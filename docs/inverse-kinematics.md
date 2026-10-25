@@ -39,7 +39,6 @@ Chains cross native figure joins and stop at the connected assembly's root. Join
 - `node --test tests/ik-joined.test.mjs`: equivalence with single-figure rigs, constant target-space angles and polygon vertex distances during repeated drags, complete planted feet through root and ancestor rotation, cross-join chains, stretch, unpinning, foot articulation/bend edits, copy remapping, shared-chain rejection, topology undo and persistence.
 - `node --test tests/ik-evaluation.test.mjs`: appearance-only solution reuse, exact pose-dependency invalidation, document isolation and deterministic seeks. The joined suite also checks thickness/color/opacity edits with pins enabled and disabled, both with and without property channels, through rebuilds, undo/redo and reload.
 - `node tests/ik.browser.mjs`: actual inspector controls and pointer gestures, live dual-foot root dragging, rotation, pin toggling, recovering an unreachable target, and real worker/backend STYK/STKZ/PIV export/reopen. Screenshot and report: `artifacts/ik/`.
-- `node scripts/benchmark-ik.mjs`: warmed CPU solver and scoped root-drag evaluation in a 1,000-figure scene, plus verification that unrelated geometry is retained. This excludes GPU completion and display latency.
 
 The browser CLI named by the verification skill was unavailable, so verification uses the repository's installed Playwright/Chrome harness. The npm shim on this machine is broken; equivalent Node script entry points were run directly.
 

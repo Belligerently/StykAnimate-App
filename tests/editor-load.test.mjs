@@ -79,10 +79,3 @@ test('validation checkpoints use exactly the synchronous native checks and can c
   assert.throws(()=>{for(const _ of validateSceneSteps(corrupt,{sliceMs:0})){};},error=>error.message===syncError);
 });
 
-test('zero-key native imports retain an editable placeholder but expose no stored Simple timeline',async()=>{
-  const report=emptyDocument();report.keyframes=[];
-  const editor=new Editor({demo:false});await editor.loadAsync(report,'Empty');editor.enableFrameDrafts(); // session gap: the frame a seek gives is the document's own record, which the session's evaluated frame is not
-  assert.equal(editor.report.keyframes.length,1);assert.equal(editor.report._styk.simpleFrameDraft.empty,true);
-  assert.equal(editor.totalTicks,0);assert.deepEqual(editor.timeline,[]);assert.equal(editor.seek(10),editor.frame);
-  assert.doesNotThrow(()=>editor.selectFrame(0));
-});

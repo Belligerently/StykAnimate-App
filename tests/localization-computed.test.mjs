@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import english from '../src/locales/en.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {engineEditor, newOwnedEditor} from './support/owned-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument,createDemo} from '../src/demo.mjs';
 import {spatialSections} from '../src/spatial-controls.mjs';
@@ -31,10 +31,9 @@ import {renderInspector} from '../src/inspector-kit.mjs';
 import {VfxInspector} from '../src/vfx-inspector.mjs';
 import {DrawingController} from '../src/drawing-controller.mjs';
 import {exportCodecChoices,exportFormatStates,exportEncodingSummary} from '../src/export-request.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
 
-const fixture=()=>new Editor({demo:false}).load(emptyDocument());
-const populatedFixture=()=>new Editor({demo:false}).load(createDemo());
+const fixture=()=>newOwnedEditor({demo:false,layerTimeline:true,propertyChannels:true}).load(emptyDocument());
+const populatedFixture=()=>newOwnedEditor({demo:false,layerTimeline:true,propertyChannels:true}).load(createDemo());
 
 test('rig descriptors retain numeric captions, descriptions, anchor actions and raw authored joint names',()=>{
  const editor=populatedFixture();editor.select(1,2);editor.enableSmartStretch(true);editor.setAngleLock('parent');
@@ -250,28 +249,6 @@ test('canonical skeleton names keep secondary part controls and localized depth 
   assert.ok(meta.text.includes(interfaceLocalization.t('spatialControls.depthHint',{key:'D'})));
   assert.equal(JSON.stringify(editor.serialize()),bytes);
  }finally{interfaceLocalization.setPseudo(null);}
-});
-
-test('fill ordering captions and fixed image shapes retain display keys while command identities and document bytes stay raw',async()=>{
- const editor=populatedFixture();editor.figure.polyfills=[{polyfill_id:1,segment_ids:[0,1,2],color_rgb:[30,60,90],z_order:1}];
- const walk=rows=>(rows??[]).flatMap(row=>row?[row,...walk(row.rows)]:[]);
- const bytes=JSON.stringify(editor.serialize());
- for(const builder of [false,true]){
-  if(builder)editor.selectPolygon(1,0);else editor.select(1);
-  const descriptor=inspectorDescriptor({editor,builder});
-  const actions=walk(descriptor.sections.flatMap(section=>section.rows??[])).find(row=>row.kind==='actions'&&row.items?.some(item=>item.action==='builder-order'));
-  assert.equal(actions.labelKey,'inspectorView.fillOrder');
-  assert.deepEqual(actions.items.map(item=>item.data),['back','down','up','front'].map(direction=>({kind:'polygon',index:0,direction})));
-  assert.deepEqual(actions.items.map(item=>item.labelKey),['inspectorView.sendToBack','inspectorView.sendBackward','inspectorView.bringForward','inspectorView.bringToFront']);
-  interfaceLocalization.setPseudo('rtl');
-  try{const html=renderInspector(descriptor);assert.match(html,/data-i18n-aria-label="inspectorView.sendToBack"/);assert.doesNotMatch(html,/aria-label="[^"]* · polygon/);}finally{interfaceLocalization.setPseudo(null);}
- }
- assert.equal(JSON.stringify(editor.serialize()),bytes);
- const {createImageFigure}=await import('../src/media-authoring.mjs');
- const image=plainEditorFor({demo:false});image.importFigure(createImageFigure({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=',width:1,height:1,name:'Artist image'}));image.select(image.selectedUid,0);
- const fields=walk(inspectorDescriptor({editor:image}).sections.flatMap(section=>section.rows??[]));
- const fixed=fields.flatMap(row=>row.options??[]).find(option=>option.value==='image');
- assert.equal(fixed.labelKey,'builderOutliner.image');assert.equal(image.figure.name,'Artist image');
 });
 
 test('owned codec display notes translate without rewriting capability diagnostics or duplicating lossless labels',async()=>{

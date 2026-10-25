@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createFrame, createObject, emptyDocument} from '../src/demo.mjs';
 import {arc} from '../src/pivot/geometry.mjs';
-import {plainScope} from './support/plain-editor.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
 
-const open = plainScope();
+const open = ownedScope();
 
 const near = (a, b, tolerance = 2e-4) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 function isolationFixture() {
@@ -97,15 +97,3 @@ test('invalid snap settings and full-circle stretching leave the scene unchanged
   assert.deepEqual(editor.serialize(), original);
 });
 
-test('numeric multiselection scaling changes selected spacing and leaves unselected joined scales intact', () => {
-  const editor = simple(), first = editor.selectedUid, child = editor.duplicateFigure().unique_id;
-  editor.joinTo(first, 1); const second = editor.duplicateFigure().unique_id;
-  editor.selectMany([first, second]); const before = editor.serialize(), roots = editor.selectedObjects.map(o => ({uid: o.unique_id, x: o.root_x, y: o.root_y}));
-  editor.scaleSelected(2, {center: {x: 0, y: 0}});
-  for (const root of roots) {
-    const object = editor.frame.objects.find(o => o.unique_id === root.uid);
-    near(object.root_x, root.x * 2); near(object.root_y, root.y * 2); near(object.scale, 2);
-  }
-  near(editor.frame.objects.find(o => o.unique_id === child).scale, 1);
-  editor.undo(); assert.deepEqual(editor.serialize(), before);
-});

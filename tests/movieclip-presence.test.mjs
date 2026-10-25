@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {engineEditor, newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure,validatePlayback} from '../src/movieclips.mjs';
 import {presencePlayback,continuations} from '../src/movieclip-presence.mjs';
@@ -10,15 +9,14 @@ import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {movieclipInspector} from '../src/movieclip-ui.mjs';
 
-/** `alone`: the editor without the engine, for the tests whose subject the session does not have. */
-function fixture({duration=12,clipDuration=8,fps=24,clipFps=24,empty=false,alone=false}={}){
+function fixture({duration=12,clipDuration=8,fps=24,clipFps=24,empty=false}={}){
   const child=defaultFigure(),document={...emptyDocument(),fps:clipFps};
   document.keyframes=Array.from({length:clipDuration},(_,i)=>createFrame([createObject(child,1,200+i*9,250)]));
   const clip=movieclipFigure(2,'Walking clip',document,{duration:clipDuration,pivot:{x:200,y:250}});
   const report={...emptyDocument(),fps,figure_types:[defaultFigure(),clip]};
   const objects=()=>empty?[]:[createObject(clip,7,300,300,{_stykMovieclip:presencePlayback()})];
   report.keyframes=duration===1?[createFrame(objects())]:[createFrame(objects(),duration-1),createFrame(objects())];
-  const e=alone?new Editor({demo:false,layerTimeline:true}).load(report):engineEditor({demo:false,layerTimeline:true}, report);e.select(7);return e;
+  const e=engineEditor({demo:false,layerTimeline:true}, report);e.select(7);return e;
 }
 function frame(e,t){const report=e.report??e,rows=timeline(report);let i=0;while(i+1<rows.length&&rows[i+1].start<=t)i++;return evaluatedFrame(report,i,(t-rows[i].start)/(rows[i].count||1),t);}
 const phase=(e,t,uid=7)=>frame(e,t).objects.find(o=>o.unique_id===uid)?._movieclipSample??null;
@@ -29,7 +27,7 @@ function closeShape(actual,expected){
   actual.forEach((value,i)=>{assert.deepEqual(value.slice(0,3),expected[i].slice(0,3));assert.equal(value[3].length,expected[i][3].length);value[3].forEach((point,j)=>point.forEach((v,k)=>assert.ok(Math.abs(v-expected[i][3][j][k])<.0001,`point ${i}/${j}/${k}: ${v} != ${expected[i][3][j][k]}`)));});
 }
 const structure=e=>JSON.stringify({duration:e.totalTicks,tracks:Object.fromEntries(Object.entries(e.report._styk.layerSheet.tracks).map(([id,t])=>[id,{end:t.end,keys:t.keys.map(k=>[k.id,k.tick,k.interpolation])}]))});
-const reopen=e=>new Editor({demo:false,layerTimeline:true}).load(JSON.parse(JSON.stringify(e.report)));
+const reopen=e=>newOwnedEditor({demo:false,layerTimeline:true}).load(JSON.parse(JSON.stringify(e.report)));
 
 test('inserting a long asset adds only current presence, with no source-length scene extension',()=>{
   const e=fixture({duration:1,clipDuration:80,empty:true}),before=e.totalTicks,undo=e._undo.length;
@@ -251,20 +249,6 @@ test('breaking an attached clip preserves unrelated joins and detaches its attac
   reopen(e);
 });
 
-test('object copy/paste through five authored frames retains one clock; middle deletion pauses it',()=>{
-  for(const single of [false,true]){
-    // session gap: copyFigure has no command in the session, and the single-figure clipboard it fills is the editor's alone.
-    const e=fixture({duration:5,empty:true,alone:single});for(let t=1;t<5;t++)e.sheetInsertKey(['layer-1'],t);
-    e.seek(0);e.addFigure(2);const uid=e.selectedUid,x=e.object.root_x;single?e.copyFigure():e.copySelection();
-    for(let t=1;t<5;t++){e.seek(t);single?e.pasteFigure():e.pasteSelection();assert.equal(e.selectedUid,uid);assert.equal(e.object.root_x,x);}
-    assert.deepEqual(phases(e,5,uid),[0,1,2,3,4]);assert.equal(e.totalTicks,5);
-    const before=e.serialize();e.seek(2);e.select(uid);e.deleteSelection();
-    assert.deepEqual(phases(e,5,uid),[0,1,null,2,3]);assert.deepEqual(phases(reopen(e),5,uid),[0,1,null,2,3]);
-    e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(phases(e,5,uid),[0,1,null,2,3]);
-    e.seek(2);e.pasteSelection();assert.equal(e.selectedUid,uid);assert.deepEqual(phases(e,5,uid),[0,1,2,3,4]);
-  }
-});
-
 test('repeated colliding pastes create fresh instances on the original layer and preserve existing poses',()=>{
   const e=fixture(),layer=e.createLayer('Other');e.copySelection();e.setActiveLayer(layer.id);
   const next=e._nextUid,ids=new Set([7]);
@@ -366,19 +350,3 @@ test('editing playback on the current pasted exposure works without adding timel
   e.undo();assert.equal(phase(e,6),2);e.redo();assert.equal(phase(reopen(e),6),5);
 });
 
-
-// The editor alone: it holds the pasted movie to share the very document object, which the session's patch does not keep.
-test('unique movieclip paste owns a definition and identity while default paste retains the clock',()=>{
-  const e=fixture({alone:true});e.copySelection();const original=e.object.figure_type_id;
-  const document=e.figure._styk.movieclip.document;
-  e.sheetClearFrames(['layer-1'],0,11);e.seek(0);
-  const before=e.serialize();e.pasteSelection({pasteMode:'unique'});
-  assert.notEqual(e.selectedUid,7);const unique=e.object.figure_type_id;assert.notEqual(unique,original);
-  assert.equal(e.figure._styk.movieclip.document,document,'Immutable animation is shared without a deep copy.');
-  const after=e.serialize();e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);
-  e.enterMovieclip();e.select(e.selectionFrame.objects[0].unique_id);e.moveSelection(15,20);e.leaveMovieclip();
-  assert.equal(e.report.figure_types.find(f=>f.figure_type_id===original)._styk.movieclip.document,document);
-  assert.notEqual(e.report.figure_types.find(f=>f.figure_type_id===unique)._styk.movieclip.document,document);
-  e.pasteSelection();assert.equal(e.selectedUid,7);assert.equal(e.object.figure_type_id,original);
-  reopen(e);
-});

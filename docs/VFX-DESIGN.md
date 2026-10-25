@@ -51,7 +51,7 @@ Turbulent displacement uses up to four normalized coherent-noise octaves in a si
 
 Saved poses use `_stykVfx.figure` for a figure/movieclip/scene stack. Node stacks use `_stykVfx['figureTypeId/handleId']`, scoped to the native physical handle and figure definition, never an array index. The owning pose supplies the instance UID. No GPU or UI state enters saved data.
 
-`src/editor-vfx.mjs` uses existing editor commands and history. The property adapter accepts `vfxStack` and typed `vfx1:type:effectId:parameter` addresses. The layer sheet composes these into its ordinary source poses and then discards the temporary property entries. It never creates a second set of animation tracks. Legacy documents without a layer sheet can still use the existing property adapter.
+`src/editor-vfx.mjs` reads the effect stacks and clips the interface shows; every effect edit is an engine session command with the editor's history. The property adapter accepts `vfxStack` and typed `vfx1:type:effectId:parameter` addresses. The layer sheet composes these into its ordinary source poses and then discards the temporary property entries. It never creates a second set of animation tracks. Legacy documents without a layer sheet can still use the existing property adapter.
 
 Matching effect IDs/types interpolate numeric/color parameters through the existing pose easing. Enabled state, stack membership, seed, and order are discrete. New effects are not introduced before their source exposure. Remove/reset/reorder edit the current exposure like other pose edits. Copying frames, physical rig remapping, foreign definition remapping, undo/redo, native save, and recovery preserve ownership.
 

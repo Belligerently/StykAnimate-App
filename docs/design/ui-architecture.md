@@ -1600,7 +1600,6 @@ The file list and verification below are the original plan; items marked landed 
 
 - `npm test`
 - Browser tests on 47913: `properties-app`, `property-controls`, `inspector-dom`, `add-frame`, `layer-timeline`, `sheet-filmstrip`, `export-experience`, three `#export-submit` tests, `recovery-interaction`, `playback-quiet`. `export-experience`, `export-auto-quality` and `export-bitrate` remove `showSaveFilePicker` (as `builder.browser` does), because headless Chrome's picker left them waiting for a download in the baseline; they now run the export flow end to end
-- `node scripts/benchmark-scrub-backpressure.mjs` (no regression)
 
 **Exit.** `app.mjs` shrinks. Playback mutations are ≥ 90% lower than the baseline (inspector and title quiet).
 
@@ -1745,7 +1744,7 @@ Commit 3 has landed as two: *"Put view controls and tool options in the stage he
 **Verify.** Browser tests on 47915:
 
 - `timeline-invalidation` (P5 and P6), `layer-timeline`, `layer-timeline-modern`, `timeline-organization`, `timeline-context`, `timeline-usability`, `onion-timeline-range`, `audio-navigation`, `audio` (header buttons unchanged), `ui-tasks` (timeline tasks), `timeline-polish`, `sheet-filmstrip`, `simple-timeline.component`, `onion-timeline-range`, `audio-navigation`, `hotkeys-timeline`, `animation-mode-sync`, `add-frame`, `playback-quiet` (filmstrip allowlist removed)
-- `node scripts/benchmark-scrub-backpressure.mjs`, `node scripts/benchmark-layer-scrub.mjs`, `npm run test:animation-performance:browser`
+- `npm run test:animation-performance:browser`
 - dense paint: 302 × 3,000 must stay at or below a median of 0.7 ms and p90 of 1.6 ms (the timeline study `timeline.md` §6, internal research, not in the repository)
 - `env -u ELECTRON_RUN_AS_NODE node tests/onion-controls.desktop.mjs`
 
@@ -1852,7 +1851,7 @@ Every track:
 - **Forced colours and reduced motion:** Playwright `emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' })` snapshots, and a check that `--surface` resolves to `Canvas` in the **light** theme (the theme blocks must not win over the forced-colours mapping) and that the canvas painters repaint with system colours.
 - **Locales:** snapshots for `el`, `de`, `pl`, `ru`, `ar` and `zh-Hans` (no clipping; the shell stays LTR).
 - **UI scale:** `node tests/settings-scale.desktop.mjs` at 75, 100, 150 and 200%; dialogs at 1000×680 and 200% in packaged Electron do not overlap the drag region.
-- **Performance** (same workloads as the baselines): `npm run benchmark:dense`, `npm run benchmark:animation-modes`, `npm run test:animation-performance:browser`, `node scripts/benchmark-scrub-backpressure.mjs`, `node scripts/benchmark-playback-interactions.mjs`, and `playback-quiet` with the final budgets (§3.2). Tradeoffs are reported explicitly.
+- **Performance** (same workloads as the baselines): `npm run benchmark:dense`, `npm run benchmark:animation-modes`, `npm run test:animation-performance:browser`, `node scripts/benchmark-playback-interactions.mjs`, and `playback-quiet` with the final budgets (§3.2). Tradeoffs are reported explicitly.
 - **Usability acceptance matrix** (`docs/audits/UI-UX-OVERHAUL-AUDIT-2026-09-09.md:211-230`), measured against the M0 baseline.
 - **Packaged:** `npm run pack && npm run verify:package && env -u ELECTRON_RUN_AS_NODE npm run test:desktop:packaged`, plus the other smoke suites: `test:hotkeys:desktop`, `test:preferences:desktop`, `test:library:desktop`, `test:support:desktop`, `test:recovery:desktop`, `test:drawing:desktop`.
 

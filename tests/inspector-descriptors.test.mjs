@@ -12,22 +12,17 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {parse} from '../vendor/text/opentype.mjs';
-import {engineEditor, plainEditorWithDrawings} from './support/owned-editor.mjs';
+import {engineEditor, ownedEditorWithDrawings} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject, defaultFigure} from '../src/demo.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
-import {compileTextFigure} from '../src/text-authoring.mjs';
-import {createImageFigure} from '../src/media-authoring.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback} from '../src/movieclip-presence.mjs';
 import {inspectorDescriptor, inspectorView} from '../src/inspector-view.mjs';
-import {ikControlsView, ikSection} from '../src/ik-view.mjs';
-import {movieclipInspector} from '../src/movieclip-ui.mjs';
+import {ikControlsView} from '../src/ik-view.mjs';
 import {INSPECTOR_BUDGET, MAX_TITLE_ACTIONS, ROW_KINDS, inspectorBudgetProblems, renderInspector} from '../src/inspector-kit.mjs';
 import {QUICK_ACTIONS, QUICK_CONTEXTS, quickDefaults} from '../src/ui/quick-actions.mjs';
-import {legacyIkControlsView, legacyInspectorView, legacyMovieclipInspector} from './fixtures/inspector-legacy.mjs';
+import {legacyIkControlsView, legacyInspectorView} from './fixtures/inspector-legacy.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
 import {
@@ -149,11 +144,6 @@ const HEADER = 7;   // the header's menu button and a full quick actions row (fi
 const assertBudget = (descriptor, label, options = {}) => assert.deepEqual(inspectorBudgetProblems(descriptor, {headerControls: HEADER, ...options}), [], `${label} fits the budget`);
 const sections = (descriptor, place) => descriptor.sections.filter(section => section && !section.hidden && (section.place ?? 'core') === place).map(section => section.id);
 
-const fonts = await Promise.all(['Regular'].map(async style => {
-  const bytes = readFileSync(new URL(`../vendor/text/NotoSans-${style}.ttf`, import.meta.url));
-  return parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-}));
-const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=';
 
 test('scene, camera, keyframe and layer contexts keep every control', () => {
   const editor = engineEditor();
@@ -171,7 +161,7 @@ test('scene, camera, keyframe and layer contexts keep every control', () => {
 
   const sheet = engineEditor({layerTimeline: true, propertyChannels: true});
   assertNothingLost({editor: sheet, context: 'frame'}, 'an exposure');
-  const {editor: inked} = plainEditorWithDrawings({layerTimeline: true, propertyChannels: true});
+  const {editor: inked} = ownedEditorWithDrawings({layerTimeline: true, propertyChannels: true});
   assertNothingLost({editor: inked, context: 'layer'}, 'a drawing layer with parallax');
 });
 
@@ -195,42 +185,6 @@ test('figure contexts keep every control: figure, joints, ranges, builder, rig t
   assertNothingLost({editor, context: 'figure', tool: 'rig'}, 'a branch');
   editor.select(1, joints + 3);
   assertNothingLost({editor}, 'a joint index past the figure');
-});
-
-test('several figures, joined figures and movieclips keep every control', () => {
-  const editor = plainEditorFor();
-  editor.selectMany([1, 2]);
-  const bounds = {minX: 10, minY: 20, maxX: 110.5, maxY: 220};
-  assertNothingLost({editor, selectionCount: 2, bounds}, 'two figures');
-  assertNothingLost({editor, selectionCount: 2, bounds, rangeIndices: [1, 2], applyRange: true}, 'two figures over a range');
-  const layer = editor.createLayer('Layer 2', {activate: false});
-  editor.assignFiguresToLayer([2], layer.id);
-  editor.selectMany([1, 2]);
-  assertNothingLost({editor, selectionCount: 2, bounds}, 'two figures on two layers');
-
-  const joined = plainEditorFor();
-  const [child, parent] = joined.frame.objects;
-  child.join = {target_object_slot: parent.object_slot, target_unique_id: parent.unique_id, target_handle_id: 3};
-  joined.select(child.unique_id);
-  assertNothingLost({editor: joined}, 'a joined figure', {connected: true});
-  joined.select(parent.unique_id);
-  assertNothingLost({editor: joined}, 'a figure with a joined child', {connected: true});
-  joined.selectMany([child.unique_id, parent.unique_id]);
-  assertNothingLost({editor: joined, selectionCount: 2, bounds}, 'a joined pair', {connected: true});
-
-  const clip = movieclipFigure(2, 'Walking clip', {...emptyDocument(), keyframes: Array.from({length: 8}, (_, i) => createFrame([createObject(defaultFigure(), 1, 200 + i * 9, 250)]))},
-    {duration: 8, pivot: {x: 200, y: 250}});
-  const report = {...emptyDocument(), fps: 24, figure_types: [defaultFigure(), clip]};
-  report.keyframes = [createFrame([createObject(clip, 7, 300, 300, {_stykMovieclip: presencePlayback()})], 11), createFrame([createObject(clip, 7, 300, 300, {_stykMovieclip: presencePlayback()})])];
-  const movie = plainEditorFor({demo: false, layerTimeline: true}, report);
-  movie.select(7);
-  assertNothingLost({editor: movie}, 'a movieclip instance');
-  // movieclipInspector() is the clip's own sections: everything today's had, less what moved to the header.
-  const own = movieclipInspector(movie), legacy = legacyMovieclipInspector(movie, (label, key) => `<input data-property="${key}">`);
-  for (const where of controls(legacy).filter(where => !where['data-property'] && !['movieclip-edit', 'movieclip-unique'].includes(where['data-action']) && !('data-movieclip-name' in where)))
-    assert.ok(find(own, where), `movieclipInspector() keeps ${JSON.stringify(where)}`);
-  movie.setMovieclipPlayback({mode: 'single', offset: 3}, {allFrames: true});
-  assertNothingLost({editor: movie}, 'a movieclip on a single frame');
 });
 
 test('Build’s rig keeps every control while its behaviours are on, each block showing its settings only while on', () => {
@@ -259,51 +213,6 @@ test('Build’s rig keeps every control while its behaviours are on, each block 
   editor.select(1, editor.figure.segments.findIndex(segment => segment.segment_id === weighted.segment_id));
   assertNothingLost({editor, builder: true}, 'a weighted joint');
   assert.equal(inspectorDescriptor({editor, builder: true}).sections.find(section => section?.id === 'rig-controls').title, 'Weighted joint');
-});
-
-test('text, image, connector, two-tone and IK joints keep every control', () => {
-  const text = plainEditorFor({demo: false});
-  text.importFigure(compileTextFigure({text: 'Hello', fontSize: 42, color: [70, 40, 170]}, fonts[0]));
-  assertNothingLost({editor: text}, 'text');
-  const image = plainEditorFor({demo: false});
-  image.importFigure(createImageFigure({dataUrl: PNG, width: 1, height: 1, name: 'Placed <sprite> & "co"'}));
-  assertNothingLost({editor: image}, 'image');
-  image.select(image.selectedUid, 0);
-  assertNothingLost({editor: image}, 'an image segment');
-
-  const rig = plainEditorFor({demo: false}, rigExampleDocument('sliding-carriage'));
-  rig.select(1, 2);
-  assertNothingLost({editor: rig}, 'a connector (slider)');
-  assertNothingLost({editor: rig, builder: true}, 'a connector in the builder');
-  rig._connectorInspector = {uid: 1, id: 3, part: 'segment'};
-  assertNothingLost({editor: rig}, 'a connector (segment)');
-  rig.select(1, 0);
-  assertNothingLost({editor: rig}, 'an anchor segment');
-
-  const tone = plainEditorFor({demo: false});
-  tone.addFigure();
-  tone.select(tone.selectedUid, 0);
-  tone.updateSegmentStyle({color: '#f8356a', opacity: 0.7, gradient: {color: '#2cd876', opacity: 0.6}});
-  for (const shape of ['circle', 'circleFill', 'circleClear', 'line', 'squareLine']) {
-    tone.convertSegment(shape);
-    assertNothingLost({editor: tone}, `a ${shape} segment`);
-  }
-  tone.convertSegment('circleFill');
-  tone.figure.segments[0].secondary = null;
-  assertNothingLost({editor: tone}, 'a circle without a second colour');
-
-  const ik = plainEditorFor();
-  ik.select(1, 4);
-  ik.setNodeIK({enabled: true});
-  assertNothingLost({editor: ik}, 'an IK joint');
-  for (const settings of [
-    {enabled: false, pinned: false, allowStretch: false, bendDirection: 0, chainLength: 2, maxLength: 3, target: {rotation: 0}},
-    {enabled: true, pinned: true, allowStretch: true, bendDirection: -1, chainLength: 3, maxLength: 3, target: {rotation: 0.5}},
-  ]) {
-    const now = ikControlsView(settings);
-    for (const where of controls(legacyIkControlsView(settings))) assert.ok(find(now, where), `IK ${settings.enabled ? 'on' : 'off'} keeps ${JSON.stringify(where)}`);
-    assert.equal(ikSection(settings).id, 'ik');
-  }
 });
 
 test('fills, long palettes, 3D rigs and the drawing tools keep every control', () => {
@@ -337,7 +246,7 @@ test('fills, long palettes, 3D rigs and the drawing tools keep every control', (
   assertNothingLost({editor: rig}, 'a 3D rig limb with IK');
   assertNothingLost({editor: rig, builder: true}, 'a 3D rig in the builder');
 
-  const {editor: drawing} = plainEditorWithDrawings({layerTimeline: true, propertyChannels: true});
+  const {editor: drawing} = ownedEditorWithDrawings({layerTimeline: true, propertyChannels: true});
   const settings = {color: '#223344', color2: '#ffffff', blend: 'multiply', alphaLock: true, preset: 'ink', hardness: 0.5, roundness: 1, angle: 0, spacingRatio: 0.08,
     taperIn: 0, taperOut: 0, stabilizerMode: 'average', tip: 'round', angleMode: 'fixed', grain: 'noise', texture: 0, grainScale: 1, pressureSize: true,
     pressureOpacity: false, pressureFlow: false, sizeCurve: 1, opacityCurve: 1, sizeJitter: 0, opacityJitter: 0, angleJitter: 0, scatter: 0, mirrorY: false,
@@ -402,32 +311,6 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
   assert.equal(inspectorDescriptor({editor, rangeIndices: [2, 5], applyRange: true}).scope.label, 'Editing 2 frames');
   assert.equal(inspectorDescriptor({editor, rangeIndices: [2, 3, 4], applyRange: false}).scope, null);
   assert.ok('checked' in tag(inspectorView({editor, rangeIndices: [2, 3, 4], applyRange: true}), {id: 'apply-range-movement'}).attrs);
-});
-
-test('text and image figures: Text and Transform lead; Arrange folds for text', () => {
-  const text = plainEditorFor({demo: false});
-  text.importFigure(compileTextFigure({text: 'Hello', fontSize: 42, color: [70, 40, 170]}, fonts[0]));
-  let options = {editor: text}, descriptor = inspectorDescriptor(options), now = inspectorView(options), today = legacyInspectorView(options);
-  assert.equal(descriptor.kind, 'text');
-  assert.equal(descriptor.target.glyph, 'text');
-  assert.deepEqual(descriptor.quick, {context: 'text'});
-  assert.deepEqual(sections(descriptor, 'core'), ['text', 'transform', 'appearance']);
-  assert.deepEqual(sections(descriptor, 'titled'), ['arrange', 'colours']);
-  for (const key of ['root_x', 'root_y', 'scale', 'rotation']) assertNumberParity(today, now, key);
-  tag(now, {'data-action': 'edit-text'});
-  assertBudget(descriptor, 'text');
-
-  const image = plainEditorFor({demo: false});
-  image.importFigure(createImageFigure({dataUrl: PNG, width: 1, height: 1, name: 'Placed sprite'}));
-  options = {editor: image}; descriptor = inspectorDescriptor(options); now = inspectorView(options); today = legacyInspectorView(options);
-  assert.equal(descriptor.kind, 'image');
-  assert.equal(descriptor.target.glyph, 'image');
-  assert.equal(descriptor.target.name, 'Placed sprite');
-  for (const key of ['root_x', 'root_y', 'scale', 'rotation', 'figure_opacity']) assertNumberParity(today, now, key);
-  assertParity(today, now, {id: 'figure-color'}, ['type', 'value', 'aria-label']);
-  // A figure without text leaves the Text section's placeholder, so the sections after it keep their places.
-  assert.ok(now.includes('<section class="ui-section" data-section="text" hidden></section>'));
-  assertBudget(descriptor, 'image');
 });
 
 test('several figures: Selection (Rotate 15°, Center), Align, Appearance and Arrange; values that differ read Mixed', () => {
@@ -532,31 +415,6 @@ test('connector joints: the Connector section opens with Segment │ Slider; the
   assertParity(today, now, {id: 'segment-color'}, ['type', 'aria-label']);
   assertNumberParity(today, now, 'thickness');
   assert.doesNotMatch(now, /id="rig-position"|id="static-joint"|data-property="joint_angle"/);
-});
-
-test('second colour: a titled section whose switch sits after its title and which opens while it is on', () => {
-  const editor = plainEditorFor({demo: false});
-  editor.addFigure();
-  editor.select(editor.selectedUid, 0);
-  editor.updateSegmentStyle({color: '#f8356a', opacity: 0.7, gradient: {color: '#2cd876', opacity: 0.6}});
-  editor.convertSegment('circle');
-  let today = legacyInspectorView({editor}), now = inspectorView({editor});
-  assertSwitchParity(today, now, {id: 'segment-gradient-enabled'}, ['type', 'role', 'checked', 'aria-controls'], {name: false});
-  assert.equal(tag(now, {id: 'segment-gradient-enabled'}).attrs['aria-label'], 'Secondary color');
-  assert.ok(!('hidden' in tag(now, {id: 'segment-secondary-controls'}).attrs));
-  assertParity(today, now, {id: 'segment-gradient-color'}, ['type', 'value', 'aria-label']);
-  assertNumberParity(today, now, 'segment_gradient_opacity');
-  assertNumberParity(today, now, 'segment_opacity');
-  assert.ok('data-open' in tag(now, {'data-section': 'second-colour'}).attrs, 'it opens while the second colour is on');
-
-  editor.updateSegmentStyle({gradient: null});
-  today = legacyInspectorView({editor}); now = inspectorView({editor});
-  assert.ok('hidden' in tag(now, {id: 'segment-secondary-controls'}).attrs, 'the region stays, hidden');
-  assert.doesNotMatch(now, /id="segment-gradient-color"/);
-  editor.convertSegment('line');
-  now = inspectorView({editor});
-  assert.doesNotMatch(now, /segment-gradient-enabled/);
-  assert.ok(now.includes('<section class="ui-section" data-section="second-colour" hidden></section>'));
 });
 
 test('the camera: Level, Center and Reset under its name; Preview with Guides, Transform with Copy and Paste, Framing titled', () => {

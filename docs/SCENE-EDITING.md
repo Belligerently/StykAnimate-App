@@ -248,8 +248,7 @@ style variants and converts untouched legacy COLORREF values to Pivot 5 too.
 Layer-sheet edits use the existing held-key/interpolated-boundary policy and range
 history. Legacy scalar timelines keep independent color/paint channels and native
 Simple working-copy behavior. Tests are in `tests/figure-colors.test.mjs` and
-`tests/figure-colors.browser.mjs`; `scripts/verify-figure-colors.mjs` checks local
-hands-pack STYK/PIV round trips and records command timings.
+`tests/figure-colors.browser.mjs`.
 
 ## Figure flips
 

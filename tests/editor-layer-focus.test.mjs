@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {ownedEditorSync, plainEditorWithDrawings} from './support/owned-editor.mjs';
+import {ownedEditorSync, ownedEditorWithDrawings} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {figureFocusLocked, layerFocusLocked} from '../src/editor-layer-focus.mjs';
 import {createLayerState, layerLocked} from '../src/layers.mjs';
@@ -58,7 +58,7 @@ test('Focus and lock preserves saved locks, visibility, history and source repor
 });
 
 test('temporary locks reject off-focus sheet edits before publication', () => {
-  const {editor} = plainEditorWithDrawings({demo: false, layerTimeline: true}, fixture().report, ['Sketch']); editor.select(1); editor.markSaved();
+  const {editor} = ownedEditorWithDrawings({demo: false, layerTimeline: true}, fixture().report, ['Sketch']); editor.select(1); editor.markSaved();
   editor.setLayerFocus(['layer-1', 'layer-2'], {lock: true});
   const before = editor.serialize(), history = editor._undo.length;
   assert.throws(() => editor.sheetInsertKey(['layer-3'], 3), /Unlock Reference/);
