@@ -68,6 +68,8 @@ impl Editor {
         let arg = |index: usize| args.item(index).filter(|value| !value.is_null());
         Some(match name {
             "getIKSettings" => self.get_ik_settings().map(Some),
+            // A clipboard the session holds, as the interface hands it to another session (`@setClipboard`).
+            "clipboard" => Ok(arg(0).and_then(|kind| kind.as_str().and_then(|kind| self.clipboard_wire(kind)))),
             "animationValue" | "vfxEffects" | "segmentAnimationTarget" if !self.sheet() => {
                 Err(EditError::Unported("property values of a document without a layer sheet".into()))
             }

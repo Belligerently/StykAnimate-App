@@ -13,6 +13,22 @@ fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
             .collect(),
     )
 }
+/// A sheet command's `assets`: the definitions and backgrounds it added, each with where it put them
+/// (`fields` names the two fields in the order the record keeps them).
+fn assets_of(definitions: &Option<(usize, Vec<Value>)>, backgrounds: &Option<(usize, Vec<Value>)>, fields: [&'static str; 2]) -> Option<Value> {
+    let table = |(at, added): &(usize, Vec<Value>)| {
+        let field = |name: &'static str| (name, if name == "index" { Value::Num(*at as f64) } else { Value::array(added.clone()) });
+        object([field(fields[0]), field(fields[1])])
+    };
+    let mut assets = Vec::new();
+    if let Some(definitions) = definitions {
+        assets.push(("figure_types", table(definitions)));
+    }
+    if let Some(backgrounds) = backgrounds {
+        assets.push(("backgrounds", table(backgrounds)));
+    }
+    (!assets.is_empty()).then(|| object(assets))
+}
 fn bytes(
     value: &Value,
     check: &mut impl FnMut() -> Result<(), crate::EditError>,
@@ -291,6 +307,7 @@ fn command_projection_checked(
             after_layers,
             sources,
             definitions,
+            backgrounds,
             retain_geometry,
         } => {
             let old = before.get("tracks");
@@ -331,17 +348,8 @@ fn command_projection_checked(
             value.set("beforeLayers", before_layers.clone());
             value.set("afterLayers", after_layers.clone());
             value.set("sources", sources.clone());
-            if let Some((at, added)) = definitions {
-                value.set(
-                    "assets",
-                    object([(
-                        "figure_types",
-                        object([
-                            ("added", Value::array(added.clone())),
-                            ("index", Value::Num(*at as f64)),
-                        ]),
-                    )]),
-                );
+            if let Some(assets) = assets_of(definitions, backgrounds, ["added", "index"]) {
+                value.set("assets", assets);
             }
             let result = bytes(&Value::object(value), check)?;
             if record.is_some() {
@@ -351,8 +359,8 @@ fn command_projection_checked(
                 metadata.set("beforeLayers", before_layers.clone());
                 metadata.set("afterLayers", after_layers.clone());
                 metadata.set("frameSourceChanges", sources);
-                if let Some((at, added)) = definitions {
-                    metadata.set("assets", object([("figure_types", object([("index", Value::Num(*at as f64)), ("added", Value::array(added.clone()))]))]));
+                if let Some(assets) = assets_of(definitions, backgrounds, ["index", "added"]) {
+                    metadata.set("assets", assets);
                 }
                 flags(&mut metadata, true, true);
                 metadata.set("retainGeometry", Value::Bool(*retain_geometry));

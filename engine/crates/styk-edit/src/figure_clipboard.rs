@@ -34,6 +34,8 @@ pub(crate) struct FigureClipboard {
     foreign: bool,
     /// Where each copied movieclip instance was in its clip (`movieclipSamples`).
     movieclip_samples: Vec<(u32, f64)>,
+    /// Definitions the copy made that the document does not hold (`freshTypes`, a copied branch): each pastes as a new one.
+    fresh_types: Vec<f64>,
 }
 
 /// `snapshotFigureDefinition(figure)`: a copy of a definition whose immutable parts (a clip's
@@ -166,9 +168,9 @@ impl Editor {
         self.figure_clipboard.as_ref().map(|clipboard| clipboard.pastes)
     }
 
-    /// `copySelection({wholeFigures})`: the selected figures, their definitions, layers and
-    /// drawing order. Returns how many were copied.
-    pub(crate) fn copy_selection(&mut self) -> Result<Value, EditError> {
+    /// `copySelection({wholeFigures, inPlace})`: the selected figures, their definitions, layers and
+    /// drawing order; `in_place` pastes them where they were (a cut). Returns how many were copied.
+    pub(crate) fn copy_selection(&mut self, in_place: bool) -> Result<Value, EditError> {
         let selected = self.selected_objects()?;
         if selected.is_empty() {
             return Ok(Value::Num(0.0));
@@ -226,18 +228,15 @@ impl Editor {
         let order: Vec<u32> = crate::figures::frame_order(frame.as_obj().unwrap_or(&Obj::new())).into_iter().map(|u| u as u32).filter(|u| ids.contains(u)).collect();
         let layers = ids.iter().map(|&u| (u, self.layer_of(u))).collect();
         let count = objects.len();
-        self.figure_clipboard = Some(FigureClipboard { objects, figures, layers, order, source_version: self.report.get("version").cloned().unwrap_or(Value::Null), offset: 24.0, pastes: 0.0, vfx_clips, copy_tick: Some((self.tick + 0.5).floor()), foreign: false, movieclip_samples });
+        self.figure_clipboard = Some(FigureClipboard { objects, figures, layers, order, source_version: self.report.get("version").cloned().unwrap_or(Value::Null), offset: if in_place { 0.0 } else { 24.0 }, pastes: 0.0, vfx_clips, copy_tick: Some((self.tick + 0.5).floor()), foreign: false, movieclip_samples, fresh_types: Vec::new() });
         Ok(Value::Num(count as f64))
     }
 
     /// `cutSelection()`: copied, then deleted; pasting puts it back where it was.
     pub(crate) fn cut_selection(&mut self) -> Result<Value, EditError> {
-        let count = self.copy_selection()?;
+        let count = self.copy_selection(true)?;
         if count.as_f64() == Some(0.0) {
             return Ok(Value::Num(0.0));
-        }
-        if let Some(clipboard) = self.figure_clipboard.as_mut() {
-            clipboard.offset = 0.0;
         }
         self.delete_selection()?;
         Ok(count)
@@ -274,7 +273,7 @@ impl Editor {
         }
         let kept = self.figure_clipboard.clone();
         let result = (|| {
-            if self.copy_selection()?.as_f64() == Some(0.0) {
+            if self.copy_selection(false)?.as_f64() == Some(0.0) {
                 if let Some(pastes) = pastes.as_deref_mut() { *pastes = Some(Value::Null); }
                 return Ok(Value::array(Vec::new()));
             }
@@ -378,7 +377,7 @@ impl Editor {
         } else {
             objects.iter().filter_map(uid).collect()
         };
-        let clipboard = FigureClipboard { objects, figures, layers: Vec::new(), order, source_version: Value::Null, offset: 0.0, pastes: 0.0, vfx_clips: Vec::new(), copy_tick: None, foreign: true, movieclip_samples: Vec::new() };
+        let clipboard = FigureClipboard { objects, figures, layers: Vec::new(), order, source_version: Value::Null, offset: 0.0, pastes: 0.0, vfx_clips: Vec::new(), copy_tick: None, foreign: true, movieclip_samples: Vec::new(), fresh_types: Vec::new() };
         let canvas = [num(&self.report, "canvas_width").unwrap_or(f64::NAN) / 2.0, num(&self.report, "canvas_height").unwrap_or(f64::NAN) / 2.0];
         let mut operation = Obj::new();
         operation.set("newIdentities", Value::Bool(true));
@@ -425,16 +424,13 @@ impl Editor {
         }
         let version = self.report.get("version").and_then(Value::as_f64).unwrap_or(f64::NAN);
         let source_version = clipboard.source_version.as_f64().unwrap_or(f64::NAN);
-        if !clipboard.foreign && source_version != version {
-            return Err(EditError::Unported("a clipboard from another format version".into()));
-        }
         let new_identities = options.get("newIdentities").is_some_and(Value::truthy);
         let definitions_now: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         let mut next_type = definitions_now.iter().filter_map(|f| num(f, "figure_type_id")).fold(1.0f64, |a, t| a.max(t + 1.0));
         let mut next_uid = self.next_uid;
         // Definitions: the copied ones themselves (instances, and movieclips unless unique),
         // else new copies.
-        let independent = |figure: &Value| clipboard.foreign || paste_mode == "unique" || is_drawing(figure) || (paste_mode == "default" && !is_movieclip(figure));
+        let independent = |figure: &Value| clipboard.foreign || num(figure, "figure_type_id").is_some_and(|t| clipboard.fresh_types.contains(&t)) || paste_mode == "unique" || is_drawing(figure) || (paste_mode == "default" && !is_movieclip(figure));
         let copied_type = |object: &Value| clipboard.figures.iter().find(|f| f.get("figure_type_id") == object.get("figure_type_id"));
         // A movieclip instance pasted where it is not on show keeps its identity (`linked`,
         // `retained`): once and hide clips still own theirs after their artwork is gone.
@@ -488,6 +484,12 @@ impl Editor {
                     let mut copy = snapshot_figure_definition(original).as_obj().cloned().unwrap_or_default();
                     copy.set("figure_type_id", Value::Num(next_type));
                     next_type += 1.0;
+                    // Modern segment colours must not acquire the destination's legacy whole-figure interpretation.
+                    if source_version >= 5.0 && version < 5.0 {
+                        let mut styk = copy.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+                        styk.set("colorMode", Value::str("segments"));
+                        copy.set("_styk", Value::object(styk));
+                    }
                     let mut copy = Value::object(copy);
                     // A drawing is a cel of its own, with the pixels of the one it copies.
                     if is_drawing(&copy) {
@@ -536,6 +538,10 @@ impl Editor {
                 return Err(EditError::Unported("a copied figure without its definition".into()));
             };
             let mut object = snapshot_pose_object(original);
+            // Legacy colours are absolute: a figure of an older format pasted into a modern document keeps the colour it shows.
+            if source_version < 5.0 && version >= 5.0 && copied_type(original).is_some_and(|f| f.path(&["_styk", "colorMode"]).and_then(Value::as_str) != Some("segments")) {
+                modernize_legacy_object_color(&mut object);
+            }
             object.remove("_stykMovieclipPart");
             let new_type = num(figure, "figure_type_id").unwrap_or(f64::NAN);
             styk_eval::vfx::remap_owner(&mut object, new_type, None, num(original, "figure_type_id").unwrap_or(f64::NAN));
@@ -655,5 +661,80 @@ impl Editor {
             self.paste_figure_vfx_clips(&clipboard.vfx_clips, &uid_map, &type_map, shift)?;
         }
         Ok(order)
+    }
+}
+
+/// `modernizeLegacyObjectColor(object)`: a legacy colour is absolute BGR with negative black; it becomes an opaque override.
+fn modernize_legacy_object_color(object: &mut Obj) {
+    if object.get("_styk").and_then(|styk| styk.get("colorMode")).and_then(Value::as_str) == Some("segments") {
+        return;
+    }
+    let number = object.get("color_override_raw").map_or(0.0, |raw| match raw {
+        Value::Null => 0.0,
+        Value::Bool(flag) => f64::from(u8::from(*flag)),
+        other => other.as_f64().unwrap_or(f64::NAN),
+    });
+    // `>>> 0`: the number as an unsigned 32-bit integer.
+    let raw = if number.is_finite() { number.trunc().rem_euclid(4294967296.0) as u32 } else { 0 };
+    let colour = 0xff00_0000u32 | if (raw as i32) < 0 { 0 } else { raw & 0x00ff_ffff };
+    object.set("color_override_raw", Value::Num(f64::from(colour)));
+    object.set("color_override_rgb", Value::nums(&[f64::from(colour & 255), f64::from((colour >> 8) & 255), f64::from((colour >> 16) & 255)]));
+    object.set("color_override_mix", Value::Num(255.0));
+}
+
+impl FigureClipboard {
+    /// The clipboard as the interface holds it (`editor._selectionClipboard`): its map of layers and its set of
+    /// fresh definitions as lists, without the document it came from (the interface knows that).
+    pub(crate) fn to_wire(&self) -> Value {
+        let mut wire = Obj::new();
+        wire.set("objects", Value::array(self.objects.clone()));
+        wire.set("figures", Value::array(self.figures.clone()));
+        let mut samples = Obj::new();
+        for (uid, sample) in &self.movieclip_samples {
+            samples.set(&uid.to_string(), Value::Num(*sample));
+        }
+        wire.set("movieclipSamples", Value::object(samples));
+        wire.set("layers", Value::array(self.layers.iter().map(|(uid, layer)| Value::array(vec![Value::Num(*uid as f64), Value::str(layer)])).collect()));
+        wire.set("order", Value::array(self.order.iter().map(|uid| Value::Num(*uid as f64)).collect()));
+        wire.set("vfxClips", Value::array(self.vfx_clips.clone()));
+        if let Some(tick) = self.copy_tick {
+            wire.set("copyTick", Value::Num(tick));
+        }
+        wire.set("sourceVersion", self.source_version.clone());
+        wire.set("offset", Value::Num(self.offset));
+        wire.set("pastes", Value::Num(self.pastes));
+        if !self.fresh_types.is_empty() {
+            wire.set("freshTypes", Value::array(self.fresh_types.iter().map(|id| Value::Num(*id)).collect()));
+        }
+        Value::object(wire)
+    }
+
+    /// The clipboard the interface hands over; `foreign` when it was copied in another document or restored from the
+    /// system's clipboard (every definition it pastes is then a new one).
+    pub(crate) fn from_wire(data: &Value, foreign: bool) -> Result<FigureClipboard, EditError> {
+        let invalid = || EditError::Invalid("errors.sharedClipboard.invalidFigureClipboard".into());
+        let list = |key: &str| data.get(key).and_then(Value::elements).map(|items| items.iter().collect::<Vec<Value>>());
+        let objects = list("objects").filter(|objects| !objects.is_empty() && objects.iter().all(Value::is_object)).ok_or_else(invalid)?;
+        let figures = list("figures").filter(|figures| figures.iter().all(Value::is_object)).ok_or_else(invalid)?;
+        let order = list("order").ok_or_else(invalid)?.iter().map(|uid| uid.as_f64().filter(|uid| uid.fract() == 0.0 && *uid >= 0.0).map(|uid| uid as u32)).collect::<Option<Vec<u32>>>().ok_or_else(invalid)?;
+        let offset = data.get("offset").and_then(Value::as_f64).filter(|offset| offset.is_finite()).ok_or_else(invalid)?;
+        let layers = match list("layers") {
+            None => Vec::new(),
+            Some(pairs) => pairs.iter().map(|pair| Some((pair.item(0)?.as_f64()? as u32, pair.item(1)?.as_str()?.to_string()))).collect::<Option<Vec<_>>>().ok_or_else(invalid)?,
+        };
+        let movieclip_samples = match data.get("movieclipSamples").and_then(Value::as_obj) {
+            None => Vec::new(),
+            Some(samples) => samples.iter().filter_map(|(uid, sample)| Some((uid.parse::<u32>().ok()?, sample.as_f64()?))).collect(),
+        };
+        let fresh_types = list("freshTypes").map(|ids| ids.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
+        Ok(FigureClipboard {
+            objects, figures, layers, order,
+            source_version: data.get("sourceVersion").cloned().unwrap_or(Value::Null),
+            offset,
+            pastes: data.get("pastes").and_then(Value::as_f64).filter(|pastes| pastes.is_finite()).unwrap_or(0.0),
+            vfx_clips: list("vfxClips").unwrap_or_default(),
+            copy_tick: data.get("copyTick").and_then(Value::as_f64).filter(|tick| tick.is_finite()),
+            foreign, movieclip_samples, fresh_types,
+        })
     }
 }
