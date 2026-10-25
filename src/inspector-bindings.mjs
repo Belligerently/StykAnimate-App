@@ -25,7 +25,7 @@ import {rigControlChange} from './rig-controls.mjs';
 import {installInspectorChrome} from './inspector-header.mjs';
 import {changeSurfaceSide} from './builder-surface-ui.mjs';
 import {layerIdForUid} from './layers.mjs';
-import {shortest} from './pivot/geometry.mjs';
+import {shortest} from './pivot/read-view.mjs';
 
 /** The handlers in the order they are tried. Each is [selector, (target, event) => false | anything]. */
 export function inspectorBindings(ctx) {

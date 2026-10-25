@@ -14,7 +14,7 @@
  * groups already held, so the objects the canvas keeps by identity (handle descriptors) stay valid.
  */
 import {resolveInstanceFigure} from '../animation-style.mjs';
-import {isStatic} from '../pivot/geometry.mjs';
+import {isStatic} from '../pivot/read-view.mjs';
 import {isMovieclip} from '../movieclips.mjs';
 import {sticknodesDrawables, sticknodesSpriteAsset} from '../sticknodes/geometry.mjs';
 

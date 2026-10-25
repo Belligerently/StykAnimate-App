@@ -19,6 +19,7 @@ import {animationOriginLayout, animationOriginAngle, animationOriginBend, correc
 import {interpolateOriginSupport} from '../animation-origin-support.mjs';
 import {easedProgress, usesLegacyNativeEasing, easingMode, autoValue} from '../keyframe-easing.mjs';
 import {geometryDefinition} from './geometry-definition.mjs';
+import {shortest, color, mixColor, isStatic, frameTicks, nativeTimeline, timeline} from './read-view.mjs';
 import {geometryPose,geometryPosePlan,geometryPlans} from './geometry-pose.mjs';
 import {hasRigConstraints, createRigEvaluation, rigConstraintPlanSteps} from '../rig-constraints.mjs';
 import {hasPinnedIK, interpolateIK} from '../ik.mjs';
@@ -50,30 +51,8 @@ import {segmentVfx,hasDrawableVfx} from '../vfx-drawable.mjs';
 import {objectBounds} from '../renderer-geometry.mjs';
 export const TAU = Math.PI * 2;
 export const lerp = (a, b, t) => Number(a) + (Number(b) - Number(a)) * t;
-export const shortest = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-export function color(raw) {
-  const n = Number(raw) >>> 0;
-  return {
-    rgb: [n & 255, (n >>> 8) & 255, (n >>> 16) & 255],
-    alpha: (n >>> 24) / 255,
-  };
-}
-export function mixColor(base, raw) {
-  const k = Number(raw) >>> 24;
-  if (k === 0) return base;
-  const c = color(raw);
-  if (k === 255) return c.rgb;
-  return base.map((v, i) => Math.floor((v * 256 + k * (c.rgb[i] - v)) / 256));
-}
 export function rgba(rgb = [0, 0, 0], a = 1) {
   return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${Math.max(0, Math.min(1, a))})`;
-}
-export function isStatic(s) {
-  if (s.aux_code !== undefined) return Boolean(s.aux_code & 1);
-  if (s.static_raw !== undefined) return Boolean(s.static_raw);
-  return (
-    s.flag_bits?.is_static ?? s.is_static ?? Boolean(Number(s.flags || 0) & 256)
-  );
 }
 export function arc(start, angle, length, bend = 0) {
   if (!Number.isFinite(start.x) || !Number.isFinite(start.y) || !Number.isFinite(angle) || !Number.isFinite(length) || !Number.isFinite(bend))
@@ -99,31 +78,6 @@ export function arc(start, angle, length, bend = 0) {
     x: start.x + r * (Math.sin(angle + (bend * i) / steps) - Math.sin(angle)),
     y: start.y + r * (Math.cos(angle) - Math.cos(angle + (bend * i) / steps)),
   }));
-}
-export function frameTicks(f) {
-  // Raw signed duration is the displayed keyframe plus its outgoing inbetweens.
-  const n = Number(f.duration_raw ?? 1);
-  return Math.max(0, n);
-}
-export function nativeTimeline(report) {
-  let tick = 0;
-  return (report.keyframes || []).map((f, index) => {
-    const n = frameTicks(f),
-      count =
-        report.version >= 5 && index === report.keyframes.length - 1
-          ? Math.min(1, n)
-          : n,
-      out = { index, start: tick, count };
-    tick += count;
-    return out;
-  });
-}
-export function timeline(report) {
-  const sheet=report._styk?.layerSheet;
-  const entries = nativeTimeline(report).filter(entry=>!sheet||entry.start<sheet.duration), last = entries.at(-1);
-  if(sheet){for(const entry of entries)entry.count=Math.min(entry.count,sheet.duration-entry.start);if(last)last.count=Math.max(sheet.duration,...(report._styk?.cameraMotion?.clips??[]).map(c=>c.start+c.duration),...(report._styk?.vfxClips?.clips??[]).map(c=>c.duration===null?0:c.start+c.duration))-last.start;return entries;}
-  if (last) last.count = Math.max(last.count, Math.max(animationEndTick(report),...(report._styk?.cameraMotion?.clips??[]).map(c=>c.start+c.duration),...(report._styk?.vfxClips?.clips??[]).map(c=>c.duration===null?0:c.start+c.duration)) - last.start);
-  return entries;
 }
 function sameSign(a, b) {
   return Math.sign(a) === Math.sign(b);

@@ -4,7 +4,8 @@ import {emptyDocument, defaultFigure, createObject, createFrame} from '../src/de
 import {animationChannelId, normalizeAnimationTarget, findAnimationChannel, composeAnimationChannels,
   animationPropertyValue, validateAnimationDocument, sampleAnimationChannel} from '../src/animation-channels.mjs';
 import {animationStyleValue, setAnimationStyle, resolveInstanceFigure} from '../src/animation-style.mjs';
-import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {roundTrip} from './support/codec.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';

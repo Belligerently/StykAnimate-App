@@ -7,7 +7,8 @@ import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {validateAnimationDocument,validateAnimationValue} from '../src/animation-channels.mjs';
 import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit,cancelNativePropertyEdit,getNativePropertyValue} from '../src/native-property-edit.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
-import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
+import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 
 function fixture(layerTimeline, owned = true) {

@@ -5,7 +5,8 @@ import {nodeCodec, exportDocument, importBytes} from '../tests/support/codec.mjs
 import {Editor} from '../src/editor.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {synchronizeExistingDerived} from '../src/document-normalize.mjs';
-import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
+import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 
 const directory='artifacts/figure-palette';await mkdir(directory,{recursive:true});
 const source=JSON.parse(await readFile(process.argv[2]??`${directory}/hands-source.json`,'utf8'));

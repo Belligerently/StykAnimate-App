@@ -20,7 +20,7 @@ import {cameraMotionView,parallaxView} from '../../src/camera-motion-ui.mjs';
 import {paintCSS} from '../../src/paint.mjs';
 import {figurePalette, displayedSegmentPaint, displayedColor} from '../../src/figure-colors.mjs';
 import { icon } from "../../src/icons.mjs";
-import { isStatic } from "../../src/pivot/geometry.mjs";
+import { isStatic } from "../../src/pivot/read-view.mjs";
 import { formatPropertyValue } from "../../src/property-controls.mjs";
 import { cameraValues } from "../../src/editor-camera.mjs";
 import { builderDrawables } from '../../src/editor-builder-style.mjs';

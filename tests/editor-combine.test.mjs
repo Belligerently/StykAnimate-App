@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {buildGeometry, mixColor} from '../src/pivot/geometry.mjs';
+import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {mixColor} from '../src/pivot/read-view.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {roundTrip} from './support/codec.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';

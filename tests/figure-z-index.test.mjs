@@ -4,7 +4,8 @@ import {Editor} from '../src/editor.mjs';
 import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {composeAnimationChannels, validateAnimationDocument} from '../src/animation-channels.mjs';
-import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 
 const target = {kind: 'figure', uid: 1};

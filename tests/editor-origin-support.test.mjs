@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {animationRotation, animationOriginOffset, synchronizeAnimationOrigin} from '../src/animation-origin.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {validateScene} from '../src/pivot/model.mjs';

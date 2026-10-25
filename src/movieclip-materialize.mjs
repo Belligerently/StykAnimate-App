@@ -2,7 +2,8 @@ import {messageError} from './localized-error.mjs';
 /** Explicit flattening for editable objects and legacy exports. Runtime playback
  * never uses this path and never expands the stored scene. */
 import {isMovieclip,movieclipAsset} from './movieclips.mjs';
-import {evaluatedFrame,buildGeometry,timeline} from './pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry} from './pivot/geometry.mjs';
+import {timeline} from './pivot/read-view.mjs';
 import {layerVisible} from './layers.mjs';
 import {createFrame} from './demo.mjs';
 import {setContinuations} from './movieclip-presence.mjs';

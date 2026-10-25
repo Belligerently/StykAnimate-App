@@ -3,7 +3,8 @@ import {messageError} from './localized-error.mjs';
  * Planning is atomic: it shares native frames and unaffected channel objects,
  * and allocates only immutable source assets for the destination pose track. */
 import {animationChannelId} from './animation-channels.mjs';
-import {evaluatedFrame, timeline} from './pivot/geometry.mjs';
+import {evaluatedFrame} from './pivot/geometry.mjs';
+import {timeline} from './pivot/read-view.mjs';
 import {layerIdForUid} from './layers.mjs';
 
 export const LAYER_MIGRATION_LIMITS = Object.freeze({maxTicks: 10000, maxObjectPoses: 250000, maxSegmentValues: 3000000});

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {falloffWeight, planFalloff, normalizeFalloff} from '../src/motion-path-falloff.mjs';
 
 const clone = value => structuredClone(value);

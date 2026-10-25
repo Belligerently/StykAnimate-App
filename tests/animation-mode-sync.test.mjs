@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';

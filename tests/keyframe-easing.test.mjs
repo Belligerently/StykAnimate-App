@@ -5,7 +5,8 @@ import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {easedProgress, cubicBezierProgress, keyEasing} from '../src/keyframe-easing.mjs';
 import {sampleAnimationChannel, validateAnimationDocument} from '../src/animation-channels.mjs';
-import {evaluatedNativeFrame, evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
+import {evaluatedNativeFrame, evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {materializePivotDocument, needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
 
 const near = (actual, expected, epsilon = 1e-7) => assert.ok(Math.abs(actual - expected) < epsilon, `${actual} ≠ ${expected}`);

@@ -1,7 +1,8 @@
 import {messageError} from './localized-error.mjs';
 import {drawingResourcesFor} from './drawing-resources.mjs';
 import {movieclipFigure,movieclipAsset,isMovieclip,playbackSettings,validatePlayback,invalidateMovieclipTypes,movieclipSourceFrames,movieclipTime} from './movieclips.mjs';
-import {evaluatedFrame,timeline,buildGeometry,movieclipPresenceIndex} from './pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry, movieclipPresenceIndex} from './pivot/geometry.mjs';
+import {timeline} from './pivot/read-view.mjs';
 import {createFrame,createObject,emptyDocument} from './demo.mjs';
 import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
 import {layerLocked,layerIdForUid} from './layers.mjs';

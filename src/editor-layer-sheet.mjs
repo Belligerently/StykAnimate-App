@@ -1,5 +1,6 @@
 import {messageError} from './localized-error.mjs';
-import {nativeTimeline, evaluatedFrame, evaluatedNativeFrame, timeline, movieclipPresenceIndex, buildGeometry} from './pivot/geometry.mjs';
+import {evaluatedFrame, evaluatedNativeFrame, movieclipPresenceIndex, buildGeometry} from './pivot/geometry.mjs';
+import {nativeTimeline, timeline} from './pivot/read-view.mjs';
 import {composePoseChannels} from './animation-pose.mjs';
 import {sheetKeyAt,validateLayerSheet,validateLayerSheetChanges,MAX_SHEET_TICKS} from './layer-sheet.mjs';
 import {snapshotPoseFrame,poseObjectSignature} from './pose-snapshot.mjs';

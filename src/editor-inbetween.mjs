@@ -1,7 +1,8 @@
 import {messageError} from './localized-error.mjs';
 import {easingMode, keyEasing} from './keyframe-easing.mjs';
 /** One chosen pose per selected native key; this command never bakes a movie. */
-import {evaluatedNativeFrame, evaluatedFrame, nativeTimeline, buildGeometry} from './pivot/geometry.mjs';
+import {evaluatedNativeFrame, evaluatedFrame, buildGeometry} from './pivot/geometry.mjs';
+import {nativeTimeline} from './pivot/read-view.mjs';
 import {animationPropertyValue, sampleAnimationChannel, validateAnimationDocumentSteps} from './animation-channels.mjs';
 import {buildVirtualPoseTrack} from './animation-pose.mjs';
 import {validateSceneSteps} from './pivot/model.mjs';

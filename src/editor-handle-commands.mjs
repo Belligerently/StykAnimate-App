@@ -4,7 +4,8 @@ import {messageError} from './localized-error.mjs';
  * alignment_to_neighbouring_frames}.htm; static clipboard evidence is in
  * artifacts/native-static/capslock-and-segment-values.md.
  */
-import {arc, buildGeometry, evaluatedFrame, shortest} from './pivot/geometry.mjs';
+import {arc, buildGeometry, evaluatedFrame} from './pivot/geometry.mjs';
+import {shortest} from './pivot/read-view.mjs';
 import {cameraMatrix} from './renderer-geometry.mjs';
 const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 const finite = value => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorHandleCommands.positionValuesMustBeFinite", {}); return value; };

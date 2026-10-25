@@ -2,7 +2,7 @@ import {messageError} from './localized-error.mjs';
 /** Native Alt+handle transforms about the selected figure's own origin.
  * https://www.pivotanimator.net/help5-2/size_and_rotation.htm
  */
-import {shortest} from './pivot/geometry.mjs';
+import {shortest} from './pivot/read-view.mjs';
 import {rotateOriginSupport} from './animation-origin-support.mjs';
 const EPS = 1e-9;
 const coordinates = (x, y) => {

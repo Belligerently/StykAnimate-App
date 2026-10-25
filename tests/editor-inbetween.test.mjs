@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {editorInbetweenMethods, planInsertInbetweens} from '../src/editor-inbetween.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-import {buildGeometry, evaluatedFrame, evaluatedNativeFrame, nativeTimeline} from '../src/pivot/geometry.mjs';
+import {buildGeometry, evaluatedFrame, evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
+import {nativeTimeline} from '../src/pivot/read-view.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {roundTrip} from './support/codec.mjs';
 

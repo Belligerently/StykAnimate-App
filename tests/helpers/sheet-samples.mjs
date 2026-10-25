@@ -1,5 +1,6 @@
 import {sheetKeyTimes} from '../../src/layer-sheet.mjs';
-import {evaluatedFrame,timeline} from '../../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../../src/pivot/geometry.mjs';
+import {timeline} from '../../src/pivot/read-view.mjs';
 export {sheetKeyTimes};
 export function sampleSheet(report,tick) {
   const rows=timeline(report),index=Math.max(0,rows.findLastIndex(row=>row.start<=tick)),row=rows[index];

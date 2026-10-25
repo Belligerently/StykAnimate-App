@@ -3,7 +3,8 @@ import {assignKeyEasing, easingMode, keyEasing, autoKeyRange} from './keyframe-e
 import {animationChannelId, animationPropertyValue, sampleAnimationChannel, validateAnimationDocument} from './animation-channels.mjs';
 import {samplePoseTrack} from './animation-pose.mjs';
 import {isColorAnimationProperty, isDiscreteAnimationProperty} from './animation-properties.mjs';
-import {evaluatedNativeFrame, buildGeometry, nativeTimeline} from './pivot/geometry.mjs';
+import {evaluatedNativeFrame, buildGeometry} from './pivot/geometry.mjs';
+import {nativeTimeline} from './pivot/read-view.mjs';
 
 const clone = value => structuredClone(value);
 const MAX_TICKS = 10000, MAX_OBJECTS = 250000, MAX_VALUES = 3000000;

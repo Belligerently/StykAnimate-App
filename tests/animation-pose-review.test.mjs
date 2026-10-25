@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {createLayerState} from '../src/layers.mjs';
 import {animationChannelId} from '../src/animation-channels.mjs';
-import {evaluatedFrame, evaluatedNativeFrame, buildGeometry, timeline} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame, evaluatedNativeFrame, buildGeometry} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {buildVirtualPoseTrack, composePoseChannels} from '../src/animation-pose.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 

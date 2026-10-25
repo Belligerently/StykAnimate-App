@@ -3,7 +3,7 @@ import {messageError} from './localized-error.mjs';
 import {planInsertInbetweenSteps,INBETWEEN_LIMITS} from './editor-inbetween.mjs';
 import {validateSceneSteps} from './pivot/model.mjs';
 import {validateAnimationDocumentSteps} from './animation-channels.mjs';
-import {nativeTimeline} from './pivot/geometry.mjs';
+import {nativeTimeline} from './pivot/read-view.mjs';
 import {yieldLoadTask} from './yield-task.mjs';
 
 const clone=value=>structuredClone(value);

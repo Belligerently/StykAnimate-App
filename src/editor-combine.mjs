@@ -2,7 +2,8 @@ import {messageError} from './localized-error.mjs';
 import {remapRigReferences,hasRigConstraints} from './rig-constraints.mjs';
 import {hasSpatialRig} from './rig-spatial.mjs';
 import {remapSurface} from './pivot/surfaces.mjs';
-import {buildGeometry, mixColor} from './pivot/geometry.mjs';
+import {buildGeometry} from './pivot/geometry.mjs';
+import {mixColor} from './pivot/read-view.mjs';
 import {validateScene} from './pivot/model.mjs';
 import {frameOrder, normalizeFrame, setOrder} from './pivot/structure.mjs';
 

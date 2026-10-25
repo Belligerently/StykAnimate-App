@@ -1,6 +1,7 @@
 import {messageError} from './localized-error.mjs';
 /** A reusable native figure retains its displayed pose and exact style overlays. */
-import {evaluatedFrame, timeline, buildGeometry} from './pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry} from './pivot/geometry.mjs';
+import {timeline} from './pivot/read-view.mjs';
 import {createFrame} from './demo.mjs';
 import {frameOrder, setOrder} from './pivot/structure.mjs';
 

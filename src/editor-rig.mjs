@@ -1,6 +1,7 @@
 import {messageError} from './localized-error.mjs';
 /** Reusable rig editing: frame-local previews, one definition commit per gesture. */
-import {buildGeometry, shortest} from './pivot/geometry.mjs';
+import {buildGeometry} from './pivot/geometry.mjs';
+import {shortest} from './pivot/read-view.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
 import {authoredRigTarget} from './rig-constraints.mjs';
 

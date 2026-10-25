@@ -6,7 +6,8 @@ import {parallaxResolver} from './layer-parallax.mjs';
 const cameraFeatures=report=>Boolean(report._styk?.cameraMotion?.clips.some(c=>c.enabled)||report._styk?.layers?.order.some(id=>report._styk.layers.byId[id]?.parallax?.enabled));
 /** Native Pivot has one shared exposure sequence. Bake authored tracks only in
  * the export worker, keeping editable STYK sources and the UI document intact. */
-import {evaluatedFrame, nativeTimeline, timeline, buildGeometry} from './pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry} from './pivot/geometry.mjs';
+import {nativeTimeline, timeline} from './pivot/read-view.mjs';
 import {validateScene} from './pivot/model.mjs';
 import {animationChannels, animationChannelId, validateAnimationDocument} from './animation-channels.mjs';
 import {applyLayerOrder, layerVisible, validateLayerState,ensureLayerState} from './layers.mjs';

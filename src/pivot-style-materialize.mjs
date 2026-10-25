@@ -1,7 +1,8 @@
 import {messageError} from './localized-error.mjs';
 /** Native Pivot stores segment/outline appearance on reusable figure types. */
 import {resolveInstanceFigure, nativeSegmentOpacity, styleColor, polygonIdentity} from './animation-style.mjs';
-import {evaluatedFrame, timeline} from './pivot/geometry.mjs';
+import {evaluatedFrame} from './pivot/geometry.mjs';
+import {timeline} from './pivot/read-view.mjs';
 
 const byte = value => Math.round((1 - value) * 255);
 export const hasNativeStyleOverrides = report => report.keyframes.some(frame => frame.objects.some(object => object._stykStyle));
