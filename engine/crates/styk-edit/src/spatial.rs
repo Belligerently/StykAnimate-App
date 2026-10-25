@@ -155,6 +155,9 @@ pub(crate) struct MotionState {
     pub min: f64,
     pub max: f64,
     pub value: f64,
+    /// The travel the joint is at before its driver is taken off, and the driver's share.
+    pub applied: f64,
+    pub driver: f64,
 }
 
 /// `Math.min(a, b)` / `Math.max(a, b)` for the values clamps see (NaN wins, as there).
@@ -317,7 +320,7 @@ impl Editor {
         // `spatialMotionValue(spatial, {length, bend, driver})`
         let raw = if motion.hinge { atan2(sin(bend), cos(bend)) } else { length - norm(&[bone.tip[0] - bone.origin[0], bone.tip[1] - bone.origin[1], bone.tip[2] - bone.origin[2]]) };
         let applied = js_min(motion.max, js_max(motion.min, raw + driver));
-        Some(MotionState { hinge: motion.hinge, min: motion.min - driver, max: motion.max - driver, value: applied - driver })
+        Some(MotionState { hinge: motion.hinge, min: motion.min - driver, max: motion.max - driver, value: applied - driver, applied, driver })
     }
 
     /// `rotateJoint(delta)` on a 3D bone (without `isolate`): `setSpatialPose` with the bend turned.

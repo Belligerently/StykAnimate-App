@@ -2,7 +2,8 @@
 import {readFileSync, writeFileSync} from 'node:fs';
 import {open} from './fixture-kit.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
-import {evaluatedFrame, timeline} from '../../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../../src/pivot/geometry.mjs';
+import {timeline} from '../../src/pivot/read-view.mjs';
 const folder = new URL('../tests/edit/', import.meta.url);
 const cases = [], reads = [];
 for (const kind of ['layout', 'offsets', 'support', 'support-pinned', 'support-free']) {

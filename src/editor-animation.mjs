@@ -4,7 +4,8 @@ import {messageError} from './localized-error.mjs';
  * `nativePropertyChannel` and `nativePoseChannel` stay for the preview of a branch or builder order edit (`editor-branch-style.mjs`,
  * reached from `native-property-edit.mjs`), which still builds its channels here. */
 import {animationChannels, animationEndTick, animationChannelId, findAnimationChannel, normalizeAnimationTarget, animationPropertyValue, sampleAnimationChannel} from './animation-channels.mjs';
-import {buildGeometry, evaluatedFrame, nativeTimeline} from './pivot/geometry.mjs';
+import {buildGeometry, evaluatedFrame} from './pivot/geometry.mjs';
+import {nativeTimeline} from './pivot/read-view.mjs';
 import {projectNativePropertyChannel} from './native-property-projection.mjs';
 import {figurePoseSequences} from './native-pose-projection.mjs';
 

@@ -11,7 +11,7 @@ import {validateContinuations,continuations} from '../movieclip-presence.mjs';
 import {validateIK} from '../ik.mjs';
 import {validatePoseChoice,validateFigurePoseChoices} from '../rig-pose-choices.mjs';
 import {validateControlMetadata} from '../rig-control-details.mjs';
-import { timeline } from "./geometry.mjs";
+import {timeline} from "./read-view.mjs";
 import { inverseCameraScale } from "./background.mjs";
 import { validateAnimationStyle } from '../animation-style.mjs';
 import {validateFigureZIndex} from '../animation-properties.mjs';

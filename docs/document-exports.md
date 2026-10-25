@@ -12,8 +12,12 @@ const blob = await exporter.export(editor.report, {
   figureTypeId: selectedFigureId, // STK/STKZ selection
   signal: controller.signal,
   getRevision: () => editor.revision,
+  revision: editor.revision, // required for 'piv', 'stk', 'stkz' and 'stykmov'
 });
 ```
+
+A `.styk` save is made from the report the caller passes; the other formats are made by the engine from the
+document it holds at `revision` (see below), so the report is not sent to the worker for them.
 
 Pass the live report directly. Calling `editor.serialize()`, `structuredClone()`,
 or `JSON.stringify()` first would recreate the main-thread pause this API avoids.
@@ -23,7 +27,14 @@ Large embedded source strings, glyph records, and pose arrays are split without
 serializing the whole document. Only keyframe object `runtime_segments` caches
 are omitted; unknown fields and opaque media survive.
 
-A dedicated worker assembles each snapshot, synchronizes existing derived
+For `.piv`, `.stk`, `.stkz` and `.stykmov` nothing of the document is sent: the worker joins the engine and the engine
+makes the document of the file from the one it holds at the editor's `revision`, baking authored tracks, camera
+motion, styles and movieclips into the stored frames Pivot has, and refusing what Pivot cannot keep
+([engine/document.md](engine/document.md#exports-of-the-document)). The worker raises the cancel flag and gives its
+thread back before it ends, so cancelling never terminates it inside the engine. A change that lands while the
+exporter waits for the engine to publish the revision cancels the export, as for every export.
+
+A dedicated worker assembles each `.styk` snapshot, synchronizes existing derived
 aliases, validates the scene, and builds the output. `.styk`/`.stkz`/`.stykmov`
 saves are encoded in the worker as version-2 sectioned containers — large
 numeric arrays and base64 payloads move to binary sections, the original source

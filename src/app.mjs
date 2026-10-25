@@ -15,7 +15,6 @@ import {displayedSegmentPaint,displayedColor} from './figure-colors.mjs';
 import {openSurfaceReference} from './builder-surface-ui.mjs';
 import {openRigTest, openRigExamples} from './rig-test-ui.mjs';
 import {bucketRegion, pickFigureFill, drawFillHighlight} from './builder-fill.mjs';
-import {pickCanvasArtwork} from './canvas-artwork-pick.mjs';
 import {figureJoinAction, joinTargetUids} from './figure-join-action.mjs';
 import {duplicatePreview, drawDuplicatePreview} from './builder-duplicate-preview.mjs';
 import {createConstruction, strokeSegments} from './builder-construction.mjs';
@@ -173,7 +172,6 @@ import { createCommandPalette } from "./ui/command-palette.mjs";
 import { kitText } from "./ui/ui-strings.mjs";
 import { installTooltips } from "./ui/ui-tooltip.mjs";
 import { withShiftHint } from "./ui/quick-actions.mjs";
-import { buildGeometry } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
   gradientAngleFromBackground,
@@ -248,6 +246,8 @@ async function runDocumentExport(format, consume, { recovery = false, controller
   telemetry.count(metric + '_started');
   try {
     const drawingRevision=editor.revision;await drawingBarrier(editor.report,{signal:controller.signal});if(drawingRevision!==editor.revision)throw messageError(new DOMException('', 'AbortError'), "errors.app.theDrawingChangedDuringExport", {});
+    // The engine makes Pivot and figure files from the document it holds: its session starts on the open document and takes what the editor changed.
+    if (format !== 'styk' && !editor._shown?.active) throw Object.assign(messageError(new Error(''), "errors.documentExport.theEngineCannotMakeThisFileHere", {}), {telemetryCode: 'engine_failed', telemetryStage: 'prepare'});
     const blob = await documentExporter.export(recovery ? editor.movieclipProjectReport() : editor.report, {
       format,
       name: recovery ? editor._movieclipScopes?.[0]?.parent.name ?? editor.name : editor.name,
@@ -255,6 +255,7 @@ async function runDocumentExport(format, consume, { recovery = false, controller
       figureTypeId: editor.object?.figure_type_id,
       figureUid: editor.selectedUid,
       tick: editor.tick,
+      revision: editor.revision,
       signal: controller.signal,
       getRevision: () => `${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`,
     });
@@ -2239,21 +2240,22 @@ function finishPolygon() {
   setTool("select");
   status({messageKey: "app.polygonAdded", messageParams: {}});
 }
-// A click on artwork paints the figures with the editor's painter (canvas-artwork-pick.mjs), which reads the drawables of
-// the pose: the engine's groups carry none for a movieclip's contents or a 3D mesh, so the pose is built for the click.
-const artworkScenes = new WeakMap();
-function artworkScene() {
-  const frame = editor.evaluatedFrame;
-  let scene = artworkScenes.get(frame);
-  if (!scene) artworkScenes.set(frame, scene = buildGeometry(editor.report, frame));
-  return scene;
+// A click on artwork asks the engine which figure the stage's frame paints at the point (engine-stage.mjs `pickArtwork`).
+function pickedArtwork(p, geometry) {
+  const hidden = [], locked = [];
+  for (const object of editor.evaluatedFrame.objects) {
+    if (isHidden(object.unique_id)) hidden.push(object.unique_id);
+    if (isLocked(object.unique_id)) locked.push(object.unique_id);
+  }
+  const hit = state.renderer.pickArtwork?.(p, {scale: state.view.scale, hiddenUids: hidden, lockedUids: locked});
+  const g = hit && geometry.objects.get(hit.slot);
+  return g ? {g, uid: hit.uid, joint: -1, id: 0, kind: 'body', point: g.root, action: 'select'} : null;
 }
 function pick(p, {preferSelected = false, artwork = false} = {}) {
   const geometry = editor.geometry;
   const body = () => {
     if (!artwork || builderMode?.active || !['select','pose','tweener'].includes(state.tool) || state.handleEditHeld) return null;
-    const painted = pickCanvasArtwork(artworkScene(), p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale});
-    const hit = painted && {...painted, g: geometry.objects.get(painted.g.slot) ?? painted.g};
+    const hit = pickedArtwork(p, geometry);
     return (state.handles && state.tool !== 'tweener' && pickCanvasSegment(geometry, p,
       {handles: canvasHandles(geometry), uid: hit?.uid, scale: state.view.scale})) || hit;
   };

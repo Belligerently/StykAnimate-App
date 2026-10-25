@@ -10,14 +10,16 @@ export const VIEW_CALLS = Object.freeze(new Set(['select', 'selectMany', 'select
   'selectSameDefinition', 'invertSelection', 'seek', 'setActiveLayer', 'selectSheetLayer', 'selectFrame', 'keepSelectionOnSeek']));
 
 /** The commands of the session that edit the document, its history or the gesture in progress. The calls that only move the view
- * (`select`, `seek`, …) and the reads stay the editor's (`VIEW_CALLS` in the owner). `movieclipBatch` and the drawing pixel
- * commits (`commitDrawingPixels`, `resampleDrawing`) are the owner's compositions of session calls; `undo` and `redo` are its own. */
+ * (`select`, `seek`, …) and the reads stay the editor's (`VIEW_CALLS` in the owner). `movieclipBatch`, `bakeMovieclip`
+ * (the session's `bakeMovieclipBegin`, `bakeMovieclipSample` and `bakeMovieclipPublish`, with the thread given back between them) and
+ * the drawing pixel commits (`commitDrawingPixels`, `resampleDrawing`) are the owner's compositions of session calls; `undo` and `redo` are its own. */
 export const SESSION_COMMANDS = Object.freeze([
   'addAnimationKey', 'addAnimationKeys', 'addAudioTrack', 'addCameraMotion', 'addConnector', 'addDraftFrame', 'addDrawingFrame', 'addFigure',
   'addFigureInFrames', 'addMovieclipToNextKeyframes', 'addPaletteColor', 'addPaletteColors', 'addPolygon', 'addSegment', 'addSegments',
   'addSpriteSegment', 'addVfx', 'addVfxClip', 'addVfxGroup', 'addVfxGroupEffect', 'addVfxUserPreset', 'addWeightedJoint', 'alignCameraToView',
   'alignFiguresInFrames', 'alignHandle', 'alignSelection', 'applyCameraToFigures', 'applyVfxPreset', 'arrangeLayers', 'assignFiguresToLayer',
-  'autoKeyDrawing', 'bakeCameraMotion', 'bakeMovieclip', 'beginAnimationEdit', 'beginCameraDrag', 'beginDrag', 'beginDuplicateDrag',
+  'autoKeyDrawing', 'bakeCameraMotion', 'bakeMovieclipBegin', 'bakeMovieclipCancel', 'bakeMovieclipPublish', 'bakeMovieclipSample',
+  'beginAnimationEdit', 'beginCameraDrag', 'beginDrag', 'beginDuplicateDrag',
   'beginFigureHandleDrag', 'beginFrameDraft', 'beginFrameDraftPreview', 'beginHandleEditDrag', 'beginMotionPathEdit', 'beginRigDrag',
   'beginSegmentValueEdit', 'beginTranslationDrag', 'beginTween', 'beginVfxClipEdit', 'bendJoint', 'bindStretchParts', 'breakApartMovieclip',
   'bringToFront', 'cancelAnimationEdit', 'cancelAuthoredPoseDrag', 'cancelCameraDrag', 'cancelDocumentPreview', 'cancelDrag',
@@ -28,7 +30,7 @@ export const SESSION_COMMANDS = Object.freeze([
   'createDrawingLayer', 'createEmptyMovieclip', 'createLayer', 'createLayerFolder', 'createMovieclip', 'cutAudioClip', 'cutSelection',
   'deleteAudioClip', 'deleteAudioTrack', 'deleteCameraMotion', 'deleteFigure', 'deleteFiguresInFrames', 'deleteLayer', 'deleteLayerFolder',
   'deleteSegment', 'deleteSelection', 'deleteSingleSegment', 'deleteVfxClip', 'deleteVfxClipKeys', 'detachFiguresInFrames', 'disableFrameDrafts',
-  'discardFrameDraft', 'disconnectSegment', 'drawingKey', 'duplicateAudioClip', 'duplicateCameraMotion', 'duplicateFigure',
+  'discardFrameDraft', 'discardNewFigure', 'disconnectSegment', 'drawingKey', 'duplicateAudioClip', 'duplicateCameraMotion', 'duplicateFigure',
   'duplicateFiguresInFrames', 'duplicateInFrames', 'duplicateSegment', 'duplicateSegmentBranch', 'duplicateSelection', 'duplicateVfx',
   'duplicateVfxClip', 'editFigureColors', 'editFrameDraftTimeline', 'editHandlePosition', 'editRigJoint', 'editStoredFrames', 'enableFrameDrafts',
   'enableSmartStretch', 'endFrameDraftPreview', 'extendDrawing', 'finishDuplicateDrag', 'importAudio', 'importFigure', 'importSceneBackground',
@@ -45,7 +47,7 @@ export const SESSION_COMMANDS = Object.freeze([
   'sendToBack', 'setAngleLock', 'setAudioClip', 'setAudioTrack', 'setBackgroundColor', 'setBranchCaps', 'setBranchFill', 'setBuilderOrder',
   'setCameraMotion', 'setCameraValues', 'setCanvasSize', 'setConnectorPosition', 'setFPS', 'setFigureColor', 'setFrameDuration', 'setLayerColor',
   'setLayerLocked', 'setLayerParallax', 'setLayerVisible', 'setMotionPathFalloff', 'setMovieclipDrawing', 'setMovieclipPlayback', 'setNodeIK',
-  'setOrigin', 'setPolygonOpacity', 'setPoseChoice', 'setRigBehavior', 'setSceneBackground', 'setSceneColor', 'setSecondaryAngleReference',
+  'setOrigin', 'setPolygonOpacity', 'setPoseChoice', 'setPoseProperty', 'setRigBehavior', 'setSceneBackground', 'setSceneColor', 'setSecondaryAngleReference',
   'setSegmentValues', 'setSpatialCamera', 'setSpatialFeetPinned', 'setSpatialIKTarget', 'setSpatialMotion', 'setSpatialPose',
   'setSpatialProportions', 'setVfxClip', 'setVfxClipEasing', 'setVfxClipParameter', 'setVfxClipParameters', 'setVfxParameter', 'setVfxScope',
   'sheetAppendFrame', 'sheetClearFrames', 'sheetClearKeys', 'sheetCopyFrames', 'sheetDuplicateFrameAfter', 'sheetInsertFrames', 'sheetInsertKey',

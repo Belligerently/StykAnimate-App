@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {createLayerState} from '../src/layers.mjs';
 import {animationChannelId} from '../src/animation-channels.mjs';
-import {evaluatedFrame, evaluatedNativeFrame, buildGeometry, timeline} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame, evaluatedNativeFrame, buildGeometry} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {buildVirtualPoseTrack, composePoseChannels} from '../src/animation-pose.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < .0001, `${a} != ${b}`);
 const channel = (target, property, keys) => ({id: animationChannelId(target, property), target, property,
@@ -70,7 +71,7 @@ test('independent joined layers remain correctly oriented for 101 sampled ticks 
     let i = 0; while (i + 1 < curve.length && curve[i + 1][0] <= tick) i++;
     const [start, source] = curve[i], next = curve[i + 1]; return !next ? values[source] : values[source] + (values[next[1]] - values[source]) * (tick - start) / (next[0] - start);
   };
-  const output = materializePivotDocument(report);
+  const output = pivotDocument(report);
   for (let tick = 0; tick <= 100; tick++) {
     const frame = sample(report, tick), geometry = buildGeometry(report, frame), byUid = new Map([...geometry.objects.values()].map(g => [g.obj.unique_id, g]));
     const parent = byUid.get(1), child = byUid.get(2), grand = byUid.get(3), a = scalar(curveA, parentAngles, tick), b = a + scalar(curveB, childAngles, tick), c = b + scalar(curveC, grandAngles, tick);

@@ -31,7 +31,7 @@ import {rigIKAllowed} from './rig-constraints.mjs';
 import {cameraMotionView, parallaxView} from './camera-motion-ui.mjs';
 import {paintCSS} from './paint.mjs';
 import {figurePalette, displayedSegmentPaint, displayedColor} from './figure-colors.mjs';
-import {isStatic} from './pivot/geometry.mjs';
+import {isStatic} from './pivot/read-view.mjs';
 import {cameraValues} from './pivot/model.mjs';
 import {builderDrawables} from './editor-builder-style.mjs';
 import {segmentBranchIndices} from './pivot/structure.mjs';

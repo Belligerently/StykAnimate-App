@@ -11,7 +11,7 @@ import {internPoseSequencesSteps} from './pose-sequences.mjs';
 import {expandPoseSequencesSteps} from './pose-sequence-storage.mjs';
 import {validateMovieclipGraph, movieclipAsset,movieclipSourceDocument,normalizeLegacyMovieclips,movieclipTypes} from './movieclips.mjs';
 import {continuations} from './movieclip-presence.mjs';
-import {nativeTimeline,timeline} from './pivot/geometry.mjs';
+import {nativeTimeline, timeline} from './pivot/read-view.mjs';
 import {validateLayerSheet,legacySheetReport} from './layer-sheet.mjs';
 import {validateAudioState, validateAudioAssetSteps} from './audio-model.mjs';
 import {validateDrawings} from './drawing-model.mjs';

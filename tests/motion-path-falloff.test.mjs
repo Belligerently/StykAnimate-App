@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {falloffWeight, planFalloff, normalizeFalloff} from '../src/motion-path-falloff.mjs';
 
 const near = (a, b, tolerance = 1e-3) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);

@@ -1,5 +1,5 @@
 import {messageError} from './localized-error.mjs';
-import {nativeTimeline, timeline} from './pivot/geometry.mjs';
+import {nativeTimeline, timeline} from './pivot/read-view.mjs';
 import {sheetKeyAt,validateLayerSheet,MAX_SHEET_TICKS} from './layer-sheet.mjs';
 import {layerIdForUid} from './layers.mjs';
 

@@ -8,9 +8,9 @@ import {motionRowSize,motionLaneBox,sheetRowLayout} from '../src/timeline-rows.m
 import {parallaxResolver} from '../src/layer-parallax.mjs';
 import {evaluatedFrame,buildGeometry} from '../src/pivot/geometry.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 const refs=ownerReferences(import.meta.url);
 const near=(a,b)=>assert.ok(Math.abs(a-b)<.002,`${a} != ${b}`);
 function fixture(){const e=ownedEditorFor({demo:false,layerTimeline:true});e.addFigure();return e;}
@@ -61,7 +61,7 @@ test('parallax reference holds composition, disabled camera bypasses depth, and 
 });
 test('Pivot materialization bakes motion and parallax once without changing editable project',()=>{
   const e=fixture();e.setLayerParallax(e.activeLayerId,{enabled:true,x:.5});e.setCameraValues({x:60});e.addCameraMotion('impact',{start:0,duration:12});
-  const before=e.serialize(),frame=at(e,0),out=materializePivotDocument(e.report);near(out.keyframes[0].objects[0].root_x,frame.objects[0].root_x+30);
+  const before=e.serialize(),frame=at(e,0),out=pivotDocument(e.report);near(out.keyframes[0].objects[0].root_x,frame.objects[0].root_x+30);
   near(out.keyframes[0].camera.x,cameraAtTime(e.report,frame).x);assert.equal(out._styk.cameraMotion,undefined);assert.deepEqual(e.serialize(),before);
 });
 refs.test('baking retains camera output and parallax at every output tick and undoes as one action',take=>{

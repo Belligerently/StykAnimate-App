@@ -101,6 +101,30 @@ pub(crate) fn normalize_frame(frame: &mut Obj) {
     set_order(frame, &ids);
 }
 
+/// The fields `updateObject` sets on every selected figure at once (`updateSelection`'s): the rest are the geometry the group transforms own.
+/// `_stykZIndex` is the figure's stacking number.
+const SHARED: [&str; 6] = ["color_override_raw", "field28", "image_text_flags", "name", "_styk", "_stykZIndex"];
+
+/// The fields of a patch. A number the command checks (`root_x`, `root_y`, `scale`, `field28`) set to `undefined` (args.rs) is no
+/// value: it is absent. Any other member set to `undefined` stays, for [`assign`] to take the field away.
+fn patch_entries(patch: &Value) -> Vec<(String, Value)> {
+    const CHECKED: [&str; 4] = ["root_x", "root_y", "scale", "field28"];
+    patch.as_obj().map(|o| o.iter().filter(|(k, v)| !(CHECKED.contains(&&***k) && crate::args::is_undefined(v))).map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default()
+}
+
+/// `Object.assign(object, clone(patch)); delete object.runtime_segments`: a member set to `undefined` (args.rs) is gone from the
+/// figure, as JSON leaves it, and one deeper in a member is an absent field.
+fn assign(record: &mut Obj, entries: &[(String, Value)]) {
+    for (key, value) in entries {
+        if crate::args::is_undefined(value) {
+            record.remove(key);
+        } else {
+            record.set(key, crate::args::decode(value, false));
+        }
+    }
+    record.remove("runtime_segments");
+}
+
 impl Editor {
     /// `editor.selectedSlot`: the slot of the selected figure in the selection frame.
     fn selected_slot(&self) -> Result<Option<usize>, EditError> {
@@ -369,8 +393,7 @@ impl Editor {
 
     /// `updateObject(patch)`: the inspector's figure fields (several figures: `updateSelection`).
     pub(crate) fn update_object(&mut self, patch: &Value) -> Result<bool, EditError> {
-        const SHARED: [&str; 5] = ["color_override_raw", "field28", "image_text_flags", "name", "_styk"];
-        let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();
+        let entries = patch_entries(patch);
         if self.selected_objects()?.len() > 1 && entries.iter().all(|(k, _)| SHARED.contains(&k.as_str())) {
             return self.update_selection(patch);
         }
@@ -395,11 +418,7 @@ impl Editor {
         }
         let Some((slot, _)) = self.object()? else { return Ok(false) };
         self.object_edit_with("Edit figure", false, |editor| {
-            let record = editor.frame_object_mut(slot).unwrap();
-            for (key, value) in &entries {
-                record.set(key, value.clone());
-            }
-            record.remove("runtime_segments");
+            assign(editor.frame_object_mut(slot).unwrap(), &entries);
             Ok(())
         })
     }
@@ -407,8 +426,7 @@ impl Editor {
     /// `updateSelection(patch)`: names, colours, opacity, mirroring and metadata of every
     /// selected figure, in one edit.
     pub(crate) fn update_selection(&mut self, patch: &Value) -> Result<bool, EditError> {
-        const SHARED: [&str; 5] = ["color_override_raw", "field28", "image_text_flags", "name", "_styk"];
-        let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();
+        let entries = patch_entries(patch);
         if entries.iter().any(|(k, _)| !SHARED.contains(&k.as_str())) {
             return Err(EditError::Invalid("errors.editor.useGroupTransformCommandsToChangeSelectionGeometry".into()));
         }
@@ -416,11 +434,7 @@ impl Editor {
             let selected = editor.selection.uids.clone();
             let slots: Vec<usize> = editor.frame_objects().iter().enumerate().filter(|(_, o)| uid(o).is_some_and(|u| selected.contains(&u))).map(|(slot, _)| slot).collect();
             for slot in slots {
-                let record = editor.frame_object_mut(slot).unwrap();
-                for (key, value) in &entries {
-                    record.set(key, value.clone());
-                }
-                record.remove("runtime_segments");
+                assign(editor.frame_object_mut(slot).unwrap(), &entries);
             }
             Ok(())
         })

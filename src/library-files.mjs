@@ -1,10 +1,9 @@
 import {messageError} from './localized-error.mjs';
 
-import {nativeFigureDocument} from './native-figure.mjs';
 import {engineLibraryPoster} from './engine/engine-previews.mjs';
 
 export function librarySnapshot(editor) {
-  return structuredClone(nativeFigureDocument(editor.report, {figureUids: [...editor.selectedUids], sourceFrame: editor.selectionFrame, tick: editor.tick}));
+  return editor._shown.figureDocument({figureUids: [...editor.selectedUids], tick: editor.tick});
 }
 const dataURL = blob => new Promise((resolve, reject) => {
   const reader = new FileReader(); reader.onerror = () => reject(messageError(new Error(''), "errors.libraryFiles.couldNotEncodeThePreview", {}));

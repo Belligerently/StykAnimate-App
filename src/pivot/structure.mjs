@@ -1,6 +1,6 @@
 import {messageError} from '../localized-error.mjs';
 // Editing operations work on frame data, preserving figure definitions and assets.
-import {isStatic} from './geometry.mjs';
+import {isStatic} from './read-view.mjs';
 export function nextIdentity(report) {
   let max = 0;
   for (const f of report.keyframes)

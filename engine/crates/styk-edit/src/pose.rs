@@ -182,7 +182,7 @@ pub(crate) fn set_item_at(object: &mut Obj, key: &str, index: usize, value: f64)
 }
 
 /// `object.angles[i] += delta` for each of `indices`, in the supplied order.
-fn add_angles(object: &mut Obj, indices: &[usize], delta: f64) {
+pub(crate) fn add_angles(object: &mut Obj, indices: &[usize], delta: f64) {
     let Some(angles) = object.get_mut("angles") else { return };
     if let Some(numbers) = angles.as_nums() {
         let mut values = numbers.to_vec();

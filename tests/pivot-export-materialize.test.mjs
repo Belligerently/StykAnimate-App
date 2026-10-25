@@ -4,12 +4,14 @@ import {fileURLToPath} from 'node:url';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
 import {plainEditorFor} from './support/plain-editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
-import {materializePivotDocument, needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
+import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {synchronizeExistingDerived} from '../src/document-normalize.mjs';
 import {missingFixture} from './helpers/local-fixtures.mjs';
 import {exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
+import {pivotDocument, keepsStoredFrames} from './support/engine-export.mjs';
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < .001, `${a} != ${b}`);
 /** `edit(report)` changes the document before the engine opens it. */
@@ -51,26 +53,25 @@ function compareFrames(original, a, exported, b) {
   if (argb(a) !== undefined) assert.equal(exported.backgrounds.find(bg => bg.background_id === b.background_id)?.color, argb(a));
 }
 
-test('untouched native documents retain the exact original export path and references', () => {
+test('untouched native documents retain the exact original export path', () => {
   const native = emptyDocument();
   // Native exposures have no authored per-frame easing metadata.
   native.keyframes = [createFrame([createObject(native.figure_types[0], 1, 40, 200)], 4)];
-  const report = plainEditorFor({demo: false}, native).report;
-  assert.equal(needsPivotMaterialization(report), false); assert.equal(materializePivotDocument(report), report);
+  const editor = engineEditor({demo: false}, native);
+  assert.equal(keepsStoredFrames(editor), true);
 });
 
 test('new documents retain authored Hold easing through native export materialization', () => {
   const editor = plainEditorFor({demo: false}); editor.addFigure(); const report = editor.report;
   const before = structuredClone(report);
-  assert.equal(needsPivotMaterialization(report), true);
-  const output = materializePivotDocument(report);
-  assert.notEqual(output, report);
+  assert.equal(keepsStoredFrames(editor), false);
+  const output = pivotDocument(editor);
   compareFrames(report, sample(report, 0), output, sample(output, 0));
   assert.deepEqual(report, before);
 });
 
 test('layer ordering alone preserves native exposures and retained opaque fields without baking', () => {
-  const editor = fixture(), report = editor.report, before = structuredClone(report), output = materializePivotDocument(report);
+  const editor = fixture(), report = editor.report, before = structuredClone(report), output = pivotDocument(editor);
   assert.equal(output.keyframes.length, report.keyframes.length);
   assert.deepEqual(output.keyframes.map(frame => frame.duration_raw), report.keyframes.map(frame => frame.duration_raw));
   assert.deepEqual(output.keyframes[0].object_draw_order_unique_ids, [2, 1, 3]);
@@ -88,20 +89,20 @@ test('independent layer/scalar/camera/scene channels bake and really roundtrip t
     {target: {kind: 'camera'}, property: 'scale', tick: 0, value: 1}, {target: {kind: 'camera'}, property: 'scale', tick: 12, value: 1.6},
     {target: {kind: 'scene'}, property: 'color', tick: 0, value: 0xff112233}, {target: {kind: 'scene'}, property: 'color', tick: 12, value: 0xffaaccdd},
   ]);
-  const report = editor.report, before = structuredClone(report), output = materializePivotDocument(report);
+  const report = editor.report, before = structuredClone(report), output = pivotDocument(editor);
   assert.equal(output.keyframes.length, 13); assert.ok(output.keyframes.every(frame => frame.duration_raw === 1));
   assert.equal(output._styk.animation, undefined); assert.equal(output._styk.frameSources, undefined); assert.equal(output.auto_easing, false);
   assert.deepEqual(report, before);
   const native = await nativeRoundtrip(output); assert.equal(native.total_output_frames, 13); assert.equal(native._styk?.animation, undefined);
   for (let tick = 0; tick < 13; tick++) compareFrames(report, sample(report, tick), native, sample(native, tick));
-  assert.equal(materializePivotDocument(native), native, 'Reimported output must never receive the authored overlays twice');
+  assert.equal(keepsStoredFrames(native), true, 'Reimported output must never receive the authored overlays twice');
 });
 
 test('native and independently retimed hidden poses remain distinct zero-duration exposures', async () => {
   const editor = fixture(report => { report.keyframes[1].duration_raw = 0; });
   const target = {kind: 'layer', id: 'layer-1'}, pose = editor.nativePoseChannel(target);
   editor.moveAnimationKeys([{channelId: pose.id, keyIds: [pose.keys[1].id]}], 2);
-  const report = editor.report, output = materializePivotDocument(report), rows = timeline(output);
+  const report = editor.report, output = pivotDocument(editor), rows = timeline(output);
   const hidden = output.keyframes.map((frame, index) => ({frame, tick: rows[index].start})).filter(({frame}) => frame.duration_raw === 0);
   assert.deepEqual(hidden.map(item => item.tick), [4, 6]);
   assert.equal(hidden[1].frame.objects.find(object => object.unique_id === 1).root_x, 250);
@@ -112,7 +113,7 @@ test('native and independently retimed hidden poses remain distinct zero-duratio
 
 test('hidden layer parents are omitted while their visible joined children keep exact world poses', async () => {
   const editor = fixture(), layer = editor.createLayer('Hidden parent'); editor.assignFiguresToLayer([1], layer.id); editor.setLayerVisible(layer.id, false);
-  const output = materializePivotDocument(editor.report), native = await nativeRoundtrip(output);
+  const output = pivotDocument(editor), native = await nativeRoundtrip(output);
   for (let tick = 0; tick < editor.totalTicks; tick++) {
     const before = buildGeometry(editor.report, sample(editor.report, tick)), after = buildGeometry(native, sample(native, tick));
     const saved = [...after.objects.values()].find(g => g.obj.unique_id === 3), source = [...before.objects.values()].find(g => g.obj.unique_id === 3);
@@ -123,7 +124,7 @@ test('hidden layer parents are omitted while their visible joined children keep 
 
 test('unsupported baked durations reject before modifying the authoring document', () => {
   const editor = fixture(); editor.addAnimationKey({kind: 'camera'}, 'x', 100000, 4); const before = editor.report.keyframes;
-  assert.throws(() => materializePivotDocument(editor.report), /supported limit/); assert.equal(editor.report.keyframes, before);
+  assert.throws(() => pivotDocument(editor), /supported limit/); assert.equal(editor.report.keyframes, before);
 });
 
 test('authored legacy export migrates real held poses and preserves new hidden exposure keys',
@@ -135,7 +136,7 @@ test('authored legacy export migrates real held poses and preserves new hidden e
   editor.setAnimationKey(editor.animationChannel(camera, 'pose').id, key.id, {hidden: true});
   editor.addAnimationKeys([{target: camera, property: 'x', tick: 0, value: 0}, {target: camera, property: 'x', tick: 6, value: 30},
     {target: {kind: 'scene'}, property: 'color', tick: 0, value: 0xff123456}]);
-  const output = materializePivotDocument(editor.report), native = await nativeRoundtrip(output, sourcePath);
+  const output = pivotDocument(editor), native = await nativeRoundtrip(output, sourcePath);
   assert.equal(native.version, 5); assert.equal(native.total_output_frames, editor.totalTicks);
   assert.equal(native.keyframes.filter(frame => frame.duration_raw === 0).length, 1);
   for (let tick = 0; tick < editor.totalTicks; tick++) compareFrames(editor.report, sample(editor.report, tick), native, sample(native, tick));

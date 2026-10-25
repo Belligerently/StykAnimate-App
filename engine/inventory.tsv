@@ -43,7 +43,7 @@ src/camera-motion-timeline.mjs	ui	-	stays
 src/camera-motion-ui.mjs	ui	-	stays	
 src/camera-motion.mjs	engine	styk-eval::camera	partial	Rust: presets, cameraTravelAt, cameraAtTime incl. edit frames and follow clips; creation and validation still JS
 src/camera-overlay.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
-src/canvas-artwork-pick.mjs	engine	styk-render	js	
+src/canvas-artwork-pick.mjs	engine	styk-render	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/canvas-color-sample.mjs	engine	styk-render	js	
 src/canvas-guides.mjs	ui	-	stays	
 src/canvas-handle-overlay.mjs	ui	-	stays	
@@ -73,7 +73,7 @@ src/community-library.mjs	platform	-	stays	file, storage and network services
 src/connected-timeline.mjs	engine	styk-eval	removed	moved to tests/helpers/legacy-connected-timeline.mjs: only the legacy timeline projection of the tests used it (4378 bytes)
 src/content-hash.mjs	engine	styk-render::images	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/demo.mjs	engine	styk-edit	js	
-src/document-export-worker.mjs	engine	styk-formats::save	partial	Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); the JS lifts the document, prepares portable figures and Pivot saves
+src/document-export-worker.mjs	engine	styk-formats::save	partial	Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); Pivot and figure files are made by the engine on this worker (styk-edit/src/export, styk_engine::document_export); the JS still prepares the .styk container
 src/document-export.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/document-normalize.mjs	engine	styk-formats::service	js	import/export transport
 src/document-save.mjs	platform	-	stays	file, storage and network services
@@ -181,7 +181,7 @@ src/export-canvas.mjs	engine	styk-export	js	frame hand-over of the engine's expo
 src/export-capabilities.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/export-crisp.mjs	engine	styk-export	removed	removed with the JavaScript export worker; No smoothing is drawn by the engine (Edges::Crisp, styk-export)
 src/export-flow.mjs	ui	-	stays	export dialog and request
-src/export-frame-core.mjs	engine	styk-export	partial	Rust: frames of every export (styk-export, src/engine/engine-export.mjs); this module still draws for the JavaScript renderer's callers (vfx-camera) and goes with them
+src/export-frame-core.mjs	engine	styk-export	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/export-frame-renderer.mjs	engine	styk-export	removed	removed; src/engine/engine-export.mjs owns the request, progress, revision, timeout and retry logic of an export and the output canvas
 src/export-frame-worker.mjs	engine	styk-export	removed	removed; the engine's export worker (src/engine/engine-export-worker.mjs) draws every export, and writes SVG with styk-export svg
 src/export-memory.mjs	engine	styk-export	partial	Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); the interface keeps the allowance and tile plan it validates a request with
@@ -272,13 +272,13 @@ src/native-container.mjs	engine	styk-formats::container	removed	read and wrote t
 src/container-cache.mjs	platform	styk-formats::files	stays	bounded cache of compressed blocks that outlives an export worker
 src/document-lift.mjs	engine	styk-formats::container	partial	Rust: container::lift writes the same skeleton and sections from a store document (461 corpus files, byte-identical), and container::ViewLifter hands a document to the editor in pieces; the JavaScript lift stays for saves while the editor holds the document as objects: an array's identity decides what is stored once
 src/native-file-codec.mjs	platform	styk-formats::files	stays	loads the Rust container module in a worker and moves a file to and from the interface's object model
-src/native-figure.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/native-figure.mjs	engine	styk-edit	removed	deleted: the document of a figure, a set of figures or a movieclip file is made by the engine (styk-edit/src/export/figure.rs, pose_sequences.rs) on the export worker
 src/native-files.mjs	platform	-	stays	file, storage and network services
 src/native-pose-projection.mjs	engine	styk-eval	js	
 src/native-property-curve.mjs	engine	styk-eval::channels	partial	Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor
 src/native-property-edit.mjs	engine	styk-edit	partial	Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated. The module is the inspector's token over session calls (animation edits, pose and camera gestures, branch keys, the project's fields, the sheet's duration) and refuses what the session has no command for; it writes nothing into the document itself
 src/native-property-projection.mjs	engine	styk-eval	partial	Rust: private native scalar adoption through same marker, Draft, Records and typed sampler; 204 exact recorded curves/200 missing first writes; authored propertyChannels:true command publication and app adoption remain guarded
-src/native-property-ranges.mjs	engine	styk-edit	removed	deleted: a pose at one value across several frames is no command of the session (the inspector's token refuses it); nothing wrote it into the document any more
+src/native-property-ranges.mjs	engine	styk-edit	removed	deleted: a pose at one value across several frames is the session's setPoseProperty (styk-edit pose_value.rs), planned like the other figure operations across frames
 src/native-text-authoring.mjs	engine	styk-edit	js	
 src/native-video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/native-video-frame-worker.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
@@ -292,18 +292,19 @@ src/onion-skin.mjs	engine	styk-edit	removed	deleted: the session plans the onion
 src/onion-surface-cache.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/onion-timeline-range.mjs	ui	-	stays	
 src/paint.mjs	engine	styk-eval	partial	Rust: segment paints and gradients in draw lists; normalizePaint, segmentPaint, samplePaint, parseColor and hexColor for recolouring (styk-edit/src/recolor.rs); CSS and SVG helpers still JS
-src/parallax-draw.mjs	engine	styk-render	js	
+src/parallax-draw.mjs	engine	styk-render	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/pen-input.mjs	ui	-	stays	
-src/pivot-export-materialize.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
-src/pivot-frame-draft.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
-src/pivot-style-materialize.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/pivot-export-materialize.mjs	engine	styk-edit	removed	deleted: Pivot animations are baked by the engine (styk-edit/src/export/pivot.rs) on the export worker and encoded by the codec
+src/pivot-frame-draft.mjs	engine	styk-formats::save	partial	Rust: the stored frames of a working-frame draft for exports (styk-edit/src/export/pivot.rs stored_frame_report); the JS keeps the stored-frame projection that Add, the movieclip scope and the render report read
+src/pivot-style-materialize.mjs	engine	styk-edit	removed	deleted: the figure types of animated instance styles are made by the engine (styk-edit/src/export/style.rs)
 src/pivot/background.mjs	engine	styk-eval	partial	Rust: background tween and colour key; painting still JS
 src/pivot/geometry-definition.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry-order.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry-pose.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry.mjs	engine	styk-eval	partial	Rust: the interface's frame, geometry and timeline from the session (styk-edit/src/interface.rs, styk_eval::geometry::build_shapes; the editor reads them, src/engine/engine-shown.mjs); evaluated records/world geometry, distinct native held shown/raw fractional views, prepared native handle/body/snap queries and per-clip/aggregate-lineage scene cache limits; app actual-shown query preparation and Canvas paths still JS; B8 ordinary shape queries omit unused render output through the same geometry owner; rich/ancestor numeric and full-output controls pass, additive platform-neutral build_only_for_shape API; full figures cost and default gate remain pending; B9 selected-joint query retains ancestors and full complex/joined/pinned/ambiguous/nonfinite fallbacks; coherent raw/typed pair reuses unchanged IK table; verified392Rust/36CLI1668/70JS/check, shippingb9cf70669501/10,240,701B; additive portable build_joint_for_shape and edit_frame_reusing_ik APIs; full figures cost/checkpoint/default gate still pending; B11 eligible ordinary selected-joint query skips unused join-order construction, original warnings/publication/fallbacks exact; verified394Rust/15CLI576/82JS/check, shipping15cbbdc513ea/10,241,300B; no API/math/schema change or measured B11 gain; B10 full cost all FAIL, figures gate stays closed; B12 no-frame-pins selected-joint query narrows joined selected segments while retaining full parents/topology/warnings/publication; verified396Rust/16CLI591/82JS/check, shippingb65ff69acb49/10,241,354B; existing portable query semantic scope extended, signatures/math/schema unchanged; accepted full joined36 instrumented B11 diagnostic305.950/280.750ms (not gate/gain); fresh full figures cost/checkpoint/default adoption next; B14 bounded ordinary same-Shape/nonpose-node conversion reuses existing typed fields, preserving changed pose conversion, metadata and rich/diagnostic fallbacks; verified405Rust/28CLI942/40guards/fivecontrols/82JS/check, shipping10b6b47a17ed/10,243,996B; existing portable Loader signatures/types/math/schema unchanged; completed B13 full cost FAIL/FAIL/PASS, fresh figures cost/checkpoint/default adoption next
 src/pivot/model.mjs	engine	styk-doc	js	validation and structure
-src/pivot/raster-clip.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/raster-clip.mjs	engine	styk-eval	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/pivot/read-view.mjs	ui	-	stays	What the interface reads of stored data without evaluating it: colours, the static flag, the shortest turn, the timeline index.
 src/pivot/structure.mjs	engine	styk-doc	partial	Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS
 src/pivot/surfaces.mjs	engine	styk-eval::spatial	ported	Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer
 src/playback-bitmap-pool.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
@@ -424,7 +425,7 @@ src/support-live-client.mjs	app	-	stays	telemetry, support, updates
 src/support-localization.mjs	app	-	stays	telemetry, support, updates
 src/support-media.mjs	app	-	stays	telemetry, support, updates
 src/support-ui.mjs	app	-	stays	telemetry, support, updates
-src/surface-raster.mjs	engine	styk-render	ported	Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer
+src/surface-raster.mjs	engine	styk-render	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/svg-export.mjs	platform	-	removed	removed; styk_export::svg writes the frame's draw list as vector SVG (a picture of the frame where it has no vector form)
 src/telemetry-core.mjs	app	-	stays	telemetry, support, updates
 src/telemetry-measurements.mjs	app	-	stays	telemetry, support, updates
@@ -500,25 +501,25 @@ src/vfw-pixels.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg
 src/vfw-video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/vfx-camera-gpu.mjs	engine	styk-render::vfx	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/vfx-camera.mjs	engine	styk-render::vfx	removed	deleted: nothing in the app used it; the engine draws the camera image and its effects (15835 bytes)
-src/vfx-canvas.mjs	engine	styk-render::vfx	partial	Rust: ordinary solid-background camera-monitor filtered-source execution/consumption and CPU/GPU result presentation through the existing worker, CanvasForeground and completed root-source receipt; SceneFX, tiled fallbacks, unadmitted sources and broader Canvas surface/cache lifetimes remain JS
+src/vfx-canvas.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-clip-controls.mjs	ui	-	stays	
 src/vfx-clip-inspector.mjs	ui	-	stays	
 src/vfx-clip-timeline.mjs	ui	-	stays	
 src/vfx-clips.mjs	engine	styk-eval::vfx	partial	Rust: clip sampling, keys, fades, composition and strict edit validation including paints/attached scopes; remaining JS model callers preserved
 src/vfx-connected.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS
-src/vfx-cpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-cpu.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-drawable.mjs	engine	styk-eval::vfx	js	what effects a drawn item carries and how far they spread (hasDrawableVfx, drawableVfxPadding); the editor bounds read it
 src/vfx-generator-anchors.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-generator-atlas.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
-src/vfx-generator-canvas.mjs	engine	styk-render::generators	partial	Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it
-src/vfx-generator-frame.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-canvas.mjs	engine	styk-render::generators	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/vfx-generator-frame.mjs	engine	styk-eval::vfx::generated	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-generator-gpu.mjs	engine	styk-render::generators	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/vfx-generator-layers.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-generator-styles.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-generators.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-gizmos.mjs	ui	-	stays	
-src/vfx-gpu.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: effect layers planned per view and filtered on the GPU (effects/plan.rs); still used by the JavaScript renderer
+src/vfx-gpu.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-icons.mjs	ui	-	stays	
 src/vfx-inspector.mjs	ui	-	stays	
 src/vfx-key-channel-menu.mjs	ui	-	stays	
@@ -530,12 +531,12 @@ src/vfx-preset-ui.mjs	ui	-	stays
 src/vfx-presets.mjs	engine	styk-eval::vfx	partial	Rust: byte-verifiable 13-preset catalogue and recorded stack/group commands; existing JS UI/oracle catalogue callers remain
 src/vfx-preview.mjs	engine	styk-eval::vfx	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/vfx-registry.mjs	engine	styk-eval::vfx	ported	effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags)
-src/vfx-scene.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: scene stack over the camera image (effects); Canvas 2D path still JS
-src/vfx-shaders.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: the filter shaders (effects/passes.wgsl); generated effects still JS
-src/vfx-surface.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-scene.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/vfx-shaders.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/vfx-surface.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-user-presets.mjs	engine	styk-eval::vfx	partial	Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS
 src/vfx-viewport.mjs	engine	styk-render::vfx	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
-src/vfx-webgpu.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: every filter pass (styk-render effects/executor.rs, passes.wgsl) on WebGPU, native and WebGL2; still the oracle and the renderer of gated documents
+src/vfx-webgpu.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS; B13 coherent edit-frame conversion reuses unchanged warning-free effect tables, retaining original diagnostics and identity/lineage fallbacks; verified400Rust/27CLI925/82JS/check; existing portable Loader API, stored fields/math/schema unchanged; fresh figures cost/checkpoint/default gate pending
 src/video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/web-library.mjs	platform	-	stays	file, storage and network services

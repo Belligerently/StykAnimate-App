@@ -5,7 +5,6 @@ import {t as interfaceText} from './localization.mjs';
 
 import {Editor} from './editor.mjs';
 import {installEngineOwner} from './engine/engine-owner.mjs';
-import {nativeFigureDocument} from './native-figure.mjs';
 import {RIG_EXAMPLES, rigExampleDocument} from './rig-examples.mjs';
 import {icon} from './icons.mjs';
 import {engineDocumentPicture, placement} from './engine/engine-pictures.mjs';
@@ -35,7 +34,7 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
  * change. Its pictures are drawn by the engine (engine-pictures.mjs) from the test editor's pose. */
 export function openRigTest(host,document,{back,galleryPreview=false}={}) {
   disposeTest?.();host.finish?.();
-  const source=document??nativeFigureDocument(host.editor.report,{figureUid:host.editor.selectedUid,tick:host.editor.tick,sourceFrame:host.editor.selectionFrame});
+  const source=document??host.editor._shown.figureDocument({figureUid:host.editor.selectedUid,tick:host.editor.tick});
   const initial=structuredClone(source),test=new Editor({demo:false,layerTimeline:true}),owner=installEngineOwner(test,{detached:true});test.load(initial);
   const figure=test.report.figure_types[0],object=test.evaluatedFrame.objects[0],
     selected=host.editor.figure?.segments[host.editor.selectedJoint]?.segment_id,
@@ -101,7 +100,7 @@ export function openRigTest(host,document,{back,galleryPreview=false}={}) {
   window.document.getElementById('rig-test-reset').addEventListener('click',()=>{test.load(structuredClone(source));test.select(object.unique_id,figure.segments.findIndex(s=>s.segment_id===control));drag=false;fit();schedule();},on);
   window.document.getElementById('rig-test-add')?.addEventListener('click',guarded(()=>{
     test.commitDrag();
-    host.addToAnimate(nativeFigureDocument(test.report,{figureUid:object.unique_id,tick:test.tick,sourceFrame:test.selectionFrame}));
+    host.addToAnimate(test._shown.figureDocument({figureUid:object.unique_id,tick:test.tick}));
     host.closeDialog();
   }),on);
   const resize=new ResizeObserver(()=>{fit();schedule();});resize.observe(canvas);

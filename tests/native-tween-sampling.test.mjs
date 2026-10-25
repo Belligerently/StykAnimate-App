@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {evaluatedFrame, frameTicks, shortest} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {frameTicks, shortest} from '../src/pivot/read-view.mjs';
 
 // The native-easing sampler as it was before per-object sampling: one
 // keyframe lookup, run search, tangent array and pchip per joint and channel.

@@ -4,7 +4,7 @@ import {Editor} from '../src/editor.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 const near = (a, b, tolerance = .001) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 const point = (a, b) => {near(a.x, b.x); near(a.y, b.y);};
@@ -327,7 +327,7 @@ test('joined IK undo, cancel and native/Pivot persistence retain all solved bran
   e.beginDrag(); e.poseJoint(355,265); e.commitDrag(); const after=e.serialize();
   e.undo(); assert.deepEqual(e.serialize(),before); e.redo(); assert.deepEqual(e.serialize(),after);
   e.beginDrag(); e.poseJoint(340,240); e.cancelDrag(); assert.deepEqual(e.serialize(),after);
-  for (const report of [after,materializePivotDocument(after)]) sameRig(e,new Editor({demo:false}).load(report));
+  for (const report of [after,pivotDocument(after)]) sameRig(e,new Editor({demo:false}).load(report));
 });
 
 test('joined IK interpolation is identical to a monolithic rig and independent of slot order', () => {

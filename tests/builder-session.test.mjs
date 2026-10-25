@@ -5,8 +5,8 @@ import {ownedEditorFor} from './support/owned-editor.mjs';
 import {BuilderSession} from '../src/builder-session.mjs';
 import {emptyDocument, createObject, createFrame, defaultFigure} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
-import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {isDrawingLayer} from '../src/drawing-model.mjs';
+import {figureDocument, readsFiguresFromEngine} from './support/engine-export.mjs';
 
 /** One scene with two figures: the bound figure has two instances, the other
  * figure is an unjoined neighbor used to prove builder edits stay scoped. */
@@ -126,7 +126,9 @@ test('import-new restores the original and adds the edited figure as a new type'
   const object = session.resolve('import-new');
   assert.deepEqual(figure(editor, originalId), original);
   const added = editor.report.figure_types.find(f => f.figure_type_id !== originalId && f.name === 'Edited');
-  assert.deepEqual(added.segments, edited.segments);
+  // The engine's figure document carries the display aliases an editor the engine owns has already.
+  const withoutAliases = segments => segments.map(({flag_bits, is_static, ...segment}) => segment);
+  assert.deepEqual(withoutAliases(added.segments), withoutAliases(edited.segments));
   assert.equal(object.figure_type_id, added.figure_type_id);
   assert.ok(editor.selectionFrame.objects.some(o => o.unique_id === object.unique_id));
   // One undoable import command on top of the restored baseline.
@@ -152,15 +154,15 @@ test('import-new preserves a posed, styled figure after deletion', () => {
   const session = new BuilderSession(editor).begin();
   editor.select(1, 0); editor.updateSegment({thickness: 18});
   editor.select(1, 3); editor.deleteSingleSegment();
-  const edited = structuredClone(nativeFigureDocument(editor.report, {figureUid: 1, tick: editor.tick, sourceFrame: editor.selectionFrame}));
+  const edited = structuredClone(figureDocument(editor.report, {figureUid: 1, tick: editor.tick, sourceFrame: editor.selectionFrame}));
   const imported = session.resolve('import-new');
   const expected = edited.keyframes[0].objects[0];
   for (const field of ['angles', 'lengths', 'bends', 'len_flag', 'bend_flag', 'scale', '_stykStyle'])
     assert.deepEqual(imported[field], expected[field], field);
   assert.deepEqual(figure(editor, 1), original.figure_types[0]);
   for (const uid of [1, 2]) assert.deepEqual(
-    nativeFigureDocument(editor.report, {figureUid: uid, tick: editor.tick, sourceFrame: editor.selectionFrame}),
-    nativeFigureDocument(original, {figureUid: uid, tick: editor.tick}),
+    figureDocument(editor.report, {figureUid: uid, tick: editor.tick, sourceFrame: editor.selectionFrame}),
+    figureDocument(original, {figureUid: uid, tick: editor.tick}),
     'Original instances keep their complete appearance');
   editor.undo();
   assert.deepEqual(editor.report, original);
@@ -289,4 +291,35 @@ test('discard survives session history eviction via the captured baseline', () =
   session.resolve('discard');
   assert.deepEqual(editor.figure, beforeFigure);
   assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+});
+
+test('a figure whose creation left the history is discarded from every frame and the library as one entry', () => {
+  const report = emptyDocument(), walker = report.figure_types[0];
+  report.keyframes = [0, 1].map(i => createFrame([createObject(walker, 1, 200 + 40 * i, 200)], 4));
+  const editor = ownedEditorFor({demo: false, layerTimeline: true, propertyChannels: true}, report);
+  editor.select(null);
+  const session = new BuilderSession(editor).begin();
+  editor.addSegment({type: 'line', start: {x: 100, y: 100}});
+  session.sync();
+  const typeId = session.typeId, uid = session.uid;
+  assert.ok(typeId !== null);
+  // The new figure is posed at a second key inside its cell as well, so that it lives in more than one frame of the layer.
+  editor.seek(2);
+  assert.equal(editor.updateObject({root_x: 330}), true);
+  const shows = () => editor._allSourceFrames().filter(frame => frame.objects.some(object => object.figure_type_id === typeId)).length;
+  assert.ok(shows() >= 2, 'the figure is in several frames');
+  const complete = JSON.stringify(editor.report), entries = editor._undo.length;
+  // What eviction leaves: the figure in the document and none of the entries that created it.
+  session._removeCreatedFigure(typeId);
+  assert.equal(shows(), 0, 'no frame holds an instance');
+  assert.ok(!editor.report.figure_types.some(f => f.figure_type_id === typeId), 'the definition left the library');
+  assert.ok(editor.report.figure_types.some(f => f.figure_type_id === walker.figure_type_id), 'the other figures stay');
+  assert.ok(editor.evaluatedFrame.objects.every(object => object.figure_type_id !== typeId));
+  assert.equal(editor.undoLabel, 'Discard new figure');
+  assert.equal(editor._undo.length, entries + 1, 'one entry');
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  editor.undo();
+  assert.equal(JSON.stringify(editor.report), complete, 'one undo brings it back everywhere');
+  assert.ok(editor.report.figure_types.some(f => f.figure_type_id === typeId));
+  assert.ok(editor.evaluatedFrame.objects.some(object => object.unique_id === uid));
 });
