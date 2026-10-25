@@ -331,8 +331,10 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
         let (mut path, mut visiting) = (Vec::new(), HashSet::new());
         let mut slot = start;
         while !done[slot] {
-            // A cycle (the editor refuses it) leaves its figures as they are.
+            // Layer poses that join each other in a ring (the editor refuses to make one; a file can hold it): the figure that
+            // closes the ring comes loose where its own pose has it, as the frame record has it (`records::channels`).
             if !visiting.insert(slot) {
+                Arc::make_mut(&mut objects[slot]).join = None;
                 break;
             }
             path.push(slot);

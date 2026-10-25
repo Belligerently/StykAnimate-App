@@ -44,7 +44,14 @@ fn layer_poses_that_join_in_a_ring_read_with_one_figure_loose() {
     for tick in [4.0, 5.0] {
         let frame = records.evaluated(tick).unwrap_or_else(|error| panic!("tick {tick}: {error}"));
         assert_eq!(joined(&frame), 1, "tick {tick}: the ring is broken at one figure");
-        // The typed frame the stage is drawn from reads the same document without refusing.
-        assert_eq!(prepared.evaluate(tick).objects.len(), objects(&frame).len(), "tick {tick}");
+        // The typed frame the stage is drawn from breaks the ring at the same figure, so the stage draws every figure.
+        let typed = prepared.evaluate(tick);
+        assert_eq!(typed.objects.len(), objects(&frame).len(), "tick {tick}");
+        for (object, record) in typed.objects.iter().zip(objects(&frame)) {
+            assert_eq!(object.uid, num(&record, "unique_id") as u32, "tick {tick}");
+            assert_eq!(object.join.is_some(), record.get("join").is_some_and(Value::truthy), "tick {tick}: figure {} joins in both or in neither", object.uid);
+        }
+        let scene = styk_eval::geometry::build(&prepared.doc, &typed);
+        assert!(scene.warnings.is_empty(), "tick {tick}: {:?}", scene.warnings);
     }
 }
