@@ -1150,6 +1150,27 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     built
 }
 
+/// How a movieclip joined to a spatial bone is placed when its drawings turn with the bone (`g.drawingView` and
+/// `g.drawingTransform`): the frame of the view the bone selects, and the angle, scale and flip the clip is drawn with.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DrawingView {
+    pub frame: f64,
+    pub angle: f64,
+    pub scale: f64,
+    pub flip: f64,
+}
+
+/// The view the movieclip at `slot` shows, from a scene built for `frame`; `None` for any object that is not a clip
+/// whose drawings rotate with the bone it is joined to.
+pub fn drawing_view(frame: &Frame, scene: &Scene, slot: usize) -> Option<DrawingView> {
+    let obj = frame.objects.get(slot)?;
+    let clip = scene.figure_for(slot)?.movieclip.as_ref()?;
+    let parent_slot = obj.join?.slot as usize;
+    let parent = JoinedParent { object: frame.objects.get(parent_slot)?, figure: scene.figure_for(parent_slot)?, geometry: scene.objects.get(parent_slot)? };
+    let drawing = rotated_drawing(clip, obj, &parent)?;
+    Some(DrawingView { frame: drawing.frame, angle: drawing.angle, scale: drawing.scale, flip: drawing.flip })
+}
+
 /// Builds the scene for an evaluated frame.
 pub fn build(doc: &Document, frame: &Frame) -> Scene {
     build_filtered(doc, frame, None, Measure::Off, true, None)

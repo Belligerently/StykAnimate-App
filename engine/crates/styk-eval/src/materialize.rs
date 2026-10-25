@@ -125,6 +125,110 @@ impl<'a> Materializer<'a> {
         self.types.insert((address, id), next);
         Ok(next)
     }
+    /// `materializeMeshGeometry`: a 3D mesh clip as the figure of its own that draws the faces it shows now (each triangle a
+    /// depth-tested fill over three reference joints and a depth guide for each corner), and its instance.
+    fn bake_mesh(&mut self, scene: &geometry::Scene, slot: usize, clip: &Value, object: &Value, transform: Transform, path: &str) -> Result<Value, Error> {
+        if self.next_type > 65535 {
+            return invalid("flatteningMovieclipsExceedsTheFigureLimit");
+        }
+        let type_id = self.next_type;
+        self.next_type += 1;
+        let uid = self.identity(path)?;
+        let mut segments: Vec<Value> = Vec::new();
+        let mut add = |x: f64, y: f64| -> f64 {
+            let id = segments.len() as f64 + 1.0;
+            let mut segment = Obj::new();
+            segment.set("segment_id", Value::Num(id));
+            segment.set("parent_id", Value::Num(0.0));
+            segment.set("length", Value::Num(styk_math::hypot(x, y)));
+            segment.set("angle_rad", Value::Num(styk_math::atan2(y, x)));
+            segment.set("thickness", Value::Num(0.0));
+            segment.set("bend_rad", Value::Num(0.0));
+            segment.set("primitive_code", Value::Num(0.0));
+            segment.set("aux_code", Value::Num(1.0));
+            segment.set("flags", Value::Num(256.0));
+            segment.set("visible", Value::Bool(false));
+            segment.set("color_rgb", Value::nums(&[0.0, 0.0, 0.0]));
+            segment.set("z_order", Value::Num(0.0));
+            segments.push(Value::object(segment));
+            id
+        };
+        let (x, y) = (add(1.0, 0.0), add(0.0, 1.0));
+        let basis = Value::nums(&[0.0, x, y]);
+        // A corner is a pair of joints, its position and its depth; corners that coincide share them (-0 and 0 alike, as keys of text).
+        let norm = |value: f64| if value == 0.0 { 0u64 } else { value.to_bits() };
+        let mut corners: HashMap<(u64, u64, u64), [f64; 2]> = HashMap::new();
+        let mut fills: Vec<Value> = Vec::new();
+        for item in scene.items.iter().filter(|item| item.slot as usize == slot && item.kind == geometry::ItemKind::Mesh) {
+            let Some(mesh) = scene.mesh_of(item) else { continue };
+            for face in item.faces.0 as usize..item.faces.1 as usize {
+                let mut points = [[0.0f64; 2]; 3];
+                let mut depths = [0.0f64; 3];
+                let mut joints = [[0.0f64; 2]; 3];
+                for k in 0..3 {
+                    let vertex = mesh.triangles[face * 3 + k] as usize;
+                    points[k] = transform.point([f64::from(mesh.positions[vertex * 2]), f64::from(mesh.positions[vertex * 2 + 1])]);
+                    depths[k] = f64::from(mesh.depth[vertex]);
+                    let key = (norm(points[k][0]), norm(points[k][1]), norm(depths[k]));
+                    joints[k] = match corners.get(&key) {
+                        Some(known) => *known,
+                        None => {
+                            let made = [add(points[k][0], points[k][1]), add(depths[k], 0.0)];
+                            corners.insert(key, made);
+                            made
+                        }
+                    };
+                }
+                let [a, b, c] = points;
+                let flipped = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) < 0.0;
+                let mut surface = Obj::new();
+                surface.set("basis", basis.clone());
+                surface.set("depth", Value::nums(&joints.map(|joint| joint[1])));
+                surface.set("depthTest", Value::Bool(true));
+                surface.set("flipped", Value::Bool(flipped));
+                let color = mesh.colors.get(mesh.materials[face] as usize).copied().unwrap_or([0, 0, 0]);
+                let mut fill = Obj::new();
+                fill.set("polyfill_id", Value::Num(fills.len() as f64 + 1.0));
+                fill.set("segment_ids", Value::nums(&joints.map(|joint| joint[0])));
+                fill.set("color_rgb", Value::nums(&color.map(f64::from)));
+                fill.set("color_alpha", Value::Num(1.0));
+                fill.set("z_order", Value::Num(0.0));
+                fill.set("_stykSurface", Value::object(surface));
+                fills.push(Value::object(fill));
+            }
+        }
+        let angles: Vec<f64> = segments.iter().map(|segment| num(segment, "angle_rad").unwrap_or(f64::NAN)).collect();
+        let mut figure = Obj::new();
+        figure.set("figure_type_id", Value::Num(f64::from(type_id)));
+        if let Some(name) = clip.get("name") {
+            figure.set("name", name.clone());
+        }
+        let count = segments.len() as f64;
+        figure.set("segments", Value::array(segments));
+        figure.set("segment_count", Value::Num(count));
+        figure.set("polyfills", Value::array(fills));
+        figure.set("image_assets", Value::array(Vec::new()));
+        figure.set("text_assets", Value::array(Vec::new()));
+        self.figures.push(Value::object(figure));
+        let opacity = transform.opacity * (1.0 - num(object, "field28").unwrap_or(0.0) / 255.0);
+        let mut baked = Obj::new();
+        baked.set("object_slot", Value::Num(0.0));
+        baked.set("unique_id", Value::Num(f64::from(uid)));
+        baked.set("figure_type_id", Value::Num(f64::from(type_id)));
+        baked.set("root_x", Value::Num(0.0));
+        baked.set("root_y", Value::Num(0.0));
+        baked.set("scale", Value::Num(1.0));
+        baked.set("color_override_raw", Value::Num(0.0));
+        baked.set("field28", Value::Num((255.0 * (1.0 - opacity) + 0.5).floor()));
+        baked.set("angles", Value::nums(&angles));
+        baked.set("len_flag", Value::Num(0.0));
+        baked.set("lengths", Value::array(Vec::new()));
+        baked.set("bend_flag", Value::Num(0.0));
+        baked.set("bends", Value::array(Vec::new()));
+        baked.set("join", Value::Null);
+        Ok(Value::object(baked))
+    }
+
     /// `frame` is an editor-shaped evaluated record, including `_movieclipSample`.
     pub fn frame(&mut self, frame: &Value) -> Result<Value, Error> {
         let mut output = Vec::new();
@@ -171,20 +275,25 @@ impl<'a> Materializer<'a> {
                 if object.get("_stykVfx").is_some_and(Value::truthy) {
                     return invalid("thisMovieclipHasContainerEffectsKeepItAs");
                 }
-                if asset.meshes.is_some() || asset.drawing_rotation.is_some() || pose.spatial.is_some() {
-                    return unsupported("spatial movieclip materialization");
+                if asset.meshes.is_some() {
+                    // A 3D mesh clip becomes a figure of its own, with a face for each triangle it shows.
+                    anchors.insert(slot, output.len());
+                    let baked = self.bake_mesh(&scene, slot, figure, object, transform, &id)?;
+                    output.push(baked);
+                    continue;
                 }
+                let drawing = geometry::drawing_view(&typed, &scene, slot);
                 let raw = figure.path(&["_styk", "movieclip", "document"]).ok_or_else(|| Error::Invalid("missing movieclip document".into()))?;
-                let local = Records::new(raw, &asset.prepared)?.evaluated_with(asset.source_start + pose.clip_time.unwrap_or(0.0), true)?;
+                let local = Records::new(raw, &asset.prepared)?.evaluated_with(asset.source_start + drawing.map_or(pose.clip_time.unwrap_or(0.0), |view| view.frame), true)?;
                 if local.get("_stykVfx").is_some_and(Value::truthy) {
                     return invalid("thisMovieclipHasSceneEffectsKeepItAs");
                 }
-                let angle = pose.angles.first().copied().unwrap_or(0.0);
-                let scale = pose.scale;
+                let angle = drawing.map_or(pose.angles.first().copied().unwrap_or(0.0), |view| view.angle);
+                let scale = drawing.map_or(pose.scale, |view| view.scale);
                 let c = styk_math::cos(angle) * scale;
                 let d = styk_math::sin(angle) * scale;
                 let root = transform.point(g.root);
-                let flip = if pose.image_text_flags { -1.0 } else { 1.0 };
+                let flip = drawing.map_or(if pose.image_text_flags { -1.0 } else { 1.0 }, |view| view.flip);
                 let a = transform.a * c + transform.c * d;
                 let b = transform.b * c + transform.d * d;
                 let cy = (-transform.a * d + transform.c * c) * flip;

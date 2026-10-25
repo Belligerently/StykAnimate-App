@@ -5,8 +5,8 @@ fn fixture(name: &str) -> Value {
     styk_doc::json::parse(&std::fs::read(root.join(name)).unwrap()).unwrap()
 }
 #[test]
-fn copying_a_selected_branch_refuses_atomically_with_changed_open_drags() {
-    let (mut refused, mut ran) = (0, 0);
+fn copying_a_selected_branch_extracts_it_with_changed_open_drags() {
+    let (mut branches, mut ran) = (0, 0);
     for mode in ["native", "sheet"] {
         let reference = fixture(&format!("selection-metadata-plain-{mode}.reference.json"));
         let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
@@ -24,12 +24,18 @@ fn copying_a_selected_branch_refuses_atomically_with_changed_open_drags() {
                 let state = editor.state_value();let drag = editor.drag_value();let draft = editor.draft_figures();let metadata = editor.selection_metadata.clone();let history = editor.selection_state().history_value();
                 let result = editor.call(method, &[]);
                 if key == "branch" {
-                    // Copying a selected branch extracts it as a definition of its own: not done by the session.
-                    assert!(matches!(result, Err(EditError::Unported(_))), "{mode}/{key}/{method}: {result:?}");
-                    assert!(report.same_node(&editor.report), "{mode}/{key}/{method}: report COW identity");
-                    assert_eq!(bytes, editor.report_json());assert_eq!(state, editor.state_value());assert_eq!(drag, editor.drag_value());assert_eq!(draft, editor.draft_figures());
-                    assert_eq!(metadata, editor.selection_metadata);assert_eq!(history, editor.selection_state().history_value());assert_eq!(shown, editor.shown_frame().unwrap());assert!(editor.take_events().is_empty());
-                    refused += 1;
+                    // Copying a selected branch extracts it as a definition of its own, and the session does it: a copy changes
+                    // no document, a cut or a duplicate does.
+                    // (a native timeline pastes nothing: only the copy runs there)
+                    if mode == "sheet" { assert!(!matches!(result, Err(EditError::Unported(_))), "{mode}/{key}/{method}: {result:?}"); }
+                    if method == "copySelection" {
+                        assert!(result.is_ok(), "{mode}/{key}/{method}: {result:?}");
+                        assert!(report.same_node(&editor.report), "{mode}/{key}/{method}: report COW identity");
+                        assert_eq!(bytes, editor.report_json());assert_eq!(drag, editor.drag_value());assert_eq!(draft, editor.draft_figures());
+                        assert_eq!(history, editor.selection_state().history_value());assert_eq!(shown, editor.shown_frame().unwrap());
+                    }
+                    let _ = (&state, &metadata);
+                    branches += 1;
                 } else {
                     // A selected fill or several joints change nothing about copying figures.
                     assert!(!matches!(result, Err(EditError::Unported(ref why)) if why.contains("selected branch")), "{mode}/{key}/{method}: {result:?}");
@@ -38,8 +44,8 @@ fn copying_a_selected_branch_refuses_atomically_with_changed_open_drags() {
             }
         }
     }
-    println!("{refused} copies of a selected branch refused atomically, {ran} others run");
-    assert!(refused > 0 && ran > 0);
+    println!("{branches} copies of a selected branch, {ran} others run");
+    assert!(branches > 0 && ran > 0);
 }
 #[test]
 fn complex_selector_fallback_restores_metadata_cleared_before_validation() {

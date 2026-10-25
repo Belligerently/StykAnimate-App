@@ -16,8 +16,10 @@ import {MotionTrails} from '../src/motion-path.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditor} from './support/owned-editor.mjs';
+import {canonical, ownerReferences} from './support/owner-references.mjs';
 import {recordedBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
 
+const refs = ownerReferences(import.meta.url);
 const folder = new URL('../engine/tests/edit/', import.meta.url);
 /** Recordings of commands the session took over from the editor (the same format as the tapes in `folder`). */
 const otherFolders = ['movieclip-sheet-extension'].map(name => new URL(`../engine/tests/${name}/`, import.meta.url));
@@ -116,7 +118,7 @@ const floatsDiffer = new Set(['origin-motion-saved-layout-native', 'origin-motio
 // With Pivot's cache on every pose (the recordings' poses have none: the engine's own document is checked against the
 // read view there).
 const variants = [{legacy: false}, {legacy: true}];
-for (const {legacy} of variants) test(`the engine owning the document gives what every recorded tape records${legacy ? ', with legacy pose caches' : ''}`, {skip: !engineBuilt}, async () => {
+for (const {legacy} of variants) test(`the engine owning the document gives what every recorded tape records${legacy ? ', with legacy pose caches' : ''}`, {skip: !engineBuilt}, async take => {
   let tapes = 0, steps = 0, native = 0, fallback = 0;
   const editorCalls = {}, refusedCalls = {}, frontiers = {}, unnamedErrors = {};
   const failures = [];
@@ -214,22 +216,28 @@ const recorded = name => {
   const scenario = JSON.parse(readFileSync(new URL(`${name}.scenario.json`, folder), 'utf8'));
   return {options: {demo: false, ...scenario.editor}, document: JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8'))};
 };
-/** An owned editor and an editor alone on the same document, and a call made on both. */
-async function pair(name) {
+/** What a reference keeps of a call's answer: a boolean, number or text (a frame or a selection is not, the documents and states compared after the call are). */
+const answered = value => ['boolean', 'number', 'string'].includes(typeof value) ? value : undefined;
+/** An owned editor on a recorded tape's document, and the references of an editor alone: `reference(label, read)` is what `read(editor)`
+ * gave on the plain editor (made only when the references are recorded); `both(method, ...args)` calls the owned editor and takes the
+ * answer of the plain one; `agree(label)` compares the owned editor's document, state and frame on show with the plain one's. */
+async function pair(take, name) {
   const {options, document} = recorded(name);
   const {editor: owned, owner} = await ownedEditor(options, document);
-  const alone = new Editor(options).load(structuredClone(document));
-  const both = (method, ...args) => { const results = [owned, alone].map(editor => editor[method](...args)); return results; };
+  let plain = null;
+  const reference = (label, read) => take(label, () => read(plain ??= new Editor(options).load(structuredClone(document))));
+  const both = (method, ...args) => { const result = owned[method](...args); return [result, reference(method, editor => answered(editor[method](...args)))]; };
   const agree = label => {
-    sameText(json(owned.report), json(alone.report), `${label}: document`);
-    same(state(owned), state(alone), `${label}: state`);
-    sameText(frameText(owned.evaluatedFrame), frameText(alone.evaluatedFrame), `${label}: frame on show`);
+    const wanted = reference(`agree ${label}`, editor => ({document: json(editor.report), state: state(editor), frame: frameText(editor.evaluatedFrame)}));
+    sameText(json(owned.report), wanted.document, `${label}: document`);
+    same(canonical(state(owned)), wanted.state, `${label}: state`);
+    sameText(frameText(owned.evaluatedFrame), wanted.frame, `${label}: frame on show`);
   };
-  return {owned, alone, owner, both, agree};
+  return {owned, owner, both, agree, reference};
 }
 
-test('a property edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async () => {
-  const {owned, alone, owner, both, agree} = await pair('property-scrub-sheet');
+refs.test('a property edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree, reference} = await pair(take, 'property-scrub-sheet');
   both('select', 1, -1);
   both('beginAnimationEdit', {kind: 'figure', uid: 1}, 'scale');
   assert.ok(owned._animationEdit?.engine && owned._animationEdit.sheet, 'the session\'s edit is on the editor');
@@ -245,7 +253,7 @@ test('a property edit runs in the session and shows on the editor as its own', {
   assert.equal(answers[0].previewChanges.figures.length, 1);
   assert.ok(owned.evaluatedFrame.objects.length > 1);
   assert.equal(owned.dirty, true, 'a previewed change is unsaved');
-  assert.equal(owned._animationEdit.changed, alone._animationEdit.changed);
+  assert.equal(owned._animationEdit.changed, reference('animation edit changed', editor => editor._animationEdit.changed));
   assert.equal(owned._animationEdit.value, 1.3);
   assert.ok(owned._sheetPropertyPreview, 'the preview is the frame on show');
   agree('preview');
@@ -261,8 +269,8 @@ test('a property edit runs in the session and shows on the editor as its own', {
   assert.equal(owner.fallback, 0, 'no call ran in the editor');
 });
 
-test('an effect-clip edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async () => {
-  const {owned, owner, both, agree} = await pair('vfx-clips-sheet');
+refs.test('an effect-clip edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree} = await pair(take, 'vfx-clips-sheet');
   const before = owned.report._styk.vfxClips;
   both('beginVfxClipEdit');
   assert.ok(owned._vfxClipEdit?.engine);
@@ -286,8 +294,8 @@ test('an effect-clip edit runs in the session and shows on the editor as its own
   assert.equal(owner.fallback, 0, 'no call ran in the editor');
 });
 
-test('ending an edit that is not open does not ask the session', {skip: !engineBuilt}, async () => {
-  const {owned, owner, both} = await pair('property-scrub-sheet');
+refs.test('ending an edit that is not open does not ask the session', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both} = await pair(take, 'property-scrub-sheet');
   owner.capture = [];
   const calls = owner.native;
   assert.deepEqual(both('commitVfxClipEdit'), [false, false]);
@@ -309,10 +317,11 @@ const staged = editor => {
   return {frame: frameText(display?.frame ?? editor.evaluatedFrame),
     figures: json([...geometry.objects].sort((a, b) => a[0] - b[0]).map(([slot, item]) => [slot, item.root, item.joints]))};
 };
-/** The owned editor shows what the editor alone does of the open motion-path edit, and the engine samples its trail. */
-const sameLive = (owned, alone, label) => {
-  sameText(motionState(owned, json), motionState(alone, json), `${label}: the edit as the interface reads it`);
-  assert.deepEqual(staged(owned), staged(alone), `${label}: the pose the stage draws`);
+/** The owned editor shows what the editor alone did of the open motion-path edit, and the engine samples its trail. */
+const sameLive = (owned, reference, label) => {
+  const wanted = reference(`live ${label}`, editor => ({motion: motionState(editor, json), stage: staged(editor)}));
+  sameText(motionState(owned, json), wanted.motion, `${label}: the edit as the interface reads it`);
+  assert.deepEqual(canonical(staged(owned)), wanted.stage, `${label}: the pose the stage draws`);
   const target = owned._drag?.target;
   if (target) {
     const [trail] = new MotionTrails(owned, {budgetMs: Infinity}).read([target]);
@@ -320,14 +329,14 @@ const sameLive = (owned, alone, label) => {
   }
 };
 
-test('a motion-path edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async () => {
-  const {owned, alone, owner, both, agree} = await pair('motion-path-sheet');
+refs.test('a motion-path edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree, reference} = await pair(take, 'motion-path-sheet');
   both('select', 1, -1);
   both('beginMotionPathEdit', head, 8);
   assert.ok(owned._drag?.engine && owned._drag.motionPath, 'the session\'s edit is on the editor');
   assert.equal(owned.motionPathReport(), owned.report, 'nothing has moved the trail yet');
   assert.equal(owned._drag.display, null, 'the stage draws the pose the document has');
-  sameLive(owned, alone, 'begin');
+  sameLive(owned, reference, 'begin');
   const start = new MotionTrails(owned, {budgetMs: Infinity}).read([head])[0].points.get(8);
   const session = owner.session(), ask = session.call.bind(session), answers = [];
   session.call = (...parts) => { const reply = ask(...parts); answers.push(JSON.parse(reply)); return reply; };
@@ -340,30 +349,30 @@ test('a motion-path edit runs in the session and shows on the editor as its own'
   assert.ok(answers[1].motionPath.report.length > 0 && answers[1].motionPath.report.length < 8, 'the changed tracks and sources, not the document');
   assert.notEqual(owned.motionPathReport(), owned.report);
   assert.equal(owned.motionPathReport(), owned.motionPathReport(), 'one report until the trail moves again');
-  assert.equal(owned.dirty, alone.dirty);
-  sameLive(owned, alone, 'move');
+  assert.equal(owned.dirty, reference('dirty', editor => editor.dirty));
+  sameLive(owned, reference, 'move');
   both('updateMotionPathEdit', {x: start.x, y: start.y});
-  sameLive(owned, alone, 'back at the start');
+  sameLive(owned, reference, 'back at the start');
   both('updateMotionPathEdit', {x: 330, y: 300});
   both('updateMotionPathEdit', {x: 340, y: 310}, {stretch: true});
-  sameLive(owned, alone, 'moved again');
+  sameLive(owned, reference, 'moved again');
   both('updateMotionPathEdit', {x: 340, y: 310}, {stretch: true});
-  sameLive(owned, alone, 'a move that changes nothing');
+  sameLive(owned, reference, 'a move that changes nothing');
   both('commitMotionPathEdit');
   assert.equal(owned._drag, null);
-  sameLive(owned, alone, 'commit');
+  sameLive(owned, reference, 'commit');
   agree('commit');
   both('beginMotionPathEdit', head, 12);
   both('updateMotionPathEdit', {x: 300, y: 320}, {isolate: true});
   both('cancelMotionPathEdit');
   assert.equal(owned._drag, null);
   agree('cancel');
-  while (alone.canUndo) { both('undo'); agree('undo'); }
+  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
   assert.equal(owner.fallback, 0, 'no call ran in the editor');
 });
 
-test('a motion-path edit on the playhead shows the pose under the trail to the stage', {skip: !engineBuilt}, async () => {
-  const {owned, alone, both} = await pair('motion-path-sheet');
+refs.test('a motion-path edit on the playhead shows the pose under the trail to the stage', {skip: !engineBuilt}, async take => {
+  const {owned, both, reference} = await pair(take, 'motion-path-sheet');
   both('select', 1, -1);
   both('seek', 8);
   both('beginMotionPathEdit', head, 8);
@@ -373,60 +382,64 @@ test('a motion-path edit on the playhead shows the pose under the trail to the s
   assert.ok(display?.frame, 'the pose under the trail');
   assert.notEqual(frameText(display.frame), frameText(owned.evaluatedFrame), 'which is not the pose the document has');
   assert.equal(owned._drag.display, display, 'built once until the trail moves again');
-  sameLive(owned, alone, 'move');
+  sameLive(owned, reference, 'move');
   both('updateMotionPathEdit', {x: 340, y: 310}, {stretch: true});
   assert.notEqual(owned._drag.display, display);
-  sameLive(owned, alone, 'moved again');
+  sameLive(owned, reference, 'moved again');
   both('cancelMotionPathEdit');
-  sameLive(owned, alone, 'cancel');
+  sameLive(owned, reference, 'cancel');
 });
 
-test('a motion-path edit that reshapes the arc shows its falloff on the editor', {skip: !engineBuilt}, async () => {
-  const {owned, alone, owner, both, agree} = await pair('motion-path-falloff-sheet');
+refs.test('a motion-path edit that reshapes the arc shows its falloff on the editor', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree, reference} = await pair(take, 'motion-path-falloff-sheet');
   both('select', 1, -1);
   both('beginMotionPathEdit', {kind: 'node', uid: 1, handleId: 0, joint: -1}, 10, {falloff: {radius: 5, shape: 'smooth'}});
   assert.ok(owned.motionPathFalloff().writes.length > 1);
-  sameLive(owned, alone, 'begin');
+  sameLive(owned, reference, 'begin');
   both('updateMotionPathEdit', {x: 250, y: 180});
   assert.ok(owned.motionPathFalloff().changed.size > 0);
-  sameLive(owned, alone, 'move');
+  sameLive(owned, reference, 'move');
   both('setMotionPathFalloff', {radius: 8, shape: 'linear'});
-  sameLive(owned, alone, 'a wider arc');
+  sameLive(owned, reference, 'a wider arc');
   both('setMotionPathFalloff', null);
   assert.equal(owned.motionPathFalloff(), null);
-  sameLive(owned, alone, 'one frame');
+  sameLive(owned, reference, 'one frame');
   both('updateMotionPathEdit', {x: 262, y: 190});
   both('commitMotionPathEdit');
   agree('commit');
-  while (alone.canUndo) { both('undo'); agree('undo'); }
+  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
   assert.equal(owner.fallback, 0, 'no call ran in the editor');
 });
 
-/** Calls of a recorded tape on both editors: what each raised, and the edit as the interface reads it. */
-const tapeSteps = (name, from, to, owned, alone) => {
+/** Calls of a recorded tape on the owned editor and the editor alone (its references): what each raised, and the edit as the interface reads it. */
+const tapeSteps = (name, from, to, owned, reference) => {
   const scenario = JSON.parse(readFileSync(new URL(`${name}.scenario.json`, folder), 'utf8'));
   const raised = [];
+  const failure = (editor, method, args) => {
+    try { editor[method.replace(/^@/, '')](...args.map(decode)); } catch (error) { return {messageKey: error.messageKey ?? null, messageParams: error.messageParams ?? null}; }
+    return null;
+  };
   for (const [index, [method, ...args]] of scenario.steps.entries().filter(([index]) => index >= from && index < to)) {
-    const failures = [owned, alone].map(editor => { try { editor[method.replace(/^@/, '')](...args.map(decode)); } catch (error) { return error; } });
-    assert.equal(failures[0]?.messageKey, failures[1]?.messageKey, `step ${index + 1} ${method}: error`);
-    assert.deepEqual(failures[0]?.messageParams, failures[1]?.messageParams, `step ${index + 1} ${method}: what the error is made of`);
-    if (failures[1]) raised.push(index + 1);
-    sameLive(owned, alone, `step ${index + 1} ${method}`);
+    const wanted = reference(`step ${index + 1} ${method}`, editor => failure(editor, method, args)), failed = canonical(failure(owned, method, args));
+    assert.equal(failed?.messageKey, wanted?.messageKey, `step ${index + 1} ${method}: error`);
+    assert.deepEqual(failed?.messageParams, wanted?.messageParams, `step ${index + 1} ${method}: what the error is made of`);
+    if (wanted) raised.push(index + 1);
+    sameLive(owned, reference, `step ${index + 1} ${method}`);
   }
   return raised;
 };
 
-test('a pointer move that is rejected leaves the motion-path edit open, in the session', {skip: !engineBuilt}, async () => {
+refs.test('a pointer move that is rejected leaves the motion-path edit open, in the session', {skip: !engineBuilt}, async take => {
   // The tape has a stretch the editor refuses (a full-circle bend) and pointers that are not finite.
-  const {owned, alone, owner, agree} = await pair('motion-path-sheet');
-  const raised = tapeSteps('motion-path-sheet', 0, Infinity, owned, alone);
+  const {owned, owner, agree, reference} = await pair(take, 'motion-path-sheet');
+  const raised = tapeSteps('motion-path-sheet', 0, Infinity, owned, reference);
   assert.ok(raised.length >= 4, `errors met: ${raised}`);
   agree('the tape');
   assert.deepEqual(Object.keys(owner.editor ?? {}).filter(name => /MotionPath/.test(name)), [], 'no motion-path call ran in the editor');
 });
 
-test('redo under an open motion-path edit ends the edit first, as undo does', {skip: !engineBuilt}, async () => {
-  const {owned, alone, both, agree} = await pair('motion-path-sheet');
+refs.test('redo under an open motion-path edit ends the edit first, as undo does', {skip: !engineBuilt}, async take => {
+  const {owned, both, agree, reference} = await pair(take, 'motion-path-sheet');
   both('select', 1, -1);
   both('beginMotionPathEdit', head, 8);
   both('updateMotionPathEdit', {x: 330, y: 300});
@@ -435,11 +448,11 @@ test('redo under an open motion-path edit ends the edit first, as undo does', {s
   both('beginMotionPathEdit', head, 12);
   both('updateMotionPathEdit', {x: 300, y: 320});
   // The editor alone leaves the edit open under a redo; the engine ends it, as undo does.
-  alone.cancelDrag();
+  reference('cancel the drag', editor => { editor.cancelDrag(); });
   assert.deepEqual(both('redo'), [true, true]);
   assert.equal(owned._drag, null, 'the edit ended');
   agree('redo');
-  while (alone.canUndo) { both('undo'); agree('undo'); }
+  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
 });
 
 // Figure-handle, Handle Edit Mode and segment-value gestures run in the session; the editor shows them as its own.
@@ -447,31 +460,32 @@ const HANDLE_CALLS = ['beginFigureHandleDrag', 'transformFigureHandle', 'commitF
   'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginSegmentValueEdit', 'setSegmentValues', 'pasteSegmentValues'];
 const ranHere = owner => HANDLE_CALLS.filter(name => owner.editor?.[name]);
 /** The gesture as the interface reads it, and what the segment-values dialog and the stage show beside it. */
-const sameHandles = (owned, alone, label) => {
-  sameText(handleState(owned, json), handleState(alone, json), `${label}: the gesture as the interface reads it`);
-  if (alone.figure?.segments[alone.selectedJoint]) for (const options of [{}, {relative: true}]) {
-    sameText(json(owned.segmentValues(options)), json(alone.segmentValues(options)), `${label}: segment values ${JSON.stringify(options)}`);
-  }
-  sameText(frameText(owned.evaluatedFrame), frameText(alone.evaluatedFrame), `${label}: frame on show`);
+const valueOptions = [{}, {relative: true}];
+const sameHandles = (owned, reference, label) => {
+  const wanted = reference(`handles ${label}`, editor => ({gesture: handleState(editor, json), frame: frameText(editor.evaluatedFrame),
+    values: editor.figure?.segments[editor.selectedJoint] ? valueOptions.map(options => json(editor.segmentValues(options))) : null}));
+  sameText(handleState(owned, json), wanted.gesture, `${label}: the gesture as the interface reads it`);
+  if (wanted.values) valueOptions.forEach((options, at) => sameText(json(owned.segmentValues(options)), wanted.values[at], `${label}: segment values ${JSON.stringify(options)}`));
+  sameText(frameText(owned.evaluatedFrame), wanted.frame, `${label}: frame on show`);
 };
 /** The pointer for an angle about the pivot of a figure-handle gesture, at a multiple of the distance it began at. */
 const around = (editor, angle, factor = 1) => {
   const {origin, distance} = editor._drag.figureHandle.transform;
   return [origin.x + distance * factor * Math.cos(angle), origin.y + distance * factor * Math.sin(angle)];
 };
-test('a figure-handle gesture runs in the session and shows its turns to the stage', {skip: !engineBuilt}, async () => {
-  const {owned, alone, owner, both, agree} = await pair('figure-transform-sheet');
+refs.test('a figure-handle gesture runs in the session and shows its turns to the stage', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree, reference} = await pair(take, 'figure-transform-sheet');
   both('seek', 3);
   both('select', 1, 2);
   both('beginFigureHandleDrag');
   assert.ok(owned._drag?.engine && owned._drag.figureHandle, 'the session\'s gesture is on the editor');
   assert.equal(owned._drag.figureHandle.transform.rotation, 0);
-  sameHandles(owned, alone, 'begin');
+  sameHandles(owned, reference, 'begin');
   const drag = owned._drag, start = owned._drag.figureHandle.transform.lastAngle;
   // Round the pivot past half a turn and back: the turns are summed, not wrapped.
   for (const [turn, factor] of [[0.9, 1.2], [1.9, 0.8], [2.9, 1], [3.9, 1.3], [4.9, 0.7], [5.9, 1], [3.1, 1], [0.2, 1.5]]) {
     both('transformFigureHandle', ...around(owned, start + turn, factor));
-    sameHandles(owned, alone, `turn ${turn}`);
+    sameHandles(owned, reference, `turn ${turn}`);
   }
   assert.ok(Math.abs(owned._drag.figureHandle.transform.rotation) < 1, 'the turns came back to where they began');
   assert.equal(owned._drag, drag, 'the gesture is one object while it lasts');
@@ -479,10 +493,10 @@ test('a figure-handle gesture runs in the session and shows its turns to the sta
   both('transformFigureHandle', ...around(owned, start + 1, 1.4), {ctrlKey: true});
   both('transformFigureHandle', ...around(owned, start + 2, 0.6), {shiftKey: true});
   both('transformFigureHandle', ...around(owned, start + 2.5, 1.1), {rotate: false});
-  sameHandles(owned, alone, 'locks');
+  sameHandles(owned, reference, 'locks');
   both('commitFigureHandleDrag');
   assert.equal(owned._drag, null);
-  sameHandles(owned, alone, 'commit');
+  sameHandles(owned, reference, 'commit');
   agree('commit');
   both('beginFigureHandleDrag');
   both('transformFigureHandle', ...around(owned, start + 0.7, 1.2));
@@ -493,22 +507,22 @@ test('a figure-handle gesture runs in the session and shows its turns to the sta
   both('transformFigureHandle', 410, 260);
   assert.equal(owned._drag, null);
   agree('a single move');
-  while (alone.canUndo) { both('undo'); agree('undo'); }
+  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
   assert.deepEqual(ranHere(owner), [], 'no figure-handle call ran in the editor');
 });
 
-test('a Handle Edit Mode gesture runs in the session and shows the handle on the editor', {skip: !engineBuilt}, async () => {
-  const {owned, alone, owner, both, agree} = await pair('handle-edit-sheet');
+refs.test('a Handle Edit Mode gesture runs in the session and shows the handle on the editor', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree, reference} = await pair(take, 'handle-edit-sheet');
   both('seek', 3);
   both('select', 1, 1);
   both('beginHandleEditDrag', {bend: true});
   assert.ok(owned._drag?.engine && owned._drag.handleEdit, 'the session\'s gesture is on the editor');
   assert.equal(owned._drag.handleEdit.bend, true);
-  sameHandles(owned, alone, 'begin');
+  sameHandles(owned, reference, 'begin');
   const drag = owned._drag, {x, y} = owned._drag.handleEdit.point;
   for (const point of [[280, 240], [285, 250, {bend: false}], [x, y], [300, 260], [x + 1e-12, y]]) {
     both('editHandlePosition', ...point);
-    sameHandles(owned, alone, `to ${point}`);
+    sameHandles(owned, reference, `to ${point}`);
   }
   assert.equal(owned._drag, drag);
   both('commitHandleEditDrag');
@@ -520,12 +534,12 @@ test('a Handle Edit Mode gesture runs in the session and shows the handle on the
   both('cancelHandleEditDrag');
   assert.equal(owned._drag, null);
   agree('cancel');
-  while (alone.canUndo) { both('undo'); agree('undo'); }
+  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
   assert.deepEqual(ranHere(owner), [], 'no handle-edit call ran in the editor');
 });
 
-test('a segment-value gesture runs in the session and keeps its options and its dialog\'s gesture', {skip: !engineBuilt}, async () => {
-  const {owned, alone, owner, both, agree} = await pair('handle-commands-sheet');
+refs.test('a segment-value gesture runs in the session and keeps its options and its dialog\'s gesture', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree, reference} = await pair(take, 'handle-commands-sheet');
   both('seek', 6);
   both('select', 2, 1);
   for (const options of [{editMode: true, relative: true}, {isolate: true}, {}]) {
@@ -534,11 +548,11 @@ test('a segment-value gesture runs in the session and keeps its options and its 
     assert.ok(drag?.engine && drag.segmentValueOptions, 'the session\'s gesture is on the editor');
     assert.deepEqual(drag.segmentValueOptions, options);
     assert.equal(Boolean(drag.handleEdit), Boolean(options.editMode));
-    sameHandles(owned, alone, `begin ${JSON.stringify(options)}`);
+    sameHandles(owned, reference, `begin ${JSON.stringify(options)}`);
     for (const [values, more] of [[{angle: 30, length: 60}, options], [{bend: 15}, options], [{angle: -20}, {}]]) {
       both('setSegmentValues', values, more);
       assert.equal(owned._drag, drag, 'the dialog\'s gesture stays the same object');
-      sameHandles(owned, alone, `${JSON.stringify(values)}`);
+      sameHandles(owned, reference, `${JSON.stringify(values)}`);
     }
     both(options.isolate ? 'cancelDrag' : 'commitDrag');
     assert.equal(owned._drag, null);
@@ -548,12 +562,12 @@ test('a segment-value gesture runs in the session and keeps its options and its 
   both('pasteSegmentValues', '12,5:3:70');
   both('pasteSegmentValues', '1:2:3');
   agree('paste');
-  while (alone.canUndo) { both('undo'); agree('undo'); }
+  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
   assert.deepEqual(ranHere(owner), [], 'no segment-value call ran in the editor');
 });
 
-test('a seek or an undo ends a figure-handle or handle-edit gesture, and a changed selection cancels it, as the editor alone does', {skip: !engineBuilt}, async () => {
-  const {owned, alone, owner, both, agree} = await pair('figure-transform-sheet');
+refs.test('a seek or an undo ends a figure-handle or handle-edit gesture, and a changed selection cancels it, as the editor alone does', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree, reference} = await pair(take, 'figure-transform-sheet');
   both('seek', 3);
   both('select', 1, 2);
   both('beginFigureHandleDrag');
@@ -566,8 +580,8 @@ test('a seek or an undo ends a figure-handle or handle-edit gesture, and a chang
   both('editHandlePosition', 300, 250);
   both('select', 2, 1);
   // The editor raises that the handle changed and cancels the gesture; the session's error is the editor's.
-  const raised = editor => { try { editor.editHandlePosition(310, 255); } catch (error) { return error.messageKey; } };
-  const [fromOwned, fromAlone] = [raised(owned), raised(alone)];
+  const raised = editor => { try { editor.editHandlePosition(310, 255); } catch (error) { return error.messageKey; } return null; };
+  const [fromOwned, fromAlone] = [raised(owned), reference('the error', raised)];
   assert.equal(fromAlone, 'errors.editorHandleEdit.theSelectedHandleChangedDuringItsGesture');
   assert.equal(fromOwned, fromAlone);
   assert.equal(owned._drag, null);
@@ -578,7 +592,7 @@ test('a seek or an undo ends a figure-handle or handle-edit gesture, and a chang
   assert.deepEqual(both('undo'), [true, true]);
   assert.equal(owned._drag, null);
   agree('undo');
-  while (alone.canUndo) { both('undo'); agree('undo all'); }
+  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo all'); }
   assert.deepEqual(ranHere(owner), []);
 });
 
@@ -587,12 +601,12 @@ test('a seek or an undo ends a figure-handle or handle-edit gesture, and a chang
 /** The frame a camera drag shows, as text. */
 const previewText = editor => editor._sheetPropertyPreview ? frameText(editor._sheetPropertyPreview) : null;
 for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
-  test(`a rig edit runs in the session and shows on the editor as its own (${name})`, {skip: !engineBuilt}, async () => {
-    const {owned, alone, owner, both, agree} = await pair(name);
+  refs.test(`a rig edit runs in the session and shows on the editor as its own (${name})`, {skip: !engineBuilt}, async take => {
+    const {owned, owner, both, agree, reference} = await pair(take, name);
     both('select', 1, 1);
     both('beginRigDrag', {});
     assert.ok(owned._drag?.engine && owned.dragging, 'the session\'s gesture is on the editor');
-    assert.equal(Boolean(owned._authoredPoseEdit), Boolean(alone._authoredPoseEdit), 'a draft on a layer sheet, the keyframe itself on a native timeline');
+    assert.equal(Boolean(owned._authoredPoseEdit), reference('authored pose edit', editor => Boolean(editor._authoredPoseEdit)), 'a draft on a layer sheet, the keyframe itself on a native timeline');
     assert.equal(owned.dirty, false);
     agree('begin');
     both('editRigJoint', 340, 300);
@@ -601,7 +615,7 @@ for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
     agree('moves');
     both('commitRigDrag');
     assert.equal(owned._drag, null);
-    assert.equal(owned.undoLabel, alone.undoLabel);
+    assert.equal(owned.undoLabel, reference('undo label', editor => editor.undoLabel));
     agree('commit');
     // A rotation and a stretch, ended by the generic commit.
     both('select', 1, 0);
@@ -610,7 +624,7 @@ for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
     both('editRigJoint', 318, 250, {stretch: true, isolate: true});
     agree('rotation');
     both('commitDrag');
-    assert.equal(owned.undoLabel, alone.undoLabel);
+    assert.equal(owned.undoLabel, reference('undo label', editor => editor.undoLabel));
     agree('commit by commitDrag');
     // The bend of a joint (the editor's bend reads the rig it began), and a cancel.
     both('select', 1, 4);
@@ -625,19 +639,20 @@ for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
     both('select', 1, 2);
     both('beginRigDrag', {});
     both('editRigJoint', 370, 320);
-    const messages = [owned, alone].map(editor => { try { editor.editRigJoint('x', 0); } catch (error) { return error.messageKey; } return null; });
+    const thrown = editor => { try { editor.editRigJoint('x', 0); } catch (error) { return error.messageKey; } return null; };
+    const messages = [thrown(owned), reference('the error', thrown)];
     assert.ok(messages[0] && messages[0] === messages[1], `the same error: ${messages}`);
     assert.ok(owned._drag?.engine, 'the session still holds the edit');
     agree('error');
     both('cancelDrag');
     agree('cancel by cancelDrag');
-    while (alone.canUndo) { both('undo'); agree('undo'); }
+    while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
     assert.equal(owner.fallback, 0, 'no call ran in the editor');
   });
 }
 
-test('a camera drag runs in the session and shows its frame on the editor', {skip: !engineBuilt}, async () => {
-  const {owned, alone, owner, both, agree} = await pair('camera-commands-sheet');
+refs.test('a camera drag runs in the session and shows its frame on the editor', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree, reference} = await pair(take, 'camera-commands-sheet');
   both('beginCameraDrag');
   assert.ok(owned._drag?.engine && owned.dragging, 'the session\'s gesture is on the editor');
   assert.equal(owned._sheetPropertyPreview, null, 'nothing moved yet');
@@ -650,13 +665,13 @@ test('a camera drag runs in the session and shows its frame on the editor', {ski
   // The session tells the camera, not the frame.
   assert.equal(answers.length, 2);
   assert.equal(answers[1].preview, undefined);
-  assert.deepEqual(answers[1].cameraPreview, alone._sheetPropertyPreview.camera);
+  assert.deepEqual(answers[1].cameraPreview, reference('camera preview', editor => editor._sheetPropertyPreview.camera));
   assert.ok(owned._sheetPropertyPreview, 'the preview is the frame on show');
-  assert.equal(previewText(owned), previewText(alone));
-  assert.equal(owned.dirty, alone.dirty);
+  assert.equal(previewText(owned), reference('preview', previewText));
+  assert.equal(owned.dirty, reference('dirty', editor => editor.dirty));
   agree('moves');
   both('updateCameraDrag', {angle_rad: 0.1}, {fromStart: false});
-  assert.equal(previewText(owned), previewText(alone));
+  assert.equal(previewText(owned), reference('preview', previewText));
   agree('a nudge');
   both('commitCameraDrag');
   assert.equal(owned._drag, null);
@@ -664,54 +679,54 @@ test('a camera drag runs in the session and shows its frame on the editor', {ski
   agree('commit');
   both('beginCameraDrag', {indices: [0, 1], label: 'Pan camera'});
   both('updateCameraDrag', {x: -15});
-  assert.equal(previewText(owned), previewText(alone));
+  assert.equal(previewText(owned), reference('preview', previewText));
   both('cancelCameraDrag');
   assert.equal(owned._sheetPropertyPreview, null);
   agree('cancel');
   // A drag that begins itself, and ends with the generic commit.
   both('updateCameraDrag', {y: 7});
   assert.ok(owned._drag?.engine);
-  assert.equal(previewText(owned), previewText(alone));
+  assert.equal(previewText(owned), reference('preview', previewText));
   both('commitDrag');
   agree('commit by commitDrag');
   // A move that fails ends the drag.
   both('beginCameraDrag');
   assert.throws(() => owned.updateCameraDrag({bogus: 1}));
-  assert.throws(() => alone.updateCameraDrag({bogus: 1}));
+  assert.equal(reference('a move that fails', editor => { try { editor.updateCameraDrag({bogus: 1}); } catch { return true; } return false; }), true);
   assert.equal(owned._drag, null);
   assert.equal(owned._sheetPropertyPreview, null);
   agree('error');
-  while (alone.canUndo) { both('undo'); agree('undo'); }
+  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
   assert.equal(owner.fallback, 0, 'no call ran in the editor');
 });
 
-test('an open camera drag is ended by the calls that end any gesture', {skip: !engineBuilt}, async () => {
-  const {owned, alone, owner, both, agree} = await pair('camera-commands-sheet');
+refs.test('an open camera drag is ended by the calls that end any gesture', {skip: !engineBuilt}, async take => {
+  const {owned, owner, both, agree, reference} = await pair(take, 'camera-commands-sheet');
   for (const end of [['seek', 3], ['undo'], ['selectFrame', 1], ['setCameraValues', {x: 2}]]) {
     both('beginCameraDrag');
     both('updateCameraDrag', {x: 12});
     both(...end);
     assert.equal(owned._drag, null);
-    assert.equal(alone._drag, null);
+    assert.equal(reference('drag', editor => editor._drag), null);
     assert.equal(owned._sheetPropertyPreview, null, `after ${end[0]}`);
     agree(end[0]);
     both('seek', 0);
   }
-  while (alone.canUndo) { both('undo'); agree('undo'); }
+  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
   assert.equal(owner.fallback, 0, 'no call ran in the editor');
 });
 
-test('redo under an open camera drag or rig edit ends the gesture first, as undo does', {skip: !engineBuilt}, async () => {
-  const camera = await pair('camera-commands-sheet');
+refs.test('redo under an open camera drag or rig edit ends the gesture first, as undo does', {skip: !engineBuilt}, async take => {
+  const camera = await pair(take, 'camera-commands-sheet');
   camera.both('setCameraValues', {x: 40});
   camera.both('undo');
   camera.both('beginCameraDrag');
   camera.both('updateCameraDrag', {x: 12});
-  camera.alone.cancelDrag();
+  camera.reference('cancel the drag', editor => { editor.cancelDrag(); });
   assert.deepEqual(camera.both('redo'), [true, true]);
   assert.equal(camera.owned._drag, null, 'the gesture ended');
   camera.agree('redo');
-  const rig = await pair('rig-drag-sheet');
+  const rig = await pair(take, 'rig-drag-sheet');
   rig.both('select', 1, 1);
   rig.both('beginRigDrag', {});
   rig.both('editRigJoint', 340, 300);
@@ -719,7 +734,7 @@ test('redo under an open camera drag or rig edit ends the gesture first, as undo
   rig.both('undo');
   rig.both('beginRigDrag', {});
   rig.both('editRigJoint', 345, 310);
-  rig.alone.cancelDrag();
+  rig.reference('cancel the drag', editor => { editor.cancelDrag(); });
   assert.deepEqual(rig.both('redo'), [true, true]);
   assert.equal(rig.owned._drag, null, 'the gesture ended');
   rig.agree('redo');

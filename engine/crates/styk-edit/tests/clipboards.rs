@@ -133,18 +133,30 @@ fn what_the_interface_empties_or_garbles_is_not_pasted() {
 
 #[test]
 fn a_copied_branch_pastes_as_a_definition_of_its_own() {
-    // The interface copies a selected branch itself (it extracts the branch as a definition the document does not have) and
-    // hands the clipboard over with the definition named in `freshTypes`.
+    // A selected branch is extracted as a definition the document does not have, which names it in `freshTypes`; pasted
+    // here or handed to another session it is a definition of its own, never an instance of the one it came from.
     let mut source = session("figure-clipboard-sheet");
-    ok(&mut source, "select", "[1,-1]");
-    let (kind, mut data) = copied(&answer(&mut source, "copySelection", "[]"));
-    let type_id = data.path(&["figures"]).and_then(|figures| figures.item(0)).and_then(|figure| figure.get("figure_type_id").and_then(Value::as_f64)).unwrap();
-    data.make_obj().unwrap().set("freshTypes", Value::array(vec![Value::Num(type_id)]));
+    ok(&mut source, "selectBranch", "[1,3]");
+    let (kind, data) = copied(&answer(&mut source, "copySelection", "[]"));
+    let fresh = data.get("freshTypes").and_then(Value::numbers).expect("the copy names the definition it made");
+    assert_eq!(fresh.len(), 1);
+    let made = data.get("figures").and_then(Value::elements).unwrap().iter().find(|figure| figure.get("figure_type_id").and_then(Value::as_f64) == Some(fresh[0])).expect("the definition is in the copy");
+    assert_eq!(made.get("segments").and_then(Value::array_len), Some(3), "the branch alone: the joint, its child and its grandchild");
+    assert!(made.get("segments").and_then(|segments| segments.item(0)).and_then(|segment| segment.get("parent_id").and_then(Value::as_f64)) == Some(0.0), "it hangs from the figure's origin");
+    let before = count(&source, "figure_types");
+    ok(&mut source, "pasteSelection", r#"[{"pasteMode":"instance"}]"#);
+    assert_eq!(count(&source, "figure_types"), before + 1, "a fresh definition is never an instance of the document's");
     let mut here = session("figure-clipboard-sheet");
     let before = count(&here, "figure_types");
     hand_over(&mut here, &kind, &data, false);
     ok(&mut here, "pasteSelection", r#"[{"pasteMode":"instance"}]"#);
-    assert_eq!(count(&here, "figure_types"), before + 1, "a fresh definition is never an instance of the document's");
+    assert_eq!(count(&here, "figure_types"), before + 1);
+    // A cut takes the branch out of the figure, and pasting puts it back in place.
+    let mut cut = session("figure-clipboard-sheet");
+    ok(&mut cut, "selectBranch", "[1,3]");
+    assert_eq!(ok(&mut cut, "cutSelection", "[]").as_f64(), Some(1.0));
+    let figure = cut.report().get("figure_types").and_then(|figures| figures.item(0)).unwrap();
+    assert_eq!(figure.get("segments").and_then(Value::array_len), Some(3), "three of its six joints went");
 }
 
 #[test]

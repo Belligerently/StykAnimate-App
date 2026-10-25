@@ -216,7 +216,7 @@ impl Editor {
             return Err(invalid("errors.editorDisconnect.disconnectIsNotAvailableInsideThisMovieclip"));
         }
         if self.report.path(&["_styk", "simpleFrameDraft"]).is_some() {
-            return Err(EditError::Unported("disconnecting a segment with a saved working frame".into()));
+            return Err(invalid("errors.editorDisconnect.updateOrDiscardTheWorkingFrameFirst"));
         }
         if self.layer_locked(id) {
             return Err(invalid("errors.editorDisconnect.unlockTheFigureBeforeDisconnectingASegment"));
@@ -227,8 +227,12 @@ impl Editor {
         }
         let part: HashSet<u64> = indices.iter().filter_map(|&i| num(&segments[i], "segment_id")).map(key).collect();
         let base = num(&segment, "parent_id").unwrap_or(f64::NAN);
-        if figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy) {
-            return Err(EditError::Unported("disconnecting a segment of an animation-origin figure".into()));
+        // The animation pivot stays with the figure that keeps it: a part that holds it (or the rotation reference) cannot leave.
+        if let Some(origin) = figure.path(&["_styk", "animationOrigin"]).filter(|origin| origin.truthy()) {
+            let held = |name: &str| num(origin, name).is_some_and(|handle| part.contains(&key(handle)));
+            if origin.get("support").is_some_and(Value::truthy) || held("handleId") || held("rotationHandleId") {
+                return Err(invalid("errors.editorDisconnect.moveTheFigureOriginOffThisPartFirst"));
+            }
         }
         let curves = |value: Option<&Value>| items(value).iter().any(|channel| channel.path(&["target", "uid"]).and_then(Value::as_f64) == Some(id as f64));
         if curves(self.report.path(&["_styk", "animation", "channels"])) || curves(self.report.path(&["_styk", "layerSheet", "legacyAnimation", "channels"])) {

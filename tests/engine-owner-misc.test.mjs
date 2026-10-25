@@ -1,6 +1,7 @@
 // Calls the engine session used to refuse or had no command for, which the editor ran (docs/engine/editing.md): each runs in the session now,
-// on an editor the engine owns and on a plain one, over a repository document that reaches the case. The documents,
-// history labels and undo and redo agree step by step, and nothing is refused or run in the editor.
+// on an editor the engine owns, over a repository document that reaches the case, and compared with what a plain editor gave
+// (the frozen references of tests/support/owner-references.mjs). The documents, history labels and undo and redo agree step
+// by step, and nothing is refused or run in the editor.
 import '../engine/tools/v8-pin.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,14 +9,16 @@ import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
+import {canonical, ownerReferences} from './support/owner-references.mjs';
 
+const refs = ownerReferences(import.meta.url);
 const folder = new URL('../engine/tests/', import.meta.url);
 const load = path => JSON.parse(readFileSync(new URL(path, folder), 'utf8'));
 const text = editor => JSON.stringify(editor.report);
 
-/** Runs `script(editor, note)` on a plain editor and on one the engine owns, over `document`; `note(label, value)` records what the
- * interface reads after a step. Returns both records and what the owner refused or ran in the editor. */
-async function bothWays(document, options, script) {
+/** Runs `script(editor, note)` on one the engine owns, over `document`, and compares it with what a plain editor gave (its references);
+ * `note(label, value)` records what the interface reads after a step. Returns both records and what the owner refused or ran in the editor. */
+async function bothWays(take, document, options, script) {
   const run = async owned => {
     const editor = new Editor({demo: false, ...options}).load(structuredClone(document));
     const owner = owned ? installEngineOwner(editor, {verify: true}) : null;
@@ -26,8 +29,8 @@ async function bothWays(document, options, script) {
       return {steps, refused: owner ? {...owner.refused} : {}, fallback: owner ? owner.fallback : 0};
     } finally { owner?.release(); }
   };
-  const plain = await run(false), owned = await run(true);
-  assert.deepEqual(owned.steps, plain.steps, 'the engine and the editor leave the same document, history and state at every step');
+  const plain = await take('plain', async () => ({steps: (await run(false)).steps})), owned = await run(true);
+  assert.deepEqual(canonical(owned.steps), plain.steps, 'the engine and the editor leave the same document, history and state at every step');
   assert.deepEqual(owned.refused, {}, 'nothing was refused');
   assert.equal(owned.fallback, 0, 'no call ran in the editor');
   return {plain, owned};
@@ -42,9 +45,9 @@ async function unwind(editor, note, count) {
 const sheet = {layerTimeline: true, propertyChannels: true};
 
 for (const name of ['playback-authored', 'playback-imported']) {
-  test(`${name}: movieclip playback on every frame of a legacy-timed clip is set, restarted and undone like the editor does`, {skip: !engineBuilt}, async () => {
+  refs.test(`${name}: movieclip playback on every frame of a legacy-timed clip is set, restarted and undone like the editor does`, {skip: !engineBuilt}, async take => {
     const document = load(`movieclip-timed-sheet-commands/${name}.document.json`);
-    const {plain} = await bothWays(document, sheet, async (editor, note) => {
+    const {plain} = await bothWays(take, document, sheet, async (editor, note) => {
       editor.select(1, -1); note('select');
       editor.seek(2.75);
       assert.ok(editor.setMovieclipPlayback({mode: 'single', offset: 2.5}, {allFrames: true})); note('playback');
@@ -60,10 +63,10 @@ for (const name of ['playback-authored', 'playback-imported']) {
 /** The tip of joint `joint` of the first figure as geometry draws it: where a drag of the bone starts. */
 const tip = (editor, joint) => editor.geometry.objects.get(editor.selectedSlot).segments[joint].end;
 
-test('posing a bone of a figure with IK in perspective is done, undone and redone like the editor does', {skip: !engineBuilt}, async () => {
+refs.test('posing a bone of a figure with IK in perspective is done, undone and redone like the editor does', {skip: !engineBuilt}, async take => {
   const document = load('edit/ik-spatial-perspective-target-sheet.document.json');
   assert.ok(document.keyframes[0].objects[0]._stykSpatial.camera.strength > 0 && document.keyframes[0].objects[0]._stykIK, 'perspective and IK');
-  const {plain} = await bothWays(document, sheet, async (editor, note) => {
+  const {plain} = await bothWays(take, document, sheet, async (editor, note) => {
     editor.seek(0);
     let count = 0;
     // The thigh steers the planted limb's knee; the foot and toe turn on their own.
@@ -90,7 +93,7 @@ test('posing a bone of a figure with IK in perspective is done, undone and redon
   assert.notEqual(plain.steps.at(-1).document, plain.steps[0].document, 'the posing changed the document');
 });
 
-test('a segment\'s own paint is read, keyed and edited as a property like the editor does', {skip: !engineBuilt}, async () => {
+refs.test('a segment\'s own paint is read, keyed and edited as a property like the editor does', {skip: !engineBuilt}, async take => {
   const document = load('edit/startup.document.json');
   const segments = document.figure_types[0].segments;
   // One plain segment, one with a second colour (a gradient) and one with a stored gradient paint.
@@ -98,7 +101,7 @@ test('a segment\'s own paint is read, keyed and edited as a property like the ed
   segments[3].paint = {type: 'radial', angle: 20, stops: [{offset: 0.8, color: [250.4, 1, 2], opacity: 0.5}, {offset: 0, color: [3, 4, 5], opacity: 1}, {offset: 1, color: [9, 8, 7], opacity: 0.25}]};
   segments[3].transparency = 51;
   const target = handleId => ({kind: 'segment', uid: 1, handleId});
-  const {plain} = await bothWays(document, sheet, async (editor, note) => {
+  const {plain} = await bothWays(take, document, sheet, async (editor, note) => {
     editor.select(1, -1);
     const read = handleId => editor.animationValue(target(handleId), 'paint', 0);
     const painted = [segments[1], segments[2], segments[3]].map(segment => read(segment.segment_id));
@@ -133,9 +136,9 @@ function editTrails(editor, note, uid, targets) {
   }
 }
 
-test('motion paths of a rigged figure are edited, undone and redone like the editor does', {skip: !engineBuilt}, async () => {
+refs.test('motion paths of a rigged figure are edited, undone and redone like the editor does', {skip: !engineBuilt}, async take => {
   const document = load('edit/rig.document.json');
-  const {plain} = await bothWays(document, sheet, async (editor, note) => {
+  const {plain} = await bothWays(take, document, sheet, async (editor, note) => {
     editor.select(1, -1);
     editor.sheetInsertKey(['layer-1'], 6); note('key');
     const before = editor.undoLabel;
@@ -151,9 +154,9 @@ test('motion paths of a rigged figure are edited, undone and redone like the edi
   assert.ok(documents.size > 3, 'the trails changed the document');
 });
 
-test('motion paths of a 3D figure in perspective with IK are edited, undone and redone like the editor does', {skip: !engineBuilt}, async () => {
+refs.test('motion paths of a 3D figure in perspective with IK are edited, undone and redone like the editor does', {skip: !engineBuilt}, async take => {
   const document = load('edit/ik-spatial-perspective-target-sheet.document.json');
-  const {plain} = await bothWays(document, sheet, async (editor, note) => {
+  const {plain} = await bothWays(take, document, sheet, async (editor, note) => {
     editor.select(1, -1);
     const before = editor.undoLabel;
     // The thigh and foot bones, the pinned foot, the figure's origin and a reshape of the foot.
@@ -173,9 +176,9 @@ test('motion paths of a 3D figure in perspective with IK are edited, undone and 
 const attempt = run => { try { return run(); } catch (error) { return `throws: ${error.message}`; } };
 const jointOf = (editor, name) => editor.figure.segments.findIndex(segment => segment.name === name);
 
-test('disconnecting a segment makes a figure of its branch in every frame, and undoes, like the editor does', {skip: !engineBuilt}, async () => {
+refs.test('disconnecting a segment makes a figure of its branch in every frame, and undoes, like the editor does', {skip: !engineBuilt}, async take => {
   const document = load('edit/startup.document.json');
-  const {plain} = await bothWays(document, sheet, async (editor, note) => {
+  const {plain} = await bothWays(take, document, sheet, async (editor, note) => {
     // Blue walks right while her left arm swings, over three held poses.
     for (const tick of [4, 8]) editor.sheetInsertKey(['layer-1'], tick);
     [0, 4, 8].forEach((tick, i) => {
@@ -198,11 +201,11 @@ test('disconnecting a segment makes a figure of its branch in every frame, and u
   assert.notEqual(plain.steps.find(step => step.label === 'disconnected').document, plain.steps.find(step => step.label === 'selected').document);
 });
 
-test('disconnecting from a linked instance, with figures joined to the part, matches the editor', {skip: !engineBuilt}, async () => {
+refs.test('disconnecting from a linked instance, with figures joined to the part, matches the editor', {skip: !engineBuilt}, async take => {
   const document = load('edit/startup.document.json');
   // Joined figures with IK controllers are the topology edits' own case.
   for (const frame of document.keyframes) for (const object of frame.objects) delete object._stykIK;
-  await bothWays(document, sheet, async (editor, note) => {
+  await bothWays(take, document, sheet, async (editor, note) => {
     // A second instance of the figure, a hand attached to the first one's arm and a body part attached to its chest.
     const typeId = editor.figure.figure_type_id;
     editor.addFigure(typeId);
@@ -222,9 +225,9 @@ test('disconnecting from a linked instance, with figures joined to the part, mat
   });
 });
 
-test('disconnecting a segment of a pinned limb keeps its displayed pose, as the editor does', {skip: !engineBuilt}, async () => {
+refs.test('disconnecting a segment of a pinned limb keeps its displayed pose, as the editor does', {skip: !engineBuilt}, async take => {
   const document = load('edit/startup.document.json');
-  const {plain} = await bothWays(document, sheet, async (editor, note) => {
+  const {plain} = await bothWays(take, document, sheet, async (editor, note) => {
     editor.select(1, jointOf(editor, 'Left forearm')); note('pinned', editor.setNodeIK({pinned: true}));
     editor.select(1); editor.updateObject({root_x: editor.object.root_x - 25}); note('moved');
     editor.select(1, jointOf(editor, 'Left forearm'));
@@ -235,9 +238,9 @@ test('disconnecting a segment of a pinned limb keeps its displayed pose, as the 
   assert.equal(plain.steps.find(step => step.label === 'pinned').value, true);
 });
 
-test('fills move with their part and a fill across the cut is refused without a change, as the editor does', {skip: !engineBuilt}, async () => {
+refs.test('fills move with their part and a fill across the cut is refused without a change, as the editor does', {skip: !engineBuilt}, async take => {
   const document = load('edit/startup.document.json');
-  await bothWays(document, sheet, async (editor, note) => {
+  await bothWays(take, document, sheet, async (editor, note) => {
     editor.addPolygon([1, 3, 4]); editor.addPolygon([0, 7, 9]);
     editor.select(1, jointOf(editor, 'Left upper arm'));
     const piece = editor.disconnectSegment();
@@ -252,9 +255,9 @@ test('fills move with their part and a fill across the cut is refused without a 
   });
 });
 
-test('what cannot be disconnected is refused with the editor\'s message', {skip: !engineBuilt}, async () => {
+refs.test('what cannot be disconnected is refused with the editor\'s message', {skip: !engineBuilt}, async take => {
   const document = load('edit/startup.document.json');
-  await bothWays(document, sheet, async (editor, note) => {
+  await bothWays(take, document, sheet, async (editor, note) => {
     editor.select(1);
     note('whole figure', [editor.canDisconnectSegment(), attempt(() => editor.disconnectSegment())]);
     editor.select(1, jointOf(editor, 'Left upper arm')); editor.disconnectSegment();
@@ -283,10 +286,10 @@ function joinedFiguresDocument({outside = false} = {}) {
   return {document: editor.serialize(), root, child, parent};
 }
 
-test('combining joined figures makes one figure that draws as they did, and undoes, like the editor does', {skip: !engineBuilt}, async () => {
+refs.test('combining joined figures makes one figure that draws as they did, and undoes, like the editor does', {skip: !engineBuilt}, async take => {
   for (const outside of [false, true]) {
-    const {document, root} = joinedFiguresDocument({outside});
-    const {plain} = await bothWays(document, sheet, async (editor, note) => {
+    const {document, root} = await take(`document ${outside}`, () => joinedFiguresDocument({outside}));
+    const {plain} = await bothWays(take, document, sheet, async (editor, note) => {
       editor.select(root); note('before');
       const combined = editor.combineJoinedFigure(root, {name: 'Merged rig'});
       note('combined', [combined.unique_id, combined.join, editor.figure.name, editor.figure.segments.length, editor.figure.polyfills.length, editor.undoLabel,
@@ -300,9 +303,9 @@ test('combining joined figures makes one figure that draws as they did, and undo
   }
 });
 
-test('what cannot be combined is refused with the editor\'s message', {skip: !engineBuilt}, async () => {
-  const {document, root, child} = joinedFiguresDocument();
-  await bothWays(document, sheet, async (editor, note) => {
+refs.test('what cannot be combined is refused with the editor\'s message', {skip: !engineBuilt}, async take => {
+  const {document, root, child} = await take('document', () => joinedFiguresDocument());
+  await bothWays(take, document, sheet, async (editor, note) => {
     note('an unknown figure', attempt(() => editor.combineJoinedFigure(child + 100)));
     editor.select(root); editor.updateObject({field28: 40});
     note('translucent', attempt(() => editor.combineJoinedFigure(root)));
