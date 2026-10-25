@@ -113,7 +113,7 @@ test('adding and pasting figures owns the active layer and undoes definitions an
   const before=e.serialize();e.addFigure();const uid=e.selectedUid;
   assert.equal(e.layerForUid(uid),'layer-2');assert.deepEqual(sample(e,5).map(o=>o.uid),[1,uid]);
   e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.equal(e.layerForUid(uid),'layer-2');
-  e.select(uid);e.copyFigure();e.selectSheetLayer('layer-1');e.pasteFigure();assert.equal(e.layerForUid(e.selectedUid),'layer-1');
+  e.select(uid);e.copySelection();e.selectSheetLayer('layer-1');e.pasteSelection();assert.equal(e.layerForUid(e.selectedUid),'layer-1');
 });
 
 test('deleting a layer removes its contents, never moves them into another layer',()=>{

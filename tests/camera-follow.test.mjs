@@ -154,7 +154,7 @@ test('work follows what is viewed and resamples only from the key before an edit
   assert.ok(resampled > 0 && resampled <= 31, `an edit at 45 resamples from the key at 30 (${resampled} frames)`);
   assert.notEqual(after.y, full.y);
   // The incremental result equals a fresh evaluation of the same document.
-  const fresh = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(editor.serialize());
+  const fresh = ownedEditorFor({demo: false, layerTimeline: true, propertyChannels: true}, editor.serialize());
   for (const tick of [10, 35, 50, 59]) {
     const a = cameraAtTime(editor.report, frameAt(editor, tick)), b = cameraAtTime(fresh.report, frameAt(fresh, tick));
     near(a.x, b.x, 1e-6, `x ${tick}`); near(a.y, b.y, 1e-6, `y ${tick}`);

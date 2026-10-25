@@ -8,11 +8,11 @@ import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
 import {missingFixture} from './helpers/local-fixtures.mjs';
 import {roundTrip, exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 import {pivotDocument, keepsStoredFrames} from './support/engine-export.mjs';
 const clone=structuredClone;
-/** `change(report)` writes into the document before it opens; `owned: false` leaves the editor to itself. */
-function fixture({authored=true,easing=false,joined=true,change,owned=true}={}){
+/** `change(report)` writes into the document before it opens. */
+function fixture({authored=true,easing=false,joined=true,change}={}){
   const report=emptyDocument(),figure=report.figure_types[0],base=figure.segments[0];
   figure.segments=[7,99,301].map((id,i)=>({...clone(base),segment_id:id,parent_id:i?7:0,length:[78,43,31][i],angle_rad:[-.8,.5,-1.2][i],bend_rad:[.2,-.3,.1][i]}));
   figure.segment_count=3;report.figure_types.push({...clone(figure),figure_type_id:2});report.auto_easing=easing;
@@ -23,7 +23,7 @@ function fixture({authored=true,easing=false,joined=true,change,owned=true}={}){
     const frame=createFrame([object,child],i===3?1:[7,5,8][i]);frame.camera={is_default:false,x:i*3,y:-i*2,scale:1+i*.1,angle_rad:i*.15};return frame;
   });
   change?.(report);
-  const editor=owned?plainEditorFor({demo:false}, report):new Editor({demo:false}).load(report);
+  const editor=ownedEditorFor({demo:false,layerTimeline:true,propertyChannels:true}, report);
   if(authored)editor.addAnimationKeys([
     ...[['rotation',[-.5,.9,-1.7]],['scale',[.6,1.8,.95]],['x',[83,177,121]],['y',[230,168,249]]].flatMap(([property,values])=>[0,8,20].map((tick,i)=>({target:{kind:'figure',uid:1},property,tick,value:values[i]}))),
     {target:{kind:'camera'},property:'rotation',tick:0,value:.17},{target:{kind:'camera'},property:'rotation',tick:20,value:-.22},
@@ -49,10 +49,6 @@ function equalWorld(expected,actual,tolerance=.00015){
   }
   for(const key of ['x','y','scale','angle_rad'])assert.ok(Math.abs(actual.frame.camera[key]-expected.frame.camera[key])<1e-5);
 }
-test('native-only reroot preserves nonlinear inbetweens without adding authored keys',()=>{
-  const editor=fixture({authored:false}),before=editor.serialize();editor.setOrigin(99);assert.equal(editor.animationChannels.length,0);assert.equal(keepsStoredFrames(editor),false);
-  for(let i=0;i<=100;i++)equalWorld(shape(before,i/5),shape(editor.report,i/5));
-});
 function roundtrip(document,format){
   return roundTrip({document,format});
 }

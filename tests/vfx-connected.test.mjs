@@ -4,9 +4,8 @@ import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {connectedVfxGeometry,connectedVfxConflict} from '../src/vfx-connected.mjs';
-import {createVfx,vfxStack,validateVfxOwner,vfxProperty} from '../src/vfx.mjs';
+import {createVfx, vfxStack, validateVfxOwner} from '../src/vfx.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
-import {newPlainEditor} from './support/plain-editor.mjs';
 function fixture(){
  const report=emptyDocument(),fig=report.figure_types[0];
  const objects=[1,2,3,4].map(id=>createObject(fig,id,120+id*20,180));
@@ -97,13 +96,6 @@ test('VFX-only paste preserves identity, interpolates values and retains authore
  editor.seek(5);assert.equal(editor.vfxEffects(target)[0].params.radius,22);
  const reopened=newOwnedEditor({demo:false}).load(editor.serialize());reopened.seek(5);assert.equal(reopened.vfxEffects(target)[0].params.radius,22);
  const duplicate=editor.duplicateVfx(target,id);assert.notEqual(duplicate,id);
-});
-test('legacy scalar channels do not override pasted values and retain their interpolation',()=>{
- const report=fixture();report.keyframes.push(structuredClone(report.keyframes[0]));const e=newPlainEditor({demo:false}).load(report),target={kind:'figure',uid:1};
- const [id]=e.addVfx(target,'glow'),property=vfxProperty('glow',id,'radius');
- e.addAnimationKeys([{target,property,tick:0,value:4,interpolation:'linear',exactTarget:true}]);
- const stack=structuredClone(e.vfxEffects(target));stack[0].params.radius=24;e.seek(10);e.pasteVfx(target,stack);
- assert.equal(e.vfxEffects(target)[0].params.radius,24);e.seek(5);assert.equal(e.vfxEffects(target)[0].params.radius,14);
 });
 test('detaching a child changes assembly membership and excessive nested scope is rejected',()=>{
  const report=fixture(),frame=report.keyframes[0];frame.objects[0]._stykVfxScope=1;frame.objects[0]._stykVfx={figure:[createVfx('glow','fx')]};

@@ -21,9 +21,7 @@ const SHARED_KEYS = new Set([
   // configuration
   'historyLimit', 'historyBytes', 'propertyChannels', 'layerTimeline', 'autoKey',
   // counters that stay monotonic across every document
-  '_revisionSerial', '_loadRequestId', '_layerRevision', '_definitionRevision', '_frameDraftRevision',
-  // services and listeners installed once
-  '_frameDraftListener', '_frameDraftEnabled',
+  '_revisionSerial', '_loadRequestId', '_layerRevision', '_definitionRevision',
   // the engine owner's view of the frame on show, which follows whichever document is open
   '_shown',
   // clipboards
@@ -38,7 +36,7 @@ const DERIVED_KEYS = ['_geometry', '_evaluated', '_incremental', '_seekGeometry'
   '_authoredCommitPreview', '_sheetPropertyPreview', '_layerDescriptors'];
 const sessions = new WeakSet();
 
-const busy = editor => Boolean(editor._drag || editor._animationEdit || editor._authoredPoseEdit || editor._movieclipBatch);
+const busy = editor => Boolean(editor._drag || editor._animationEdit || editor._authoredPoseEdit);
 
 export const editorSessionMethods = {
   /**
@@ -73,10 +71,7 @@ export const editorSessionMethods = {
     this._loadRequestId = (this._loadRequestId ?? 0) + 1;
     for (const key of Object.keys(this)) if (!SHARED_KEYS.has(key)) delete this[key];
     Object.assign(this, session);
-    // The Simple timeline's working frame is stored in the report; its listener restores it below.
-    if (!this._frameDraftEnabled) this._frameDraft = null;
     this._layerRevision = (this._layerRevision ?? 0) + 1;
-    this._frameDraftRevision = (this._frameDraftRevision ?? 0) + 1;
     this._invalidate({timing: true});
     this._emit('document', {structural: true, timing: true, resumed: true});
     return this;

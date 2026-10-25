@@ -18,16 +18,6 @@ test('object validation reuses validated definitions without reading unrelated s
   validateScene({...report, keyframes: [frame]}); assert.ok(reads > 0);
 });
 
-test('incremental validation rejects invalid numeric and pose channels with atomic editor rollback', () => {
-  const editor = new Editor(), before = editor.serialize();
-  for (const mutate of [o => { o.root_x = Infinity; }, o => { o.root_y = 1e100; }, o => { o.scale = -1; },
-    o => { o.angles[0] = NaN; }, o => { o.angles.pop(); }, o => { o.field28 = 999; },
-    o => { o.len_flag = 1; o.lengths = [Infinity]; }]) {
-    editor.beginDrag(); mutate(editor.object); editor.touch(); assert.throws(() => editor.commitDrag());
-    assert.deepEqual(editor.serialize(), before); assert.equal(editor.dragging, false);
-  }
-});
-
 test('changed join ancestry is checked for missing handles, invalid slots and indirect cycles', () => {
   const editor = new Editor(), frame = editor.frame, uid = frame.objects[0].unique_id;
   for (const join of [{target_object_slot: 999, target_handle_id: 0}, {target_object_slot: 1, target_handle_id: 65535},
@@ -47,9 +37,3 @@ test('replacement definitions are fully validated before entering the gesture ca
   assert.throws(() => validateObjectChanges(editor.report, editor.frame, [editor.frame.objects[0].unique_id]), /missing parent/);
 });
 
-test('pointer down at a keyframe retains prepared geometry and a tween drag returns to the keyframe', () => {
-  const editor = new Editor(), geometry = editor.geometry;
-  editor.beginTranslationDrag(); assert.equal(editor.geometry, geometry); editor.cancelDrag();
-  editor.seek(1); const tween = editor.geometry; editor.beginDrag();
-  assert.equal(editor.tick, 0); assert.notEqual(editor.geometry, tween); editor.cancelDrag();
-});

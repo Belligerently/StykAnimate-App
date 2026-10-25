@@ -586,8 +586,7 @@ it on the editor, for every document.
 
 - **Calls.** The editor's calls that change the document, its history or a gesture run in the session. The list of them
   (`SESSION_COMMANDS`, `src/engine/engine-commands.mjs`) is held to the session's own dispatch by
-  `tests/engine-owner-command-list.test.mjs`, and the owner installs each on the editor itself, so the editor's body of a
-  call is never run (a body deleted later changes nothing here). The calls that only move the view (selecting, seeking),
+  `tests/engine-owner-command-list.test.mjs`, and the owner installs each on the editor itself: the editor holds no body of them (they were deleted with the cutover). The calls that only move the view (selecting, seeking),
   the queries and the lifecycle stay the editor's. Its answer (`patch: true`) carries the document patch
   (`styk_edit::patch`, copy-on-write identity diff), the state, the gesture and its draft,
   the retained frame and the change events. The owner applies the patch to `editor.report`
@@ -806,9 +805,7 @@ made from the app:
 | the definition of a figure and the fields of a frame through the inspector's token | `outline_*`, `thickness`, `segment_*` opacity and the project's `duration` on a document without property channels | native timelines only: with property channels these are keys of the figure's channels |
 
 The editor's other calls the session has no command for (`copyFigure`, `poseIKTarget`, `adoptNativePoseTrack`, the
-animation key commands of a native timeline and the like) are not called from the interface; their bodies are the editor's until
-they are deleted, and the owner does not run them for a document it owns (a call of one on an owned editor changes the read view
-alone, which `verify` mode reports).
+animation key commands of a native timeline and the like) were not called from the interface and are deleted with their bodies.
 
 ### A pose at one value in several keys, and a discarded figure (2026-10-25)
 

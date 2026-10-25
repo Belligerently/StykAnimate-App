@@ -63,11 +63,11 @@ test('copying frames fills the clipboard the filmstrip, the timeline and the sha
 
 refs.test('copying figures fills the clipboard the paste actions read, and each paste moves the next one along', opts, async take => {
   const {alone, engine} = await bothWays(take, [recordedDocument('sheet-layers')], editor => {
-    assert.equal(editor.hasFigureClipboard, false);
+    assert.equal(Boolean(editor._figureClipboard || editor._selectionClipboard), false);
     editor.select(1, -1);
     assert.equal(editor.copySelection(), 1);
     const clipboard = editor._selectionClipboard;
-    assert.equal(editor.hasFigureClipboard, true);
+    assert.equal(Boolean(editor._figureClipboard || editor._selectionClipboard), true);
     assert.deepEqual([clipboard.objects.length, clipboard.offset, clipboard.pastes, clipboard.layers instanceof Map, clipboard.documentToken === editor._documentToken], [1, 24, 0, true, true]);
     editor.pasteSelection();
     assert.equal(editor._selectionClipboard.pastes, 1);
@@ -215,7 +215,7 @@ test('what the interface empties is not pasted, and what it restores replaces wh
     editor.select(1, -1); editor.copySelection();
     const before = documentText(editor), entries = editor._undo.length;
     editor._selectionClipboard = null;
-    assert.equal(editor.hasFigureClipboard, false);
+    assert.equal(Boolean(editor._figureClipboard || editor._selectionClipboard), false);
     assert.equal(editor.pasteSelection().length, 0, 'nothing to paste');
     assert.equal(documentText(editor), before);
     assert.equal(editor._undo.length, entries);

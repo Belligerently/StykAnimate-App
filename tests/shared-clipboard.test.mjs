@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {Editor, emptyDocument} from '../src/editor.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
-import {SharedClipboard, clipboardSnapshot, restoreClipboard, pasteSheetClipboard} from '../src/shared-clipboard.mjs';
+import {newOwnedEditor, ownedEditorFor} from './support/owned-editor.mjs';
+import {SharedClipboard, pasteSheetClipboard} from '../src/shared-clipboard.mjs';
 import {librarySnapshot} from '../src/library-files.mjs';
 import {libraryDragData, readLibraryDrag, LIBRARY_DRAG_TYPE} from '../src/library-drag.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
 const {SharedClipboard: NativeClipboard, FORMAT} = createRequire(import.meta.url)('../desktop/shared-clipboard.cjs');
 
 function systemClipboard() {
@@ -179,7 +179,6 @@ test('library drag rejects folders and paths outside the library', () => {
   assert.equal(readLibraryDrag({getData:type => type === LIBRARY_DRAG_TYPE ? libraryDragData(item) : ''}).path, item.path);
   for (const path of ['../secret','C:/secret','/secret','foo/../secret']) assert.throws(() => readLibraryDrag({getData:() => libraryDragData({...item,path})}), /Invalid/);
 });
-
 
 for(const [sourceVersion,targetVersion] of [[2,5],[3,5],[4,5],[5,4],[5,5],[4,4]])test(`figure clipboard preserves rendered colors across instances (${sourceVersion} to ${targetVersion})`,async t=>{
   const {createFrame,createObject}=await import('../src/demo.mjs');

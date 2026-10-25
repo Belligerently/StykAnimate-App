@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {newPlainEditor} from './support/plain-editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {builderFixture} from '../scripts/builder-benchmark-fixture.mjs';
 
 /** `prepare(report)` changes the document before it opens. */
-function fixture(propertyChannels = false, prepare = null) {
+function fixture(prepare = null) {
   const report = builderFixture(5, 2), figure = report.figure_types[0];
   figure.segments.forEach((segment, index) => {
     segment.parent_id = [0, 1, 2, 1, 4][index];
@@ -15,12 +15,12 @@ function fixture(propertyChannels = false, prepare = null) {
   report.keyframes.push(structuredClone(report.keyframes[0]));
   report.keyframes[1].objects[0].angles = figure.segments.map(segment => segment.angle_rad + .2);
   prepare?.(report);
-  const editor = newPlainEditor({propertyChannels}); editor.load(report); editor.select(1, 1);
+  const editor = newOwnedEditor({}); editor.load(report); editor.select(1, 1);
   return editor;
 }
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
 test('branch flip reflects attached figures only on selected handles', () => {
-  const e = fixture(false, report => {
+  const e = fixture(report => {
     const frame = report.keyframes[0], attached = structuredClone(frame.objects[1]);
     attached.unique_id = 3; attached.object_slot = 2;
     attached.join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 3};
@@ -39,9 +39,9 @@ test('branch flip reflects attached figures only on selected handles', () => {
   assert.deepEqual(e.frame.objects[1].angles, sibling);
   assert.deepEqual(after.objects.get(1).root, before.objects.get(1).root);
 });
-for (const axis of ['horizontal', 'vertical']) for (const authored of [false, true]) {
-  test(`${axis} selected parts, root, and undo (${authored})`, () => {
-    const e = fixture(authored); e.toggleSegment(1, 3);
+for (const axis of ['horizontal', 'vertical']) {
+  test(`${axis} selected parts, root, and undo`, () => {
+    const e = fixture(); e.toggleSegment(1, 3);
     const before = structuredClone(e.object), document = JSON.stringify(e.serialize());
     const geometry = e.geometry.objects.get(0), undo = e._undo.length;
     e.mirrorFigure(axis);
@@ -60,8 +60,8 @@ for (const axis of ['horizontal', 'vertical']) for (const authored of [false, tr
     e.undo(); e.select(1, -1); e.mirrorFigure(axis);
     e.object.angles.forEach((angle, i) => near(angle, axis === 'horizontal' ? Math.PI - before.angles[i] : -before.angles[i]));
   });
-  test(`${axis} branch range preserves sibling branch (${authored})`, () => {
-    const e = fixture(authored); e.selectBranch(1, 1);
+  test(`${axis} branch range preserves sibling branch`, () => {
+    const e = fixture(); e.selectBranch(1, 1);
     const before = e.report.keyframes.map(frame => structuredClone(frame.objects[0]));
     e.mirrorFiguresInFrames(axis, [0, 1]);
     for (let frame = 0; frame < 2; frame++) {

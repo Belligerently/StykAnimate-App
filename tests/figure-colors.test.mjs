@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
-import {timeline} from '../src/pivot/read-view.mjs';
+import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {figurePalette,displayedSegmentPaint} from '../src/figure-colors.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
@@ -172,14 +171,5 @@ test('recolored legacy instances retain their palette when copied across Pivot v
     const expected=palette(source),destination=fixture({version:to,raw:to<5?196:0});
     destination._selectionClipboard=source._selectionClipboard;destination.pasteSelection();assert.deepEqual(palette(destination),expected,`${from} to ${to}`);
   }
-});
-
-test('materializing legacy layer ordering preserves held poses at every output tick',()=>{
-  const e=fixture({plain:true,version:4,raw:196,layerTimeline:false,propertyChannels:false}),document=e.serialize(),layers=document._styk.layers;
-  // A second layer in front, holding figure 2.
-  layers.byId['layer-2']={name:'Other',visible:true,locked:false};layers.order=['layer-2','layer-1'];layers.nextId=3;layers.assignments['2']='layer-2';e.load(document);
-  const output=pivotDocument(e.serialize());assert.equal(output.version,5);
-  const sample=(report,tick)=>{const rows=timeline(report);let index=0;while(index+1<rows.length&&rows[index+1].start<=tick)index++;return evaluatedFrame(report,index,rows[index].count?(tick-rows[index].start)/rows[index].count:0,tick);};
-  for(let tick=0;tick<e.totalTicks;tick++)assert.deepEqual(sample(output,tick).objects.map(o=>[o.unique_id,o.root_x,o.root_y]),sample(e.report,tick).objects.map(o=>[o.unique_id,o.root_x,o.root_y]));
 });
 

@@ -25,7 +25,7 @@ Unpinning bakes the displayed solution, including stretched lengths, without a j
 - `src/ik-joined.mjs` compiles only affected connected IK components into temporary skeletons, aliases joined origins to their parent vertices, and scatters solved angles/lengths back to the original figures. Native topology, figure identities, draw order and assets remain separate. Joins retain stable figure UID and handle identities. Undo and topology snapshots include the affected connected component.
 - The editor materializes displayed angles only for FK pose edits that require them. Gestures use the existing object snapshots, cancellation and one-step undo. Root drags with pins use live scoped geometry updates; ordinary rigs retain the existing GPU translation preview. Unchanged objects retain their geometry/resources.
 - Authored joined-child snapshots include a changed parent orientation reference even if the child's world angle stays constant. Recomposition after style edits, undo or reload therefore reconstructs the same local articulation as the live preview.
-- `src/ik-topology.mjs` repairs controller IDs, chain lengths and outgoing children within existing rig-edit history. Splitting a chain preserves its base; deleted nodes lose their controllers. Copy/paste, duplication and imported figure placement offset copied targets with the copied figure.
+- The engine session repairs controller IDs, chain lengths and outgoing children within the rig-edit history (styk-edit). Splitting a chain preserves its base; deleted nodes lose their controllers. Copy/paste, duplication and imported figure placement offset copied targets with the copied figure.
 
 ## Persistence and boundaries
 
@@ -39,7 +39,6 @@ Chains cross native figure joins and stop at the connected assembly's root. Join
 - `node --test tests/ik-joined.test.mjs`: equivalence with single-figure rigs, constant target-space angles and polygon vertex distances during repeated drags, complete planted feet through root and ancestor rotation, cross-join chains, stretch, unpinning, foot articulation/bend edits, copy remapping, shared-chain rejection, topology undo and persistence.
 - `node --test tests/ik-evaluation.test.mjs`: appearance-only solution reuse, exact pose-dependency invalidation, document isolation and deterministic seeks. The joined suite also checks thickness/color/opacity edits with pins enabled and disabled, both with and without property channels, through rebuilds, undo/redo and reload.
 - `node tests/ik.browser.mjs`: actual inspector controls and pointer gestures, live dual-foot root dragging, rotation, pin toggling, recovering an unreachable target, and real worker/backend STYK/STKZ/PIV export/reopen. Screenshot and report: `artifacts/ik/`.
-- `node scripts/benchmark-ik.mjs`: warmed CPU solver and scoped root-drag evaluation in a 1,000-figure scene, plus verification that unrelated geometry is retained. This excludes GPU completion and display latency.
 
 The browser CLI named by the verification skill was unavailable, so verification uses the repository's installed Playwright/Chrome harness. The npm shim on this machine is broken; equivalent Node script entry points were run directly.
 

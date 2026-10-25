@@ -33,7 +33,7 @@ for(const kind of ['figure','clip'])for(const tick of [0,5,19])test(`${kind} ins
   assert.equal(e.report._styk.layerSheet.tracks[second],untouched[1]);
   assert.equal(e.report._styk.layerSheet.tracks[third].keys.at(-1).empty,false);
   validateLayerSheet(e.report);const after=e.serialize();e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);
-  const reopened=new Editor({demo:false,layerTimeline:true}).load(after);reopened.seek(tick);
+  const reopened=open({demo:false,layerTimeline:true},after);reopened.seek(tick);
   assert.equal(reopened.layerForUid(uid),third);assert.ok(reopened.evaluatedFrame.objects.some(o=>o.unique_id===uid));
 });
 test('duplicate ownership hints win over the active layer and survive history',()=>{

@@ -14,7 +14,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parse} from '../vendor/text/opentype.mjs';
-import {engineEditor, plainEditorWithDrawings} from './support/owned-editor.mjs';
+import {engineEditor, ownedEditorWithDrawings} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject, defaultFigure} from '../src/demo.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
@@ -24,12 +24,10 @@ import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback} from '../src/movieclip-presence.mjs';
 import {inspectorDescriptor, inspectorView} from '../src/inspector-view.mjs';
 import {ikControlsView, ikSection} from '../src/ik-view.mjs';
-import {movieclipInspector} from '../src/movieclip-ui.mjs';
 import {INSPECTOR_BUDGET, MAX_TITLE_ACTIONS, ROW_KINDS, inspectorBudgetProblems, renderInspector} from '../src/inspector-kit.mjs';
 import {QUICK_ACTIONS, QUICK_CONTEXTS, quickDefaults} from '../src/ui/quick-actions.mjs';
-import {legacyIkControlsView, legacyInspectorView, legacyMovieclipInspector} from './fixtures/inspector-legacy.mjs';
+import {legacyIkControlsView, legacyInspectorView} from './fixtures/inspector-legacy.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
 import {
   assertNoKeyState, assertNoTitles, assertNumberParity, assertOptions, assertParity, assertSwitchParity, find, nameOf, options, tag, tags,
 } from './helpers/inspector-markup.mjs';
@@ -149,11 +147,13 @@ const HEADER = 7;   // the header's menu button and a full quick actions row (fi
 const assertBudget = (descriptor, label, options = {}) => assert.deepEqual(inspectorBudgetProblems(descriptor, {headerControls: HEADER, ...options}), [], `${label} fits the budget`);
 const sections = (descriptor, place) => descriptor.sections.filter(section => section && !section.hidden && (section.place ?? 'core') === place).map(section => section.id);
 
+
 const fonts = await Promise.all(['Regular'].map(async style => {
   const bytes = readFileSync(new URL(`../vendor/text/NotoSans-${style}.ttf`, import.meta.url));
   return parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
 }));
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=';
+
 
 test('scene, camera, keyframe and layer contexts keep every control', () => {
   const editor = engineEditor();
@@ -171,7 +171,7 @@ test('scene, camera, keyframe and layer contexts keep every control', () => {
 
   const sheet = engineEditor({layerTimeline: true, propertyChannels: true});
   assertNothingLost({editor: sheet, context: 'frame'}, 'an exposure');
-  const {editor: inked} = plainEditorWithDrawings({layerTimeline: true, propertyChannels: true});
+  const {editor: inked} = ownedEditorWithDrawings({layerTimeline: true, propertyChannels: true});
   assertNothingLost({editor: inked, context: 'layer'}, 'a drawing layer with parallax');
 });
 
@@ -195,42 +195,6 @@ test('figure contexts keep every control: figure, joints, ranges, builder, rig t
   assertNothingLost({editor, context: 'figure', tool: 'rig'}, 'a branch');
   editor.select(1, joints + 3);
   assertNothingLost({editor}, 'a joint index past the figure');
-});
-
-test('several figures, joined figures and movieclips keep every control', () => {
-  const editor = plainEditorFor();
-  editor.selectMany([1, 2]);
-  const bounds = {minX: 10, minY: 20, maxX: 110.5, maxY: 220};
-  assertNothingLost({editor, selectionCount: 2, bounds}, 'two figures');
-  assertNothingLost({editor, selectionCount: 2, bounds, rangeIndices: [1, 2], applyRange: true}, 'two figures over a range');
-  const layer = editor.createLayer('Layer 2', {activate: false});
-  editor.assignFiguresToLayer([2], layer.id);
-  editor.selectMany([1, 2]);
-  assertNothingLost({editor, selectionCount: 2, bounds}, 'two figures on two layers');
-
-  const joined = plainEditorFor();
-  const [child, parent] = joined.frame.objects;
-  child.join = {target_object_slot: parent.object_slot, target_unique_id: parent.unique_id, target_handle_id: 3};
-  joined.select(child.unique_id);
-  assertNothingLost({editor: joined}, 'a joined figure', {connected: true});
-  joined.select(parent.unique_id);
-  assertNothingLost({editor: joined}, 'a figure with a joined child', {connected: true});
-  joined.selectMany([child.unique_id, parent.unique_id]);
-  assertNothingLost({editor: joined, selectionCount: 2, bounds}, 'a joined pair', {connected: true});
-
-  const clip = movieclipFigure(2, 'Walking clip', {...emptyDocument(), keyframes: Array.from({length: 8}, (_, i) => createFrame([createObject(defaultFigure(), 1, 200 + i * 9, 250)]))},
-    {duration: 8, pivot: {x: 200, y: 250}});
-  const report = {...emptyDocument(), fps: 24, figure_types: [defaultFigure(), clip]};
-  report.keyframes = [createFrame([createObject(clip, 7, 300, 300, {_stykMovieclip: presencePlayback()})], 11), createFrame([createObject(clip, 7, 300, 300, {_stykMovieclip: presencePlayback()})])];
-  const movie = plainEditorFor({demo: false, layerTimeline: true}, report);
-  movie.select(7);
-  assertNothingLost({editor: movie}, 'a movieclip instance');
-  // movieclipInspector() is the clip's own sections: everything today's had, less what moved to the header.
-  const own = movieclipInspector(movie), legacy = legacyMovieclipInspector(movie, (label, key) => `<input data-property="${key}">`);
-  for (const where of controls(legacy).filter(where => !where['data-property'] && !['movieclip-edit', 'movieclip-unique'].includes(where['data-action']) && !('data-movieclip-name' in where)))
-    assert.ok(find(own, where), `movieclipInspector() keeps ${JSON.stringify(where)}`);
-  movie.setMovieclipPlayback({mode: 'single', offset: 3}, {allFrames: true});
-  assertNothingLost({editor: movie}, 'a movieclip on a single frame');
 });
 
 test('Build’s rig keeps every control while its behaviours are on, each block showing its settings only while on', () => {
@@ -337,7 +301,7 @@ test('fills, long palettes, 3D rigs and the drawing tools keep every control', (
   assertNothingLost({editor: rig}, 'a 3D rig limb with IK');
   assertNothingLost({editor: rig, builder: true}, 'a 3D rig in the builder');
 
-  const {editor: drawing} = plainEditorWithDrawings({layerTimeline: true, propertyChannels: true});
+  const {editor: drawing} = ownedEditorWithDrawings({layerTimeline: true, propertyChannels: true});
   const settings = {color: '#223344', color2: '#ffffff', blend: 'multiply', alphaLock: true, preset: 'ink', hardness: 0.5, roundness: 1, angle: 0, spacingRatio: 0.08,
     taperIn: 0, taperOut: 0, stabilizerMode: 'average', tip: 'round', angleMode: 'fixed', grain: 'noise', texture: 0, grainScale: 1, pressureSize: true,
     pressureOpacity: false, pressureFlow: false, sizeCurve: 1, opacityCurve: 1, sizeJitter: 0, opacityJitter: 0, angleJitter: 0, scatter: 0, mirrorY: false,
@@ -386,10 +350,10 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
   assertBudget(descriptor, 'figure');
 
   // Joined: Arrange's action unjoins, and the Connection section opens by itself.
-  const joined = engineEditor();
-  const [child, parent] = joined.frame.objects;
-  child.join = {target_object_slot: parent.object_slot, target_unique_id: parent.unique_id, target_handle_id: 3};
+  const joined = engineEditor({layerTimeline: true, propertyChannels: true});
+  const [parent, child] = joined.selectionFrame.objects;
   joined.select(child.unique_id);
+  joined.joinTo(parent.unique_id, 3);
   const connected = inspectorView({editor: joined});
   assert.equal(tag(connected, {'data-action': 'join-figure'}).attrs['data-hotkey-title'], 'Unjoin figure');
   assert.ok('data-open' in tag(connected, {'data-section': 'connection'}).attrs);
@@ -404,34 +368,8 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
   assert.ok('checked' in tag(inspectorView({editor, rangeIndices: [2, 3, 4], applyRange: true}), {id: 'apply-range-movement'}).attrs);
 });
 
-test('text and image figures: Text and Transform lead; Arrange folds for text', () => {
-  const text = plainEditorFor({demo: false});
-  text.importFigure(compileTextFigure({text: 'Hello', fontSize: 42, color: [70, 40, 170]}, fonts[0]));
-  let options = {editor: text}, descriptor = inspectorDescriptor(options), now = inspectorView(options), today = legacyInspectorView(options);
-  assert.equal(descriptor.kind, 'text');
-  assert.equal(descriptor.target.glyph, 'text');
-  assert.deepEqual(descriptor.quick, {context: 'text'});
-  assert.deepEqual(sections(descriptor, 'core'), ['text', 'transform', 'appearance']);
-  assert.deepEqual(sections(descriptor, 'titled'), ['arrange', 'colours']);
-  for (const key of ['root_x', 'root_y', 'scale', 'rotation']) assertNumberParity(today, now, key);
-  tag(now, {'data-action': 'edit-text'});
-  assertBudget(descriptor, 'text');
-
-  const image = plainEditorFor({demo: false});
-  image.importFigure(createImageFigure({dataUrl: PNG, width: 1, height: 1, name: 'Placed sprite'}));
-  options = {editor: image}; descriptor = inspectorDescriptor(options); now = inspectorView(options); today = legacyInspectorView(options);
-  assert.equal(descriptor.kind, 'image');
-  assert.equal(descriptor.target.glyph, 'image');
-  assert.equal(descriptor.target.name, 'Placed sprite');
-  for (const key of ['root_x', 'root_y', 'scale', 'rotation', 'figure_opacity']) assertNumberParity(today, now, key);
-  assertParity(today, now, {id: 'figure-color'}, ['type', 'value', 'aria-label']);
-  // A figure without text leaves the Text section's placeholder, so the sections after it keep their places.
-  assert.ok(now.includes('<section class="ui-section" data-section="text" hidden></section>'));
-  assertBudget(descriptor, 'image');
-});
-
 test('several figures: Selection (Rotate 15°, Center), Align, Appearance and Arrange; values that differ read Mixed', () => {
-  const editor = plainEditorFor();
+  const editor = engineEditor({layerTimeline: true, propertyChannels: true});
   editor.selectMany([1, 2]);
   const bounds = {minX: 10, minY: 20, maxX: 110.5, maxY: 220}, view = {editor, selectionCount: 2, bounds};
   const today = legacyInspectorView(view), now = inspectorView(view), descriptor = inspectorDescriptor(view);

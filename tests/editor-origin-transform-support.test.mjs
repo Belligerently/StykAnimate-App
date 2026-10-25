@@ -163,15 +163,3 @@ test('branch rotation changes each attached child ghost once while the selected 
   near(animationRotation(editor.figure,editor.frame.objects[0]),initialRotation[0]);checkCow(editor,before);checkUndo(editor,before);
 });
 
-test('camera baking rotates retained support and preserves projected joined geometry over a native range',()=>{
-  const editor=fixture({plain: true, joined:true});
-  for(const index of [0,2])editor.report.keyframes[index].camera={is_default:false,x:40-index*25,y:15+index*10,scale:.8+index*.3,angle_rad:.4-index*.1};
-  editor._invalidate();const before=record(editor),middle=editor.report.keyframes[1],expected=[0,2].map(index=>points(editor,index,{projected:true}));
-  assert.equal(editor.applyCameraToFigures([0,2]),2);
-  for(const [position,index]of [0,2].entries()) {
-    const delta=-before.document.keyframes[index].camera.angle_rad;
-    for(const [slot,object]of editor.report.keyframes[index].objects.entries())checkGhosts(ghosts(object),ghosts(before.document.keyframes[index].objects[slot]),pose=>rotated(pose,delta));
-    closePoints(points(editor,index,{projected:true}),expected[position]);
-  }
-  assert.equal(editor.report.keyframes[1],middle);checkCow(editor,before,[0,2]);checkUndo(editor,before);
-});

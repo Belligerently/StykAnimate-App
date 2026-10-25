@@ -6,7 +6,6 @@ import {buildGeometry,evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
 import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
 import {sameSpatial,spatialPoint,remapSpatial} from '../src/rig-spatial.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
-import {Editor} from '../src/editor.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {createSpatialGizmo,ringPoint,startRotationGizmo,rotateGizmo} from '../src/spatial-gizmo.mjs';
@@ -140,19 +139,6 @@ test('driver edits invalidate their spatial subtree and match fresh geometry aft
     for(const bone of [f.master,f.a,f.b,f.tip,f.cheek])vectorNear(current.segments[bone.id-1].spatialFrame.q,fresh.segments[bone.id-1].spatialFrame.q);
   }
   e.undo();near(e.geometry.objects.get(0).segments[f.tip.id-1].spatialFrame.motionValue,.63);
-});
-
-// session gap: the engine's geometry carries no spatial mesh (the engine draws it itself)
-test('driven mesh updates are fresh-equivalent and a referenced master cannot be deleted',()=>{
-  const f=fixture(),x=f.q.add(0,30,0,'Surface X'),y=f.q.add(0,30,Math.PI/2,'Surface Y');f.object.angles.push(0,Math.PI/2);
-  f.figure._styk={spatialMesh:{positions:[-15,64,0,-5,64,0,-10,70,6],bones:Array.from({length:3},()=>[f.tip.id,0,0,0]).flat(),weights:Array.from({length:3},()=>[1,0,0,0]).flat(),indices:[0,1,2],colors:[[230,180,130]],materials:[0],basis:[0,x,y]}};
-  const e=new Editor({demo:false});e.load(f.doc);e.select(1,f.master.id-1);const before=e.serialize(),rest=e.geometry.objects.get(0).spatialMesh;
-  assert.throws(()=>e.deleteSegment({branch:false}),/missing joint/);assert.deepEqual(e.serialize(),before);
-  for(const value of [.5,1.2,.2]){
-    e.setSpatialMotion(value);const current=e.geometry.objects.get(0).spatialMesh,doc=e.serialize(),fresh=buildGeometry(doc,doc.keyframes[0]).objects.get(0).spatialMesh;
-    assert.deepEqual(current.positions,fresh.positions);assert.deepEqual(current.depth,fresh.depth);assert.notDeepEqual(current.positions,rest.positions);
-  }
-  e.undo();const doc=e.serialize(),fresh=buildGeometry(doc,doc.keyframes[0]).objects.get(0).spatialMesh;assert.deepEqual(e.geometry.objects.get(0).spatialMesh.positions,fresh.positions);
 });
 
 test('a mechanical rotation gizmo exposes its actual axis and edits only the fine residual',()=>{

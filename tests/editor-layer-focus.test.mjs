@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ownedEditorSync, ownedEditorFor} from './support/owned-editor.mjs';
+import {Editor} from '../src/editor.mjs';
+import {ownedEditorSync, ownedEditorFor, ownedEditorWithDrawings} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {figureFocusLocked, layerFocusLocked} from '../src/editor-layer-focus.mjs';
 import {createLayerState, layerLocked} from '../src/layers.mjs';

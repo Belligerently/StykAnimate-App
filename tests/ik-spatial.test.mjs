@@ -9,13 +9,13 @@ import {spatialPoint,quatRotate,quatMultiply} from '../src/rig-spatial.mjs';
 import {spatialWorldQuaternion,spatialWorldVector,inverseQuaternion} from '../src/ik-spatial.mjs';
 import {validateIK,interpolateIK} from '../src/ik.mjs';
 import {spatialControlsView} from '../src/spatial-controls.mjs';
-/** `setup(editor, ids)` edits the document in place on an editor alone: the engine opens the document it leaves. */
+/** `setup(editor, ids)` edits the document through an editor the engine owns: the editor the test uses opens the document it leaves. */
 function fixture(setup){
  const q=construction();q.add(0,0,0,'Figure rotation');
  const bone=(parent,origin,tip,name)=>{const turn=q.add(0,0,0,name+' turn'),pitch=q.add(0,0,0,name+' tilt'),v=tip.map((n,i)=>n-origin[i]);return q.add(parent,Math.hypot(...v),Math.atan2(v[1],v[0]),name,{control:true,rig:{spatial:{parent,origin,tip,turn,pitch}}});};
  const body=bone(0,[0,0,0],[0,0,0],'Body'),upper=bone(body,[0,0,0],[0,90,15],'Thigh'),lower=bone(upper,[0,90,15],[0,170,0],'Shin'),foot=bone(lower,[0,170,0],[0,185,35],'Foot'),toe=bone(foot,[0,185,35],[0,185,50],'Toe');
  const f={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},document={...emptyDocument(),figure_types:[f],keyframes:[createFrame([createObject(f,1,200,100)])]},ids={body,upper,lower,foot,toe};
- if(setup){const plain=new Editor({demo:false}).load(document);setup(plain,ids);return{e:ownedEditorFor({demo:false, layerTimeline:true},plain.serialize()),...ids};}
+ if(setup){const plain=ownedEditorFor({demo:false, layerTimeline:true},document);setup(plain,ids);return{e:ownedEditorFor({demo:false, layerTimeline:true},plain.serialize()),...ids};}
  return{e:ownedEditorFor({demo:false, layerTimeline:true},document),...ids};
 }
 const near=(a,b,t=.003)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
@@ -105,18 +105,6 @@ test('target depth and full knee orbits preserve planted orientation or the free
  }
 });
 
-test('direct joint dragging preserves depth and returns without accumulated twist',()=>{
- for(const mirror of [false,true])for(const scale of [.65,1.4]){
-  const{e,body,upper,foot}=fixture(plain=>{plain.select(1,-1);if(mirror)plain.mirrorFigure();plain.object.scale=scale;plain.touch();});e.select(1,-1);
-  e.select(1,body-1);e.setSpatialPose({turn:.6,pitch:.3});e.select(1,upper-1);e.setSpatialPose({turn:.4,pitch:.2});
-  const g=e.geometry.objects.get(0).segments[upper-1],center={...g.start},point={...g.end},before=state(e,upper),boot=state(e,foot),saved=e.serialize();
-  const radius=Math.hypot(point.x-center.x,point.y-center.y),angle=Math.atan2(point.y-center.y,point.x-center.x);
-  e.beginDrag('Pose knee');
-  for(let i=1;i<=60;i++){const a=angle+i*Math.PI/30;e.poseJoint(center.x+radius*Math.cos(a),center.y+radius*Math.sin(a));near(state(e,upper).p[2],before.p[2],1e-4);}
-  sameOrientation(state(e,upper).q,before.q);sameOrientation(state(e,foot).q,boot.q);e.cancelDrag();assert.deepEqual(e.serialize(),saved);
- }
-});
-
 test('dragging a planted knee steers the existing pole and retains the foot',()=>{
  const{e,upper,lower,foot}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});e.poseJoint(215,245);
  const before=e.serialize(),ankle=state(e,lower),boot=state(e,foot),knee=state(e,upper);e.select(1,upper-1);
@@ -129,7 +117,7 @@ test('dragging a planted knee steers the existing pole and retains the foot',()=
 
 test('whole-figure orientation rigidly carries planted ankles, poles and boots with undo and cancellation',()=>{
  for(const mirror of [false,true])for(const scale of [1.4,.8]){
-  const{e,body,upper,lower,foot,toe}=fixture(plain=>{plain.object.scale=scale;plain.select(1,-1);if(mirror)plain.mirrorFigure();});
+  const{e,body,upper,lower,foot,toe}=fixture(plain=>{plain.select(1,-1);plain.updateObject({scale});if(mirror)plain.mirrorFigure();});
   e.select(1,-1);
   e.select(1,foot-1);e.setSpatialPose({turn:.3,pitch:.2});
   e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});

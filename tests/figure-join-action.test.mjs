@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {figureJoinAction, joinTargetUids} from '../src/figure-join-action.mjs';
+import {joinTargetUids} from '../src/figure-join-action.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-import {plainScope} from './support/plain-editor.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
 
-const open = plainScope();
+const open = ownedScope();
 
 function fixture({prepare = null} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
@@ -12,17 +12,6 @@ function fixture({prepare = null} = {}) {
   prepare?.(report);
   const editor = open({demo: false}); editor.load(report); editor.select(707, 2); return editor;
 }
-test('node/branch selections resolve the figure, while genuine multi-selection is disabled', () => {
-  const editor = fixture();
-  assert.deepEqual(figureJoinAction(editor), {uid: 707, kind: 'join'});
-  editor.joinTo(101, 3);
-  assert.deepEqual(figureJoinAction(editor), {uid: 707, kind: 'unjoin'});
-  editor.select(909, -1, {add: true}); assert.equal(figureJoinAction(editor), null);
-  editor.selectBranch(101, 2);
-  assert.equal(editor.selectedUids.size, 2);
-  assert.deepEqual(figureJoinAction(editor), {uid: 101, kind: 'join'});
-  editor.select(null); assert.equal(figureJoinAction(editor), null);
-});
 test('joining excludes self and descendants by slots with sparse UIDs and bounded cycle traversal', () => {
   const objects = [101, 707, 909, 4].map(unique_id => ({unique_id}));
   objects[0].join = {target_object_slot: 2}; objects[1].join = {target_object_slot: 0};

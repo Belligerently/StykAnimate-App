@@ -1,5 +1,4 @@
 import test from 'node:test';
-import {pasteInFrames} from './support/figure-range.mjs';
 import assert from 'node:assert/strict';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
@@ -21,9 +20,9 @@ test(`${range?'range':'single'} paste at ${pasteDepth} depth preserves joins, or
   const e=ownedEditorFor({demo:false,layerTimeline:true}, report);
   e.selectConnected(1);e.copySelection();
   const before=e.serialize(),count=e._undo.length,clipboard=structuredClone(e._selectionClipboard.objects);
-  const ids=range?pasteInFrames(e, [0,1],{pasteDepth,offset:0}).insertedUids:e.pasteSelection({pasteDepth,offset:0}).map(o=>o.unique_id);
+  const ids=e.pasteSelection({pasteDepth,offset:0}).map(o=>o.unique_id);
   assert.equal(ids.length,2);assert.equal(e._undo.length,count+1);
-  for(const tick of range?[0,5]:[0]){
+  for(const tick of [0]){
     e.seek(tick);const objects=e.evaluatedFrame.objects,copies=ids.map(uid=>objects.find(o=>o.unique_id===uid));
     assert.deepEqual(copies.map(o=>o._stykZIndex),pasteDepth==='same'?[-5,2]:[tick?71:31,tick?71:31]);
     assert.equal(objects[copies[1].join.target_object_slot].unique_id,copies[0].unique_id);

@@ -4,10 +4,8 @@ import {isSharedEditorKey} from '../src/editor-sessions.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
-import {plainScope} from './support/plain-editor.mjs';
 
 const open = ownedScope();
-const openPlain = plainScope();
 
 const application = () => open({demo: false, propertyChannels: true, layerTimeline: true}).newDocument();
 function scene(count = 3, objects = 2) {
@@ -104,11 +102,11 @@ test('resuming publishes one document replacement that every listener rebuilds f
   const first = editor.detachDocument();
   editor.newDocument();
   const second = editor.detachDocument();
-  const seen = events(editor), definition = editor.definitionRevision, layers = editor.layerRevision, draft = editor.frameDraftRevision;
+  const seen = events(editor), definition = editor.definitionRevision, layers = editor.layerRevision;
   editor.resumeDocument(first);
   assert.deepEqual(seen.map(detail => detail.kind), ['document']);
   assert.equal(seen[0].resumed, true); assert.equal(seen[0].structural, true); assert.equal(seen[0].timing, true);
-  assert.ok(editor.definitionRevision > definition); assert.ok(editor.layerRevision > layers); assert.ok(editor.frameDraftRevision > draft);
+  assert.ok(editor.definitionRevision > definition); assert.ok(editor.layerRevision > layers);
   assert.equal(editor.geometry.objects.size > 0, true);
   editor.detachDocument(); editor.resumeDocument(second);
   assert.equal(seen.filter(detail => detail.kind === 'document').length, 2);
@@ -141,7 +139,6 @@ test('clipboards, configuration and installed services belong to the editor, not
   editor.newDocument();
   assert.equal(editor._selectionClipboard ?? editor._figureClipboard, copied);
   assert.equal(editor.autoKey, true); assert.equal(editor.layerTimeline, true); assert.equal(editor.propertyChannels, true);
-  assert.equal(editor.hasFigureClipboard, true);
   assert.notEqual(editor._documentToken, source);
   const count = editor.selectionFrame.objects.length;
   editor.pasteSelection();

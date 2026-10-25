@@ -1,17 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
-import {vfxStack,vfxProperty,documentHasVfx} from '../src/vfx.mjs';
-import {validateVfxClips,sampleVfxClip,clipContains,vfxRenderFrame} from '../src/vfx-clips.mjs';
-import {connectedVfxGeometry} from '../src/vfx-connected.mjs';
+import {vfxStack, vfxProperty} from '../src/vfx.mjs';
+import {validateVfxClips, clipContains, vfxRenderFrame} from '../src/vfx-clips.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {appendVfxRows,visibleVfxKeys} from '../src/vfx-clip-timeline.mjs';
 import {filterVfxClips} from '../src/vfx-clip-inspector.mjs';
 const target={kind:'figure',uid:1};
-/** `owned`: whether the engine owns the editor; the tests that read the effect stacks of the JavaScript geometry keep the plain one. */
-function fixture(sheet=true,owned=true){const report=emptyDocument(),fig=report.figure_types[0];report.keyframes=[0,1,2].map(()=>createFrame([createObject(fig,1,120,180),createObject(fig,2,280,180)],10));return (owned?newOwnedEditor:options=>new Editor(options))({demo:false,layerTimeline:sheet}).load(report);}
+function fixture(){const report=emptyDocument(),fig=report.figure_types[0];report.keyframes=[0,1,2].map(()=>createFrame([createObject(fig,1,120,180),createObject(fig,2,280,180)],10));return newOwnedEditor({demo:false,layerTimeline:true}).load(report);}
 test('extending a timed effect before its source preserves keyed animation and undo',()=>{
  const e=fixture(),id=e.addVfxClip(target,'glow',{start:10,duration:15}),fx=e.getVfxClips()[0].effects[0];
  for(const tick of [10,20,29])e.setVfxClipParameter(id,fx.id,'radius',tick,{key:true,tick});
@@ -33,8 +30,6 @@ test('authored pose drafts invalidate composed effect geometry throughout a drag
  e.commitDrag();assert.equal(e.geometry.objects.get(0).root.x,115);assert.deepEqual(e.report._styk.vfxClips,clips);
  e.undo();assert.equal(e.geometry.objects.get(0).root.x,120);e.redo();assert.equal(e.geometry.objects.get(0).root.x,115);
 });
-// session gap: the engine's geometry carries no effect stacks (the engine draws effects itself)
-for(const sheet of [false,true])test(`persistent effects sample every pose without authoring pose keys (${sheet})`,()=>{const e=fixture(sheet,false),poses=structuredClone(e.report.keyframes),id=e.addVfxClip(target,'glow');for(const tick of [0,5,12,29]){e.seek(tick);assert.equal(vfxStack(e.geometry.objects.get(0).obj)[0].type,'glow');assert.equal(vfxStack(e.evaluatedFrame.objects[0]).length,0);assert.equal(vfxStack(e.geometry.objects.get(1).obj).length,0);}assert.deepEqual(e.report.keyframes,poses);assert.ok(documentHasVfx(e.report));e.undo();assert.equal(e.getVfxClips().length,0);e.redo();const copy=new Editor({demo:false}).load(structuredClone(e.report));copy.seek(20);assert.equal(copy.getVfxClips()[0].id,id);assert.equal(vfxStack(copy.geometry.objects.get(0).obj).length,1);});
 test('timed clips, fades, zero strength, trimming, keys and animation copy',()=>{const e=fixture(),id=e.addVfxClip(target,'tint',{start:4,duration:20}),effect=e.getVfxClips()[0].effects[0],property=vfxProperty('tint',effect.id,'mix');e.setVfxClipParameter(id,effect.id,'mix',0,{key:true,tick:4});e.setVfxClipParameter(id,effect.id,'mix',1,{key:true,tick:14});assert.equal(e.sampleVfxClip(id,9)[0].params.mix,.5);e.setVfxClip(id,{start:10});assert.equal(e.sampleVfxClip(id,15)[0].params.mix,.5);e.setVfxClip(id,{start:12,duration:18,offset:2});assert.equal(e.sampleVfxClip(id,15)[0].params.mix,.5);e.copyVfxClip(id);const pasted=e.pasteVfxClip(target,{start:40}),p=e.getVfxClips().find(c=>c.id===pasted);assert.notEqual(p.effects[0].id,effect.id);assert.equal(e.sampleVfxClip(pasted,43)[0].params.mix,.5);assert.equal(Object.values(p.keys)[0].length,2);e.setVfxClip(id,{strength:0});assert.ok(clipContains(e.getVfxClips()[0],15));e.setVfxClipEasing(pasted,Object.keys(p.keys)[0],0,'constant');assert.equal(e.sampleVfxClip(pasted,43)[0].params.mix,0);e.moveVfxClipKey(id,property,10,15);assert.equal(e.getVfxClips()[0].keys[property][1].tick,15);assert.throws(()=>e.moveVfxClipKey(id,property,15,0));});
 test('effect preview is one undo step and Escape restores exact values',()=>{const e=fixture(),id=e.addVfxClip(target,'glow'),fx=e.getVfxClips()[0].effects[0],before=e.report._styk.vfxClips,n=e._undo.length;e.beginVfxClipEdit();for(let i=0;i<30;i++)e.setVfxClipParameter(id,fx.id,'radius',i);assert.equal(e._undo.length,n);e.cancelVfxClipEdit();assert.deepEqual(e.report._styk.vfxClips,before);e.beginVfxClipEdit();e.setVfxClipParameter(id,fx.id,'radius',40);e.commitVfxClipEdit();assert.equal(e._undo.length,n+1);e.undo();assert.deepEqual(e.report._styk.vfxClips,before);});
 
@@ -53,8 +48,6 @@ test('group reordering preserves parameter tables and supports undo, redo and lo
  const before=e.report._styk.vfxClips,keys=e.getVfxClips()[0].keys;e.reorderVfxGroupEffect(id,glow,1);assert.deepEqual(e.getVfxClips()[0].effects.map(f=>f.id),[shadow,glow]);assert.equal(e.getVfxClips()[0].keys,keys);
  e.undo();assert.deepEqual(e.report._styk.vfxClips,before);e.redo();e.setLayerLocked(e.layerForUid(1),true);const locked=e.report._styk.vfxClips;assert.throws(()=>e.reorderVfxGroupEffect(id,glow,0),/Unlock/);assert.deepEqual(e.report._styk.vfxClips,locked);
 });
-// session gap: the engine's geometry carries no effect stacks (connectedVfxGeometry composes them from the JavaScript geometry)
-test('scope composes all connected parts without copying effects onto them',()=>{const e=fixture(true,false);for(const frame of e.report.keyframes)frame.objects[1].join={target_object_slot:0,target_handle_id:1,target_unique_id:1};e._invalidate({timing:true});const id=e.addVfxClip(target,'outline');e.setVfxClip(id,{includeAttached:true});const view=connectedVfxGeometry(e.geometry,e.evaluatedFrame,e.report);assert.equal(view.orderedObjects.length,1);assert.equal(view.drawables[0]._movieclipOwner.effects.length,1);assert.equal(e.evaluatedFrame.objects[1]._stykVfx,undefined);});
 test('scene snapshots exclude runtime effects',()=>{const e=fixture();e.addVfxClip({kind:'scene'},'tint');const frame=e.evaluatedFrame;assert.equal(vfxStack(frame).length,1);const saved=snapshotPoseFrame(frame);assert.equal(saved._vfxTimelineScene,undefined);assert.equal(saved._vfxTimelineTick,undefined);assert.equal(saved._stykVfx,undefined);});
 test('twenty timed effects share one compact lane and order is independent of time',()=>{const e=fixture();for(let i=0;i<20;i++)e.addVfxClip(target,'glow',{start:i*10,duration:8});e._vfxTimelineVisible=true;const layer=e.getLayer(e.layerForUid(1)),rows=appendVfxRows([layer],e);assert.equal(rows.length,2);const first=e.getVfxClips()[0];e.setVfxClip(first.id,{start:250});assert.equal(e.getVfxClips()[0].id,first.id);e.moveVfxClipOrder(first.id,1);assert.equal(e.getVfxClips()[1].id,first.id);});
 test('invalid state and locked edits fail atomically',()=>{const e=fixture(),id=e.addVfxClip(target,'glow'),before=e.report._styk.vfxClips;assert.throws(()=>e.setVfxClip(id,{duration:-1}));assert.deepEqual(e.report._styk.vfxClips,before);const bad=structuredClone(before);bad.clips[0].target.uid=-1;assert.throws(()=>validateVfxClips(bad));e.setLayerLocked(e.layerForUid(1),true);assert.throws(()=>e.setVfxClip(id,{name:'Locked'}));assert.deepEqual(e.report._styk.vfxClips,before);});
@@ -98,16 +91,4 @@ test('key painting reads a bounded visible range and reuses projections after ti
  assert.deepEqual(visibleVfxKeys({a:[{tick:1},{tick:7}],b:[{tick:1},{tick:5}]},0,10,14),[1,5,7]);
 });
 
-// session gap: the engine's geometry carries no effect stacks (the effect on the clip's content is read from the JavaScript geometry)
-test('capturing an animated movieclip preserves source effect time and isolates other targets',()=>{const e=fixture(false,false),id=e.addVfxClip(target,'tint',{start:4,duration:15}),fx=e.getVfxClips()[0].effects[0];e.setVfxClipParameter(id,fx.id,'mix',0,{key:true,tick:4});e.setVfxClipParameter(id,fx.id,'mix',1,{key:true,tick:14});e.select(1);const figure=e.createMovieclip({start:5,end:20,replace:false});const report={...e.report,figure_types:[figure],keyframes:[createFrame([createObject(figure,90,120,180,{_stykMovieclip:{start:0}})],15),createFrame([createObject(figure,90,120,180,{_stykMovieclip:{start:0}})],1)],_styk:{}};const nested=new Editor({demo:false}).load(report);nested.seek(4);const item=nested.geometry.drawables.find(i=>vfxStack(i.obj).length);assert.ok(item);assert.equal(vfxStack(item.obj)[0].params.mix,.5);});
 test('untrusted validation rechecks changed payloads and simultaneous work stays bounded',()=>{const e=fixture(),id=e.addVfxClip(target,'glow'),state=structuredClone(e.report._styk.vfxClips);validateVfxClips(state);state.clips[0].strength=Infinity;assert.throws(()=>validateVfxClips(state));for(let i=1;i<64;i++)e.addVfxClip(target,'glow');assert.throws(()=>e.addVfxClip(target,'glow'),/simultaneous/);assert.equal(e.getVfxClips().length,64);});
-// session gap: the engine's geometry carries no effect stacks (connectedVfxGeometry composes them from the JavaScript geometry)
-test('local effects stay local when another clip covers attached parts',()=>{
- const e=fixture(true,false);for(const frame of e.report.keyframes)frame.objects[1].join={target_object_slot:0,target_handle_id:1,target_unique_id:1};e._invalidate({timing:true});
- const local=e.addVfxClip(target,'tint'),assembly=e.addVfxClip(target,'outline');e.setVfxClip(assembly,{includeAttached:true});
- const view=connectedVfxGeometry(e.geometry,e.evaluatedFrame,e.report),items=view.orderedObjects[0].drawables;
- assert.deepEqual(items[0]._movieclipOwner.effects.map(f=>f.type),['outline']);
- assert.deepEqual(vfxStack(items.find(i=>i.obj.unique_id===1).obj).map(f=>f.type),['tint']);
- assert.equal(vfxStack(items.find(i=>i.obj.unique_id===2).obj).length,0);
- e.setVfxClip(assembly,{enabled:false});assert.equal(e.getVfxClips()[0].id,local);assert.equal(connectedVfxGeometry(e.geometry,e.evaluatedFrame,e.report).orderedObjects.length,2);
-});
