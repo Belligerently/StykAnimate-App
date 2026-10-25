@@ -260,7 +260,7 @@ src/motion-path.mjs	ui	-	stays	trails and the pose at a trail point are sampled 
 src/movieclip-drawings-view.mjs	ui	-	stays	
 src/movieclip-drawings.mjs	engine	styk-eval::movieclips	partial	Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS
 src/movieclip-geometry.mjs	engine	styk-eval::movieclips	partial	Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS
-src/movieclip-materialize.mjs	engine	styk-eval::movieclips	partial	Rust: shared recorded materializer/source clocks and native/sheet Bake capture; portable effect remapping shared with topology/clipboard; unrecorded combinations and runtime app adoption pending
+src/movieclip-materialize.mjs	engine	styk-eval::movieclips	partial	Rust: shared recorded materializer/source clocks and native/sheet Bake capture; portable effect remapping shared with topology/clipboard; figures with IK limbs (as solved), rigs, origins and 3D poses expand like the editor's; meshes and drawing rotation of a movieclip still JS
 src/movieclip-membership.mjs	engine	styk-eval::movieclips	partial	Rust: recorded native document/presence clocks, restart and source membership across frames with retained VFX clocks; remaining unrecorded combinations and app adoption pending
 src/movieclip-mesh-materialize.mjs	engine	styk-eval::movieclips	js	
 src/movieclip-mesh.mjs	engine	styk-eval::spatial	partial	Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS

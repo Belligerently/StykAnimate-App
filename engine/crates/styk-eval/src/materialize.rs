@@ -143,7 +143,8 @@ impl<'a> Materializer<'a> {
     }
     fn expand(&mut self, document: &Value, prepared: &Prepared, frame: &Value, transform: Transform, path: &str, output: &mut Vec<Value>) -> Result<(), Error> {
         let typed = Loader::new().edit_frame(frame, None, &prepared.doc).map_err(|e| Error::Invalid(e.to_string()))?;
-        let scene = geometry::build(&prepared.doc, &typed);
+        // Shapes are built for the inverse kinematics each figure solved (`solvedAngles`, `solvedLengths`).
+        let scene = geometry::build_shapes(&prepared.doc, &typed, None);
         let objects = items(frame.get("objects"));
         let order = frame.get("object_draw_order").and_then(Value::numbers).unwrap_or_else(|| (0..objects.len()).map(|i| i as f64).collect());
         let definitions = items(document.get("figure_types"));
@@ -214,9 +215,6 @@ impl<'a> Materializer<'a> {
                 )?;
                 continue;
             }
-            if pose.ik.is_some() || typed_figure.plan.rig.is_some() || typed_figure.mesh.is_some() || pose.spatial.is_some() || typed_figure.origin.is_some() {
-                return unsupported("rig, IK, origin or spatial figure materialization");
-            }
             anchors.insert(slot, output.len());
             let root = transform.point(g.root);
             let mut next = object.as_obj().cloned().unwrap_or_default();
@@ -227,7 +225,10 @@ impl<'a> Materializer<'a> {
             next.set("root_y", Value::Num(root[1]));
             next.set("join", object.get("join").filter(|v| v.truthy()).cloned().unwrap_or(Value::Null));
             next.set("scale", Value::Num(pose.scale * transform.scale));
-            next.set("angles", Value::array(pose.angles.iter().map(|a| Value::Num(a * transform.flip + transform.angle)).collect()));
+            // A figure with enabled IK controllers is expanded as they solved it; a rig, an origin or a 3D pose is copied as it is.
+            let solved = g.solution.as_ref();
+            let angles = solved.map_or(&pose.angles[..], |solution| &solution.angles[..]);
+            next.set("angles", Value::array(angles.iter().map(|a| Value::Num(a * transform.flip + transform.angle)).collect()));
             next.set("field28", Value::Num((255.0 * (1.0 - transform.opacity * (1.0 - num(object, "field28").unwrap_or(0.0) / 255.0)) + 0.5).floor()));
             if transform.flip < 0.0 {
                 next.set("image_text_flags", Value::Num(if object.get("image_text_flags").is_some_and(Value::truthy) { 0.0 } else { 1.0 }));
@@ -235,6 +236,10 @@ impl<'a> Materializer<'a> {
                 next.set("bends", Value::array(typed_figure.segments.iter().enumerate().map(|(i, s)| Value::Num(-pose.bends.as_ref().and_then(|b| b.get(i)).copied().unwrap_or(s.bend))).collect()));
             }
             crate::vfx::remap_owner(&mut next, type_id, None, pose.figure as f64);
+            if let Some(lengths) = solved.and_then(|solution| solution.lengths.as_ref()) {
+                next.set("len_flag", Value::Num(1.0));
+                next.set("lengths", Value::array(lengths.iter().map(|&length| Value::Num(length)).collect()));
+            }
             for key in ["runtime_segments", "_stykIK", "_stykAnimationOrigin", "_stykMovieclip", "_movieclipSample", "_stykMovieclipPart"] {
                 next.remove(key);
             }

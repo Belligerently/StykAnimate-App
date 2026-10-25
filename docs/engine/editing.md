@@ -727,7 +727,7 @@ sends, 214 cannot be reached from the app, and these can (each runs in the edito
 | a motion-path edit of rigged or 3D figures | beginMotionPathEdit (check_figures), also per falloff write | large |
 | duplicating figures with effect clips | duplicateFiguresInFrames, duplicateInFrames | small |
 | adding a movieclip | addFigureInFrames | small |
-| materialize_error forwards styk_eval::materialize Unported | breakApartMovieclip (also the worker-only bakeMovieclip) | large |
+| a movieclip with meshes, a drawing rotation or a 3D pose (`styk_eval::materialize`: spatial movieclip materialization) | breakApartMovieclip (also the worker-only bakeMovieclip) | large |
 | capturing drawing layers into a movieclip | createMovieclip | medium |
 | break apart with legacy sheet timing | breakApartMovieclip | small |
 | movieclip playback across every frame of a clip on the document's clock | setMovieclipPlayback with {allFrames:true} (restartMovieclip / removeMovieclipRestart go through it) | small |

@@ -186,3 +186,13 @@ test('keys of a figure whose rig appears in a later pose run in the session besi
   await agree(fixture('origin-future-rig-joined-sheet'), [['select', 1, -1], ['addAnimationKey', target(2), 'x', 8, 410.75], ['addAnimationKeys', [{target: target(2), property: 'x', tick: 8, value: 405}]], ['moveSelectionInFrames', 4.25, -2.125, [1]]]);
   await agree(fixture('origin-changing-rig-sheet'), [['select', 1, -1], ['addAnimationKey', target(3), 'rotation', 8, 0.47], ['rotateFiguresInFrames', 0.27, [1], {uids: [3], ticks: [8]}]]);
 });
+
+test('a movieclip holding figures with IK limbs, rigs and origins breaks apart in the session', {skip: !engineBuilt}, async () => {
+  const selectClip = editor => {
+    const clip = editor.evaluatedFrame.objects.find(object => editor.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.movieclip);
+    editor.select(clip.unique_id, -1);
+  };
+  const breakApart = [['seek', 2], ['selectMany', [1, 2]], ['createMovieclip', {start: 0, end: 6, replace: true, name: 'Clip'}], ['seek', 3], selectClip, ['breakApartMovieclip']];
+  await agree(fixture('origin-pose-support-pinned-sheet'), breakApart, {digits: 9});
+  await agree(fixture('origin-rig-pose-support-sheet'), breakApart, {digits: 9});
+});
