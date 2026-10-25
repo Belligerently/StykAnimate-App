@@ -727,7 +727,6 @@ sends, 214 cannot be reached from the app, and these can (each runs in the edito
 | a motion-path edit of rigged or 3D figures | beginMotionPathEdit (check_figures), also per falloff write | large |
 | duplicating figures with effect clips | duplicateFiguresInFrames, duplicateInFrames | small |
 | adding a movieclip | addFigureInFrames | small |
-| forwards styk_eval::records::Error::Unported from evaluated frames | anything that evaluates a frame; the paint case through animation_value / beginAnimationEdit / property keying | medium |
 | materialize_error forwards styk_eval::materialize Unported | breakApartMovieclip (also the worker-only bakeMovieclip) | large |
 | capturing drawing layers into a movieclip | createMovieclip | medium |
 | break apart with legacy sheet timing | breakApartMovieclip | small |

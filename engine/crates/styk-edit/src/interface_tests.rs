@@ -246,6 +246,24 @@ fn the_values_the_interface_shows_are_read_from_the_frame_on_show() {
 }
 
 #[test]
+fn the_paint_of_a_segment_without_a_style_override_is_the_segment_own() {
+    let (mut session, _) = tape("channels-pose-sheet");
+    call(&mut session, "seek", "[11]");
+    let figure = session.editor.report().get("figure_types").unwrap().elements().unwrap().iter().find(|f| f.get("figure_type_id").and_then(Value::as_f64) == Some(4.0)).unwrap();
+    let segment = figure.get("segments").unwrap().item(0).unwrap();
+    let handle = segment.get("segment_id").and_then(Value::as_f64).unwrap();
+    let opacity = 1.0 - segment.get("transparency").and_then(Value::as_f64).unwrap_or(0.0) / 255.0;
+    let painted = read(&mut session, "animationValue", &format!(r#"[{{"kind":"segment","uid":4,"handleId":{handle}}},"paint"]"#));
+    let paint = painted.get("v").unwrap_or_else(|| panic!("{}", json(&painted)));
+    assert_eq!(paint.get("angle").and_then(Value::as_f64), Some(0.0));
+    let stop = paint.get("stops").unwrap().item(0).unwrap();
+    assert_eq!(stop.get("offset").and_then(Value::as_f64), Some(0.0));
+    assert_eq!(stop.get("color"), segment.get("color_rgb"));
+    assert_eq!(stop.get("opacity").and_then(Value::as_f64), Some(opacity));
+    assert_eq!(paint.get("type").and_then(Value::as_str), Some(if segment.get("secondary").is_some_and(Value::truthy) { "linear" } else { "solid" }));
+}
+
+#[test]
 fn the_settings_of_a_controller_are_the_defaults_over_what_the_node_has() {
     let (mut session, _) = tape("channels-pose-sheet");
     call(&mut session, "seek", "[11]");

@@ -158,7 +158,7 @@ pub(crate) fn channel_id(target: &Value, property: &str) -> Result<String, EditE
 }
 
 /// `validateAnimationValue(target, property, value)` of a normalized target; `None` is
-/// `undefined`. Fill styles and effect colours given as paints are not validated here.
+/// `undefined`. A fill style is the paint it normalizes to.
 pub(crate) fn validate_value(target: &Value, property: &str, value: Option<&Value>) -> Result<Value, EditError> {
     channel_id(target, property)?;
     let kind = target.get("kind").and_then(Value::as_str).unwrap_or("");
@@ -166,7 +166,8 @@ pub(crate) fn validate_value(target: &Value, property: &str, value: Option<&Valu
         return validate_vfx_value(property, value);
     }
     if property == "paint" {
-        return Err(EditError::Unported("a fill style value".into()));
+        // `normalizePaint(value)`: the paint the key stores.
+        return crate::recolor::normalize_paint(value.unwrap_or(&Value::Null)).map(|paint| paint.value());
     }
     if property == "pose" {
         return match value {

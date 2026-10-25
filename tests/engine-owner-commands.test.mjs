@@ -185,3 +185,20 @@ test('the drawing commands refuse what the editor refused', {skip: !engineBuilt}
   assert.equal(editor.autoKeyDrawing(layer.id), false, 'auto key is off');
   assert.equal(owner.fallback, 0);
 });
+
+test('the paint of a segment is read and keyed in the session, whether the segment has a style override or not', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await owned('branch-thickness-sheet');
+  const {segmentPaint} = await import('../src/paint.mjs');
+  const segments = editor.report.figure_types[0].segments;
+  // Segment 44 has a gradient of its own, segment 11 a plain colour: both read as `segmentPaint` gives them.
+  for (const handleId of [44, 11]) {
+    const target = {kind: 'segment', uid: 1, handleId};
+    assert.deepEqual(editor.animationValue(target, 'paint'), segmentPaint(segments.find(segment => segment.segment_id === handleId)));
+  }
+  const target = {kind: 'segment', uid: 1, handleId: 44};
+  const green = {type: 'solid', angle: 0, stops: [{offset: 0, color: [10, 200, 30], opacity: 1}]};
+  editor.addAnimationKey(target, 'paint', 0, green);
+  editor.seek(0);
+  assert.deepEqual(editor.animationValue(target, 'paint'), green, 'the keyed paint is read once there is one');
+  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+});
