@@ -19,7 +19,7 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-export` | 14 | 63 KiB | 8 | 2 | 0 | 0 | 4 | 0 % | 10 % | 0 % |
 | `styk-formats` | 56 | 742 KiB | 23 | 7 | 1 | 22 | 3 | 65 % | 11 % | 7 % |
 | `styk-render` | 51 | 95 KiB | 4 | 1 | 2 | 0 | 44 | 48 % | 23 % | 27 % |
-| **Total** | 355 | 2667 KiB | 91 | 87 | 22 | 22 | 133 | 41 % | 36 % | 18 % |
+| **Total** | 355 | 2668 KiB | 91 | 87 | 22 | 22 | 133 | 41 % | 36 % | 18 % |
 
 ## Engine modules
 
@@ -478,7 +478,7 @@ Interface: stays in JS.
 | `src/drawing-pressure-curve.mjs` |  | stays |  |
 | `src/drawing-sliders.mjs` |  | stays |  |
 | `src/drawing-view.mjs` |  | stays |  |
-| `src/editor-layer-focus.mjs` |  | stays | view state of the layers' Focus and Lock: the editor's, the engine session knows no focus |
+| `src/editor-layer-focus.mjs` |  | stays | view state of the layers' Focus and Lock: the editor's; the owner sends it with every call and the session holds the layers outside it as locked (styk-edit/src/layer_focus.rs) |
 | `src/error-presentation.mjs` |  | stays |  |
 | `src/export-flow.mjs` |  | stays | export dialog and request |
 | `src/export-presets.mjs` |  | stays | export dialog and request |

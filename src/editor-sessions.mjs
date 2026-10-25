@@ -21,7 +21,7 @@ const SHARED_KEYS = new Set([
   // configuration
   'historyLimit', 'historyBytes', 'propertyChannels', 'layerTimeline', 'autoKey',
   // counters that stay monotonic across every document
-  '_revisionSerial', '_loadRequestId', '_layerRevision', '_definitionRevision', '_frameDraftRevision',
+  '_revisionSerial', '_loadRequestId', '_layerRevision', '_layerFocusRevision', '_definitionRevision', '_frameDraftRevision',
   // services and listeners installed once
   '_frameDraftListener', '_frameDraftEnabled',
   // the engine owner's view of the frame on show, which follows whichever document is open

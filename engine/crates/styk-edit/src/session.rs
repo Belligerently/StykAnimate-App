@@ -580,6 +580,8 @@ fn apply_view(editor: &mut Editor, view: &Value) -> Result<(), EditError> {
     editor.sync_selection_metadata(view)?;
     editor.set_auto_key(flag(view, "autoKey"));
     editor.audio_ripple = flag(view, "audioRipple");
+    // Focus and lock: the layers outside the focus are locked for this call (the focus is the interface's, never the document's).
+    editor.set_layer_focus_lock_of(view);
     // Selecting changes the active layer without a new revision of the document.
     if let Some(active) = view.get("activeLayerId").and_then(Value::as_str) {
         editor.set_active_layer_id(active);

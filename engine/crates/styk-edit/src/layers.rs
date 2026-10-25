@@ -466,7 +466,7 @@ impl Editor {
         let Some(id) = id.as_str().filter(|id| state.path(&["byId", id]).is_some()).map(str::to_string) else {
             return Err(EditError::Invalid("errors.editorCameraMotion.selectAFigureLayerForParallax".into()));
         };
-        if state.path(&["byId", &id, "locked"]).is_some_and(Value::truthy) {
+        if self.track_locked(&id) {
             return Err(crate::invalid_with("errors.editorCameraMotion.unlockBeforeEditingParallax", vec![("name", Value::str(&layer_title(Some(&state), &id)))]));
         }
         let patch = patch.as_obj().ok_or_else(|| EditError::Unported("a parallax change that is not an object".into()))?;
@@ -624,7 +624,7 @@ impl Editor {
         Ok(self.layer_view(&id))
     }
 
-    /// `getLayer(id)` for a layer just created, without layer focus (the facade keeps it).
+    /// `getLayer(id)` for a layer just created: Focus and lock never holds it, as it joins the focus.
     fn layer_view(&self, id: &str) -> Value {
         let state = self.layer_state();
         let Some(layer) = state.path(&["byId", id]).and_then(Value::as_obj) else { return Value::Null };

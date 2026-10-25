@@ -22,10 +22,10 @@ const layerTable = report => report._styk?.layers?.byId;
 function changed(editor, {notify = true} = {}) {
   editor._layerDescriptors = null;
   editor._nativeAnimationChannels = null;
-  editor._layerRevision++;
+  editor._layerFocusRevision = (editor._layerFocusRevision ?? 0) + 1; // the focus's own count: `layerRevision` is the engine session's alone
   const focus = focusByReport.get(editor.report);
   if (focus) focus.layers = layerTable(editor.report);
-  if (notify) editor._emit('layer-focus', {layers: true, layerFocus: true, layerRevision: editor.layerRevision});
+  if (notify) editor._emit('layer-focus', {layers: true, layerFocus: true, layerFocusRevision: editor.layerFocusRevision});
 }
 
 export const editorLayerFocusMethods = {
@@ -100,4 +100,18 @@ export const editorLayerFocusMethods = {
 
   isLayerFocusLocked(id) { this.reconcileLayerFocus(); return layerFocusLocked(this.report, id); },
   isFigureFocusLocked(uid) { this.reconcileLayerFocus(); return figureFocusLocked(this.report, uid); },
+
+  /** What the engine session holds from edits while Focus and lock is on: the focused layers, which it leaves free (everything else,
+   * Scene and Camera too, is locked as if saved). Null without the lock: a focus that only filters the view changes no edit. The
+   * owner sends it with every call (`view()`); the focus never changes the document. */
+  layerFocusLock() {
+    const focus = this.getLayerFocus();
+    return focus?.lock ? [...focus.ids] : null;
+  },
+
+  /** Focus changes count here, never in `layerRevision`, which the engine session counts and writes alone: one number then never
+   * stands for two states. */
+  get layerFocusRevision() { return this._layerFocusRevision ?? 0; },
+  /** What a cache of the layers' look keys on: the layers the session counts and the focus the editor keeps. */
+  get layerViewKey() { return `${this.layerRevision}.${this.layerFocusRevision}`; },
 };

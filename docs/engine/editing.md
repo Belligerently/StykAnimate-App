@@ -475,10 +475,15 @@ document difference the harness can see):
   whether a command adds one more layer revision (a figure appears or disappears
   altogether). The engine counts them from the document when first needed; the editor's
   set of figures *ever seen* can be larger after figures were deleted and collected.
-- **Layer focus** (view-only or with locks) is runtime state of the JavaScript editor; the session knows none of it. The owner
-  adds the layers a call creates to the focus the editor holds (a layer Draw makes can be drawn on under Focus and lock). A
-  focus lock is not enforced for a session call: a key inserted or a cel added on a layer the lock holds is not refused
-  (a limitation, for every command the session runs).
+- **Layer focus** (view-only or with locks) is runtime state of the JavaScript editor (`src/editor-layer-focus.mjs`,
+  [LAYER-FOCUS.md](../LAYER-FOCUS.md)), never part of the document or its history. With Focus and lock the owner sends the
+  focused layers with the view of every call (`layerFocusLock`; absent otherwise), and the session locks every other layer, Scene
+  and Camera too, for that call (`styk-edit/src/layer_focus.rs`): each check that refuses an edit of a locked layer holds a
+  focus-locked layer the same way, with the same message (the timeline planners, moving figures between layers, parallax, camera
+  motion, recoloring, effects, tweening, movieclip and IK edits). The scene background check reads the saved lock only, as the
+  editor's did. A layer a call creates is free for that call, and the owner adds it to the focus the editor holds (a layer Draw
+  makes can be drawn on under Focus and lock). Focus changes count in `layerFocusRevision` and never in `layerRevision`,
+  which is the session's alone; a cache of what the layers look like keys on `layerViewKey`, the two together.
 - **Frame ranges**: on a layer sheet the app passes a timeline range as an array carrying the
   chosen ticks (`rangeFrames()`, `sheetTicks`), which JSON drops; the facade sends such arrays
   as `{"@array": [...], "sheetTicks": [...]}`, and recorded steps may spell them the same way

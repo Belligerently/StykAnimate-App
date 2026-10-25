@@ -372,14 +372,14 @@ impl Editor {
         let layers = self.report.path(&["_styk", "layers"]);
         let mut owner = "scene".to_string();
         let locked = match target.and_then(|t| t.get("kind")).and_then(Value::as_str) {
-            Some("scene") => layers.and_then(|l| l.path(&["fixed", "scene", "locked"])).is_some_and(Value::truthy),
+            Some("scene") => self.track_locked("scene"),
             _ => {
                 let uid = target.and_then(|t| t.get("uid")).and_then(Value::as_f64);
                 let layer = match uid {
                     Some(uid) => self.layer_of(uid as u32),
                     None => return Err(EditError::Unported("an effect clip without a figure".into())),
                 };
-                let locked = layers.and_then(|l| l.path(&["byId", &layer, "locked"])).is_some_and(Value::truthy);
+                let locked = self.track_locked(&layer);
                 owner = layer;
                 locked
             }

@@ -20,7 +20,7 @@ impl Editor {
         }
         self.finish_gesture()?;
         let prepared = self.prepared()?;
-        let request = Request { uids, target_layer: target, deleted_layer: deleted, next_frame_identity: self.next_frame_identity, max_source_bytes: SOURCE_BYTES };
+        let request = Request { uids, target_layer: target, deleted_layer: deleted, next_frame_identity: self.next_frame_identity, max_source_bytes: SOURCE_BYTES, focus: self.focus_lock.as_ref() };
         let plan = {
             let mut cache = self.eval.borrow_mut();
             sheet_layer_plan(&self.report, &prepared, &mut cache.loader, request, || Ok(()), |_| {}, || 0.0)?

@@ -150,7 +150,7 @@ src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget and the IK setting
 src/editor-inbetween-async.mjs	engine	styk-edit	removed	deleted with the Insert Inbetween dialog, which nothing opened any more: the asynchronous insertion and its planner on the engine's workers (10327 bytes)
 src/editor-inbetween.mjs	engine	styk-edit	removed	deleted with the Insert Inbetween dialog, which nothing opened any more: the planner and insertInbetweenFrames; the in-between preview samples went with it (16274 bytes)
 src/editor-layer-async.mjs	engine	styk-edit	removed	deleted: the awaitable layer commands moved to src/editor-layers.mjs (893 bytes)
-src/editor-layer-focus.mjs	ui	-	stays	view state of the layers' Focus and Lock: the editor's, the engine session knows no focus
+src/editor-layer-focus.mjs	ui	-	stays	view state of the layers' Focus and Lock: the editor's; the owner sends it with every call and the session holds the layers outside it as locked (styk-edit/src/layer_focus.rs)
 src/editor-layer-folders.mjs	engine	styk-edit	removed	deleted: the layer folder commands are the engine session's (styk-edit layers.rs); getLayerFolders moved to src/editor-layers.mjs (4577 bytes)
 src/editor-layer-migration.mjs	engine	styk-edit	removed	deleted: layer membership planning is the engine session's (styk-edit layer_planning.rs) (10753 bytes)
 src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: every sheet edit (styk-edit sheet.rs, layer_planning.rs); the editor keeps initializeLayerSheet (a new document's layer sheet), sheetSpan, sheetEditTimes, layerFrameKeys and the sheet selection

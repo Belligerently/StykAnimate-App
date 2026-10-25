@@ -470,7 +470,7 @@ export class Timeline{
    */
   _paintLabels(first,last,sy){
     const layout=this.layout,pinned=layout.pinned?layout.system:0;
-    const signature=[pinned,layout.header,layout.row,this.editor.layerRevision,this.editor.activeLayerId,this.editor._selectedCameraMotion,this.editor._selectedVfxClip,vfxChannelRevision(this.editor),this.layerDrag?.active?`${this.layerDrag.id}/${this.layerDrag.inside}`:'',...this.ids].join(':');
+    const signature=[pinned,layout.header,layout.row,this.editor.layerViewKey,this.editor.activeLayerId,this.editor._selectedCameraMotion,this.editor._selectedVfxClip,vfxChannelRevision(this.editor),this.layerDrag?.active?`${this.layerDrag.id}/${this.layerDrag.inside}`:'',...this.ids].join(':');
     if(signature!==this.labelSignature){this.labelSignature=signature;this.labelStamp=(this.labelStamp??0)+1;this.labelWindow=null;}
     const view=`${first}:${last}:${sy}`;if(view===this.labelWindow)return;this.labelWindow=view;
     const rows=[];for(let index=0;index<pinned;index++)rows.push(index);for(let index=Math.max(first,pinned);index<last;index++)rows.push(index);
