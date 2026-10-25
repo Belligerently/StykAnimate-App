@@ -121,6 +121,14 @@ pub(crate) fn merged(base: &Value, patch: &[(&str, Value)]) -> Value {
     Value::object(object)
 }
 
+/// `captureSpatialIK(…, [], [index], rotation).spatialFollowers?.[handle]` for a joint of a figure of an assembly: the orientation
+/// its limb keeps relative to the target, when the figure is posed in 3D.
+pub(crate) fn follower_orientation(geometry: Option<&styk_eval::geometry::ObjectGeometry>, index: usize, rotation: f64) -> Option<[f64; 4]> {
+    let spatial = geometry?.spatial.as_ref()?;
+    let frame = spatial.frames.get(index).copied().flatten()?;
+    Some(quat_multiply(spatial_quaternion(-rotation, 0.0, 0.0), spatial_world_quaternion(frame.q, spatial.figure_angle, spatial.mirror, false)))
+}
+
 /// What `capture` reads of the controller it captures the limb for.
 #[derive(Clone, Debug)]
 pub(crate) struct CaptureSpec {
@@ -232,7 +240,7 @@ impl Editor {
         Ok(Self::capture_spatial_from(context.as_ref(), chain, followers, rotation, swivel))
     }
 
-    fn capture_spatial_from(context: Option<&crate::spatial::Context>, chain: &[usize], followers: &[usize], rotation: f64, swivel: f64) -> SpatialCapture {
+    pub(crate) fn capture_spatial_from(context: Option<&crate::spatial::Context>, chain: &[usize], followers: &[usize], rotation: f64, swivel: f64) -> SpatialCapture {
         let Some(context) = context else { return SpatialCapture { spatial_followers: None, spatial_target: None } };
         let mut spatial_followers = BTreeMap::new();
         for &i in followers {

@@ -127,7 +127,7 @@ pub(super) fn validate_scene(report: &Value, frames: Option<&[Value]>) -> Result
         let mut known = NumberSet::default();
         for s in &segments {
             if truthy(prop(Some(s), "paint")?) {
-                crate::recolor::normalize_paint(s.get("paint").unwrap())?;
+                styk_eval::records::paint::normalize_paint(s.get("paint").unwrap())?;
             }
             if truthy(s.get("_sticknodes")) {
                 object::sticknodes_shape(s.get("_sticknodes"))?;
@@ -299,7 +299,7 @@ pub(super) fn validate_scene(report: &Value, frames: Option<&[Value]>) -> Result
     for bg in if truthy(list) { items(list) } else { Vec::new() } {
         let b = Some(&bg);
         if truthy(prop(b, "paint")?) {
-            crate::recolor::normalize_paint(bg.get("paint").unwrap())?;
+            styk_eval::records::paint::normalize_paint(bg.get("paint").unwrap())?;
         }
         let id = get(b, "background_id");
         if !integer(id) || num(id).unwrap() < 1.0 || backgrounds.has(num(id).unwrap()) {

@@ -349,7 +349,7 @@ pub(crate) fn validate_definition(figure: &Value) -> Result<Vec<Value>, EditErro
     let mut seen: HashSet<u64> = HashSet::new();
     for s in &segments {
         if let Some(paint) = s.get("paint").filter(|p| p.truthy()) {
-            crate::recolor::normalize_paint(paint)?;
+            styk_eval::records::paint::normalize_paint(paint)?;
         }
         let id = s.get("segment_id").and_then(Value::as_f64).filter(|n| n.fract() == 0.0 && *n > 0.0 && *n <= 65535.0);
         let Some(id) = id.filter(|id| !seen.contains(&key_of(*id))) else { return Err(invalid("errors.model.invalidOrRepeatedSegmentHandle")) };

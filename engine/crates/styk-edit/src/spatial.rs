@@ -234,7 +234,7 @@ impl Editor {
         Ok(Self::spatial_context_of(slot, object, id, prepared, frame, scene, Some(solved), None))
     }
 
-    fn spatial_context_of(slot: usize, object: Value, id: u32, prepared: &Prepared, frame: &Frame, scene: &Scene, solved: Option<&HashMap<u32, crate::ik::Solved>>, keep_solved: Option<&mut HashMap<u32, crate::ik::Solved>>) -> Option<Context> {
+    pub(crate) fn spatial_context_of(slot: usize, object: Value, id: u32, prepared: &Prepared, frame: &Frame, scene: &Scene, solved: Option<&HashMap<u32, crate::ik::Solved>>, keep_solved: Option<&mut HashMap<u32, crate::ik::Solved>>) -> Option<Context> {
         let at = frame.objects.iter().position(|o| o.uid == id)?;
         let evaluated = &frame.objects[at];
         let figure = evaluated.figure_override.clone().or_else(|| prepared.doc.figure(evaluated.figure).cloned())?;

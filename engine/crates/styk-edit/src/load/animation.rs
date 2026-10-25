@@ -167,7 +167,7 @@ fn animation_value(kind: &str, property: &str, value: V) -> Result<(), EditError
     }
     if property == "paint" {
         return match value {
-            Some(paint) => crate::recolor::normalize_paint(paint).map(|_| ()),
+            Some(paint) => styk_eval::records::paint::normalize_paint(paint).map(|_| ()).map_err(EditError::from),
             None => fail("errors.paint.invalidPaintType"),
         };
     }

@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 
 use styk_doc::{Obj, Value};
 
-use super::{Error, Records, default_camera, items, num, numbers, paint_record, uid};
+use super::{Error, Records, default_camera, items, num, numbers, paint, paint_record, uid};
 use crate::channels::{Channel, KeyValue, Property, Sampled, Target};
 use crate::eval::{Prepared, Seq};
 use crate::vfx::registry::{ParamKind, ParamValue};
@@ -359,55 +359,11 @@ fn set_style(object: &mut Obj, target: &Target, name: &str, value: &Value) {
     object.set("_stykStyle", Value::object(style));
 }
 
-/// What `animationStyleValue` reads for a segment's fill style: the override, or the
-/// segment's own paint (`segmentPaint`).
+/// What `animationStyleValue` reads for a segment's fill style without an override: the
+/// segment's own paint (`segmentPaint`), made only where the value is read.
 enum Style {
     Value(Value),
-    /// The segment itself: its paint is read from it (`segmentPaint`).
     NativePaint(Value),
-}
-
-/// `segmentPaint(segment)` (src/paint.mjs) as a record: the paint of the segment, its first stop the segment's colour
-/// and transparency, a native gradient's end the segment's second colour. A paint the editor refuses to normalize is
-/// the editor's to report.
-fn segment_paint(segment: &Value) -> Result<Value, Error> {
-    let opacity = |alpha: Option<&Value>| Value::Num(1.0 - number(alpha, 0.0) / 255.0);
-    let secondary = segment.get("secondary").filter(|s| s.truthy());
-    let stop = |offset: f64, color: Value, opacity: Value| {
-        let mut stop = Obj::new();
-        stop.set("offset", Value::Num(offset));
-        stop.set("color", color);
-        stop.set("opacity", opacity);
-        stop
-    };
-    let (kind, angle, mut stops) = match segment.get("paint").filter(|paint| paint.truthy()) {
-        Some(paint) => {
-            let Some(normal) = crate::vfx::paint::normalize(paint) else { return Err(Error::Unported("a segment paint the editor refuses".into())) };
-            let record = paint_record(&normal);
-            let stops: Vec<Obj> = items(record.get("stops")).iter().filter_map(|stop| stop.as_obj().cloned()).collect();
-            (record.get("type").cloned().unwrap_or(Value::Null), record.get("angle").cloned().unwrap_or(Value::Num(0.0)), stops)
-        }
-        None => {
-            let mut stops = vec![stop(0.0, Value::Null, Value::Null)];
-            if secondary.is_some() { stops.push(stop(1.0, Value::Null, Value::Null)); }
-            (Value::str(if secondary.is_some() { "linear" } else { "solid" }), Value::Num(0.0), stops)
-        }
-    };
-    let given = segment.get("paint").is_some_and(Value::truthy);
-    let color = |value: Option<&Value>, fallback: Value| present(value).cloned().unwrap_or(fallback);
-    let first = stops.first_mut().ok_or_else(|| Error::Unported("a segment paint without stops".into()))?;
-    first.set("color", color(segment.get("color_rgb"), if given { first.get("color").cloned().unwrap_or(Value::Null) } else { numbers([0.0, 0.0, 0.0]) }));
-    first.set("opacity", opacity(segment.get("transparency")));
-    if let Some(secondary) = secondary.filter(|_| kind.as_str() != Some("solid")) {
-        let last = stops.last_mut().expect("a stop");
-        last.set("color", secondary.get("rgb").cloned().unwrap_or(Value::Null));
-        last.set("opacity", opacity(secondary.get("a")));
-    }
-    let mut record = Obj::new();
-    record.set("type", kind);
-    record.set("angle", angle);
-    record.set("stops", Value::array(stops.into_iter().map(Value::object).collect()));
-    Ok(Value::object(record))
 }
 
 /// `animationStyleValue(figure, object, target, property)`: `None` where it is undefined.
@@ -1221,7 +1177,7 @@ impl Records<'_> {
             return match style_value(definition.as_ref(), object, target, property) {
                 None => Ok(None),
                 Some(Style::Value(value)) => Ok(Some(value)),
-                Some(Style::NativePaint(segment)) => segment_paint(&segment).map(Some),
+                Some(Style::NativePaint(segment)) => Ok(Some(paint::segment_paint(&segment)?.value())),
             };
         }
         Ok(match property {

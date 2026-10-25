@@ -21,7 +21,6 @@ use styk_eval::ik::joined::{Assembly, Followers};
 use styk_eval::ik::{self, BendReference, Controller, Pose, Skeleton, Solution, Table, Target};
 use styk_math::{atan2, cos, hypot, sin};
 
-use crate::frame::objects_of;
 use crate::record::{join_target, uid};
 use crate::{EditError, Editor};
 
@@ -66,14 +65,6 @@ pub(crate) fn translate_targets(object: &mut Obj, dx: f64, dy: f64, source: &Val
     }
 }
 
-/// Calls that change poses on the frame on show (`_objectEdit` and the gestures).
-const GESTURES: &[&str] = &[
-    "beginDrag", "beginTranslationDrag", "moveSelection", "rotateSelection", "scaleSelection", "scaleSelected", "mirrorSelection", "rotateFigure", "centerFigure", "resetPose",
-    "poseJoint", "rotateJoint", "bendJoint",
-];
-/// Calls that only read or restore: selection, the playhead, history.
-const VIEWS: &[&str] = &["select", "@select", "selectMany", "seek", "@seek", "undo", "redo", "cancelDrag"];
-
 /// Movieclip capture/break can read future native keys, saved sources and nested assets.
 /// Reuse the controller owner rather than relying on the gesture's current-frame gate.
 fn movieclip_document_has_controllers(report: &Value) -> bool {
@@ -84,32 +75,10 @@ fn movieclip_document_has_controllers(report: &Value) -> bool {
 }
 
 impl Editor {
-    /// Why `method` cannot run here because of IK controllers on the frame on show.
+    /// Why `method` cannot run here because of IK controllers: movieclip edits over a document that has any.
     pub(crate) fn ik_gate(&self, method: &str, args: &[Value]) -> Result<Option<String>, EditError> {
         if self.native_movieclip_mutation(method, args) && movieclip_document_has_controllers(&self.report) {
             return Ok(Some("native movieclip edits with IK are not recorded".into()));
-        }
-        if VIEWS.contains(&method) {
-            return Ok(None);
-        }
-        let objects = objects_of(&self.shown_frame()?);
-        let all: Vec<(std::sync::Arc<str>, Value)> = objects.iter().flat_map(controllers).collect();
-        if all.is_empty() {
-            return Ok(None);
-        }
-        if !GESTURES.contains(&method) {
-            return Ok(None);
-        }
-        // Only the recorded target path is admitted around IK in perspective.
-        if method == "poseJoint" && let Some((_, object)) = self.object()?
-            && object.get("_stykIK").is_some()
-            && object.path(&["_stykSpatial", "camera", "strength"]).is_some_and(Value::truthy)
-        {
-            let definition = self.figure_value(&object);
-            let handle = (self.selection.joint >= 0).then(|| definition.get("segments").and_then(|s| s.item(self.selection.joint as usize))).flatten().and_then(|s| s.get("segment_id").and_then(Value::as_f64));
-            if !handle.is_some_and(|h| object.path(&["_stykIK", &(h as u32).to_string(), "enabled"]).is_some_and(Value::truthy)) {
-                return Ok(Some("posing a bone in perspective around IK".into()));
-            }
         }
         Ok(None)
     }
@@ -169,7 +138,7 @@ impl Editor {
     }
 
     /// `layerLocked(report, uid)` without focus locks, which the facade keeps in JavaScript.
-    fn layer_locked(&self, uid: u32) -> bool {
+    pub(crate) fn layer_locked(&self, uid: u32) -> bool {
         matches!(self.report.path(&["_styk", "layers", "byId", &self.layer_of(uid), "locked"]), Some(Value::Bool(true)))
     }
 
@@ -247,10 +216,7 @@ impl Editor {
             let entry = assembly.entry(i);
             let angle = displayed_angle(prepared, frame, scene, &solved, entry.slot, entry.index) - spec.rotation;
             if entry.slot == slot { followers.insert(entry.handle, angle); } else { joined.entry(entry.uid).or_default().insert(entry.handle, angle); }
-            if let Some(s) = geometry_of(entry.slot).and_then(|g| g.spatial.as_ref())
-                && let Some(f) = s.frames.get(entry.index).copied().flatten()
-            {
-                let q = styk_eval::rig::quat_multiply(styk_eval::rig::spatial_quaternion(-spec.rotation, 0.0, 0.0), styk_eval::ik::spatial::spatial_world_quaternion(f.q, s.figure_angle, s.mirror, false));
+            if let Some(q) = crate::spatial_ik::follower_orientation(geometry_of(entry.slot), entry.index, spec.rotation) {
                 if entry.slot == slot { spatial.insert(entry.handle, q); } else { joined_spatial.entry(entry.uid).or_default().insert(entry.handle, q); }
             }
         }

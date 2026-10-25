@@ -17,6 +17,7 @@
 //! `styk records` compares.
 
 mod channels;
+pub mod paint;
 
 use std::collections::HashMap;
 use std::sync::Arc;

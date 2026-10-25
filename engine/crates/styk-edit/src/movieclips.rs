@@ -1,8 +1,9 @@
 //! Movieclips (src/editor-movieclips.mjs): `renameMovieclip`, published as one
 //! `movieclip-definition` history entry (`publishDefinition`); an instance's playback on the
 //! frame on show (`setMovieclipPlayback`, `setMovieclipDrawing`), checked as
-//! `validatePlayback` checks it. Recorded native playback across every frame uses
-//! the shared movieclip pose/history owner; timed sheet preparation is still refused.
+//! `validatePlayback` checks it. Playback across every frame uses the shared movieclip
+//! pose/history owner; a legacy-timed clip in a layer sheet is first prepared the way
+//! the timed-sheet worker does it.
 
 use styk_doc::{Obj, Value};
 
@@ -123,15 +124,17 @@ impl Editor {
                 let id = crate::record::uid(&object).unwrap_or(0);
                 return self.sheet_set_movieclip_playback(id, patch);
             }
-            if !self.sheet() || worker.is_some() {
-                let prepare = self.sheet() && self.batch.is_none();
-                return self.movieclip_batch("Set movieclip playback", |editor| {
-                    if prepare { worker.as_deref_mut().unwrap().prepare(editor)?; }
-                    editor.edit_native_movieclip_poses("Set movieclip playback", |object| object.set("_stykMovieclip", value.clone()))?;
-                    Ok(value.clone())
-                });
+            // A clip on the document's clock in a layer sheet first has its sheet expanded to poses (`_prepareSheetMovieclips`):
+            // a replay hands the worker's context, a session call runs it inline.
+            if self.sheet() && worker.is_none() {
+                return self.inline_timeline(|editor, worker| editor.set_movieclip_playback_with(patch, options, Some(worker)));
             }
-            return Err(EditError::Unported("movieclip playback across every frame of a clip on the document's clock".into()));
+            let prepare = self.sheet() && self.batch.is_none();
+            return self.movieclip_batch("Set movieclip playback", |editor| {
+                if prepare { worker.as_deref_mut().unwrap().prepare(editor)?; }
+                editor.edit_native_movieclip_poses("Set movieclip playback", |object| object.set("_stykMovieclip", value.clone()))?;
+                Ok(value.clone())
+            });
         }
         let playback = value.clone();
         self.object_edit("Set movieclip playback", move |editor| {

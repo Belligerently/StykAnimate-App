@@ -336,7 +336,7 @@ fn style_patch(figure: &Value, selected: usize, patch: &Obj, targets: &Branch) -
     let mut opacity = patch.get("opacity").cloned();
     let mut gradient = patch.get("gradient").cloned();
     if patch.contains("paint") {
-        let paint = crate::recolor::normalize_paint(patch.get("paint").unwrap_or(&Value::Null))?;
+        let paint = styk_eval::records::paint::normalize_paint(patch.get("paint").unwrap_or(&Value::Null))?;
         let value = paint.value();
         let stops: Vec<Value> = value.get("stops").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         let (first, last) = (stops.first().cloned().unwrap_or(Value::Null), stops.last().cloned().unwrap_or(Value::Null));

@@ -291,7 +291,7 @@ fn animation_style(object: &Value, figure: &Value) -> Result<(), EditError> {
             }
             if has_own(v, "paint") {
                 if let Some(paint) = get(v, "paint") {
-                    crate::recolor::normalize_paint(paint)?;
+                    styk_eval::records::paint::normalize_paint(paint)?;
                 } else {
                     return fail("errors.paint.invalidPaintType");
                 }
