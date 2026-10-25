@@ -1360,7 +1360,7 @@ function canvasHandles(geometry, {selectStatic = false} = {}) {
     settings = state.settings;
   const key = [
     builderMode?.active ? [...editor.selectedSegmentIds].join(',') : '',
-    editor.layerRevision,
+    editor.layerViewKey,
     showStaticHandles(),
     state.tool,
     state.figureJoin?.uid,

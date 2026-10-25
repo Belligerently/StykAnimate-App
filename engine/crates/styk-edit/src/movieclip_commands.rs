@@ -48,6 +48,32 @@ fn set_continuations(frame: &mut Obj, values: Vec<Value>) {
     }
     frame.set("_styk", Value::object(styk));
 }
+/// The new figure layer of a clip made of drawings (`sheetCreateMovieclip`'s `ownLayer`): named after the clip (at most 120 characters,
+/// else "Movieclip"), in the folder of the anchor drawing layer, directly above it. Returns its id.
+fn clip_layer(layers: &mut Value, above: &str, name: Option<&Value>) -> String {
+    let title = name.and_then(Value::as_str).map(|name| String::from_utf16_lossy(&name.encode_utf16().take(120).collect::<Vec<_>>())).filter(|name| !name.is_empty()).unwrap_or_else(|| "Movieclip".to_string());
+    let Some(state) = layers.make_obj() else { return above.to_string() };
+    let next = state.get("nextId").and_then(Value::as_f64).unwrap_or(1.0);
+    let id = format!("layer-{}", styk_doc::json::to_string(&Value::Num(next)));
+    let folder = state.get("byId").and_then(|by_id| by_id.get(above)).and_then(|layer| layer.get("folderId")).filter(|folder| folder.truthy()).cloned();
+    let mut layer = Obj::new();
+    layer.set("name", Value::str(&title));
+    layer.set("visible", Value::Bool(true));
+    layer.set("locked", Value::Bool(false));
+    if let Some(folder) = folder {
+        layer.set("folderId", folder);
+    }
+    if let Some(by_id) = state.get_mut("byId").and_then(Value::make_obj) {
+        by_id.set(&id, Value::object(layer));
+    }
+    let mut order: Vec<Value> = items(state.get("order"));
+    let at = order.iter().position(|layer| layer.as_str() == Some(above)).map_or(order.len(), |at| at + 1);
+    order.insert(at, Value::str(&id));
+    state.set("order", Value::array(order));
+    state.set("nextId", Value::Num(next + 1.0));
+    id
+}
+
 /// `clipDrawingKeys(document, localFrames)`: a captured clip's layer sheet with ordinary drawing keys. Without one, loading
 /// derives imported-timing keys, which draw the cels but cannot be painted, copied or re-timed like drawing keys. Each
 /// exposure gets its own pose frame; consecutive keys showing the same cel become one hold.
@@ -273,7 +299,7 @@ impl Editor {
         }
         let selected = uid(&instance).unwrap();
         let id = self.layer_of(selected);
-        if self.report.path(&["_styk", "layers", "byId", &id, "locked"]).is_some_and(Value::truthy) {
+        if self.track_locked(&id) {
             return Err(error("unlockTheMovieclipLayerBeforeEditingIt"));
         }
         (worker.check)()?;
@@ -616,8 +642,23 @@ impl Editor {
                 ids
             });
             let mut plan = editor.planner(&ids)?;
-            let owner = editor.layer_of(anchor);
+            let mut owner = editor.layer_of(anchor);
+            // Drawing layers hold only drawing cels: a clip made of drawings alone gets its own figure layer directly above the anchor drawing layer.
+            let own_layer = plan.layers.path(&["byId", &owner, "drawing", "version"]).and_then(Value::as_f64) == Some(1.0);
+            if own_layer {
+                owner = clip_layer(&mut plan.layers, &owner, figure.get("name"));
+            }
             plan.assign(identity, &owner);
+            if own_layer {
+                let blank = crate::sheet::Write { blank: true, ..crate::sheet::Write::default() };
+                if start > 0.0 {
+                    plan.write(&owner, 0.0, &create_frame(&[]), blank)?;
+                }
+                plan.write(&owner, start, &create_frame(std::slice::from_ref(&instance)), crate::sheet::Write::default())?;
+                if actual_end < plan.duration {
+                    plan.write(&owner, actual_end, &create_frame(&[]), blank)?;
+                }
+            }
             let mut captures = HashMap::new();
             for id in ids {
                 let uids = selected_ids.iter().filter(|u| editor.layer_of(**u) == id).copied().collect::<Vec<_>>();
@@ -634,7 +675,7 @@ impl Editor {
                     }
                     let original = editor.evaluated(*t, false)?;
                     for u in &uids {
-                        let mut frame = create_frame(if *u == anchor { std::slice::from_ref(&instance) } else { &[] }).as_obj().cloned().unwrap();
+                        let mut frame = create_frame(if *u == anchor && !own_layer { std::slice::from_ref(&instance) } else { &[] }).as_obj().cloned().unwrap();
                         let original_object = objects_of(&original).into_iter().find(|o| uid(o) == Some(*u));
                         let step = original_object
                             .as_ref()

@@ -128,8 +128,7 @@ impl Editor {
             if !listed {
                 return Err(invalid("theSelectedLayerNoLongerExists"));
             }
-            let state = layers.and_then(|l| if fixed(id) { l.path(&["fixed", id]) } else { l.path(&["byId", id]) });
-            if state.and_then(|s| s.get("locked")).is_some_and(Value::truthy) {
+            if self.track_locked(id) {
                 return Err(crate::invalid_with("errors.editorLayerSheet.unlockBeforeEditingIt", vec![("name", Value::str(&crate::layers::layer_title(layers, id)))]));
             }
         }

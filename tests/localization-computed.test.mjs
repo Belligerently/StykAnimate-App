@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import english from '../src/locales/en.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {engineEditor, ownedEditorFor} from './support/owned-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument,createDemo} from '../src/demo.mjs';
 import {spatialSections} from '../src/spatial-controls.mjs';
@@ -19,7 +19,6 @@ import {validateOriginSupport,validateOriginObject} from '../src/animation-origi
 import {createClipboardWireDecoder} from '../src/clipboard-wire.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {rigConstraintPlan} from '../src/rig-constraints.mjs';
-import {planFigureFrameOperation} from '../src/range-figure-operations.mjs';
 import {textOptionsWithDefaults} from '../src/text-authoring.mjs';
 import {validateSticknodesObject} from '../src/sticknodes/validation.mjs';
 import fontService from '../desktop/font-service.cjs';
@@ -31,9 +30,8 @@ import {renderInspector} from '../src/inspector-kit.mjs';
 import {VfxInspector} from '../src/vfx-inspector.mjs';
 import {DrawingController} from '../src/drawing-controller.mjs';
 import {exportCodecChoices,exportFormatStates,exportEncodingSummary} from '../src/export-request.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
 
-const fixture=()=>new Editor({demo:false}).load(emptyDocument());
+const fixture=()=>ownedEditorFor({demo:false,layerTimeline:true},emptyDocument());
 const populatedFixture=()=>engineEditor({demo:false,layerTimeline:true},createDemo());
 
 test('rig descriptors retain numeric captions, descriptions, anchor actions and raw authored joint names',()=>{
@@ -83,7 +81,6 @@ test('model, rig, editor, range, text, SVG and font failures localize human labe
  const rig=structuredClone(editor.figure);rig.segments[0]._stykRig={connector:{start:999,end:0,restLength:1}};
  assert.throws(()=>rigConstraintPlan(rig),capture('Connector start refers to a missing joint. Remove or reconnect the rig relationship first.','errors.validationLabels.connectorStart'));
  assert.throws(()=>editor.seek(NaN),capture('Timeline tick must be finite.','errors.validationLabels.timelineTick'));
- assert.throws(()=>planFigureFrameOperation(editor.report,editor.frame,[editor.frame.objects[0].unique_id],{kind:'appearance',opacity:NaN}),capture('Opacity must be finite and within the native numeric range.','errors.validationLabels.opacity'));
  assert.throws(()=>textOptionsWithDefaults({text:'Hello',fontSize:NaN}),capture('Font size must be between 1 and 2048.','errors.validationLabels.fontSize'));
  assert.throws(()=>validateSticknodesObject({_sticknodesSprite:{ratio:NaN,pivotX:0,pivotY:0}},editor.figure),capture('Invalid Stick Nodes sprite ratio.','errors.validationLabels.spriteField','ratio'));
  assert.throws(()=>new fontService.FontService({maxFonts:0}),capture('Invalid font limit.','desktop.fontService.labels.limit'));
@@ -268,7 +265,7 @@ test('fill ordering captions and fixed image shapes retain display keys while co
  }
  assert.equal(JSON.stringify(editor.serialize()),bytes);
  const {createImageFigure}=await import('../src/media-authoring.mjs');
- const image=plainEditorFor({demo:false});image.importFigure(createImageFigure({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=',width:1,height:1,name:'Artist image'}));image.select(image.selectedUid,0);
+ const image=ownedEditorFor({demo:false,layerTimeline:true});image.importFigure(createImageFigure({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=',width:1,height:1,name:'Artist image'}));image.select(image.selectedUid,0);
  const fields=walk(inspectorDescriptor({editor:image}).sections.flatMap(section=>section.rows??[]));
  const fixed=fields.flatMap(row=>row.options??[]).find(option=>option.value==='image');
  assert.equal(fixed.labelKey,'builderOutliner.image');assert.equal(image.figure.name,'Artist image');

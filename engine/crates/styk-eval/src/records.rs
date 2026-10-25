@@ -13,7 +13,7 @@
 //! ([`crate::eval`]), so there is one implementation of the arithmetic.
 //!
 //! What it does not cover yet answers [`Error::Unported`] with the reason.
-//! `engine/tools/records-reference.mjs` records the editor's output and
+//! The recordings of the editor's output (`tests/fixtures/records`) are frozen and
 //! `styk records` compares.
 
 mod channels;
@@ -231,7 +231,7 @@ impl<'a> Records<'a> {
         Ok(snapshot_pose_frame(&self.evaluated(tick)?))
     }
 
-    /// What `engine/tools/records-reference.mjs` recorded for one tick (`{tick, channels?}`):
+    /// What the editor's recording holds for one tick (`{tick, channels?}`):
     /// the evaluated frame, or with `channels` the frame a property edit writes there
     /// (`_sheetPropertyEntries`: `at(report, tick)` with those one-key channels composed).
     pub fn recorded(&self, entry: &Value) -> Result<Value, Error> {

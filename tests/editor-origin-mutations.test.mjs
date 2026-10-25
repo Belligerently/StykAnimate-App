@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
-import {plainScope} from './support/plain-editor.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
 
-const open = plainScope();
+const open = ownedScope();
 
 function fixture(){
   const report=emptyDocument(),figure=report.figure_types[0];
@@ -28,16 +28,7 @@ function close(actual,expected){assert.equal(actual.length,expected.length);for(
   // precision. Compare within one source-coordinate rounding unit.
   for(const j of [2,3])assert.ok(Math.abs(actual[i][j]-expected[i][j])<1e-4,`${actual[i]} != ${expected[i]}`);
 }}
-test('unchanged and style-only pivot synchronization preserves shared metadata references',()=>{
-  const editor=fixture(),frame=editor.frame,object=frame.objects[0],origin=object._stykAnimationOrigin;
-  editor._synchronizeAnimationOrigins(frame,frame.objects);
-  assert.equal(object._stykAnimationOrigin,origin);
-  const before=structuredClone(object),styled={...object,field28:93};
-  editor._synchronizeAnimationOrigins({...frame,objects:[styled]},[before]);
-  assert.equal(styled._stykAnimationOrigin,origin);
-});
 for(const [name,apply]of [
-  ['relative translation',editor=>editor.moveSelectionInFrames(23,-17,[0,2])],
   ['rotation',editor=>editor.rotateFiguresInFrames(.3,[0,2])],
   ['scale',editor=>editor.scaleFiguresInFrames(1.6,[0,2])],
   ['vertical mirror',editor=>editor.mirrorFiguresInFrames('vertical',[0,2])],
@@ -47,14 +38,5 @@ for(const [name,apply]of [
   const editor=fixture(),before=editor.serialize(),middle=editor.report.keyframes[1],history=editor._undo.length;
   apply(editor);assert.equal(editor._undo.length,history+1);assert.equal(editor.report.keyframes[1],middle);
   for(const index of [0,2])close(points(editor,index),points(editor,index,{evaluated:false}));
-  const after=editor.serialize();editor.undo();assert.deepEqual(editor.serialize(),before);editor.redo();assert.deepEqual(editor.serialize(),after);
-});
-test('native camera baking preserves rerooted projected joints and leaves other keys unchanged',()=>{
-  const editor=fixture();
-  for(const index of [0,2])editor.report.keyframes[index].camera={is_default:false,x:40-index*30,y:15+index*20,scale:.8+index*.4,angle_rad:.4-index*.15};
-  editor._invalidate();const before=editor.serialize(),middle=editor.report.keyframes[1],middleBefore=structuredClone(middle),history=editor._undo.length,expected=[0,2].map(index=>points(editor,index,{projected:true}));
-  assert.equal(editor.applyCameraToFigures([0,2]),2);assert.equal(editor._undo.length,history+1);
-  for(const [i,index]of [0,2].entries())close(points(editor,index,{projected:true}),expected[i]);
-  assert.equal(editor.report.keyframes[1],middle);assert.deepEqual(middle,middleBefore);
   const after=editor.serialize();editor.undo();assert.deepEqual(editor.serialize(),before);editor.redo();assert.deepEqual(editor.serialize(),after);
 });

@@ -23,20 +23,21 @@ and after), and emit change events the interface listens to.
 - In the app the engine owns the open document (Phase 3 below,
   [D15](decisions/0015-commands-record-for-record.md) and [D19](decisions/0019-engine-owns-the-document.md)):
   ported commands run in its session, and the editor shows what the session answers.
-- Every port is checked by the **command-replay harness**: a scenario (a
-  document, editor options, a list of `[method, ...arguments]` steps including
-  undo and redo) runs in the JavaScript editor, which records the document
-  bytes, selection and events after every step; `styk edit-replay` runs the same
-  steps in `styk-edit` and compares. Scenarios come from the existing editor
-  tests, from fixtures built with `engine/tools/fixture-kit.mjs`, and from
-  recorded sessions.
+- Every port is checked by the **command-replay harness**: a tape (a document,
+  editor options, a list of `[method, ...arguments]` steps including undo and redo,
+  `engine/tests/edit/*.scenario.json`) and the reference the JavaScript editor recorded
+  for it (`*.reference.json`: the document bytes, selection and events after every
+  step); `styk edit-replay` runs the same steps in `styk-edit` and compares. The tapes
+  and their references are frozen: nothing re-records them from the JavaScript
+  ([README](README.md#fixtures)), and a new or changed command gets a Rust test that
+  states its expected result.
 - Order: what the app runs. The app constructs the editor with `propertyChannels` and
   `layerTimeline` (`src/app.mjs`), and `load` gives every document a layer sheet
   (`initializeLayerSheet`). Every gesture in the app therefore takes the authored path
-  (`src/editor-authored-pose.mjs`): a draft of the evaluated frame at the playhead, the same
+  (the editor's `src/editor-authored-pose.mjs`, deleted now that the session runs it: `styk-edit/src/authored.rs`): a draft of the evaluated frame at the playhead, the same
   per-figure mutations as on a native frame, and a commit that captures the edited frame
   into pose sources and writes keys on the layer tracks (`_commitSheetPose`, the sheet
-  planner and `publish` in `src/editor-layer-sheet.mjs`). The native-timeline commands
+  planner and `publish`, once in `src/editor-layer-sheet.mjs`, now `styk-edit/src/sheet.rs`). The native-timeline commands
   ported first are those mutations, checked on native frames; the app needs, in order:
   1. **The evaluated frame as records**: `editor.evaluatedFrame` reproduced as JSON byte for
      byte (layer sheets, tweens, movieclips, layer order), because a commit stores it.
@@ -475,14 +476,18 @@ document difference the harness can see):
   whether a command adds one more layer revision (a figure appears or disappears
   altogether). The engine counts them from the document when first needed; the editor's
   set of figures *ever seen* can be larger after figures were deleted and collected.
-- **Layer focus** (view-only or with locks) is runtime state of the JavaScript editor; the session knows none of it. The owner
-  adds the layers a call creates to the focus the editor holds (a layer Draw makes can be drawn on under Focus and lock). A
-  focus lock is not enforced for a session call: a key inserted or a cel added on a layer the lock holds is not refused
-  (a limitation, for every command the session runs).
+- **Layer focus** (view-only or with locks) is runtime state of the JavaScript editor (`src/editor-layer-focus.mjs`,
+  [LAYER-FOCUS.md](../LAYER-FOCUS.md)), never part of the document or its history. With Focus and lock the owner sends the
+  focused layers with the view of every call (`layerFocusLock`; absent otherwise), and the session locks every other layer, Scene
+  and Camera too, for that call (`styk-edit/src/layer_focus.rs`): each check that refuses an edit of a locked layer holds a
+  focus-locked layer the same way, with the same message (the timeline planners, moving figures between layers, parallax, camera
+  motion, recoloring, effects, tweening, movieclip and IK edits). The scene background check reads the saved lock only, as the
+  editor's did. A layer a call creates is free for that call, and the owner adds it to the focus the editor holds (a layer Draw
+  makes can be drawn on under Focus and lock). Focus changes count in `layerFocusRevision` and never in `layerRevision`,
+  which is the session's alone; a cache of what the layers look like keys on `layerViewKey`, the two together.
 - **Frame ranges**: on a layer sheet the app passes a timeline range as an array carrying the
   chosen ticks (`rangeFrames()`, `sheetTicks`), which JSON drops; the facade sends such arrays
-  as `{"@array": [...], "sheetTicks": [...]}`, and recorded steps may spell them the same way
-  (`engine/tools/edit-replay.mjs`). Found while porting the range commands: owned
+  as `{"@array": [...], "sheetTicks": [...]}`, and recorded steps may spell them the same way. Found while porting the range commands: owned
   `setSceneColor` with a timeline range selected had keyed the playhead only.
 - **A selected fill, several selected segments, a selected branch** (`_polygonSelection`, `_segmentSelection`,
   `_branchSelection`; `selectPolygon`, `toggleSegment`, `selectBranch`): the session keeps them with the
@@ -520,8 +525,8 @@ document difference the harness can see):
 
 ## Values the editor draws at random (D18)
 
-Commands that draw identities or seeds draw them through `src/editor-draws.mjs`. The recorder
-(`engine/tools/edit-replay.mjs`) draws a fixed sequence (identities `d0d0d0d0-0000-4000-8000-…`)
+Commands that draw identities or seeds draw them through `src/editor-draws.mjs`. The tapes' recorder
+(deleted with the JavaScript editor's recording) drew a fixed sequence (identities `d0d0d0d0-0000-4000-8000-…`)
 and stores each step's draws as `draws: [[kind, value], …]`; the replay hands them to the
 engine before the step (`Editor::set_draws`), and a port takes them in order and by kind
 (`draw_uuid`, `draw_seed`, `draw_random`), answering `Unported` when it would draw what it was
@@ -564,9 +569,9 @@ n·π/2 up to 64 and its neighbours, special values) it returned V8's bits every
 
 `Math.pow` and `**` are `styk_math::pow`, V8's own fdlibm-based `pow`. Node 24 computes
 them with the platform's by default (Windows and Linux differ for 0.05 % of inputs), so
-every tool that records the editor imports `engine/tools/v8-pin.mjs` first, which starts
-V8's own (`--no-use-std-math-pow`) and fails if Node does not run it. A tool that runs
-the editor must import it before anything else, and so must a child process it starts.
+every JavaScript test that loads the editor imports `engine/tools/v8-pin.mjs` first, which starts
+V8's own (`--no-use-std-math-pow`) and fails if Node does not run it. It must come before anything
+else, and so must it in a child process the test starts.
 
 ## Phase 2: queries from the engine
 
@@ -586,8 +591,7 @@ it on the editor, for every document.
 
 - **Calls.** The editor's calls that change the document, its history or a gesture run in the session. The list of them
   (`SESSION_COMMANDS`, `src/engine/engine-commands.mjs`) is held to the session's own dispatch by
-  `tests/engine-owner-command-list.test.mjs`, and the owner installs each on the editor itself, so the editor's body of a
-  call is never run (a body deleted later changes nothing here). The calls that only move the view (selecting, seeking),
+  `tests/engine-owner-command-list.test.mjs`, and the owner installs each on the editor itself: the editor holds no body of them (they were deleted with the cutover). The calls that only move the view (selecting, seeking),
   the queries and the lifecycle stay the editor's. Its answer (`patch: true`) carries the document patch
   (`styk_edit::patch`, copy-on-write identity diff), the state, the gesture and its draft,
   the retained frame and the change events. The owner applies the patch to `editor.report`
@@ -718,9 +722,8 @@ it on the editor, for every document.
   not valid (`errors.engineOwner.invalidValue`).
 - **Refusals.** A call the session refuses for this document or selection (`Unported`), or has no command for (it answers
   `unported` with the call's own name), raises `errors.engineOwner.notSupported` with the call's name and the reason on
-  `error.reason`, and changes nothing: the editor never runs it, and `report.refused` counts it. The keyframe commands of a
-  native timeline (`REFUSED_CALLS`: `addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames` and `insertBlankFrame`) are
-  refused by the owner itself. The app gives every document a layer sheet, so none of these is reached from it ("Refusals" below lists what is refused on a sheet). Nothing but the session's
+  `error.reason`, and changes nothing: the editor never runs it, and `report.refused` counts it. The editor has no bodies for the keyframe commands of a
+  native timeline (`addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`): the app never calls them, and a call raises a `TypeError`. The app gives every document a layer sheet, so none of these is reached from it ("Refusals" below lists what is refused on a sheet). Nothing but the session's
   answers writes to the editor's read view: code that changed a record in place would leave it apart from the session's
   document, which the tests' `verify` mode (the session's document compared with the read view after every call) reports.
 - **Arguments.** JSON drops an object member set to `undefined` and turns `NaN` into `null`, so the owner encodes both
@@ -808,9 +811,7 @@ made from the app:
 | the definition of a figure and the fields of a frame through the inspector's token | `outline_*`, `thickness`, `segment_*` opacity and the project's `duration` on a document without property channels | native timelines only: with property channels these are keys of the figure's channels |
 
 The editor's other calls the session has no command for (`copyFigure`, `poseIKTarget`, `adoptNativePoseTrack`, the
-animation key commands of a native timeline and the like) are not called from the interface; their bodies are the editor's until
-they are deleted, and the owner does not run them for a document it owns (a call of one on an owned editor changes the read view
-alone, which `verify` mode reports).
+animation key commands of a native timeline and the like) were not called from the interface and are deleted with their bodies.
 
 ### A pose at one value in several keys, and a discarded figure (2026-10-25)
 
@@ -889,13 +890,13 @@ the shared VFX owner remapper. Schema evidence covers five accepted and 26 rejec
 editor loads; 57 command refusals are atomic and three source mutants are caught.
 These tapes compare existing history flags/labels/undo-redo and shown frames at
 every step, without claiming full enumerable command carriers or new full returns.
-The 37 derived record groups cover 357 exact ticks; all 186 affected JSON regenerate
-twice byte-stable. No public crate API, app adoption or class gate changes.
+The 37 derived record groups cover 357 exact ticks; all 186 affected JSON were
+recorded twice byte-stable. No public crate API, app adoption or class gate changes.
 
 Inspector `animationValue` reads accept finite fractional playhead ticks and use
 the existing shown-frame/channel sampler, including exact target scope. Stored key
 times and property-edit begins still require whole ticks. The affected 93 command
-recordings regenerate unchanged and match all 12,050 steps. Native scalar-channel
+recordings matched all 12,050 steps when recorded. Native scalar-channel
 authoring, canonical worker readiness and document-class adoption remain separate
 prerequisites.
 

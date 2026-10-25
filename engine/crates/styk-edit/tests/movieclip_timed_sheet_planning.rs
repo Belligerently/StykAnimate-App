@@ -145,6 +145,7 @@ fn timed_sheet_movieclip_recordings_match_every_step() {
                             uids: &uids,
                             next_frame_identity: identity,
                             max_source_bytes: 128 * 1024 * 1024,
+                            focus: None,
                         },
                         || Ok(()),
                         |_| {},
@@ -164,6 +165,7 @@ fn timed_sheet_movieclip_recordings_match_every_step() {
                                 .is_some_and(Value::truthy),
                             next_frame_identity: identity,
                             max_source_bytes: 128 * 1024 * 1024,
+                            focus: None,
                         },
                         || Ok(()),
                         |_| {},
@@ -254,6 +256,7 @@ fn borrowed_planning_cancels_and_bounds_sources_before_publication() {
         uids: &[1],
         next_frame_identity: 3,
         max_source_bytes: bytes,
+        focus: None,
     };
     let before = json::to_string(&report);
     for bytes in [0, 1, 3695] {

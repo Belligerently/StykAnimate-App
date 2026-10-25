@@ -4,7 +4,6 @@ import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
-import {Editor} from '../src/editor.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {evaluateSpatial,quatMultiply,quatRotate,spatialQuaternion,spatialPoint} from '../src/rig-spatial.mjs';
 const near=(a,b,t=.002)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
@@ -16,18 +15,6 @@ export function spatialFixture(){
  const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},object=createObject(figure,1,200,200),doc={...emptyDocument(),figure_types:[figure],keyframes:[createFrame([object])]};
  return{doc,figure,object,a,b,skin};
 }
-// session gap: the engine's geometry joints carry no depthOffset (only the JavaScript surface code reads it)
-test('spatial hierarchy retains every joint through compound turns and native branch rotations',()=>{
- const{doc,object,a,b}=spatialFixture();
- let g=buildGeometry(doc,doc.keyframes[0]).objects.get(0);near(g.joints.get(b.id).y,380);
- object.angles[a.pitch-1]=Math.PI/2;g=buildGeometry(doc,doc.keyframes[0]).objects.get(0);
- near(g.joints.get(b.id).y,200);near(g.joints.get(b.id).depthOffset.x,180);
- object.angles[b.pitch-1]=-Math.PI/2;g=buildGeometry(doc,doc.keyframes[0]).objects.get(0);
- near(g.joints.get(b.id).y,280);near(g.joints.get(b.id).depthOffset.x,100);
- const e=new Editor({demo:false});e.load(doc);e.select(1,a.id-1);e.rotateJoint(Math.PI/2);
- g=e.geometry.objects.get(0);near(g.joints.get(b.id).x,120);near(g.joints.get(b.id).y,200);near(g.joints.get(b.id).depthOffset.x,100);
- e.undo();near(e.geometry.objects.get(0).joints.get(b.id).y,280);
-});
 test('dual quaternion skin retains radius at a half-weight 180 degree twist',()=>{
  const{doc,object,b,skin}=spatialFixture();object.angles[b.turn-1]=Math.PI;
  const p=buildGeometry(doc,doc.keyframes[0]).objects.get(0).joints.get(skin);

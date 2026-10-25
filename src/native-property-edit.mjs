@@ -7,7 +7,7 @@ import {messageError} from './localized-error.mjs';
  * itself, to record it as an entry of the editor's own (the definition of a figure), is the engine's alone now, and refused where
  * the session has no command for it. */
 import { objectBounds } from "./renderer-geometry.mjs";
-import { cameraValues } from "./editor-camera.mjs";
+import { cameraValues } from "./pivot/model.mjs";
 import { animationStyleValue, polygonIdentity, resolveInstanceFigure } from "./animation-style.mjs";
 import { builderStyleProperty, builderOrderTargets, builderOrderValues } from './editor-builder-style.mjs';
 import { branchOpacityPlan } from './editor-branch-style.mjs';

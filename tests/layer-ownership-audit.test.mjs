@@ -26,7 +26,7 @@ function fixture({destination='new'}={}){
 }
 function samples(e,uids){const tick=e.tick,result=[];for(let t=0;t<e.totalTicks;t++){e.seek(t);const frame=e.evaluatedFrame;result.push(frame.objects.filter(o=>uids.includes(o.unique_id)).map(o=>[o.unique_id,poseObjectSignature(o,frame),o._movieclipSample]).sort((a,b)=>a[0]-b[0]));}e.seek(tick);return result;}
 function checkState(e){validateLayerState(e.report._styk.layers);validateLayerSheet(e.report);for(let tick=0;tick<e.totalTicks;tick++){e.seek(tick);const ids=e.evaluatedFrame.objects.map(o=>o.unique_id);assert.equal(new Set(ids).size,ids.length);for(const uid of ids){assert.equal(e.getLayer(e.layerForUid(uid))?.kind,'layer');assert.ok(e.getLayerFigureUids(e.layerForUid(uid)).includes(uid));}}}
-function history(e,before){const after=e.serialize();checkState(e);e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);checkState(new Editor({demo:false,layerTimeline:true}).load(after));}
+function history(e,before){const after=e.serialize();checkState(e);e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);checkState(engineEditor({demo:false,layerTimeline:true},after));}
 function geometrySamples(e,uids){const tick=e.tick,result=[];for(let t=0;t<e.totalTicks;t++){e.seek(t);const frame=e.evaluatedFrame,geometry=buildGeometry(e.report,frame);result.push(frame.objects.filter(o=>uids.includes(o.unique_id)).map(o=>{
   const posed=geometry.objects.get(o.object_slot);return {uid:o.unique_id,points:[posed.root,...posed.segments.flatMap(s=>[s.start,s.end])].flatMap(p=>[p.x,p.y])};
 }).sort((a,b)=>a.uid-b.uid));}e.seek(tick);return result;}

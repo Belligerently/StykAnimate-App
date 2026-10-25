@@ -1,5 +1,5 @@
 //! Parity with the JavaScript editor: compares what this engine evaluates with
-//! a reference dump written by `engine/tools/reference.mjs` (every drawable and
+//! a recorded reference dump of the editor's evaluation (every drawable and
 //! every joint of the sampled ticks, the effects when the dump has them (see
 //! [`crate::vfx::parity`]), what the scene camera does when it is shown, and the
 //! background and outlines when the dump has them).

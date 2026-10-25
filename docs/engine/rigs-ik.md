@@ -59,14 +59,13 @@ Chains stop at a derived joint (`layout::derived_rig_joint`: skin, connector, an
 
 ## Changing it
 
-- **A solver option** (a controller field): add it to `Controller`, read it in `parse.rs`, decide in `interpolate.rs` whether it tweens or holds, use it in `object.rs` or `solve.rs`. Add a fixture that fails without it.
+- **A solver option** (a controller field): add it to `Controller`, read it in `parse.rs`, decide in `interpolate.rs` whether it tweens or holds, use it in `object.rs` or `solve.rs`. Add a Rust test in `tests/ik.rs` that states the expected result and fails without it.
 - **A rig relationship**: its evaluation belongs in `rig.rs`. For IK, add what it reads to the dependency list in `rig::plan`; set `State::space` if posing the joint directly must be inverted; add it to `derived_rig_joint` if IK must not drive it; and remap its handle references in `joined::remap_rig`.
-- **Behaviour changes start in the JavaScript** while it is the oracle: change it there, regenerate the fixtures, then make the engine match.
+- **The recorded fixtures are frozen** ([README](README.md#fixtures)): a new or changed behaviour gets a Rust test that states its expected result; nothing re-records `fixtures/ik/` from the JavaScript.
 
 ## Testing
 
 ```sh
-node engine/tools/ik-fixtures.mjs                 # regenerate engine/crates/styk-eval/tests/fixtures/ik/ (byte-stable)
 cd engine && cargo test -p styk-eval              # unit tests + tests/ik.rs, well under a second
 cargo clippy -p styk-eval --all-targets
 cargo build -p styk-eval --target wasm32-unknown-unknown
@@ -74,17 +73,9 @@ cargo build -p styk-eval --target wasm32-unknown-unknown
 
 `tests/ik.rs` loads every fixture and:
 
-- compares joints and primitives with the editor's dump within `parity::TOLERANCE` (2e-3);
+- compares joints and primitives with the recorded editor dump within `parity::TOLERANCE` (2e-3);
 - compares what the solver derived (each reference's `frames[].ik`, unrounded): angles and stretched lengths bit for bit (the solver's trigonometry is `styk-math`'s, [D16](decisions/0016-v8-exact-math.md)), and the same iteration count per controller. The position tolerance alone would hide a wrong threshold or a missing iteration;
 - checks that each fixture with a pin stops matching when its controllers are removed;
 - replays recorded inputs of `solveIKPoints` and `interpolateIK` (`vectors.json`, bit for bit).
 
-The fixtures are built with the editor's own commands, except `movieclip` (the clip is captured by the editor, its instance placed by hand) and `legacy-tables` and `conflict` (states the commands no longer write but evaluation still handles).
-
-Against a real file:
-
-```sh
-cd engine && cargo build --release -p styk-cli
-node tools/reference.mjs <file.styk> /tmp/reference.json --every 1
-target/release/styk compare <file.styk> /tmp/reference.json     # add --verbose for every differing tick
-```
+The fixtures were recorded from the editor's own commands, except `movieclip` (the clip was captured by the editor, its instance placed by hand) and `legacy-tables` and `conflict` (states the commands no longer write but evaluation still handles).

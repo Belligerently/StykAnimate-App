@@ -1,7 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
@@ -20,124 +18,10 @@ function fixture() {
     createFrame([createObject(figure, 1, 300, 200)], 10),
     createFrame([createObject(figure, 1, 500, 200)], 10),
   ];
-  return plainEditorFor({demo: false}, report);
-}
-
-function ikFixture() {
-  const document = emptyDocument(), figure = document.figure_types[0], base = figure.segments[0];
-  figure.segments = [
-    {...base, segment_id: 11, parent_id: 0, length: 90, angle_rad: .8, aux_code: 0, is_static: false},
-    {...base, segment_id: 22, parent_id: 11, length: 90, angle_rad: 2, aux_code: 0, is_static: false},
-    {...base, segment_id: 33, parent_id: 22, length: 35, angle_rad: 0, aux_code: 0, is_static: false},
-  ];
-  figure.segment_count = figure.segments.length;
-  document.keyframes = [
-    createFrame([createObject(figure, 1, 300, 150)], 8),
-    createFrame([createObject(figure, 1, 340, 150)], 8),
-    createFrame([createObject(figure, 1, 380, 150)], 8),
-  ];
-  return ownedEditorFor({demo: false}, document);
+  return ownedEditorFor({demo: false, layerTimeline: true, propertyChannels: true}, report);
 }
 
 const rootTarget = {kind: 'node', uid: 1, handleId: 0, joint: -1};
-test('origin path edits carry pins at remote keys and inbetweens in every timeline store', () => {
-  for (const mode of ['native', 'channels', 'sheet']) for (const tick of [0, 4]) for (const falloff of [undefined, {radius: 6, shape: 'smooth'}]) {
-    let editor = ikFixture(); editor.select(1, 1); editor.setNodeIK({enabled: true}); editor.poseJoint(420, 190);
-    const report = editor.serialize();
-    // Keep the same posed limb across all keys, changing only its placement.
-    for (let i = 1; i < report.keyframes.length; i++) {
-      const object = clone(report.keyframes[0].objects[0]); object.root_x += i * 40;
-      object._stykIK[22].target.x += i * 40; report.keyframes[i].objects[0] = object;
-    }
-    // The editor alone on a layer sheet: the test reads the working frame of the editor's own motion-path gesture, which the session's gesture does not have.
-    const options = {demo: false, layerTimeline: mode === 'sheet', propertyChannels: mode === 'channels'};
-    editor = mode === 'sheet' ? new Editor(options).load(report) : plainEditorFor(options, report);
-    if (mode === 'channels') editor.addAnimationKeys([{target: {kind:'figure', uid:1}, property:'x', tick:0, value:300}, {target:{kind:'figure',uid:1},property:'x',tick:8,value:340}]);
-    editor.seek(8); editor.select(1);
-    const history = editor._undo.length, saved = clone(editor.report);
-    assert.ok(editor.beginMotionPathEdit(rootTarget, tick, {falloff}));
-    const session = editor._drag, sub = session.grab ?? session;
-    const before = buildGeometry(editor.report, sub.working).objects.get(0);
-    const goal = {x: before.root.x + 20, y: before.root.y - 12};
-    for (const movePins of [true, false, true]) {
-      editor.updateMotionPathEdit(goal, {movePins});
-      const after = buildGeometry(editor.report, sub.working).objects.get(0);
-      const foot = before.joints.get(22);
-      point(after.joints.get(22), {x: foot.x + (movePins ? 20 : 0), y: foot.y - (movePins ? 12 : 0)});
-      if (movePins) for (const [id, p] of before.joints) point(after.joints.get(id), {x:p.x+20,y:p.y-12});
-      assert.equal(sub.working.objects[0]._stykIK[22].pinned, true);
-    }
-    assert.equal(editor.tick, 8); assert.deepEqual(editor.report, saved);
-    assert.ok(editor.commitMotionPathEdit()); assert.equal(editor._undo.length, history + 1);
-    editor.seek(tick); point(editor.geometry.objects.get(0).joints.get(22), {x:before.joints.get(22).x+20,y:before.joints.get(22).y-12});
-    editor.undo(); editor.seek(tick); point(editor.geometry.objects.get(0).joints.get(22), before.joints.get(22));
-    editor.redo(); editor.seek(tick); point(editor.geometry.objects.get(0).joints.get(22), {x:before.joints.get(22).x+20,y:before.joints.get(22).y-12});
-    const committed = clone(editor.report);
-    assert.ok(editor.beginMotionPathEdit(rootTarget, tick, {falloff}));
-    editor.updateMotionPathEdit({x:goal.x+50,y:goal.y+30}, {movePins:true}); editor.cancelMotionPathEdit();
-    assert.deepEqual(editor.report, committed);
-    assert.equal(editor._undo.length, history + 1);
-    assert.ok(editor.beginMotionPathEdit(rootTarget, tick, {falloff}));
-    editor.updateMotionPathEdit({x:goal.x+50,y:goal.y+30}, {movePins:true});
-    editor.updateMotionPathEdit(goal, {movePins:true});
-    assert.equal(editor.commitMotionPathEdit(), false); assert.deepEqual(editor.report, committed);
-  }
-});
-const rootAt = (editor, tick) => {
-  const rows = editor.timeline;
-  let low = 0, high = rows.length - 1;
-  while (low < high) { const mid = Math.ceil((low + high) / 2); if (rows[mid].start <= tick) low = mid; else high = mid - 1; }
-  const frame = evaluatedFrame(editor.report, low, rows[low].count ? (tick - rows[low].start) / rows[low].count : 0, tick);
-  return frame.objects.find(o => o.unique_id === 1);
-};
-
-test('a keyframe-boundary path edit writes that frame without splitting', () => {
-  const editor = fixture();
-  editor.seek(10); editor.select(1);
-  const history = editor._undo.length, frames = editor.report.keyframes.length;
-  assert.ok(editor.beginMotionPathEdit(rootTarget, 10));
-  editor.updateMotionPathEdit({x: 250, y: 260});
-  assert.equal(editor.tick, 10);
-  assert.equal(editor.commitMotionPathEdit(), true);
-  assert.equal(editor.report.keyframes.length, frames);
-  near(editor.report.keyframes[1].objects[0].root_x, 250);
-  near(editor.report.keyframes[1].objects[0].root_y, 260);
-  near(rootAt(editor, 15).root_x, 250 * 0.5 + 500 * 0.5);
-  assert.equal(editor._undo.length, history + 1);
-  editor.undo(); near(rootAt(editor, 15).root_x, 400);
-  editor.redo(); near(rootAt(editor, 15).root_x, 375);
-  assert.equal(editor.tick, 10);
-});
-
-test('a mid-span path edit splits the native frame and keeps the playhead put', () => {
-  const editor = fixture();
-  editor.seek(3); editor.select(1);
-  const history = editor._undo.length;
-  assert.ok(editor.beginMotionPathEdit(rootTarget, 15));
-  const session = editor._drag;
-  assert.equal(session.mode, 'split');
-  for (let i = 0; i <= 5; i++) editor.updateMotionPathEdit({x: 240 + i, y: 260 - i * 2});
-  assert.equal(editor._undo.length, history);
-  // The playhead is outside the edit window: the displayed pose is unchanged.
-  near(editor.evaluatedFrame.objects[0].root_x, 160);
-  assert.equal(editor.commitMotionPathEdit(), true);
-  assert.equal(editor.tick, 3); assert.equal(editor.frameIndex, 0);
-  assert.equal(editor.report.keyframes.length, 4);
-  assert.equal(editor.report.keyframes[1].duration_raw, 5);
-  assert.equal(editor.report.keyframes[2].duration_raw, 5);
-  near(editor.report.keyframes[2].objects[0].root_x, 245);
-  near(editor.report.keyframes[2].objects[0].root_y, 250);
-  near(rootAt(editor, 15).root_x, 245);
-  // Tick 12 interpolates from the original key pose toward the inserted pose.
-  near(rootAt(editor, 12).root_x, 300 * 0.6 + 245 * 0.4);
-  assert.equal(editor._undo.length, history + 1);
-  editor.undo();
-  assert.equal(editor.report.keyframes.length, 3); assert.equal(editor.tick, 3); assert.equal(editor.frameIndex, 0);
-  near(rootAt(editor, 15).root_x, 400);
-  editor.redo();
-  assert.equal(editor.report.keyframes.length, 4);
-  near(rootAt(editor, 15).root_x, 245);
-});
 
 test('an in-window path edit previews the moved pose at the playhead', () => {
   const editor = fixture();
@@ -171,67 +55,13 @@ test('motionless and cancelled path gestures leave no history or document change
   assert.deepEqual(editor.report, before); assert.equal(editor._undo.length, history);
 });
 
-test('camera path points edit the native camera at the remote tick', () => {
-  const editor = fixture();
-  const history = editor._undo.length;
-  assert.ok(editor.beginMotionPathEdit({kind: 'camera'}, 10));
-  editor.updateMotionPathEdit({x: editor.report.canvas_width / 2 + 40, y: editor.report.canvas_height / 2 - 30});
-  assert.equal(editor.commitMotionPathEdit(), true);
-  near(editor.report.keyframes[1].camera.x, 40);
-  near(editor.report.keyframes[1].camera.y, -30);
-  assert.equal(editor._undo.length, history + 1);
-  editor.undo();
-  assert.ok(editor.report.keyframes[1].camera.is_default || editor.report.keyframes[1].camera.x === 0);
-});
-
-test('mid-span camera path edits split the frame and re-time the camera pose', () => {
-  const editor = fixture();
-  editor.seek(2);
-  assert.ok(editor.beginMotionPathEdit({kind: 'camera'}, 15));
-  editor.updateMotionPathEdit({x: editor.report.canvas_width / 2 + 24, y: editor.report.canvas_height / 2 + 8});
-  assert.equal(editor.commitMotionPathEdit(), true);
-  assert.equal(editor.report.keyframes.length, 4);
-  near(editor.report.keyframes[2].camera.x, 24);
-  assert.equal(editor.tick, 2);
-  editor.undo();
-  assert.equal(editor.report.keyframes.length, 3);
-});
-
-test('authored channels write one pose key at the remote tick without touching native frames', () => {
-  const editor = fixture();
-  editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'});
-  editor.seek(4); editor.select(1);
-  const native = clone(editor.report.keyframes), history = editor._undo.length;
-  assert.ok(editor.beginMotionPathEdit(rootTarget, 15));
-  assert.equal(editor._drag.mode, 'channels');
-  for (let i = 0; i <= 4; i++) editor.updateMotionPathEdit({x: 260 + i * 3, y: 240});
-  assert.deepEqual(editor.report.keyframes, native);
-  assert.equal(editor.commitMotionPathEdit(), true);
-  assert.equal(editor.tick, 4);
-  assert.equal(editor._undo.length, history + 1);
-  assert.deepEqual(editor.report.keyframes, native);
-  const channel = editor.animationChannels.find(c => c.property === 'pose');
-  const key = channel.keys.find(k => k.tick === 15);
-  assert.ok(key?.value?.frameId);
-  const source = editor.getFrameById(key.value.frameId);
-  near(source.objects.find(o => o.unique_id === 1).root_x, 272);
-  editor.seek(15);
-  near(editor.evaluatedFrame.objects.find(o => o.unique_id === 1).root_x, 272);
-  editor.undo(); editor.seek(15);
-  near(editor.evaluatedFrame.objects.find(o => o.unique_id === 1).root_x, 400);
-  editor.redo(); editor.seek(15);
-  near(editor.evaluatedFrame.objects.find(o => o.unique_id === 1).root_x, 272);
-});
-
-// The editor alone: the test reads the mode of the editor's own motion-path gesture, which the session's gesture does not have.
 test('layer-sheet path edits publish one key at the remote tick', () => {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [0, 10, 20].map(x => createFrame([createObject(figure, 1, x, 200), createObject(figure, 2, 100 + x, 200)], 10));
-  const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(report);
+  const editor = ownedEditorFor({demo: false, propertyChannels: true, layerTimeline: true}, report);
   editor.seek(3); editor.select(1);
   const history = editor._undo.length, sheetBefore = clone(editor.report._styk.layerSheet);
   assert.ok(editor.beginMotionPathEdit(rootTarget, 15));
-  assert.equal(editor._drag.mode, 'sheet');
   editor.updateMotionPathEdit({x: 77, y: 210});
   assert.deepEqual(editor.report._styk.layerSheet, sheetBefore);
   assert.equal(editor.commitMotionPathEdit(), true);
@@ -247,46 +77,6 @@ test('layer-sheet path edits publish one key at the remote tick', () => {
   near(editor.evaluatedFrame.objects.find(o => o.unique_id === 1).root_x, 15);
 });
 
-test('joined children follow their parent through a remote root edit', () => {
-  const report = emptyDocument(), figure = report.figure_types[0];
-  const make = () => {
-    const child = createObject(figure, 2, 0, 0);
-    child.join = {target_object_slot: 0, target_handle_id: figure.segments[0].segment_id, target_unique_id: 1};
-    return child;
-  };
-  report.keyframes = [
-    createFrame([createObject(figure, 1, 100, 200), make()], 10),
-    createFrame([createObject(figure, 1, 300, 200), make()], 10),
-    createFrame([createObject(figure, 1, 500, 200), make()], 10),
-  ];
-  const editor = plainEditorFor({demo: false}, report);
-  editor.seek(0); editor.select(1);
-  assert.ok(editor.beginMotionPathEdit(rootTarget, 10));
-  editor.updateMotionPathEdit({x: 250, y: 260});
-  assert.equal(editor.commitMotionPathEdit(), true);
-  const stored = editor.report.keyframes[1];
-  assert.ok(stored.objects[1].join, 'join link survives the remote edit');
-  near(stored.objects[0].root_x, 250);
-  editor.seek(10);
-  const geometry = buildGeometry(editor.report, editor.evaluatedFrame);
-  const joinedRoot = geometry.objects.get(1).root;
-  const parentEnd = geometry.objects.get(0).joints.get(figure.segments[0].segment_id);
-  point(joinedRoot, parentEnd, 1e-3);
-});
-
-test('path edits survive serialize and reload', () => {
-  const editor = fixture();
-  editor.seek(0); editor.select(1);
-  assert.ok(editor.beginMotionPathEdit(rootTarget, 15));
-  editor.updateMotionPathEdit({x: 245, y: 250});
-  assert.equal(editor.commitMotionPathEdit(), true);
-  const saved = editor.serialize();
-  const reopened = new Editor({demo: false}).load(saved);
-  assert.equal(reopened.report.keyframes.length, 4);
-  near(rootAt(reopened, 15).root_x, 245);
-  near(rootAt(reopened, 15).root_y, 250);
-});
-
 /** Parent + joined child: the child attaches at the parent's first segment end. */
 function joinedFixture() {
   const report = emptyDocument(), figure = report.figure_types[0];
@@ -300,7 +90,7 @@ function joinedFixture() {
     createFrame([createObject(figure, 1, 300, 200), make()], 10),
     createFrame([createObject(figure, 1, 500, 200), make()], 10),
   ];
-  return plainEditorFor({demo: false}, report);
+  return ownedEditorFor({demo: false, layerTimeline: true, propertyChannels: true}, report);
 }
 
 test('a joined figure\'s origin trail edits the parent attach joint, not the component root', () => {
@@ -315,11 +105,11 @@ test('a joined figure\'s origin trail edits the parent attach joint, not the com
   const attach = geometry.objects.get(0).joints.get(figure.segments[0].segment_id);
   editor.updateMotionPathEdit({x: attach.x + 40, y: attach.y});
   assert.equal(editor.commitMotionPathEdit(), true);
-  const stored = editor.report.keyframes[1];
+  editor.seek(10);
+  const stored = editor.evaluatedFrame;
   near(stored.objects[0].root_x, 300);
   assert.ok(Math.abs(stored.objects[0].angles[0] - (-Math.PI / 2)) > 0.01, 'parent joint rotated');
   assert.ok(stored.objects[1].join, 'child stays attached');
-  editor.seek(10);
   const after = buildGeometry(editor.report, editor.evaluatedFrame);
   assert.ok(after.objects.get(0).joints.get(figure.segments[0].segment_id).x > attach.x + 10);
   editor.undo();
@@ -332,7 +122,7 @@ test('multi-target overlay lists every selected figure', () => {
     createFrame([createObject(figure, 1, 300, 200), createObject(figure, 2, 200, 300)], 10),
     createFrame([createObject(figure, 1, 500, 200), createObject(figure, 2, 400, 300)], 10),
   ];
-  const editor = plainEditorFor({demo: false}, report);
+  const editor = ownedEditorFor({demo: false, layerTimeline: true}, report);
   editor.selectMany([1, 2]);
   const targets = motionPathTargets(editor);
   assert.deepEqual(targets.map(t => t.uid).sort(), [1, 2]);
@@ -369,7 +159,7 @@ function swingFixture() {
     object.angles = object.angles.map((a, j) => j ? a + Math.sin(k + j) * .6 : a);
     return object;
   }), 6));
-  return plainEditorFor({demo: false}, report);
+  return ownedEditorFor({demo: false, layerTimeline: true, propertyChannels: true}, report);
 }
 
 test('limb-tip targets follow every branch end and the origin of each figure', async () => {

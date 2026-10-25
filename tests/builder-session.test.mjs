@@ -22,6 +22,8 @@ function fixture({layerTimeline = false} = {}) {
 }
 /** An editor the engine owns, on a document with a drawing layer (the active one) the session made. */
 const editorWithDrawing = options => { const editor = ownedEditorFor(options); editor.createDrawingLayer(); return editor; };
+/** Every stored pose frame of the document: its keyframes and the retained sources. */
+const storedFrames = editor => [...editor.report.keyframes, ...Object.values(editor.report._styk.frameSources ?? {})];
 const figure = (editor, typeId) => editor.report.figure_types.find(f => f.figure_type_id === typeId);
 const objectsOf = (editor, typeId, frame = editor.frame) => frame.objects.filter(o => o.figure_type_id === typeId);
 
@@ -88,7 +90,7 @@ test('update keeps shared-definition edits on every instance', () => {
   assert.equal(objectsOf(editor, session.typeId).length, 2);
   assert.equal(editor.frame.objects[0].angles.length, count + 1);
   assert.equal(editor.frame.objects[1].angles.length, count + 1);
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: storedFrames(editor)}));
   // The commit is history: undo returns the pre-session definition.
   editor.undo();
   assert.equal(figure(editor, session.typeId).segments.length, count);
@@ -110,7 +112,7 @@ test('discard restores the original definition and object poses', () => {
   assert.deepEqual(editor.frame.objects[0].angles, beforeAngles);
   assert.equal(editor._undo.length, history);
   assert.equal(session.changed, false);
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: storedFrames(editor)}));
 });
 
 test('import-new restores the original and adds the edited figure as a new type', () => {
@@ -135,7 +137,7 @@ test('import-new restores the original and adds the edited figure as a new type'
   editor.undo();
   assert.ok(!editor.report.figure_types.some(f => f.figure_type_id === added.figure_type_id));
   editor.redo();
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: storedFrames(editor)}));
 });
 
 test('import-new preserves a posed, styled figure after deletion', () => {
@@ -167,7 +169,7 @@ test('import-new preserves a posed, styled figure after deletion', () => {
   editor.undo();
   assert.deepEqual(editor.report, original);
   editor.redo();
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: storedFrames(editor)}));
 });
 
 test('create session adopts the first drawn figure and imports it on exit', () => {
@@ -231,7 +233,7 @@ test('create session draws a visible figure on a materialized layer-sheet cell',
   editor.undo();
   assert.ok(!editor.report.figure_types.some(f => f.figure_type_id === typeId));
   assert.ok(!editor.selectionFrame.objects.some(o => o.unique_id === uid));
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: storedFrames(editor)}));
 });
 
 test('undo inside a session reduces changed work but never crosses the baseline', () => {
@@ -267,7 +269,7 @@ test('moveBuilderSegment reparents, reorders, rejects cycles, and undoes', () =>
   const ids = moved.segments.map(s => s.segment_id);
   assert.ok(ids.indexOf(4) > ids.indexOf(6));
   assert.deepEqual(poses(), before, 'every segment keeps its own angle in every pose');
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: storedFrames(editor)}));
   assert.throws(() => editor.moveBuilderSegment(1, {parentId: 4}), /own branch/);
   editor.undo();
   assert.equal(figure(editor, 1).segments.find(s => s.segment_id === 4).parent_id, 3);
@@ -275,7 +277,7 @@ test('moveBuilderSegment reparents, reorders, rejects cycles, and undoes', () =>
   editor.moveBuilderSegment(2, {parentId: 1, beforeId: 5});
   const order = figure(editor, 1).segments.map(s => s.segment_id);
   assert.ok(order.indexOf(2) < order.indexOf(5) && order.indexOf(2) > order.indexOf(1));
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: storedFrames(editor)}));
 });
 
 test('discard survives session history eviction via the captured baseline', () => {
@@ -290,7 +292,7 @@ test('discard survives session history eviction via the captured baseline', () =
   editor._redo = [];
   session.resolve('discard');
   assert.deepEqual(editor.figure, beforeFigure);
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: storedFrames(editor)}));
 });
 
 test('a figure whose creation left the history is discarded from every frame and the library as one entry', () => {
@@ -306,7 +308,7 @@ test('a figure whose creation left the history is discarded from every frame and
   // The new figure is posed at a second key inside its cell as well, so that it lives in more than one frame of the layer.
   editor.seek(2);
   assert.equal(editor.updateObject({root_x: 330}), true);
-  const shows = () => editor._allSourceFrames().filter(frame => frame.objects.some(object => object.figure_type_id === typeId)).length;
+  const shows = () => storedFrames(editor).filter(frame => frame.objects.some(object => object.figure_type_id === typeId)).length;
   assert.ok(shows() >= 2, 'the figure is in several frames');
   const complete = JSON.stringify(editor.report), entries = editor._undo.length;
   // What eviction leaves: the figure in the document and none of the entries that created it.
@@ -317,7 +319,7 @@ test('a figure whose creation left the history is discarded from every frame and
   assert.ok(editor.evaluatedFrame.objects.every(object => object.figure_type_id !== typeId));
   assert.equal(editor.undoLabel, 'Discard new figure');
   assert.equal(editor._undo.length, entries + 1, 'one entry');
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: storedFrames(editor)}));
   editor.undo();
   assert.equal(JSON.stringify(editor.report), complete, 'one undo brings it back everywhere');
   assert.ok(editor.report.figure_types.some(f => f.figure_type_id === typeId));

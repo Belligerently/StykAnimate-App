@@ -53,7 +53,7 @@ impl Editor {
         }
         for id in ids {
             let Some(layer) = self.drawing_layer_state(id) else { return Err(invalid("errors.editorDrawing.chooseADrawingLayerOrCreateANew")) };
-            if layer.get("locked").is_some_and(Value::truthy) || !layer.get("visible").is_some_and(Value::truthy) {
+            if self.track_locked(id) || !layer.get("visible").is_some_and(Value::truthy) {
                 let name = layer.get("name").cloned().unwrap_or(Value::Null);
                 return Err(crate::invalid_with("errors.editorDrawing.showAndUnlockBeforeDrawing", vec![("name", name)]));
             }

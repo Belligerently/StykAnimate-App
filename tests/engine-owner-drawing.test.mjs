@@ -14,7 +14,7 @@ import {loadDrawingEngine} from '../src/engine/engine-drawing.mjs';
 import {TILE_BYTES} from '../src/drawing-tiles.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
-import {plainEditorWithDrawings} from './support/owned-editor.mjs';
+import {ownedEditorWithDrawings} from './support/owned-editor.mjs';
 import {canonical, ownerReferences} from './support/owner-references.mjs';
 
 const refs = ownerReferences(import.meta.url);
@@ -103,7 +103,7 @@ refs.test('strokes, an erase and a fill undo and redo exactly as without the own
   let alone = null;
   const plainSide = async () => {
     if (alone) return alone;
-    const {editor} = plainEditorWithDrawings({demo: false, layerTimeline: true, propertyChannels: true});
+    const {editor} = ownedEditorWithDrawings({demo: false, layerTimeline: true, propertyChannels: true});
     const history = new DrawingHistory({disk: memoryDisk(), minRecordBytes: Infinity});
     const resources = new DrawingResources(editor.report, {history, worker: stub});
     resources.busy = true;

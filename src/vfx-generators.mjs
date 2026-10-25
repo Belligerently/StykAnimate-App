@@ -9,8 +9,7 @@
  *
  * Effect styles compile into layers (vfx-generator-styles.mjs); this module
  * packs them into records and holds `evaluateParticle`, the reference
- * implementation used by the Canvas renderer. The WGSL in
- * vfx-generator-gpu.mjs mirrors it line for line. */
+ * particle function the tests check. The engine draws the frames. */
 import {VFX_REGISTRY,isGeneratorType} from './vfx-registry.mjs';
 import {vfxClips,sampleVfxClip,sampleVfxKeys,vfxFadeAt} from './vfx-clips.mjs';
 import {vfxProperty} from './vfx.mjs';
@@ -19,9 +18,8 @@ import {COMPILERS} from './vfx-generator-styles.mjs';
 
 export {SHAPE,EMIT,BLEND,COLOR_STOPS};
 /** 32 vec4 per layer record: emission, motion and colour, the movieclip
- * transform (vec4 26–27) and materials with extended motion (vec4 28–31).
- * GPU records sit on 512-byte uniform offsets. */
-export const RECORD_FLOATS=128,RECORD_BYTES=512;
+ * transform (vec4 26–27) and materials with extended motion (vec4 28–31). */
+export const RECORD_FLOATS=128;
 export const LIMITS=Object.freeze({layerParticles:65536,batchParticles:262144,batchLayers:256,tableTicks:420,segments:192});
 const TAU=Math.PI*2,EMPTY=Object.freeze([]);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v,mix=(a,b,t)=>a+(b-a)*t;
@@ -29,10 +27,10 @@ const smoothstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 
 // Hashing and value noise, bit-compatible with the WGSL versions.
 const f32=Math.fround,INV32=1/4294967296;
-export function pcg(v){const s=(Math.imul(v>>>0,747796405)+2891336453)>>>0,w=Math.imul(((s>>>((s>>>28)+4))^s)>>>0,277803737)>>>0;return ((w>>>22)^w)>>>0;}
-export const hash=(n,k,seed)=>f32(pcg((pcg((n^Math.imul(seed,1664525))>>>0)+Math.imul(k,1013904223))>>>0))*INV32;
+function pcg(v){const s=(Math.imul(v>>>0,747796405)+2891336453)>>>0,w=Math.imul(((s>>>((s>>>28)+4))^s)>>>0,277803737)>>>0;return ((w>>>22)^w)>>>0;}
+const hash=(n,k,seed)=>f32(pcg((pcg((n^Math.imul(seed,1664525))>>>0)+Math.imul(k,1013904223))>>>0))*INV32;
 const hash2=(x,y)=>f32(pcg((Math.imul(x|0,73856093)^Math.imul(y|0,19349663))>>>0))*INV32;
-export function vnoise(x,y){
+function vnoise(x,y){
  const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);
  return mix(mix(hash2(ix,iy),hash2(ix+1,iy),ux),mix(hash2(ix,iy+1),hash2(ix+1,iy+1),ux),uy);
 }
@@ -52,7 +50,7 @@ export function generatorClipTail(clip){
  }
  tail=Math.max(0,Math.ceil(tail));tails.set(clip,tail);return tail;
 }
-export const hasGenerators=clip=>clip.effects.some(e=>isGeneratorType(e.type));
+const hasGenerators=clip=>clip.effects.some(e=>isGeneratorType(e.type));
 export function generatorClipActiveAt(clip,tick){
  if(!clip.enabled||!clip.strength||!hasGenerators(clip)||tick<clip.start)return false;
  return clip.duration===null||tick<clip.start+clip.duration+generatorClipTail(clip);
@@ -293,7 +291,7 @@ function inkStops(colors){
 }
 function fitSegments(segments,count){if(!segments)return null;if(segments.length===count*4)return segments;const out=new Float32Array(count*4);for(let i=0;i<count;i++){const j=Math.min(segments.length/4-1,Math.floor(i*segments.length/4/count))*4;out.set(segments.subarray(j,j+4),i*4);}return out;}
 /** A draw's stage transform: its movieclip matrix then its parallax/drag offset. */
-export function drawMatrix(batch,draw){const R=batch.records,o=draw.record*RECORD_FLOATS;return [R[o+104],R[o+105],R[o+106],R[o+107],R[o+108]+R[o+48],R[o+109]+R[o+49]];}
+function drawMatrix(batch,draw){const R=batch.records,o=draw.record*RECORD_FLOATS;return [R[o+104],R[o+105],R[o+106],R[o+107],R[o+108]+R[o+48],R[o+109]+R[o+49]];}
 
 /** Placement plan: which draws go before or after each target's artwork.
  * Targets missing from the drawn groups (culled or empty) draw at the end. */
@@ -432,10 +430,9 @@ export function rampColor(batch,draw,x,out){
  out[3]=mix(R[o+96+i],R[o+97+i],f)*(dim?Math.max(0,intensity):1);return out;
 }
 export function beamTip(R,o,te){const k=clamp((te-R[o+59])/Math.max(R[o+58],1),0,1),e=1-(1-k)*(1-k);return [mix(R[o+36],R[o+38],e),mix(R[o+37],R[o+39],e)];}
-export function beamWidth(R,o,te){return smoothstep(R[o+59]-1,R[o+59]+2,te)*(1-smoothstep(R[o+60]-R[o+61],R[o+60],te));}
-export function steppedTime(R,o){const t=R[o+54],cs=R[o+50],step=R[o+6];return step>1?cs+Math.floor((t-cs)/step)*step:t;}
+function steppedTime(R,o){const t=R[o+54],cs=R[o+50],step=R[o+6];return step>1?cs+Math.floor((t-cs)/step)*step:t;}
 /** Farthest reach of a drawn particle from its centre. */
-export function particleExtent(R,o,shape,p){
+function particleExtent(R,o,shape,p){
  if(shape===SHAPE.ring)return p.size*(1+R[o+23]*2);
  if(shape===SHAPE.streak)return p.size+Math.hypot(p.vx,p.vy)*R[o+22];
  if(shape===SHAPE.sprite)return Math.max(p.size,p.size*R[o+125]+.5*Math.hypot(p.vx,p.vy)*R[o+22]);

@@ -269,6 +269,7 @@ impl Editor {
             let layer = self.layer_of(id);
             let locked = object.path(&["_styk", "locked"]).is_some_and(Value::truthy)
                 || layers.as_ref().and_then(|l| l.path(&["byId", &layer, "locked"])).and_then(Value::as_bool) == Some(true)
+                || self.layer_focus_locked(&layer)
                 || layers.as_ref().and_then(|l| l.path(&["byId", &layer, "visible"])).and_then(Value::as_bool) == Some(false);
             if locked {
                 return Err(invalid("errors.editorTweener.unlockAndShowAllSelectedFiguresBeforeTweening"));

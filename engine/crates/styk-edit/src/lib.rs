@@ -42,6 +42,7 @@ mod handle_edit;
 mod history;
 mod ik;
 mod ik_settings;
+mod layer_focus;
 mod layer_membership;
 mod layers;
 pub mod load;
@@ -99,6 +100,7 @@ use styk_doc::{Obj, Value};
 pub use history::{Command, CommandKind, HistoryLimits};
 pub use frame::FrameSlice;
 pub use onion_skins::{Ghost, OnionSet, MAX_GHOSTS};
+pub use layer_focus::FocusLock;
 pub use select::Selection;
 
 /// What a failed call says. `Unported` means "run this in JavaScript": the call
@@ -291,6 +293,8 @@ pub struct Editor {
     /// `editor.audioRipple` (the app sets it) and `_audioRippling`: frame edits of every layer move the audio.
     pub(crate) audio_ripple: bool,
     pub(crate) audio_rippling: bool,
+    /// The layers Focus and lock holds (`editor.getLayerFocus()` with a lock), as the view of the call in progress has them.
+    pub(crate) focus_lock: Option<FocusLock>,
     /// `editor._audioClipboard`: the last copied audio clip and its recording.
     pub(crate) audio_clipboard: Option<(Value, Value)>,
     /// `editor._cameraMotionClipboard`: the last copied camera motion clip.
@@ -439,6 +443,7 @@ impl Editor {
             audio_clipboard: None,
             audio_ripple: false,
             audio_rippling: false,
+            focus_lock: None,
             camera_motion_clipboard: None,
             vfx_clip_clipboard: None,
             draws: Default::default(),

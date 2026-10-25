@@ -825,6 +825,7 @@ impl Editor {
         let hidden_or_locked = |editor: &Editor, id: u32| {
             let layer = layers.as_ref().and_then(|l| l.get(&editor.layer_of(id)).cloned());
             layer.as_ref().is_some_and(|l| l.get("locked").and_then(Value::as_bool) == Some(true) || l.get("visible").and_then(Value::as_bool) == Some(false))
+                || editor.layer_focus_locked(&editor.layer_of(id))
         };
         if uids.iter().any(|&id| hidden_or_locked(self, id)) {
             return Err(invalid("errors.editorColors.showAndUnlockTheSelectedLayersBeforeRecoloring"));

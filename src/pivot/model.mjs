@@ -21,6 +21,11 @@ const finite = (value, label) => {
   if (typeof value !== "number" || !Number.isFinite(value))
     throw messageError(new Error(''), "errors.model.mustBeAFiniteNumber", {label: validationLabel(label)});
 };
+/** A frame's camera with every value present: the default camera when it has none. */
+export function cameraValues(camera) {
+  if (!camera || camera.is_default) return {is_default: true, x: 0, y: 0, scale: 1, angle_rad: 0};
+  return {...camera, x: camera.x ?? 0, y: camera.y ?? 0, scale: camera.scale ?? 1, angle_rad: camera.angle_rad ?? 0};
+}
 export function roundEven(value) {
   const floor = Math.floor(value),
     fraction = value - floor;

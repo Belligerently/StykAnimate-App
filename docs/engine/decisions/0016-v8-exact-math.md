@@ -65,14 +65,14 @@ gave no difference, on Windows and on Linux; Rust's `f64::powf` (the platform's)
 `pow.bin` records 86,024 of them.
 
 Engine code uses `styk_math::pow` for every `**` and `Math.pow` of the editor whose result
-is stored, natively and in WebAssembly, without a platform branch. The tools that record
-the editor pin Node's `Math.pow` to V8's own before it loads (`engine/tools/v8-pin.mjs`:
-`v8.setFlagsFromString('--no-use-std-math-pow')`, imported first by every tool that runs
-the editor and by each child process it starts, and refusing to go on if `Math.pow` or
-`**` is not V8's own), so recordings no longer depend on the machine they are made on:
+is stored, natively and in WebAssembly, without a platform branch. The tools that recorded
+the editor pinned Node's `Math.pow` to V8's own before it loaded (`engine/tools/v8-pin.mjs`:
+`v8.setFlagsFromString('--no-use-std-math-pow')`, imported first by every tool that ran
+the editor and by each child process it started, and refusing to go on if `Math.pow` or
+`**` is not V8's own; the JavaScript tests that load the editor still import it), so recordings no longer depended on the machine they were made on:
 Node 24.11 on Windows, Node 24.11 on Linux and Node 22 (without the flag) record the same
-bytes: regenerating the 60 fixture tools of the parity suite changes no file on Windows or on
-Linux (WSL), and the pow-dependent ones change none under Node 22.21. The editor running in an
+bytes: regenerating the 60 fixture tools of the parity suite (since deleted: the fixtures are frozen) changed no file on Windows or on
+Linux (WSL), and the pow-dependent ones changed none under Node 22.21. The editor running in an
 app (Electron, a browser) still computes `**` with its platform's `pow`, so a value it stores
 can differ from the engine's in the last digit; the shadow comparison accepts that (1e-9
 relative), as it does for a browser's `sin`.

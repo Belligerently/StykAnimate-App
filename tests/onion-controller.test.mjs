@@ -1,15 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {normalizeEditorSettings} from '../src/settings.mjs';
 import {OnionController} from '../src/onion-controller.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
-import {ownedEditor} from './support/owned-editor.mjs';
+import {ownedEditor, ownedEditorFor} from './support/owned-editor.mjs';
 
 function fixture({legacy=false}={}){
   const report=emptyDocument();report.keyframes=Array.from({length:12},(_,i)=>createFrame([createObject(report.figure_types[0],1,100+i*10,250)],10));
-  const editor=new Editor({demo:false}).load(report);editor.seek(50);
+  const editor=ownedEditorFor({demo:false,layerTimeline:true},report);editor.seek(50);
   let settings=normalizeEditorSettings({onionBefore:2,onionAfter:2,...(!legacy?{onionRangeBefore:20,onionRangeAfter:20}:{})});const commits=[],errors=[];
   const controller=new OnionController({editor,getSettings:()=>settings,getEnabled:()=>true,onCommit:patch=>{commits.push(patch);settings=normalizeEditorSettings({...settings,...patch});},onError:error=>errors.push(error)});
   return {editor,controller,commits,errors,getSettings:()=>settings};
@@ -45,7 +44,7 @@ test('superseded views cannot commit or cancel a newer gesture',()=>{
 test('seek, document edits, disposal and failed commits leave no preview behind',()=>{
   const {controller,editor,commits,errors}=fixture(),owner={};
   controller.begin(owner);controller.preview(owner,{onionRangeBefore:40});editor.seek(60);controller.commit(owner);assert.equal(commits.length,0);assert.equal(controller.session,null);
-  controller.begin(owner);controller.preview(owner,{onionRangeBefore:40});editor.setFramesDuration([editor.frameIndex], 4);controller.commit(owner);assert.equal(commits.length,0);
+  controller.begin(owner);controller.preview(owner,{onionRangeBefore:40});editor.sheetSetDuration(4);controller.commit(owner);assert.equal(commits.length,0);
   controller.onCommit=()=>{throw new Error('Failed setting');};controller.begin(owner);controller.preview(owner,{onionRangeBefore:30});controller.commit(owner);assert.equal(errors.length,1);assert.equal(controller.session,null);
   controller.begin(owner);controller.preview(owner,{onionRangeBefore:30});controller.destroy();assert.equal(controller.session,null);assert.equal(controller.listeners.size,0);
 });

@@ -926,12 +926,11 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorLayerSheet.selectALayer".into()));
         }
         for id in ids {
-            let state = if fixed(id) { layers.path(&["fixed", id]) } else { layers.path(&["byId", id]) };
             let listed = fixed(id) || items(layers.get("order")).iter().any(|layer| layer.as_str() == Some(id.as_str()));
             if !listed {
                 return Err(EditError::Invalid("errors.editorLayerSheet.theSelectedLayerNoLongerExists".into()));
             }
-            if state.and_then(|s| s.get("locked")).is_some_and(Value::truthy) {
+            if self.track_locked(id) {
                 return Err(crate::invalid_with("errors.editorLayerSheet.unlockBeforeEditingIt", vec![("name", Value::str(&crate::layers::layer_title(Some(&layers), id)))]));
             }
         }

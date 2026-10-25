@@ -122,6 +122,7 @@ fn plan(e: &Editor, reference: &Value) -> Option<styk_edit::layer_planning::Shee
             deleted_layer: r.get("deletedLayerId").and_then(Value::as_str),
             next_frame_identity: e.state().next_frame_identity,
             max_source_bytes: 128 * 1024 * 1024,
+            focus: None,
         },
         || Ok(()),
         |_| {},

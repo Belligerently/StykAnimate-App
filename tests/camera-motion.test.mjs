@@ -1,9 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
-import {Editor} from '../src/editor.mjs';
 import {createCameraMotion,sampleCameraMotion,validateCameraMotion,cameraAtTime} from '../src/camera-motion.mjs';
-import {ownedEditorSync} from './support/owned-editor.mjs';
+import {ownedEditorSync, ownedEditorFor} from './support/owned-editor.mjs';
 import {ownerReferences} from './support/owner-references.mjs';
 import {packMotionLanes} from '../src/camera-motion-timeline.mjs';
 import {motionRowSize,motionLaneBox,sheetRowLayout} from '../src/timeline-rows.mjs';
@@ -15,7 +13,7 @@ import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {pivotDocument} from './support/engine-export.mjs';
 const refs=ownerReferences(import.meta.url);
 const near=(a,b)=>assert.ok(Math.abs(a-b)<.002,`${a} != ${b}`);
-function fixture(){const e=new Editor({demo:false});e.addFigure();initializeLayerSheet(e.report);e._invalidate({timing:true});return e;}
+function fixture(){const e=ownedEditorFor({demo:false,layerTimeline:true});e.addFigure();return e;}
 /** The same document (built by a plain editor, once: its reference) with the engine owning the editor: baking the camera's motion is a command of the engine session. */
 function ownedFixture(take){return ownedEditorSync({demo:false},JSON.parse(take('fixture')),{recorded:false}).editor;}
 function at(e,tick){const rows=e.timeline,index=rows.findLastIndex(r=>r.start<=tick),row=rows[Math.max(0,index)];return evaluatedFrame(e.report,Math.max(0,index),row.count?(tick-row.start)/row.count:0,tick);}

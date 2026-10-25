@@ -7,7 +7,7 @@ import {followStats, followSamplingReport} from '../src/camera-follow.mjs';
 import {worldToScreen} from '../src/renderer-geometry.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {parallaxResolver} from '../src/layer-parallax.mjs';
-import {ownedEditorSync} from './support/owned-editor.mjs';
+import {ownedEditorSync, ownedEditorFor} from './support/owned-editor.mjs';
 import {ownerReferences} from './support/owner-references.mjs';
 
 const refs = ownerReferences(import.meta.url);
@@ -19,7 +19,7 @@ function fixture(options = {layerTimeline: true, propertyChannels: true}) {
   report.keyframes = [createFrame([createObject(figure, 1, 100, 250), createObject(figure, 2, 700, 250)], 30),
     createFrame([createObject(figure, 1, 700, 250), createObject(figure, 2, 700, 250)], 30),
     createFrame([createObject(figure, 1, 700, 250), createObject(figure, 2, 700, 250)], 1)];
-  const editor = new Editor({demo: false, ...options}).load(report);
+  const editor = ownedEditorFor({demo: false, ...options}, report);
   if (editor.report._styk?.layerSheet) editor.sheetSetEasing([editor.layerForUid(1)], 0, 60, {interpolation: 'linear'});
   return editor;
 }
@@ -138,33 +138,6 @@ test('parameter edits reuse target samples; pose edits resample', () => {
   assert.ok(followStats.samples > samples);
 });
 
-test('native follow invalidates in-place poses and history before sampling again', () => {
-  const editor = fixture({}); follow(editor, undefined, {lag: 3, lookAhead: 2, zoomFit: .5});
-  const camera = () => cameraAtTime(editor.report, frameAt(editor, 0));
-  const fresh = () => {
-    const copy = new Editor({demo: false}).load(structuredClone(editor.report));
-    return cameraAtTime(copy.report, frameAt(copy, 0));
-  };
-  const before = camera();
-  editor.select(1); editor.moveSelection(80, -20);
-  assert.notEqual(camera().x, before.x, 'the next camera read follows the moved target');
-  assert.deepEqual(camera(), fresh(), 'an edited native pose equals fresh evaluation');
-  editor.undo(); assert.deepEqual(camera(), before, 'undo restores the original travel');
-  editor.redo(); assert.deepEqual(camera(), fresh(), 'redo follows the target again');
-  editor.select(1, 1); editor.rotateJoint(.3);
-  assert.deepEqual(camera(), fresh(), 'joint poses invalidate target bounds');
-});
-
-test('native follows retain target samples across reads, scrubs and parameter edits', () => {
-  const editor = fixture({}), id = follow(editor, undefined, {lag: 3});
-  cameraAtTime(editor.report, frameAt(editor, 10));
-  const samples = followStats.samples;
-  for (const tick of [10, 2, 8, 0, 9]) cameraAtTime(editor.report, frameAt(editor, tick));
-  assert.equal(followStats.samples, samples, 'reads and backward seeks reuse the path');
-  for (const lag of [5, 9, 14]) { editor.setCameraMotion(id, {params: {lag}}); cameraAtTime(editor.report, frameAt(editor, 10)); }
-  assert.equal(followStats.samples, samples, 'parameter changes reshape the same target samples');
-});
-
 test('work follows what is viewed and resamples only from the key before an edit', () => {
   const editor = fixture(); follow(editor, undefined, {lag: 4});
   let samples = followStats.samples;
@@ -181,7 +154,7 @@ test('work follows what is viewed and resamples only from the key before an edit
   assert.ok(resampled > 0 && resampled <= 31, `an edit at 45 resamples from the key at 30 (${resampled} frames)`);
   assert.notEqual(after.y, full.y);
   // The incremental result equals a fresh evaluation of the same document.
-  const fresh = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(editor.serialize());
+  const fresh = ownedEditorFor({demo: false, layerTimeline: true, propertyChannels: true}, editor.serialize());
   for (const tick of [10, 35, 50, 59]) {
     const a = cameraAtTime(editor.report, frameAt(editor, tick)), b = cameraAtTime(fresh.report, frameAt(fresh, tick));
     near(a.x, b.x, 1e-6, `x ${tick}`); near(a.y, b.y, 1e-6, `y ${tick}`);

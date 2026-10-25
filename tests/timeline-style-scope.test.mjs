@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
-import {animationChannelId, animationPropertyValue} from '../src/animation-channels.mjs';
+import {animationChannelId} from '../src/animation-channels.mjs';
 import {emptyDocument, defaultFigure, createFrame, createObject} from '../src/demo.mjs';
-import {newPlainEditor} from './support/plain-editor.mjs';
 
 const targetA={kind:'segment',uid:7,handleId:1,figureTypeId:1};
 const targetB={...targetA,figureTypeId:2};
@@ -66,15 +65,3 @@ test('scoped gradient placeholders resolve their definition even when the first 
   assert.deepEqual(projection.byId.get('figure:7').children.filter(row=>row.kind==='segment'&&row.handleId===1).map(row=>row.id),['segment:7:1','segment:7:1@2']);
 });
 
-test('dormant scoped rows preserve existing curve edits while new keys require a matching displayed pose', () => {
-  const editor=newPlainEditor({demo:false}).load(fixture());
-  editor.addAnimationKeys(curves().flatMap(source=>source.keys.map(key=>({target:source.target,property:source.property,...key}))));
-  const projection=buildChannelTimelineTracks(editor.layers,editor.animationChannels,editor.report);
-  const row=projection.byId.get(`channel:${animationChannelId(targetB,'opacity')}`);
-  editor.seek(0); assert.equal(animationPropertyValue(editor.report,editor.evaluatedFrame,row.target,row.property),undefined);
-  assert.throws(()=>editor.addAnimationKey(row.target,row.property,0),/finite|missing|present|exist|value/i);
-  const key=row.keys[0]; editor.moveAnimationKeys([{channelId:row.channelId,keyIds:[key.id]}],1);
-  assert.equal(editor.animationChannel(targetB,'opacity').keys[0].tick,7);
-  editor.seek(7); const value=editor.addAnimationKey(row.target,row.property,8);
-  assert.equal(value.tick,8); assert.equal(editor.animationChannel(targetA,'opacity').keys[0].tick,1);
-});

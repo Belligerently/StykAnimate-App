@@ -331,8 +331,7 @@ impl Editor {
         if Some(id) != self.selection.uid && parent.is_none_or(|p| Some(p) != self.selection.uid) {
             return Err(EditError::Invalid("errors.editorMovieclips.selectTheDrawingOrItsParentRig".into()));
         }
-        let layer = self.layer_of(id);
-        if self.report.path(&["_styk", "layers", "byId", &layer, "locked"]).is_some_and(|l| l.as_bool() == Some(true)) {
+        if self.layer_locked(id) {
             return Err(EditError::Invalid("errors.editorMovieclips.unlockTheDrawingLayerBeforeChangingIt".into()));
         }
         let mut settings = playback_settings(object.get("_stykMovieclip"));
