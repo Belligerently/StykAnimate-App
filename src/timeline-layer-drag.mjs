@@ -141,9 +141,7 @@ export const timelineLayerDragMethods = {
     const target = commit ? drag.target : null;
     if (target) {
       if (target.folderId) this.collapsedFolders.delete(target.folderId);
-      // A dragged folder's layers stay in it: no folder argument at all (an `undefined` one reaches the engine as `null`, out of every folder).
-      const folder = target.folderId === undefined ? [] : [target.folderId];
-      this._run(() => this.editor.arrangeLayers(target.order, [...drag.ids], ...folder));
+      this._run(() => this.editor.arrangeLayers(target.order, [...drag.ids], target.folderId));
     }
     this.labelSignature = null; this.update();
   },
