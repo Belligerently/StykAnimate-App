@@ -4,8 +4,7 @@ import {engineEditor, newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure,validatePlayback} from '../src/movieclips.mjs';
 import {presencePlayback,continuations} from '../src/movieclip-presence.mjs';
-import {evaluatedFrame, buildGeometry, movieclipPresenceIndex} from '../src/pivot/geometry.mjs';
-import {timeline} from '../src/pivot/read-view.mjs';
+import {sceneAt} from './support/engine-geometry.mjs';
 import {movieclipInspector} from '../src/movieclip-ui.mjs';
 import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 
@@ -18,10 +17,12 @@ function fixture({duration=12,clipDuration=8,fps=24,clipFps=24,empty=false}={}){
   report.keyframes=duration===1?[createFrame(objects())]:[createFrame(objects(),duration-1),createFrame(objects())];
   const e=engineEditor({demo:false,layerTimeline:true}, report);e.select(7);return e;
 }
-function frame(e,t){const report=e.report??e,rows=timeline(report);let i=0;while(i+1<rows.length&&rows[i+1].start<=t)i++;return evaluatedFrame(report,i,(t-rows[i].start)/(rows[i].count||1),t);}
+/** The frame the engine shows for the editor at tick `t` (its playhead stays where it was). */
+function frame(e,t){const at=e.tick;e.seek(t,{allowBeyondEnd:true});const shown=e.evaluatedFrame;e.seek(at);return shown;}
 const phase=(e,t,uid=7)=>frame(e,t).objects.find(o=>o.unique_id===uid)?._movieclipSample??null;
 const phases=(e,n=12,uid=7)=>Array.from({length:n},(_,t)=>phase(e,t,uid));
-const shape=(e,t)=>buildGeometry(e.report??e,frame(e,t)).drawables.map(d=>[d.type,d.rgb,d.alpha,d.points.map(p=>[+p.x.toFixed(5),+p.y.toFixed(5)])]);
+/** The shapes the engine draws at tick `t`, movieclip contents included. */
+const shape=(e,t)=>sceneAt(e,t).drawables.map(d=>[d.type,d.rgb,d.alpha,d.points.map(p=>[+p.x.toFixed(5),+p.y.toFixed(5)])]);
 function closeShape(actual,expected){
   assert.equal(actual.length,expected.length);
   actual.forEach((value,i)=>{assert.deepEqual(value.slice(0,3),expected[i].slice(0,3));assert.equal(value[3].length,expected[i][3].length);value[3].forEach((point,j)=>point.forEach((v,k)=>assert.ok(Math.abs(v-expected[i][3][j][k])<.0001,`point ${i}/${j}/${k}: ${v} != ${expected[i][3][j][k]}`)));});
@@ -71,7 +72,6 @@ test('speed integration, different FPS, single frame, loops, once and final hold
   e.setMovieclipPlayback({mode:'single',offset:3},{allFrames:true});assert.equal(phase(e,10),3);
   e.setMovieclipPlayback({mode:'hold',speed:10,offset:0},{allFrames:true});assert.equal(phase(e,10),7);
   e.setMovieclipPlayback({mode:'once'},{allFrames:true});assert.equal(phase(e,10),null);
-  assert.equal(movieclipPresenceIndex(e.report).get(7).elapsed,120);
 });
 
 test('removing inside a held exposure changes only that output frame',()=>{
@@ -161,10 +161,9 @@ test('Pivot expansion agrees with every rendered frame after gaps and breaks',()
   const flat=pivotDocument(e.report);for(let t=0;t<12;t++)closeShape(shape(flat,t),shape(e,t));
 });
 
-test('large held scenes build a sparse clock once and reuse it while seeking',()=>{
+test('large held scenes keep the clock exact while seeking',()=>{
   const e=fixture();e.sheetInsertFrames(['layer-1'],5,50000);
-  const index=movieclipPresenceIndex(e.report);assert.equal(index.get(7).spans.length,1);
-  for(const t of [45000,0,30000,49999]){assert.equal(phase(e,t),t%8);assert.equal(movieclipPresenceIndex(e.report),index);}
+  for(const t of [45000,0,30000,49999])assert.equal(phase(e,t),t%8);
 });
 
 test('Break Apart preserves an eased outer motion and unrelated figures on its layer',()=>{

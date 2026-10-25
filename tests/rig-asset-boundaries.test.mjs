@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {RIG_EXAMPLES,rigExampleDocument} from '../src/rig-examples.mjs';
 import {SOLID_RIG_EXAMPLES} from '../src/rig-solids.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {geometryOfDocument} from './support/engine-geometry.mjs';
 
 const visiblePose=document=>{
-  const g=buildGeometry(document,document.keyframes[0]).objects.get(0);
+  const g=geometryOfDocument(document).objects.get(0);
   return {
     joints:[...g.joints],
     segments:g.segments.map(s=>({start:s.start,end:s.end,angle:s.angle,length:s.length,width:s.width,rgb:s.rgb,alpha:s.alpha})),

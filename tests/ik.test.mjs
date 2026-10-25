@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {geometryOfDocument} from './support/engine-geometry.mjs';
 import {solveIKPoints, ikChain, validateIK} from '../src/ik.mjs';
 import {getPivotHandles} from '../src/canvas-interactions.mjs';
 import {pivotDocument, figureDocument} from './support/engine-export.mjs';
@@ -27,6 +26,10 @@ export function fixture(options = {}, edit = null) {
   const editor = engineEditor({demo: false, ...options}, document); editor.select(1, 1); return editor;
 }
 const g = e => e.geometry.objects.get(0);
+/** A document of the two poses `a` and `b` of the figure `e` holds, opened on the engine: the figure moves between them over the first row. */
+const between = (e, a, b) => engineEditor({demo: false}, {...e.serialize(), keyframes: [a, b]});
+/** The engine's geometry `fraction` of the way through the first row of the timeline. */
+const geometryAt = (e, fraction) => { const row = e.timeline[0]; e.seek(row.start + fraction * row.count); return e.geometry; };
 const angleNear = (a,b) => near(Math.atan2(Math.sin(a-b),Math.cos(a-b)),0);
 
 test('Both follows a full circular drag without mirroring across the original knee axis', () => {
@@ -61,7 +64,7 @@ test('Both switches once through a fully folded limb, preserving knee continuity
       assert.equal(Math.sign(knee.y - 150), side); previous = knee;
     }
     e.commitDrag();
-    const saved = e.serialize(), reopened = new Editor({demo: false}).load(saved);
+    const saved = e.serialize(), reopened = engineEditor({demo: false},saved);
     point(g(reopened).joints.get(11), previous);
     e.undo(); e.redo(); point(g(e).joints.get(11), previous);
   }
@@ -85,16 +88,15 @@ test('Both stays continuous through folded animation and is independent of seek 
   const a = structuredClone(e.frame); delete a._styk;
   e.select(1, -1); e.moveSelection(120, 0);
   const b = structuredClone(e.frame); delete b._styk;
-  e.report.keyframes = [a, b];
-  const source = JSON.stringify(e.report), knees = [];
+  const m = between(e, a, b), source = JSON.stringify(m.report), knees = [];
   for (let i = 0; i <= 120; i++) {
-    const frame = evaluatedFrame(e.report, 0, i / 120), posed = buildGeometry(e.report, frame).objects.get(0), knee = posed.joints.get(11);
+    const posed = geometryAt(m, i / 120).objects.get(0), knee = posed.joints.get(11);
     point(posed.joints.get(22), {x: 360, y: 150});
     if (i) assert.ok(Math.hypot(knee.x - knees[i - 1].x, knee.y - knees[i - 1].y) < 2, `animated fold snapped at ${i}`);
     knees.push(knee);
   }
-  for (let i = 120; i >= 0; i--) point(buildGeometry(e.report, evaluatedFrame(e.report, 0, i / 120)).objects.get(0).joints.get(11), knees[i]);
-  assert.equal(JSON.stringify(e.report), source);
+  for (let i = 120; i >= 0; i--) point(geometryAt(m, i / 120).objects.get(0).joints.get(11), knees[i]);
+  assert.equal(JSON.stringify(m.report), source);
 });
 
 test('Both retains its bend through extension, stretch and subpixel target jitter', () => {
@@ -155,7 +157,7 @@ test('stretched native and baked Pivot exports reproduce the pose without modify
   const e = fixture(); e.setNodeIK({enabled: true, allowStretch: true}); e.poseJoint(600, 200);
   const original = JSON.stringify(e.serialize()), displayed = g(e);
   for (const report of [e.serialize(), figureDocument(e.report, {figureUid: 1}), pivotDocument(e.report)]) {
-    const reopened = new Editor({demo: false}).load(report), actual = g(reopened);
+    const reopened = engineEditor({demo: false},report), actual = g(reopened);
     for (const [id, p] of displayed.joints) point(actual.joints.get(id), p);
   }
   assert.equal(JSON.stringify(e.serialize()), original);
@@ -296,7 +298,7 @@ test('gesture previews produce one history entry; cancellation, undo, redo and s
   assert.equal(e._undo.length, count + 1); const after = e.serialize();
   e.undo(); assert.deepEqual(e.serialize(), saved); e.redo(); assert.deepEqual(e.serialize(), after);
   e.beginDrag(); e.poseJoint(340, 250); e.cancelDrag(); assert.deepEqual(e.serialize(), after);
-  const loaded = new Editor({demo: false}).load(JSON.parse(JSON.stringify(after))); loaded.select(1, 1);
+  const loaded = engineEditor({demo: false},JSON.parse(JSON.stringify(after))); loaded.select(1, 1);
   point(g(loaded).joints.get(22), g(e).joints.get(22)); assert.deepEqual(loaded.getIKSettings(), e.getIKSettings());
 });
 
@@ -304,27 +306,27 @@ test('pins solve at interpolated ticks and native export bakes identical visible
   const e = fixture(); e.setNodeIK({enabled: true});
   const target = g(e).joints.get(22), a = structuredClone(e.frame), b = structuredClone(e.frame);
   delete a._styk; delete b._styk; b.objects[0].root_x += 20; b.objects[0].root_y -= 12;
-  e.report.keyframes = [a, b]; e._invalidate({timing: true});
-  const before = JSON.stringify(e.report), materialized = pivotDocument(e.report);
+  const m = between(e, a, b), before = JSON.stringify(m.report), materialized = pivotDocument(m);
   for (let tick = 0; tick < 8; tick++) {
-    const frame = evaluatedFrame(e.report, 0, tick / 8, tick), live = buildGeometry(e.report, frame).objects.get(0);
+    m.seek(tick); const live = m.geometry.objects.get(0);
     point(live.joints.get(22), target); angleNear(live.segments[2].angle,0);
-    const baked = buildGeometry(materialized, materialized.keyframes[tick]).objects.get(0);
+    const baked = geometryOfDocument(materialized, materialized.keyframes[tick]).objects.get(0);
     for (const [id, p] of live.joints) point(baked.joints.get(id), p);
     assert.equal(materialized.keyframes[tick].objects[0]._stykIK, undefined);
   }
-  assert.equal(JSON.stringify(e.report), before);
+  assert.equal(JSON.stringify(m.report), before);
 });
 
 test('target movement interpolates, while pin state changes are discrete', () => {
   const e = fixture(); e.setNodeIK({enabled: true});
   const a = structuredClone(e.frame), b = structuredClone(e.frame), first = a.objects[0]._stykIK[22].target;
+  delete a._styk; delete b._styk;
   b.objects[0]._stykIK[22].target.x += 20; b.objects[0]._stykIK[22].target.rotation = .4;
-  e.report.keyframes = [a, b];
-  const frame = evaluatedFrame(e.report, 0, .5), posed = buildGeometry(e.report, frame).objects.get(0);
+  const posed = geometryAt(between(e, a, b), .5).objects.get(0);
   point(posed.joints.get(22), {x: first.x + 10, y: first.y}); angleNear(posed.segments[2].angle,.2);
   b.objects[0]._stykIK[22].pinned = false;
-  assert.equal(evaluatedFrame(e.report, 0, .5).objects[0]._stykIK[22].pinned, true);
+  const m = between(e, a, b); geometryAt(m, .5);
+  assert.equal(m.evaluatedFrame.objects[0]._stykIK[22].pinned, true);
 });
 
 test('analytic solver handles unreachable, folded, straight, zero length and bend-side cases', () => {
@@ -381,6 +383,6 @@ test('curved links, arbitrary segment order, and off-chain branches preserve len
   near(g(e).segments[0].length, 90); near(g(e).segments[0].bend, .3); angleNear(g(e).segments[2].angle,0);
   const report = e.serialize(), object = report.keyframes[0].objects[0], figure = report.figure_types[0];
   figure.segments.reverse(); object.angles.reverse(); if (object.len_flag) object.lengths.reverse(); if (object.bend_flag) object.bends.reverse();
-  point(buildGeometry(report, report.keyframes[0]).objects.get(0).joints.get(22), {x: 360, y: 265});
+  point(geometryOfDocument(report, report.keyframes[0]).objects.get(0).joints.get(22), {x: 360, y: 265});
 });
 

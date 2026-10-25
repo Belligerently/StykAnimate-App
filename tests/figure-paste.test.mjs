@@ -2,7 +2,6 @@ import test from 'node:test';
 import {pasteInFrames} from './support/figure-range.mjs';
 import assert from 'node:assert/strict';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
 
@@ -32,7 +31,7 @@ test('paste across frames owns copied poses and records one exact undo',()=>{
   e.undo();assert.deepEqual(poses(e),before);e.redo();assert.deepEqual(poses(e),after);
   const again=e.pasteSelection();assert.equal(again[0].root_x,clipboard[0].root_x+48);
   const reopened=open({demo:false,layerTimeline:true},e.serialize());reopened.seek(e.tick);
-  const geometry=editor=>[...buildGeometry(editor.report,editor.selectionFrame).objects.values()].map(g=>({uid:g.obj.unique_id,joints:[...g.joints]}));
+  const geometry=editor=>[...editor.geometry.objects.values()].map(g=>({uid:g.obj.unique_id,joints:[...g.joints]}));
   assert.deepEqual(geometry(reopened),geometry(e));validateScene(e.report);
 });
 
@@ -48,7 +47,7 @@ test('cross-project sheet assets survive later edits and two undo/redo cycles in
 test('pasting a group uses the active layer, preserves attachments and leaves unrelated tracks untouched',()=>{
   const e=fixture();const layer=e.createLayer('Child');e.assignFiguresToLayer([2,3,4],layer.id);
   e.selectConnected(1);e.copySelection();e.selectFrame(1);
-  const before=e.report._styk.layerSheet,copy=e.pasteSelection(),geometry=buildGeometry(e.report,e.evaluatedFrame);
+  const before=e.report._styk.layerSheet,copy=e.pasteSelection(),geometry=e.geometry;
   for(const object of copy)assert.equal(e.layerForUid(object.unique_id),layer.id);
   assert.strictEqual(e.report._styk.layerSheet.tracks['layer-1'],before.tracks['layer-1']);
   assert.strictEqual(e.report._styk.layerSheet.tracks.camera,before.tracks.camera);

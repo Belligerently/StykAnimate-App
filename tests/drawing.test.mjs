@@ -13,7 +13,6 @@ import {presenterScratch,levelStore,invalidateLevels,flattenedDrawingPNG} from '
 import {createDrawingFigure} from '../src/drawing-model.mjs';
 import {objectBounds} from '../src/renderer-geometry.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {createFrame,createObject} from '../src/demo.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 
@@ -32,6 +31,8 @@ function fixture(){
   // The structure of a drawing layer (its cels, exposures and auto key) is the engine session's.
   installEngineOwner(e);e.createDrawingLayer();return {e,resources};
 }
+/** The engine's geometry of `frame`, with `figure` (not in the document yet) as the figure of the object `uid` on the active layer. */
+const celGeometry=(e,frame,figure,uid)=>e._shown.previewGeometry(frame,figure,e.activeLayerId,uid);
 async function stroke(e,x=40,y=40){
   const target=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),surface=await e.drawingResources.surface(target.figure);
   const brush=new DrawingStroke(surface.store,{size:8,pressureSize:false});brush.sample({x,y});
@@ -153,12 +154,12 @@ test('tile blobs round-trip exact RGBA at negative coordinates and skip transpar
 
 test('v1 to v2 migration preserves pixel world positions with rotated, mirrored and reversed poses',async()=>{
   const {e,resources}=fixture();try{
-    const {figure:v1}=await legacyFigure(),migrated=migrateDrawingFigure(v1,99,{bounds:{x:0,y:0,width:96,height:64}});
+    const {figure:v1}=await legacyFigure({figureTypeId:50}),migrated=migrateDrawingFigure(v1,99,{bounds:{x:0,y:0,width:96,height:64}});
     assert.equal(drawingMetadata(migrated).version,2);assert.ok(/^cel-/.test(drawingMetadata(migrated).celId));
     for(const mirror of [0,1])for(const reverse of [0,1]){
       const object={...createObject(v1,7,0,0),angle_rad:.8,angles:[.8],scale:1.5,image_text_flags:0};
       for(const f of [v1,migrated])f.segments[0].extra_u8_a=reverse,f.segments[0].extra_u8_b=mirror;
-      const item=f=>buildGeometry({...e.report,figure_types:[f]},createFrame([{...object,figure_type_id:f.figure_type_id}])).drawables[0];
+      const item=f=>celGeometry(e,createFrame([{...object,figure_type_id:f.figure_type_id}]),f,7).drawables[0];
       const a=transformPoint(drawingMatrix(item(v1)),{x:50.25,y:60.75}),b=transformPoint(drawingPixelMatrix(item(migrated)),{x:50.25,y:60.75});
       assert.ok(Math.hypot(a.x-b.x,a.y-b.y)<1e-8,`mirror=${mirror} reverse=${reverse}`);
     }
@@ -337,7 +338,7 @@ test('v2 cels place pixel (0,0) at the pointer world position independently of s
     e.report.canvas_width=8000;e.report.canvas_height=8000;
     const target=e.prepareDrawingCel({pixelsPerUnit:4,world:{x:3000,y:-100}});
     assert.equal(target.figure._styk.drawing.pixelsPerUnit,4);assert.equal(target.figure._styk.drawing.version,2);
-    const item=buildGeometry({...e.report,figure_types:[...e.report.figure_types,target.figure]},createFrame([target.object])).drawables[0];
+    const item=celGeometry(e,createFrame([target.object]),target.figure,target.object.unique_id).drawables[0];
     const origin=transformPoint(drawingPixelMatrix(item),{x:0,y:0});
     assert.ok(Math.hypot(origin.x-3000,origin.y+100)<1e-8);
     validateDrawings({...e.report,figure_types:[...e.report.figure_types,target.figure]});
@@ -641,17 +642,19 @@ test('forking a cel does not double-count copy-on-write tiles in the byte stats'
 });
 
 test('a v2 cel world bounds equal its tile bounds through drawingPixelMatrix',()=>{
-  const figure=createDrawingFigure({celId:'cel-bounds'});
+  const {e,resources}=fixture();try{
+  const figure=createDrawingFigure({celId:'cel-bounds',figureTypeId:60});
   // Tile bounds that also cover the segment endpoints, which objectBounds
   // unions with the image quad for every figure.
   figure._styk.drawing.bounds={x:-64,y:-64,width:384,height:192};
   const object=createObject(figure,7,120,-40,{scale:1.5});
-  const item=buildGeometry({figure_types:[figure],canvas_width:640,canvas_height:480},createFrame([object])).drawables[0];
+  const item=celGeometry(e,createFrame([object]),figure,7).drawables[0];
   const bounds=objectBounds([item],{}),matrix=drawingPixelMatrix(item),b=figure._styk.drawing.bounds;
   const corners=[[b.x,b.y],[b.x+b.width,b.y],[b.x,b.y+b.height],[b.x+b.width,b.y+b.height]].map(([x,y])=>transformPoint(matrix,{x,y}));
   const x0=Math.min(...corners.map(p=>p.x)),y0=Math.min(...corners.map(p=>p.y)),x1=Math.max(...corners.map(p=>p.x)),y1=Math.max(...corners.map(p=>p.y));
   // objectBounds adds a 3px guard pad around painted geometry.
   assert.deepEqual(bounds,{x:Math.floor(x0-3),y:Math.floor(y0-3),width:Math.ceil(x1+3)-Math.floor(x0-3),height:Math.ceil(y1+3)-Math.floor(y0-3)});
+  }finally{resources.dispose();}
 });
 
 test('flattening a tile store yields a PNG at source resolution with source-space anchors',async()=>{

@@ -32,8 +32,7 @@ const SHARED_KEYS = new Set([
   '_vfxTimelineVisible', '_cameraInspectorTab', 'lastLoadTimings',
 ]);
 /** Derived from the report and rebuilt on demand: a resting session does not hold them. */
-const DERIVED_KEYS = ['_geometry', '_evaluated', '_incremental', '_seekGeometry', '_propertyChannelCache',
-  '_authoredCommitPreview', '_sheetPropertyPreview', '_layerDescriptors'];
+const DERIVED_KEYS = ['_geometry', '_evaluated', '_sheetPropertyPreview', '_layerDescriptors'];
 const sessions = new WeakSet();
 
 const busy = editor => Boolean(editor._drag || editor._animationEdit || editor._authoredPoseEdit);

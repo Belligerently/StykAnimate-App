@@ -8,6 +8,7 @@ import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {holdsRevision, registeredEngine} from '../src/engine/engine-open.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditor} from './support/owned-editor.mjs';
+import {createDemo} from '../src/demo.mjs';
 
 const folder = new URL('../engine/crates/styk-eval/tests/fixtures/channels/', import.meta.url);
 const read = name => JSON.parse(readFileSync(new URL(name, folder), 'utf8'));
@@ -152,27 +153,25 @@ test('the values the interface shows are the session\'s reads', {skip: !engineBu
   } finally { owner.release(); }
 });
 
-test('a document the session does not answer property values for is read by the editor', {skip: !engineBuilt}, async () => {
-  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/startup.document.json', import.meta.url), 'utf8'));
-  const {editor, owner} = await ownedEditor({demo: false}, document);
+test('a document the session does not answer property values for raises its refusal', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await ownedEditor({demo: false}, createDemo());
   try {
     const asked = spy(owner.session());
     const object = editor.evaluatedFrame.objects[0];
-    assert.equal(editor.animationValue({kind: 'figure', uid: object.unique_id}, 'x'), object.root_x);
-    assert.ok(asked.includes('animationValue'), 'the session was asked and did not answer');
+    assert.throws(() => editor.animationValue({kind: 'figure', uid: object.unique_id}, 'x'), /without a layer sheet/);
+    assert.ok(asked.includes('animationValue'), 'the session was asked');
   } finally { owner.release(); }
 });
 
-test('what the session says it does not evaluate yet is evaluated by the editor; any other refusal is raised', {skip: !engineBuilt}, async () => {
+test('a refusal of the session is raised, whatever it says', {skip: !engineBuilt}, async () => {
   const {editor, owner} = await poses();
   try {
     editor.seek(11);
-    const expected = editor._evaluateHere();
+    const expected = editor.evaluatedFrame;
     const session = owner.session(), ask = session.query.bind(session);
     session.query = () => { throw new Error('unported: geometry with a feature of its own'); };
     editor._invalidate();
-    assert.deepEqual(editor.evaluatedFrame.objects.map(object => object.root_x), expected.objects.map(object => object.root_x));
-    assert.equal(editor.geometry.objects.size, expected.objects.length);
+    assert.throws(() => editor.evaluatedFrame, /unported: geometry with a feature of its own/);
     session.query = () => { throw new Error('errors.something.invalid'); };
     editor._invalidate();
     assert.throws(() => editor.evaluatedFrame, /errors\.something\.invalid/);

@@ -13,7 +13,6 @@ try {
   const result = await page.evaluate(async () => {
     const { Editor } = await import('/src/editor.mjs');
     const { validateScene } = await import('/src/pivot/model.mjs');
-    const { buildGeometry } = await import('/src/pivot/geometry.mjs');
     const results = [], epoch = () => performance.timeOrigin + performance.now();
     const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     for (const path of ['Goku_Broly_Movie_by_Killer1.piv', 'PIVOT ANIMATOR SCENE TEST/Shroobs_JJK_Pack.piv']) {
@@ -35,7 +34,6 @@ try {
         const timings = { workerSenderSerializeMs: senderSerializeMs, workerToReceiverMs: receivedEpoch - postedEpoch, receiveLongTasks };
         let started = performance.now(); validateScene(report); timings.validateMs = performance.now() - started; await wait(20);
         const editor = new Editor({ demo: false }); started = performance.now(); editor.load(report); timings.editorLoadWithoutListenersMs = performance.now() - started; await wait(20);
-        started = performance.now(); const geometry = buildGeometry(report, report.keyframes[0]); timings.firstGeometryMs = performance.now() - started; timings.firstGeometryDrawables = geometry.drawables.length; await wait(20);
         started = performance.now(); const cloned = structuredClone(report); timings.mainStructuredCloneMs = performance.now() - started; await wait(20);
         const serializerWorker = new Worker('/tests/import-profile-worker.mjs', { type: 'module' });
         started = performance.now(); serializerWorker.postMessage({ type: 'profile-clone-only', report }); timings.playbackSnapshotPostMs = performance.now() - started;

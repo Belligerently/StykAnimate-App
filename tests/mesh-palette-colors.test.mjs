@@ -1,10 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {figurePalette,validateRecolor} from '../src/figure-colors.mjs';
 import {resolveInstanceFigure,validateAnimationStyle} from '../src/animation-style.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
@@ -24,7 +22,8 @@ function fixture(options={}, edit=null) {
   edit?.(document);
   const editor=ownedEditorFor({demo:false,...options}, document);editor.select(1);return editor;
 }
-const colors=e=>buildGeometry(e.report,e.evaluatedFrame).objects.get(e.selectedSlot).spatialMesh.colors;
+/** The colours the selected figure's mesh shows, one per mesh colour: what its palette says (the engine draws the mesh; the interface holds the swatches). */
+const colors=e=>{const shown=[];for(const entry of e.figurePalette())for(const index of entry.meshColors??[])shown[index]=[1,3,5].map(at=>parseInt(entry.color.slice(at,at+2),16));return shown;};
 
 for(const options of [{layerTimeline:true},{layerTimeline:false,propertyChannels:false}])test(`mesh palette edits preserve other colors, instances and history: ${JSON.stringify(options)}`,async()=>{
   const e=fixture(options),mesh=e.figure._styk.spatialMesh,before=e.serialize(),other=structuredClone(e.evaluatedFrame.objects[1]);
@@ -35,25 +34,14 @@ for(const options of [{layerTimeline:true},{layerTimeline:false,propertyChannels
   assert.equal(e._undo.length,1);assert.deepEqual(e.evaluatedFrame.objects[1],other);
   assert.equal(e.figure._styk.spatialMesh,mesh);assert.equal(resolveInstanceFigure(e.figure,e.object)._styk.spatialMesh,mesh);
   const saved=e.serialize(),decoded=await decodeDocument(await buildContainerV2(saved,'styk'),'styk');
-  const loaded=new Editor({demo:false,...options}).load(decoded.document);loaded.select(1);
+  const loaded=ownedEditorFor({demo:false,...options},decoded.document);loaded.select(1);
   assert.deepEqual(colors(loaded),colors(e));
-  assert.deepEqual(buildGeometry(e.report,e.evaluatedFrame).objects.get(0).spatialMesh.colors,colors(e));
   e.undo();assert.deepEqual(colors(e),[[210,145,100],[60,130,190]]);
   // Authored pose tracks retain their source snapshots for redo, as ordinary
   // joint edits do. Undo restores the authored keyframes and definitions.
   assert.deepEqual(e.serialize().keyframes,before.keyframes);assert.deepEqual(e.serialize().figure_types,before.figure_types);
   e.redo();assert.deepEqual(colors(e),[[119,136,153],[60,130,190]]);
   e.resetFigureColors();assert.deepEqual(colors(e),[[210,145,100],[60,130,190]]);
-});
-
-test('color-only mesh evaluation reuses vertex, depth, triangle and binding arrays',()=>{
-  const e=fixture({layerTimeline:false,propertyChannels:false}),frame=e.frame,previous=buildGeometry(e.report,frame),mesh=previous.objects.get(0).spatialMesh;
-  const object={...frame.objects[0],_stykStyle:{meshColors:{0:0x778899}}};
-  const geometry=buildGeometry(e.report,{...frame,objects:[object,frame.objects[1]]},{previous,dirtySlots:new Set([0])});
-  const edited=geometry.objects.get(0).spatialMesh;
-  assert.deepEqual(edited.colors,[[119,136,153],[60,130,190]]);
-  for(const field of ['positions','depth','triangles','materials','key','plan'])assert.equal(edited[field],mesh[field],field);
-  assert.equal(geometry.objects.get(0).fig._styk.spatialMesh,e.figure._styk.spatialMesh);
 });
 
 test('partial figure tints are normalized once while replacing a mesh color',()=>{
@@ -75,9 +63,8 @@ test('attached mesh palettes preserve instance membership after swatches merge',
   const mergedStyle=e.evaluatedFrame.objects[0]._stykStyle.meshColors;
   e.replaceFigureColor(skin.color,'#778899',{targets:skin});
   assert.deepEqual(mergedStyle,{0:0x3c82be},'editing a palette keeps earlier instance overlays immutable');
-  const geometry=buildGeometry(e.report,e.evaluatedFrame);
-  for(const slot of [0,1])assert.deepEqual(geometry.objects.get(slot).spatialMesh.colors,[[119,136,153],[60,130,190]]);
-  assert.deepEqual(geometry.objects.get(2).spatialMesh.colors,[[210,145,100],[60,130,190]]);
+  // Each attached instance shows its own overlay: the first two the new colour, the third the definition's.
+  for(const [uid,expected] of [[1,[[119,136,153],[60,130,190]]],[2,[[119,136,153],[60,130,190]]],[3,[[210,145,100],[60,130,190]]]]){e.select(uid);assert.deepEqual(colors(e),expected,`UID ${uid}`);}
 });
 
 test('mesh palettes reject malformed and out-of-definition indices before editing',()=>{

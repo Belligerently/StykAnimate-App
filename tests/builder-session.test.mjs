@@ -6,7 +6,7 @@ import {BuilderSession} from '../src/builder-session.mjs';
 import {emptyDocument, createObject, createFrame, defaultFigure} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {isDrawingLayer} from '../src/drawing-model.mjs';
-import {figureDocument, readsFiguresFromEngine} from './support/engine-export.mjs';
+import {figureDocument} from './support/engine-export.mjs';
 
 /** One scene with two figures: the bound figure has two instances, the other
  * figure is an unjoined neighbor used to prove builder edits stay scoped. */

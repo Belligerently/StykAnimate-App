@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {builderFixture} from '../scripts/builder-benchmark-fixture.mjs';
 import {ConstructionIndex,strokeSegments} from '../src/builder-construction.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
@@ -25,7 +24,7 @@ test('new chain round-trips and undo removes the complete new figure',()=>{
  const e=ownedEditorFor({demo:false});e.select(null);const before=JSON.stringify(e.serialize());
  e.addSegments(strokeSegments([{x:110,y:100},{x:160,y:100},{x:160,y:140}]));
  assert.equal(e.figure.segments.length,2);const saved=e.serialize();
- const restored=new Editor({demo:false}).load(saved);restored.select(e.selectedUid);
+ const restored=ownedEditorFor({demo:false},saved);restored.select(e.selectedUid);
  assert.equal(restored.figure.segments[1].parent_id,1);assert.equal(restored.object.root_x,110);assert.equal(restored.object.angles.length,2);
  e.undo();assert.equal(JSON.stringify(e.serialize()),before);e.redo();assert.equal(JSON.stringify(e.serialize()),JSON.stringify(saved));
 });

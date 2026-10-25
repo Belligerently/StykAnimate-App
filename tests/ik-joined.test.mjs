@@ -1,9 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {pivotDocument} from './support/engine-export.mjs';
 
 const near = (a, b, tolerance = .001) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
@@ -160,7 +158,7 @@ test('thickness and color edits preserve IK poses across cache rebuilds, history
     for (const patch of [{thickness:32},{color:'#ff3300'},{opacity:.5}]) {
       e.updateSegmentStyle(patch); check(e);
       e._invalidate(); check(e);
-      check(new Editor({demo:false,propertyChannels}).load(e.serialize()));
+      check(ownedEditorFor({demo:false,propertyChannels},e.serialize()));
       e.undo(); check(e); e.redo(); check(e);
     }
   }
@@ -177,7 +175,7 @@ test('end-group branches keep their shape through repeated target drags and root
     }
     e.select(1,-1);e.beginTranslationDrag();for(let i=0;i<40;i++){e.moveSelection(Math.sin(i/10)*15,-10,{fromStart:true});check();}e.commitDrag();check();
     e.rotateSelection(.3);check();
-    const restored=new Editor({demo:false,propertyChannels}).load(e.serialize());
+    const restored=ownedEditorFor({demo:false,propertyChannels},e.serialize());
     const current=shapes(restored);near(current.get(24).angle-current.get(22).angle,relative);
   }
 });
@@ -211,7 +209,7 @@ test('edited target orientation survives root and ancestor FK motion, history an
     e.select(1,0); e.rotateJoint(.3); check(e);
     e.select(1,-1); e.moveSelection(12,-10); check(e); e.rotateSelection(.15); check(e);
     e.undo(); check(e); e.redo(); check(e);
-    check(new Editor({demo:false,propertyChannels}).load(e.serialize()));
+    check(ownedEditorFor({demo:false,propertyChannels},e.serialize()));
   }
 });
 
@@ -223,13 +221,13 @@ test('foot articulation edits update only the edited branch and keep its new ori
     e.rotateJoint(.3); near(shapes(e).get(33).angle,.7); near(shapes(e).get(34).angle,.9);
     for (const id of [24,35,41]) point(shapes(e).get(id).end,before.get(id).end);
     e.undo();
-    sameRig(e,new Editor({demo:false,propertyChannels}).load(saved));
-    assert.deepEqual(e.evaluatedFrame.objects.map(o=>o._stykIK),new Editor({demo:false,propertyChannels}).load(saved).evaluatedFrame.objects.map(o=>o._stykIK));
+    sameRig(e,ownedEditorFor({demo:false,propertyChannels},saved));
+    assert.deepEqual(e.evaluatedFrame.objects.map(o=>o._stykIK),ownedEditorFor({demo:false,propertyChannels},saved).evaluatedFrame.objects.map(o=>o._stykIK));
     e.redo();
     const posed = shapes(e);
     e.select(1,-1); e.moveSelection(10,-10);
     for (const id of [22,33,34,35]) point(shapes(e).get(id).end,posed.get(id).end);
-    sameRig(e,new Editor({demo:false,propertyChannels}).load(e.serialize()));
+    sameRig(e,ownedEditorFor({demo:false,propertyChannels},e.serialize()));
   }
 });
 
@@ -288,7 +286,7 @@ test('near-zero construction pivots keep shin artwork attached and the next foot
     for (const id of [33,34,35]) point(shapes(e).get(id).end,planted.get(id).end);
     e.rotateSelection(.2); check();
     for (const id of [33,34,35]) point(shapes(e).get(id).end,planted.get(id).end);
-    sameRig(e,new Editor({demo:false,propertyChannels}).load(e.serialize()));
+    sameRig(e,ownedEditorFor({demo:false,propertyChannels},e.serialize()));
   }
 });
 
@@ -327,8 +325,11 @@ test('joined IK undo, cancel and native/Pivot persistence retain all solved bran
   e.beginDrag(); e.poseJoint(355,265); e.commitDrag(); const after=e.serialize();
   e.undo(); assert.deepEqual(e.serialize(),before); e.redo(); assert.deepEqual(e.serialize(),after);
   e.beginDrag(); e.poseJoint(340,240); e.cancelDrag(); assert.deepEqual(e.serialize(),after);
-  for (const report of [after,pivotDocument(after)]) sameRig(e,new Editor({demo:false}).load(report));
+  for (const report of [after,pivotDocument(after)]) sameRig(e,ownedEditorFor({demo:false},report));
 });
+
+/** The engine's geometry `fraction` of the way through the first row of the timeline. */
+const geometryAt = (editor, fraction) => { const row = editor.timeline[0]; editor.seek(row.start + fraction * row.count); return editor.geometry; };
 
 test('joined IK interpolation is identical to a monolithic rig and independent of slot order', () => {
   // Both poses are made by editing; the document of the two keys is opened on the engine afterwards.
@@ -338,7 +339,7 @@ test('joined IK interpolation is identical to a monolithic rig and independent o
     return ownedEditorFor({demo:false},{...e.serialize(),keyframes:[a,b]});
   });
   for (const t of [.7,.1,.9,.5]) {
-    const a=buildGeometry(joined.report,evaluatedFrame(joined.report,0,t)), b=buildGeometry(single.report,evaluatedFrame(single.report,0,t));
+    const a=geometryAt(joined,t), b=geometryAt(single,t);
     for (const g of a.objects.values()) for (const s of g.segments) point(s.end,b.objects.get(0).joints.get(s.seg.segment_id));
   }
   const report=joined.serialize();
@@ -347,6 +348,6 @@ test('joined IK interpolation is identical to a monolithic rig and independent o
     frame.objects.forEach((o,slot)=>{o.object_slot=slot;if(o.join)o.join.target_object_slot=slots.get(o.join.target_unique_id);});
     frame.object_draw_order=frame.objects.map((_,i)=>i);
   }
-  const reordered=new Editor({demo:false}).load(report);
+  const reordered=ownedEditorFor({demo:false},report);
   sameRig(joined,reordered);
 });

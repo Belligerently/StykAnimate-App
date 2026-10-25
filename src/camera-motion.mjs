@@ -55,4 +55,3 @@ export function validateCameraMotion(state) {
     }
   }
 }
-export function frameWithCameraTime(report,frame,tick){return report._styk?.cameraMotion?.clips.length?{...frame,_cameraMotionTick:tick}:frame;}
