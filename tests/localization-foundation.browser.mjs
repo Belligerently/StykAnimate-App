@@ -534,7 +534,7 @@ try {
   check('One-sided numeric bounds retain their original infinity value in translated validation',await page.evaluate(()=>validationInput.validationMessage===styk.localization.t('propertyControls.enterValueBetween',{min:-Infinity,max:10})&&validationInput.value==='12'));
   await page.evaluate(()=>{validationControls.destroy();rigCaptionProbe.remove();styk.localization.localization.setPseudo(null);});
   await page.evaluate(async()=>{
-    const {Editor}=await import('/src/editor.mjs');const {emptyDocument}=await import('/src/demo.mjs');const {Timeline}=await import('/src/timeline.mjs');
+    const {Editor}=await import('/src/editor.mjs');const {emptyDocument}=await import('/src/demo.mjs');const {Timeline}=await import("/src/layer-timeline.mjs");
     const {appendLocalized}=await import('/src/localization-bindings.mjs');
     window.organizationEditor=new Editor({demo:false,layerTimeline:true}).load(emptyDocument());const artist=organizationEditor.createLayer('Artist layer',{activate:false});
     window.organizationHost=document.createElement('div');organizationHost.className='workspace';organizationHost.dataset.mode='animate';organizationHost.style.cssText='position:fixed;top:40px;right:10px;width:760px;height:300px;background:white;z-index:10';appendLocalized(document.body,organizationHost);

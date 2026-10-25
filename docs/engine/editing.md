@@ -296,7 +296,7 @@ ownership gate.
 Portable mobile pin additions include `HistoryLimits`, worker history configuration,
 preparation and application methods, `Editor::set_revision_counters`,
 `set_selection_metadata`, `motion_display_frame_worker`, prepared/guarded publication
-types and accessors, and the Engine layer planning and canonical publication APIs.
+types and accessors, and the Engine canonical publication APIs.
 `CommandKind::Animation` gains structural metadata, `FigureRange` retains geometry when
 recorded, and layer/movieclip command variants preserve their recorded history shape.
 Browser bindings remain confined to `styk-wasm`.

@@ -70,7 +70,7 @@ src/color-palette.mjs	engine	styk-eval	js
 src/color-picker-magnifier.mjs	ui	-	stays	
 src/color-picker.mjs	ui	-	stays	
 src/community-library.mjs	platform	-	stays	file, storage and network services
-src/connected-timeline.mjs	engine	styk-eval	js	
+src/connected-timeline.mjs	engine	styk-eval	removed	moved to tests/helpers/legacy-connected-timeline.mjs: only the legacy timeline projection of the tests used it (4378 bytes)
 src/content-hash.mjs	engine	styk-render::images	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/demo.mjs	engine	styk-edit	js	
 src/document-export-worker.mjs	engine	styk-formats::save	partial	Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); Pivot and figure files are made by the engine on this worker (styk-edit/src/export, styk_engine::document_export); the JS still prepares the .styk container
@@ -101,9 +101,9 @@ src/drawing-png.mjs	engine	styk-drawing	ported	PNG data URL helpers and the enco
 src/drawing-preparation.mjs	engine	styk-drawing	partial	Rust: tile preparation (styk-drawing); its orchestration still JS
 src/drawing-pressure-curve.mjs	ui	-	stays	
 src/drawing-preview-cache.mjs	engine	styk-drawing	js	
-src/drawing-provider.mjs	engine	styk-drawing	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/drawing-provider.mjs	engine	styk-drawing	removed	deleted: only the removed playback resources used it (4068 bytes)
 src/drawing-raster.mjs	engine	styk-drawing	partial	Rust: reduced levels for previews (styk-drawing); presenters still JS
-src/drawing-render-dependencies.mjs	engine	styk-drawing	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/drawing-render-dependencies.mjs	engine	styk-drawing	removed	deleted: only the removed camera effects executor used it (2362 bytes)
 src/drawing-resources.mjs	engine	styk-drawing	js	
 src/drawing-selection.mjs	engine	styk-drawing	partial	Rust: the selection matrix and moving selected pixels (styk-drawing); selection state still JS
 src/drawing-sliders.mjs	ui	-	stays	
@@ -148,7 +148,7 @@ src/editor-handle-commands.mjs	engine	styk-edit	partial	Rust: recorded segment-v
 src/editor-handle-edit.mjs	engine	styk-edit	ported	beginHandleEditDrag, editHandlePosition, commitHandleEditDrag, cancelHandleEditDrag, handleEditSegmentPose (styk-edit/src/handle_edit.rs)
 src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); getIKSettings, setNodeIK, rotateIKTarget, also across joined figures (bakeGraph and captureFor on the graph; ik_settings.rs); same-call evaluated pose/full solved map reuse verified against old58-step double-capture oracle and final116full/compact+numeric/drag controls; updated controller specs still recompute; no public API/math change; actual ordinary app exact22.925/17.075ms remains aboveJS; fresh full cost/default gate next; B10 active unpinned context uses existing all-joint numeric query, full solved map/guards/default/rich fallback exact; verified215edit/12CLI241/82JS/check, shipping61537fd7901f10,241,121B; no API/math/schema change; fresh full figures cost/checkpoint/default gate next
 src/editor-inbetween-async.mjs	engine	styk-edit	removed	deleted with the Insert Inbetween dialog, which nothing opened any more: the asynchronous insertion and its planner on the engine's workers (10327 bytes)
-src/editor-inbetween.mjs	engine	styk-edit	removed	deleted with the Insert Inbetween dialog, which nothing opened any more: the planner and insertInbetweenFrames; the in-between preview samples stay in styk_eval::preview (16274 bytes)
+src/editor-inbetween.mjs	engine	styk-edit	removed	deleted with the Insert Inbetween dialog, which nothing opened any more: the planner and insertInbetweenFrames; the in-between preview samples went with it (16274 bytes)
 src/editor-layer-async.mjs	engine	styk-edit	partial	Rust: native and sheet migration kernels on the existing bounded Engine worker lane with cancel/stale/ACK retirement; app async facade and selection-owner handoff pending
 src/editor-layer-focus.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-folders.mjs	engine	styk-edit	verified	createLayerFolder, renameLayerFolder, moveLayersToFolder, arrangeLayers, deleteLayerFolder (styk-edit/src/layers.rs); all five ordinary-sheet mutators adopt opt-in ordered layerPublication updates through the original _layerEdit tail; getLayerFolders remains a UI record projection; 236 Rust / three recordings 58 exact calls / 204 JS and Main check pass; actual default all-five adoption, Advanced timeline Ungroup, 21 paired boundaries and full undo exact; public Rust signatures/layout/math unchanged, guarded unsupported contexts retain their route
@@ -313,16 +313,16 @@ src/playback-cadence.mjs	engine	styk-engine::playback	js	scheduling, budgets
 src/playback-geometry-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-metrics.mjs	engine	styk-engine::playback	js	scheduling, budgets
 src/playback-native.mjs	engine	styk-formats::piv	removed	deleted: the engine opens files into its own store; no playback worker takes a frame table
-src/playback-patch.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
-src/playback-planning.mjs	engine	styk-engine::playback	removed	deleted: the layer-move planning job runs on the engine's workers (styk-engine planning)
-src/playback-raster-cache.mjs	engine	styk-engine::playback	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
-src/playback-resources.mjs	engine	styk-engine::playback	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/playback-patch.mjs	engine	styk-engine::playback	removed	deleted: the playback worker it patched is gone (4600 bytes)
+src/playback-planning.mjs	engine	styk-engine::playback	removed	deleted: the layer-move planning job went too; the session plans a layer move itself (styk-edit layer_membership)
+src/playback-raster-cache.mjs	engine	styk-engine::playback	removed	deleted: only the removed playback resources used it (3781 bytes)
+src/playback-resources.mjs	engine	styk-engine::playback	removed	deleted: nothing in the app used it; the engine decodes and draws the pictures (6825 bytes)
 src/playback-retention.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/playback-software-painter.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/playback-software-size.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/playback-tween-cache.mjs	engine	styk-engine::playback	removed	deleted: only the JavaScript motion-path sampling used it (1243 bytes)
 src/playback-upload.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
-src/playback-vector-cache.mjs	engine	styk-engine::playback	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/playback-vector-cache.mjs	engine	styk-engine::playback	removed	deleted: only the removed playback resources used it (1337 bytes)
 src/playback-window.mjs	engine	styk-engine::playback	js	scheduling, budgets
 src/playback-worker.mjs	engine	styk-engine::playback	removed	deleted: the engine prepares frames on its worker threads (styk-engine frames)
 src/playback.mjs	engine	styk-engine::playback	removed	deleted: the engine prepares playback on its worker threads and the app reads its tickets (src/engine/engine-playback.mjs)
@@ -343,11 +343,11 @@ src/project-tabs.mjs	engine	styk-edit	js
 src/property-controls.mjs	ui	-	stays	
 src/property-toggle.mjs	ui	-	stays	
 src/range-figure-operations.mjs	engine	styk-edit	partial	Rust: planFigureFrameOperation for every operation (styk-edit/src/range_plan.rs: appearance, recolouring, order, join, detach, delete, duplicate, reset, center, align by the app's bounds callback, scale, rotate, flips and branch flips)
-src/raster-surfaces.mjs	engine	styk-render	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/raster-surfaces.mjs	engine	styk-render	removed	deleted: only the removed playback resources used it (1952 bytes)
 src/raster-view.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/release-notes.mjs	app	-	stays	telemetry, support, updates
 src/render-artwork.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
-src/renderer-camera-scene.mjs	engine	styk-render	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/renderer-camera-scene.mjs	engine	styk-render	removed	deleted: only the removed camera effects executor used it (2907 bytes)
 src/renderer-canvas-plan.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/renderer-geometry.mjs	engine	styk-eval::view	partial	the interface's view math only: cameraMatrix, worldToScreen, screenToWorld and objectBounds. Rust: styk_eval::view (camera_matrix, orientation) and drawlist::artwork_bounds; the editing cut replaces picking and bounds with engine queries
 src/renderer-glyphs.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
@@ -356,7 +356,7 @@ src/renderer-mesh-raster.mjs	engine	styk-render	removed	deleted with the JavaScr
 src/renderer-onion-composite.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/renderer-opacity.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/renderer-preview-drawing-resources.mjs	engine	styk-render	removed	deleted with the drawing composite worker, its only caller: the engine draws every frame
-src/renderer-preview-drawings.mjs	engine	styk-render	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/renderer-preview-drawings.mjs	engine	styk-render	removed	deleted: only the removed camera effects executor used it (1749 bytes)
 src/renderer-raster-cache.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/renderer-raster-capture.mjs	engine	styk-render	removed	deleted with the drawing composite worker, its only caller: the engine draws every frame
 src/renderer-upload.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
@@ -375,8 +375,8 @@ src/rig-solids.mjs	engine	styk-edit	js
 src/rig-spatial.mjs	engine	styk-eval::spatial	partial	Rust: spatial joints, quaternion frames, 3D pose tweens, quaternionPose (rig.rs, styk_eval::spatial); validateSpatial (styk-edit/src/rig_behavior.rs); authoring still JS
 src/rig-test-ui.mjs	ui	-	stays	
 src/rig-weighted.mjs	engine	styk-eval::rig	partial	Rust: weighted joints and bindings (styk_eval::rig); validateWeightedJoint (styk-edit/src/rig_behavior.rs); authoring still JS
-src/scene-order.mjs	engine	styk-render	partial	Rust: composeSceneGroups for onion skins; other scene grouping still JS
-src/scene-preparation.mjs	engine	styk-render	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/scene-order.mjs	engine	styk-render	removed	deleted: nothing imported it; the engine orders onion skins (styk_eval::onion) (3105 bytes)
+src/scene-preparation.mjs	engine	styk-render	removed	deleted: only the removed camera effects executor used it (1150 bytes)
 src/segment-values-dialog.mjs	ui	-	stays	
 src/settings.mjs	ui	-	stays	
 src/shared-clipboard.mjs	engine	styk-edit	js	
@@ -395,7 +395,7 @@ src/shell/rail.mjs	ui	-	stays
 src/shell/shell-commands.mjs	ui	-	stays	
 src/shell/stage-head.mjs	ui	-	stays	
 src/shell/topbar.mjs	ui	-	stays	
-src/simple-timeline.mjs	ui	-	stays	
+src/simple-timeline.mjs	ui	-	removed	deleted: an alias of sheet-filmstrip.mjs that only tests imported (149 bytes)
 src/source-record.mjs	engine	styk-formats::container	js	
 src/spatial-controls.mjs	ui	-	stays	
 src/spatial-gizmo.mjs	ui	-	stays	
@@ -455,7 +455,7 @@ src/timeline-menu.mjs	ui	-	stays
 src/timeline-navigation.mjs	ui	-	stays	
 src/timeline-organization.mjs	ui	-	stays	
 src/timeline-rows.mjs	ui	-	stays	
-src/timeline.mjs	ui	-	stays	
+src/timeline.mjs	ui	-	removed	deleted: an alias of layer-timeline.mjs that only tests imported (83 bytes)
 src/topology-history.mjs	engine	styk-edit	partial	Rust: topology entries' snapshots of the definition and the poses they touch, undo and redo (styk-edit/src/topology.rs); the history byte budget still JS
 src/touch/canvas-touch.mjs	ui	-	stays	
 src/touch/long-press.mjs	ui	-	stays	
@@ -500,7 +500,7 @@ src/vfw-frame-worker.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, 
 src/vfw-pixels.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/vfw-video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/vfx-camera-gpu.mjs	engine	styk-render::vfx	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
-src/vfx-camera.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
+src/vfx-camera.mjs	engine	styk-render::vfx	removed	deleted: nothing in the app used it; the engine draws the camera image and its effects (15835 bytes)
 src/vfx-canvas.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-clip-controls.mjs	ui	-	stays	
 src/vfx-clip-inspector.mjs	ui	-	stays	

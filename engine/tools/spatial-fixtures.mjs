@@ -12,9 +12,8 @@
 // engine/crates/styk-eval/tests/spatial.rs compares the engine with each of
 // them and checks that each stops matching without the feature it is about.
 //
-// Figure definitions are written here, as the asset builders write them
-// (scripts/build-spider-man-rig.mjs): a mesh is authored data, the editor has no
-// command that creates one. Meshes come from the editor's own converter
+// Figure definitions are written here, as the asset builders write them: a mesh
+// is authored data, the editor has no command that creates one. Meshes come from the editor's own converter
 // (src/spatial-mesh-legacy.mjs); every pose, key, camera and proportion is set
 // with the editor's commands.
 import {mkdirSync, writeFileSync} from 'node:fs';

@@ -56,14 +56,9 @@ test('a document the engine draws gets its thumbnails from the stage', async () 
   assert.equal(thumbnails.stats.engine.renders, 2);
 });
 
-test('in-between previews without a worker, refused documents and devices without a second canvas are not drawn', async () => {
+test('refused documents and devices without a second canvas are not drawn', async () => {
   const target = editor();
-  // An in-between preview samples a pose that is not in the document.
-  const {stage, calls} = app();
-  const thumbnails = new EngineThumbnails(target, {stage: () => stage, previews: async () => null});
-  assert.equal(await thumbnails.renderThumbnail(0, canvas(), {inbetween: {ratio: .5}}), false);
-  assert.equal(calls.length, 0, 'without a worker nothing is asked of the engine');
-  assert.equal(thumbnails.stats.engine.refusal, 'the preview worker cannot sample in-betweens (no preview worker)');
+  const {stage} = app();
   // The engine refuses the document (its stroke waits for publication).
   const refused = app({refusal: 'unpublished drawing strokes'});
   const second = new EngineThumbnails(target, {stage: () => refused.stage});
@@ -89,19 +84,6 @@ test('in-between previews without a worker, refused documents and devices withou
   const fifth = new EngineThumbnails(target, {stage: () => stage});
   assert.equal(await fifth.renderThumbnail(9, canvas()), false);
   assert.equal(fifth.stats.engine.refusal, 'a frame outside the timeline');
-});
-
-test('in-between thumbnails sample an explicit interval in the existing engine worker without copying the document', async () => {
-  const {stage, calls} = app(), target = editor();
-  const worker = previewWorker();
-  const thumbnails = new EngineThumbnails(target, {stage: () => stage, previews: async () => worker.worker});
-  const inbetween = {ratio: .37, onionMode: 'settings', onionCount: 3, onionOpacity: .18, onionAhead: false};
-  const picture = canvas();
-  assert.equal(await thumbnails.renderThumbnail(1, picture, {inbetween}), true);
-  assert.deepEqual(calls, [['definitions', 4]]);
-  assert.deepEqual({...worker.requests[0], address: undefined}, {operation: 'inbetween', address: undefined, revision: 4, index: 1, ratio: .37, mode: 1, count: 3, opacity: .18, ahead: false, width: 320, height: 192});
-  assert.equal(picture.drawn[0].closed, true);
-  assert.equal(thumbnails.stats.engine.inbetweens, 1);
 });
 
 test('thumbnails the stage cannot draw are drawn by the preview worker on the CPU, from the engine\'s document', async () => {

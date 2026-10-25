@@ -1,6 +1,6 @@
 // Legacy document projection fixture; never loaded by the application.
 import {keyEasing} from '../../src/keyframe-easing.mjs';
-import {connectedTimelineGroups,connectedGroupIndex} from '../../src/connected-timeline.mjs';
+import {connectedTimelineGroups,connectedGroupIndex} from './legacy-connected-timeline.mjs';
 import {animationChannelId} from '../../src/animation-channels.mjs';
 import {ANIMATION_PROPERTIES,AUTHORING_PROPERTIES,ANIMATION_PROPERTY_NAMES} from '../../src/animation-properties.mjs';
 const PROPERTY_NAMES = ANIMATION_PROPERTY_NAMES;

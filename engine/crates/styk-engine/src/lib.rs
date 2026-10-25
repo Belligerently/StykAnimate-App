@@ -29,7 +29,6 @@ pub mod edit;
 pub mod export;
 mod frames;
 mod images;
-pub mod planning;
 mod publication;
 pub use publication::PublicationRetirement;
 mod store;
@@ -145,8 +144,8 @@ struct State {
     images: images::Store,
     /// Background tasks that are not frames (image decoding), oldest first.
     tasks: TaskQueue,
-    /// Read-only planning/cleanup tasks survive document replacement: payloads
-    /// must be disposed on a worker, including jobs awaiting receiver ACKs.
+    /// Cleanup tasks survive document replacement: what a replaced document held
+    /// is disposed on a worker, never where the replacement was published.
     retained_tasks: std::collections::LinkedList<Box<dyn FnOnce(&Engine) + Send>>,
 }
 
@@ -163,7 +162,6 @@ struct Inner {
     pictures_refused: std::sync::atomic::AtomicUsize,
     progress: std::sync::atomic::AtomicU32,
     notifier: Option<Notifier>,
-    planning: Shared<Option<Arc<planning::Core>>>,
 }
 
 /// The engine. Cheap to clone; every clone is the same engine.
@@ -196,7 +194,6 @@ impl Engine {
                 pictures_refused: Default::default(),
                 progress: std::sync::atomic::AtomicU32::new(0),
                 notifier,
-                planning: Shared::new(None),
             }),
         }
     }
@@ -250,8 +247,8 @@ impl Engine {
         self.inner.state.notify_all();
     }
 
-    /// Internal planning continuations: coalesced to one per active job and
-    /// retained across generation replacement until a worker disposes the job.
+    /// Cleanup that must outlive the generation being replaced: runs on a worker
+    /// ahead of the ordinary tasks.
     fn spawn_retained(&self, task: impl FnOnce(&Engine) + Send + 'static) {
         let mut node = std::collections::LinkedList::new();
         node.push_back(Box::new(task) as Box<dyn FnOnce(&Engine) + Send>);
@@ -285,7 +282,6 @@ impl Engine {
 
     /// Asks every worker to return from [`Engine::work`].
     pub fn stop(&self) {
-        planning::cancel_current(self);
         {
             let mut state = self.inner.state.lock();
             // Workers return once the flag is set, so a decode being prepared must not be installed after it.
@@ -314,7 +310,6 @@ impl Engine {
     /// Runs one unit of background work on the calling thread, if there is any.
     /// A host without worker threads calls this between its own tasks.
     pub fn step(&self) -> bool {
-        planning::expire_current(self);
         let job = {
             let mut state = self.inner.state.lock();
             if let Some(task) = detach_task(&mut state.retained_tasks) {

@@ -8,7 +8,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true}),page=await
 page.setDefaultTimeout(15000);
 const observations=[],errors=[],sources={},pending=[];
 page.on('pageerror',e=>errors.push(e.message));
-page.on('response',r=>{const name=new URL(r.url()).pathname;if(!['/src/app.mjs','/src/inspector-view.mjs','/src/timeline.mjs'].includes(name))return;
+page.on('response',r=>{const name=new URL(r.url()).pathname;if(!['/src/app.mjs','/src/inspector-view.mjs','/src/layer-timeline.mjs'].includes(name))return;
   pending.push(r.body().then(async b=>{sources[name]=createHash('sha256').update(b).digest('hex');await writeFile(path.join(out,'loaded-'+path.basename(name)),b);}));});
 const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 async function record(name,detail){observations.push({name,detail});console.log(JSON.stringify({name,detail}));}

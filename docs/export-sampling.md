@@ -119,12 +119,12 @@ than retaining the complete file as JavaScript ArrayBuffers.
 See [export experience and verification](export-experience.md) for the panel,
 progress semantics, measured 4K throughput and desktop export evidence.
 
-If the editor's WebGPU device is lost, its GPU resources are destroyed and the
-scene canvas is replaced with a software compatibility renderer automatically.
-The document, playhead, undo history and active software export remain available.
-Recovery makes one attempt and leaves Save and a manual retry available if
-software canvas creation also fails. Driver resets, total process memory
-exhaustion and browser/OS termination remain outside this guarantee.
+If the editor's graphics device is lost, its GPU resources are destroyed and the
+scene canvas is replaced, with a stage on a new device, automatically. The
+document, playhead, undo history and active export remain available. Recovery
+makes two attempts and leaves Save and a manual Retry available if the new
+device cannot start. Driver resets, total process memory exhaustion and
+browser/OS termination remain outside this guarantee.
 
 Regression commands:
 

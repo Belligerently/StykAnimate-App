@@ -281,7 +281,7 @@ style findings.
   pacing, native comparison and repeated-session drift remain open.
 - [x] T08 A bottom timeline with time ruler, playhead, visible keys/holds,
   editable timing, track selection, range selection, and horizontal zoom.
-  **Verified:** [timeline.mjs](../src/timeline.mjs),
+  **Verified:** [layer-timeline.mjs](../src/layer-timeline.mjs),
   [timeline.browser.mjs](../tests/timeline.browser.mjs),
   [timeline report](../artifacts/timeline-verification.json) and integrated
   authoring/creation UI reports exercise timing, tracks, ranges and scrubbing.

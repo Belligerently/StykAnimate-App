@@ -1179,7 +1179,6 @@ dependencies = [
  "styk-eval",
  "styk-formats",
  "styk-piv",
- "thiserror",
 ]
 
 [[package]]

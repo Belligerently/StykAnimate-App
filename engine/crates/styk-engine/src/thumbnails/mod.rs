@@ -17,7 +17,6 @@
 
 pub mod library;
 pub mod monitor;
-pub mod inbetween;
 
 /// The largest thumbnail side (`src/thumbnail-worker.mjs`).
 pub const MAX_SIDE: u32 = 512;

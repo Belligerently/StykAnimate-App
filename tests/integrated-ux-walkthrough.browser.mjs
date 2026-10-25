@@ -506,7 +506,7 @@ try {
   });
   await step("simple-initial-reveal", async () => {
     const hidden = await page.evaluate(async () => {
-      const { SimpleTimeline } = await import("/src/simple-timeline.mjs");
+      const { SheetFilmstrip } = await import("/src/sheet-filmstrip.mjs");
       const { Editor } = await import("/src/editor.mjs");
       const editor = new Editor({ demo: true, layerTimeline:true });
       editor.selectFrame(23);
@@ -515,7 +515,7 @@ try {
       host.style.cssText =
         "position:fixed;left:20px;top:60px;width:600px;height:205px;z-index:80;display:none!important";
       document.body.append(host);
-      const ui = new SimpleTimeline(host, editor);
+      const ui = new SheetFilmstrip(host, editor);
       window.hiddenSimpleTest = { host, ui, editor };
       return ui.revealPending && ui.strip.clientWidth === 0;
     });
@@ -732,7 +732,7 @@ try {
         document.querySelector("#renderer-error").hidden,
     );
   });
-  await step("compatibility", async () => {
+  await step("webgl2-backend", async () => {
     const fallback = await browser.newPage({
       viewport: { width: 1100, height: 740 },
     });
@@ -742,28 +742,28 @@ try {
       );
       await fallback.goto(process.env.STYK_URL || "http://127.0.0.1:47831");
       await fallback.waitForFunction(() => window.styk?.ready);
+      await fallback.waitForFunction(
+        () => document.querySelector("#renderer-label")?.textContent === "WebGL2",
+      );
       const label = await fallback.locator("#renderer-label").evaluate((e) => ({
         text: e.textContent,
-        title: e.title,
         display: getComputedStyle(e).display,
         backend: styk.state.renderer.stats.backend,
       }));
       check(
-        "Unavailable WebGPU reveals stable compatibility label and reason",
-        label.text === "Compatibility mode" &&
-          label.title.includes("unavailable") &&
+        "Without WebGPU the engine draws with WebGL2 and the label names it",
+        label.text === "WebGL2" &&
           label.display !== "none" &&
-          label.backend === "Canvas 2D fallback",
+          label.backend === "WebGL2",
         label,
       );
       await fallback.evaluate(() => styk.editor.moveSelection(10, 0));
       await fallback.waitForTimeout(60);
       check(
-        "Compatibility label remains stable while editing",
-        (await fallback.locator("#renderer-label").textContent()) ===
-          "Compatibility mode",
+        "The backend label remains stable while editing",
+        (await fallback.locator("#renderer-label").textContent()) === "WebGL2",
       );
-      await fallback.screenshot({ path: `${out}/compatibility-1100.png` });
+      await fallback.screenshot({ path: `${out}/webgl2-1100.png` });
     } finally {
       await fallback.close();
     }

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {audioState, validateAudioState, audibleClips, rippleAudio, clipGainAt} from '../src/audio-model.mjs';
 import {inspectWave, pcmWave, wavePeaks, mixAudio} from '../src/audio-pcm.mjs';
-import {playbackProperties} from '../src/playback-patch.mjs';
 import {documentChunks, applyDocumentChunk} from '../src/document-transport.mjs';
 import {buildContainerV2, decodeDocument} from './support/native-files.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
@@ -77,10 +76,10 @@ test('explicit ripple splits at inserted time and joins surviving source ranges 
   const ids=['scene','camera',...editor.report._styk.layers.order]; editor.audioRipple=true;
   const frames=editor.totalTicks; editor.sheetInsertFrames(ids,1,2); editor.undo(); assert.equal(editor.totalTicks,frames); assert.equal(audioState(editor.report),original);
 });
-test('save transport retains original bytes but prepared render metadata excludes them', () => {
+test('save transport retains the original recording bytes', () => {
   const editor = editorWithAudio(); let copy;
   for (const chunk of documentChunks(editor.report,{maxBytes:4096})) copy=applyDocumentChunk(copy,chunk);
-  assert.deepEqual(copy._styk.audio,editor.report._styk.audio); assert.equal(playbackProperties(editor.report)._styk.audio,undefined);
+  assert.deepEqual(copy._styk.audio,editor.report._styk.audio);
   const loaded = new Editor({layerTimeline:true}); loaded.load(copy); assert.deepEqual(audioState(loaded.report),audioState(editor.report));
 });
 test('WAV parsing and waveform peaks read original mono/stereo PCM', async () => {

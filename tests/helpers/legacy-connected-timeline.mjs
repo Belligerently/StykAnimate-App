@@ -1,7 +1,7 @@
 /** Union joins by persistent identity, including authored pose sources. Membership
  * is independent of the playhead: a pickup/drop does not reshuffle the timeline. */
-import {layerIdForUid} from './layers.mjs';
-import {poseSourceFrame} from './animation-pose.mjs';
+import {layerIdForUid} from '../../src/layers.mjs';
+import {poseSourceFrame} from '../../src/animation-pose.mjs';
 const groupIndices=new WeakMap();
 export function connectedGroupIndex(groups) {
   let index=groupIndices.get(groups);

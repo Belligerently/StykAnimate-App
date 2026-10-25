@@ -109,7 +109,7 @@ passes all four views and its engine RGBA output is byte-identical to the retain
 original captures; all four software-web legacy captures are also byte-identical.
 The draw-list entry marks exactly one published drawing image before tile expansion.
 `DrawingGrid::Destination` uses the existing nested placement/filter owner for direct
-software edit frames, thumbnails and in-between previews, including a single drawing
+software edit frames and thumbnails, including a single drawing
 inside a movieclip with child/outer effects. Multiple children and ordinary onion
 entries retain their existing policy. `DrawingGrid::World` remains the portable default
 for prepared playback and ordinary GPU rendering. The private monitor request carries
@@ -568,9 +568,7 @@ with an `ExportFrames`, waits on the engine's progress counter for the frame (pr
 workers) and every picture (decoded there once per document lineage: a later revision decodes only
 the images and drawing cels the earlier one lacked, `ExportFrames::decode_images_since`), rasterizes
 the card with styk-raster and hands it over as an `ImageBitmap`, which the interface draws onto the
-card. No copy of the document goes to a thumbnail worker. The same worker can draw a sampled pose that is not
-in the document (`Previews::inbetween`, an explicit interval with onion settings); nothing in the interface asks
-for one. Thumbnails show parallax layers moved by the camera, as playback does.
+card. No copy of the document goes to a thumbnail worker. Thumbnails show parallax layers moved by the camera, as playback does.
 
 **Library previews** (`src/library-files.mjs`, `src/library-hover-preview.mjs`): one preview
 worker per page (`src/engine/engine-previews.mjs`, `engine-preview-worker.mjs`) joins the

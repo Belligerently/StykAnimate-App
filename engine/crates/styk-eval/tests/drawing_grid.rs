@@ -44,14 +44,6 @@ fn ordinary_onion_entries_keep_their_world_grid() {
 }
 
 #[test]
-fn inbetween_per_figure_ghosts_share_the_direct_thumbnail_painter() {
-    let (prepared, assets, scene) = drawing();
-    let ghosts = [Ghost { scene: &scene, hidden: &[], opacity: 0.14, tint: None }];
-    let list = drawlist::encode_preview(&prepared.doc, &assets, &scene, &Overrides::default(), &ghosts);
-    assert_eq!(entries(&list), [true,true], "thumbnail interval ghosts are painted directly, unlike stage onion rasters");
-}
-
-#[test]
 fn an_ordinary_bitmap_is_not_a_published_drawing_cel() {
     let (prepared, mut assets, mut scene) = drawing();
     let figure = Arc::make_mut(&mut scene.figures[0]);
