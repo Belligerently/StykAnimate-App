@@ -85,13 +85,13 @@ How the engine runs in the app (`engine/crates/styk-engine`,
   use 16 ms). An idle lock can release without publishing progress. A timeout
   rechecks readiness without changing the counter. Publishing the document (`Engine::activate`,
   `publish_tree`, [document.md](document.md)) takes the document's lock only for pointer exchanges;
-  a worker that reads the document (a planner, an edit session starting) tries it once.
+  a worker that reads the document (an edit session starting) tries it once.
 - No rayon in WebAssembly: `styk_eval::par::map` is sequential there;
   parallelism is whole frames on workers.
 - Library code has no clock, file or thread of its own: the host injects a
   clock (`styk_wasm::clock`), and native tools use rayon through `par`.
 
-## Prepared samples and layer planning
+## Prepared samples
 
 Fractional interface playback requests use `Engine::try_request_samples` and `frame_at`
 on the existing frame cache. `FrameData::tick` is now `f64`; integer entry points remain
@@ -133,24 +133,8 @@ images methods, `frame_ready_at`, `frame_metadata`, `generation_for_frame_epoch`
 header owner; no document returns zero identity, while contention returns Busy.
 Existing integer and explicit worker preparation APIs remain available.
 
-`Engine::plan_layers(revision, LayerRequest)` uses the existing worker task lane and returns `LayerJob`:
-a layer move planned read-only against the document the engine holds. Polling gives bounded chunks and
-progress (the latest report only), ACK admits the next chunk, and cancellation, expiry or generation
-replacement retires the original job on workers. Native and sheet layer kernels share this protocol, and
-one job runs at a time (a second request cancels the first and is refused until the worker has disposed
-it). A publication invalidates only the job of the exact generation it displaced, preserving a newer job
-installed during the exchange. This adds portable Engine APIs and a dependency on `styk-edit`; browser glue
-stays in `styk-wasm` (`plan_layers`; a job's errors are told apart by name: `AbortError` for a cancelled,
-replaced or timed-out job, `EngineUnported` for a plan the engine does not make yet, an ordinary error
-carrying the editor's message key for a refusal).
-
-Nothing in the app calls `plan_layers`: the session plans and publishes a layer move itself
-(`styk-edit/src/layer_membership.rs`, docs/LAYER-MIGRATION.md), and `tests/engine-planning-wasm.test.mjs` and
-the `styk-engine` layer planning tests are its callers.
-
-Mobile pin compatibility: `Engine::stage` now returns a checked result,
-`PlanError::Unported` carries an owned `String`, and `FrameData::tick` changes from `u32`
-to `f64`. Callers should retain error handling and use integer wrappers where appropriate.
+Mobile pin compatibility: `Engine::stage` now returns a checked result and
+`FrameData::tick` changes from `u32` to `f64`. Callers should retain error handling and use integer wrappers where appropriate.
 
 ## Building
 

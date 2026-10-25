@@ -111,9 +111,6 @@ impl Engine {
                 prepared.current(&state).then(|| prepared.install(&mut state))
             };
             if let Some(retirement) = retirement {
-                if let Some(previous) = &retirement.generation {
-                    crate::planning::invalidate_generation(self, previous.id);
-                }
                 self.inner.state.notify_all();
                 return (id, retirement);
             }

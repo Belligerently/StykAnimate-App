@@ -13,7 +13,6 @@ use std::sync::Arc;
 
 use crate::doc::*;
 
-pub mod preview;
 pub(crate) mod retained;
 
 /// One key of a native or virtual (pose-track) timeline.
@@ -945,14 +944,6 @@ impl Prepared {
 
     fn evaluate_with(&self, tick: f64, fractional: bool) -> Frame {
         self.finish_frame(self.evaluate_raw(tick, fractional), tick, fractional)
-    }
-
-    /// A native interval selected explicitly by the editor (including one-tick and
-    /// hidden keys). A layer sheet still samples its tracks at the absolute tick.
-    pub fn evaluate_interval(&self, index: usize, ratio: f64, tick: f64) -> Frame {
-        let mut frame = if self.doc.sheet.is_some() { self.sample_sheet(tick) } else { self.native_interval(index, ratio, tick) };
-        frame.tick = tick;
-        self.finish_frame(frame, tick, false)
     }
 
     fn finish_frame(&self, mut frame: Frame, tick: f64, fractional: bool) -> Frame {
