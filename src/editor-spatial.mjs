@@ -1,31 +1,21 @@
 import {messageError} from './localized-error.mjs';
-import {editorSpatialShapeMethods} from './editor-spatial-shape.mjs';
-import {unprojectSpatial,unprojectJoint,projectSpatial,projection} from './spatial-projection.mjs';
+import {unprojectSpatial,unprojectJoint,projectSpatial,projection,spatialCamera,spatialShape} from './spatial-projection.mjs';
 import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {animationRotation} from './animation-origin.mjs';
 import {rigConstraintPlan} from './rig-constraints.mjs';
-import {spatialBone,spatialSkin,spatialMotionValue,spatialAxisQuaternion,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose,betweenVectors} from './rig-spatial.mjs';
+import {spatialBone,spatialMotionValue,spatialAxisQuaternion,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose,betweenVectors} from './rig-spatial.mjs';
 import {inverseQuaternion,spatialWorldQuaternion,spatialWorldVector,spatialPoleHandle,captureSpatialIK,flatSpatialBend,spatialPoleFor,spatialKnee} from './ik-spatial.mjs';
 import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
-import {poseChoiceGroups,applyChannelPoseChoice} from './rig-pose-choices.mjs';
 
 const plans=e=>geometryPlans(e.geometry.objects.get(e.selectedSlot));
 const layout=e=>plans(e)?.definition??ikLayout(e.figure);
 const rigPlan=e=>plans(e)?.plan??rigConstraintPlan(e.figure);
 export const editorSpatialMethods={
- ...editorSpatialShapeMethods,
- setPoseChoice(name,id){
-  const group=poseChoiceGroups(this.figure,this.object).find(g=>g.name===name);if(!group)return false;
-  if((id===0&&group.hidden===false)||(id!==0&&!group.choices.some(c=>c.id===id)))throw messageError(new Error(''), "errors.editorSpatial.chooseAnAvailableRigPose", {});
-  if(group.value===id)return false;
-  return this._objectEdit('Change '+name,o=>{
-   if(group.kind==='channels'){
-    applyChannelPoseChoice(this.figure,o,group.choices.find(c=>c.id===id));return;
-   }
-   const lengths=o.len_flag?o.lengths.slice():this.figure.segments.map(s=>s.length);
-   for(const c of group.choices)lengths[c.index]=c.id===id?c.shown:c.hidden;
-   o.lengths=lengths;o.len_flag=1;delete o.runtime_segments;
-  },{posed:true});
+ /** The 3D rig's perspective and part proportions (the engine session sets them); evaluation stays in the existing rig graph. */
+ getSpatialCamera(){return spatialCamera(this.object);},
+ getSpatialProportions(){
+  const f=this.figure,o=this.object,s=f?.segments[this.selectedJoint];if(!o||!spatialBone(s))return null;
+  return {...spatialShape(o,s.segment_id),canResizeLength:s.length>1e-9,length:s.length>1e-9?(o.len_flag?o.lengths[this.selectedJoint]:s.length)/s.length:1};
  },
  _releaseSpatialChain(object,index=this.selectedJoint){
   // Direct FK manipulation takes ownership of this limb. The object edit has
@@ -73,14 +63,6 @@ export const editorSpatialMethods={
    o._stykIK={...o._stykIK,[id]:next};delete o.runtime_segments;
   },{posed:true});
  },
- setSpatialFeetPinned(pinned){
-  const f=this.figure,o=this.object;if(!f||!o)return false;
-  const targets=f.segments.flatMap((s,i)=>o._stykIK?.[s.segment_id]?.enabled&&f.segments.some(child=>spatialBone(child)&&child._stykRig.spatial.parent===s.segment_id&&/foot|ankle/i.test(child.name??''))?[i]:[]);
-  if(!targets.length)return false;
-  const selected=this.selectedJoint;if(!this.beginDrag(pinned?'Plant feet':'Release feet'))return false;
-  try{for(const i of targets){this.selectedJoint=i;this.setNodeIK({pinned});}this.selectedJoint=selected;this.commitDrag();return true;}
-  catch(error){this.selectedJoint=selected;this.cancelDrag();throw error;}
- },
  getSpatialPose(index=this.selectedJoint){
   const f=this.figure,o=this.object,s=f?.segments[index];if(!o||!spatialBone(s))return null;
   const r=s._stykRig.spatial,delta=animationRotation(f,o),find=id=>{const i=f.segments.findIndex(s=>s.segment_id===id);return i<0?undefined:i;},parent=find(r.parent),turn=find(r.turn),pitch=find(r.pitch);
@@ -122,20 +104,6 @@ export const editorSpatialMethods={
      spatialTarget:{...c.spatialTarget,depth:center[2]+p[2],pole:quatRotate(delta,c.spatialTarget.pole)},
      ...(c.spatialFollowers?{spatialFollowers:Object.fromEntries(Object.entries(c.spatialFollowers).map(([id,q])=>[id,rotate(q)]))}:{})}];
    }));
-  },{posed:true});
- },
- resetSpatialPose(all=false){
-  if(!all)return this.getSpatialMotion()?this.setSpatialMotion(0):this.setSpatialPose({bend:0,turn:0,pitch:0});
-  const f=this.figure,o=this.object;if(!f||!o)return false;
-  return this._objectEdit('Reset articulated rig',o=>{
-   const delta=animationRotation(f,o),ids=rigPlan(this).ids;
-   for(const s of f.segments)if(spatialBone(s))for(const id of [s.segment_id,s._stykRig.spatial.turn,s._stykRig.spatial.pitch]){const i=ids.get(id);o.angles[i]=f.segments[i].angle_rad*(o.image_text_flags?-1:1)+delta;}
-   // Slides return to their rest position (or the nearest end of their range).
-   const slides=f.segments.flatMap((s,i)=>s._stykRig?.spatial?.motion?.type==='slide'?[i]:[]);
-   if(slides.length){o.lengths=o.len_flag?o.lengths.slice():f.segments.map(s=>s.length);o.len_flag=1;
-    for(const i of slides){const r=f.segments[i]._stykRig.spatial,rest=Math.hypot(...r.tip.map((n,k)=>n-r.origin[k]));o.lengths[i]=rest+Math.min(r.motion.max,Math.max(r.motion.min,0));}}
-   // Targets must release when the animator explicitly restores the rest pose.
-   if(o._stykIK)o._stykIK=Object.fromEntries(Object.entries(o._stykIK).map(([id,c])=>[id,{...c,pinned:false}]));
   },{posed:true});
  },
  /** Gesture reference for direct spatial posing. Every sample is solved from
@@ -377,4 +345,3 @@ export const editorSpatialMethods={
   this.setSpatialIKTarget({depth:gesture.depth+(y-gesture.y)/pixel*Math.abs(o.scale)*.5});return true;
  },
 };
-export {spatialBone,spatialSkin};

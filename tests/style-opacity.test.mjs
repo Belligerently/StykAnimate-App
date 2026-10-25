@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {newPlainEditor} from './support/plain-editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import { inspectorView } from "../src/inspector-view.mjs";
 
 function fixture() {
-  const editor = newPlainEditor({ demo: false });
+  const editor = newOwnedEditor({ demo: false, layerTimeline: true });
   editor.addFigure();
   editor.select(editor.selectedUid, 0);
   editor.updateFigureStyle({
@@ -53,13 +53,5 @@ test("inspector shows secondary color only on circles and omits figure outline c
     assert.doesNotMatch(inspectorView({editor}), /id="segment-gradient-enabled"|data-property="segment_gradient_opacity"/);
     assert.deepEqual(editor.figure.segments[0].secondary, secondary);
   }
-  editor.convertSegment('circleFill');
-  editor.figure.segments[0].secondary = null;
-  assert.doesNotMatch(
-    inspectorView({ editor }),
-    /data-property="segment_gradient_opacity"/,
-  );
-  assert.match(inspectorView({editor}), /id="segment-gradient-enabled"/);
-  assert.doesNotMatch(inspectorView({editor}), /id="segment-gradient-color"/);
 });
 

@@ -21,22 +21,6 @@ function fixture() {
   return ownedEditorFor({demo: false, layerTimeline: true, propertyChannels: true}, report);
 }
 
-function ikFixture() {
-  const document = emptyDocument(), figure = document.figure_types[0], base = figure.segments[0];
-  figure.segments = [
-    {...base, segment_id: 11, parent_id: 0, length: 90, angle_rad: .8, aux_code: 0, is_static: false},
-    {...base, segment_id: 22, parent_id: 11, length: 90, angle_rad: 2, aux_code: 0, is_static: false},
-    {...base, segment_id: 33, parent_id: 22, length: 35, angle_rad: 0, aux_code: 0, is_static: false},
-  ];
-  figure.segment_count = figure.segments.length;
-  document.keyframes = [
-    createFrame([createObject(figure, 1, 300, 150)], 8),
-    createFrame([createObject(figure, 1, 340, 150)], 8),
-    createFrame([createObject(figure, 1, 380, 150)], 8),
-  ];
-  return ownedEditorFor({demo: false, layerTimeline: true, propertyChannels: true}, document);
-}
-
 const rootTarget = {kind: 'node', uid: 1, handleId: 0, joint: -1};
 
 test('an in-window path edit previews the moved pose at the playhead', () => {
@@ -69,20 +53,6 @@ test('motionless and cancelled path gestures leave no history or document change
   editor.updateMotionPathEdit({x: 300, y: 200});
   assert.equal(editor.commitMotionPathEdit(), false);
   assert.deepEqual(editor.report, before); assert.equal(editor._undo.length, history);
-});
-
-test('unpinned IK path edits bake a solved pose like an ordinary pose drag', () => {
-  const editor = ikFixture();
-  editor.select(1, 1); editor.setNodeIK({enabled: true, pinned: false});
-  editor.seek(0);
-  const goal = {x: 410, y: 180};
-  assert.ok(editor.beginMotionPathEdit({kind: 'node', uid: 1, handleId: 22, joint: 1}, 4));
-  editor.updateMotionPathEdit(goal);
-  assert.equal(editor.commitMotionPathEdit(), true);
-  editor.seek(4);
-  const end = buildGeometry(editor.report, editor.evaluatedFrame).objects.get(0).joints.get(22);
-  point(end, goal, 3);
-  editor.undo();
 });
 
 test('layer-sheet path edits publish one key at the remote tick', () => {

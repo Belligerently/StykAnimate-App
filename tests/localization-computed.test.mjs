@@ -32,7 +32,7 @@ import {DrawingController} from '../src/drawing-controller.mjs';
 import {exportCodecChoices,exportFormatStates,exportEncodingSummary} from '../src/export-request.mjs';
 
 const fixture=()=>ownedEditorFor({demo:false,layerTimeline:true},emptyDocument());
-const populatedFixture=()=>new Editor({demo:false}).load(createDemo());
+const populatedFixture=()=>engineEditor({demo:false,layerTimeline:true},createDemo());
 
 test('rig descriptors retain numeric captions, descriptions, anchor actions and raw authored joint names',()=>{
  const editor=populatedFixture();editor.select(1,2);editor.enableSmartStretch(true);editor.setAngleLock('parent');

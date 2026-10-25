@@ -16,6 +16,6 @@ Verification:
 
 - `node tests/segment-values-dialog.browser.mjs`: [25 actual browser checks](../artifacts/segment-values-dialog/report.json), including system clipboard, partial and invalid tokens, relative angles, scrubbing, typed precision, cancellation and Handle Edit.
 - `node tests/segment-values-app.browser.mjs`: [11 integrated app checks](../artifacts/segment-values-app/report.json), including I over a node, context-menu access, live previews, Apply/Undo, Escape and R + I.
-- `node --test tests/editor-handle-commands.test.mjs`: native model semantics. The [static executable audit](../artifacts/native-static/capslock-and-segment-values.md) records the native relative-angle and clipboard behavior.
+- `node --test tests/segment-values.test.mjs`: native model semantics. The [static executable audit](../artifacts/native-static/capslock-and-segment-values.md) records the native relative-angle and clipboard behavior.
 
 Right-button dragging on a node retains Pivot’s bend gesture. The verified context-menu route uses the canvas while the desired segment remains selected.

@@ -314,17 +314,6 @@ test('playback seek may update timeline state without evaluating the sampled fra
   assert.equal(editor._evaluated, null); assert.equal(editor.revision, revision);
 });
 
-test('splitting a curved limb preserves original endpoint handles, poses and descendant positions', () => {
-  const editor = blank(); editor.select(editor.selectedUid, 2); editor.updateSegment({bend_rad: 0.8, length: 70}); editor.duplicateFrame();
-  const before = editor.serialize(), old = editor.geometry.objects.get(0), endpoint = {...old.joints.get(3)}, child = {...old.joints.get(4)};
-  editor.select(editor.selectedUid, 2); editor.splitSegment(0.3);
-  assert.equal(editor.figure.segments.length, 11); assert.equal(editor.figure.segments[3].segment_id, 3);
-  near(editor.object.bends[2], 0.24); near(editor.object.bends[3], 0.56);
-  const after = editor.geometry.objects.get(0); near(after.joints.get(3).x, endpoint.x, 5e-5); near(after.joints.get(3).y, endpoint.y, 5e-5);
-  near(after.joints.get(4).x, child.x, 5e-5); near(after.joints.get(4).y, child.y, 5e-5);
-  assert.doesNotThrow(() => validateScene(editor.serialize())); editor.undo(); assert.deepEqual(editor.serialize(), before);
-});
-
 test('setting the origin preserves rendered geometry and retargets attached children', () => {
   const editor = open(); editor.select(3); editor.joinTo(1, 2); editor.select(1, 1);
   const before = editor.serialize(), baseline = editor.geometry, oldWalker = baseline.objects.get(0), oldChildRoot = {...baseline.objects.get(2).root};

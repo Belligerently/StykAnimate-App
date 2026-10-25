@@ -1,5 +1,5 @@
 import { cameraMatrix } from './renderer-geometry.mjs';
-import {segmentBranchIndices} from './editor-builder.mjs';
+import {segmentBranchIndices} from './pivot/structure.mjs';
 
 export const BUILDER_HIGHLIGHT_COLORS = Object.freeze({dynamic:'#0000ff',static:'#4444cc',path:'#0000ff'});
 export function isBuilderContext(tool) { return ['rig','line','chain','circle','polygon'].includes(tool); }

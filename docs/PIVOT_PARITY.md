@@ -373,7 +373,7 @@ native easing tests, local 5.2.9 release notes.
 - [ ] B06 Add multiple sprites to one figure; position endpoints, reflect,
   stretch, bend, and preserve source alpha.
   **Progress:** sprite import and embedded image/STK round trips pass the media
-  report; [builder unit cases](../tests/editor-builder.test.mjs) also cover branch
+  report; the [Builder edit tapes](../engine/tests/edit/polygons-sheet.scenario.json) also cover branch
   copies sharing one embedded media table. [Sprite placement](SPRITE-PLACEMENT.md)
   now has ten model/native PIV/STK cases and [nine actual dialog checks](../artifacts/sprite-placement/report.json)
   for endpoints, alpha, races and narrow layouts. [Eight actual desktop checks](../artifacts/sprite-builder-smoke.json)

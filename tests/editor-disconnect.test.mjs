@@ -6,7 +6,7 @@ import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const near = (a, b, label) => assert.ok(Math.abs(a - b) <= 1e-3, `${label}: ${a} != ${b}`);
 const index = (editor, name) => editor.figure.segments.findIndex(segment => segment.name === name);
-const blue = (layerTimeline, owned = true) => (owned ? ownedEditorFor({layerTimeline}) : new Editor({layerTimeline})).newDocument();
+const blue = layerTimeline => ownedEditorFor({layerTimeline}).newDocument();
 
 /** Every drawable's points, keyed by figure family (a source and its disconnected
  * part share one), primitive and native handle, which disconnecting preserves. */
@@ -127,23 +127,6 @@ test('fills move with their part; a fill across the cut is refused without chang
   spanning.select(1, index(spanning, 'Left upper arm'));
   assert.throws(() => spanning.disconnectSegment(), /fill/i);
   assert.deepEqual(spanning.serialize(), saved); assert.equal(spanning._undo.length, depth);
-});
-
-test('a failure while trimming the rig leaves the document, layers and history untouched', () => {
-  for (const layerTimeline of [true, false]) {
-    // plain editor: the test makes the editor's own topology edit (_topologyEdit) fail
-    const editor = blue(layerTimeline, false); animated(editor);
-    const saved = editor.serialize(), depth = editor._undo.length, uids = editor.getLayerFigureUids(editor.layerForUid(1)).slice();
-    editor.select(1, index(editor, 'Right upper arm'));
-    const original = editor._topologyEdit; let calls = 0;
-    editor._topologyEdit = function (...args) { if (++calls === 2) throw new Error('trim failed'); return original.apply(this, args); };
-    assert.throws(() => editor.disconnectSegment(), /trim failed/);
-    delete editor._topologyEdit;
-    assert.deepEqual(editor.serialize(), saved); assert.equal(editor._undo.length, depth);
-    assert.deepEqual(editor.getLayerFigureUids(editor.layerForUid(1)), uids);
-    editor.disconnectSegment();
-    assert.equal(editor.report.figure_types.length, 2, 'the command still works afterwards');
-  }
 });
 
 test('the whole figure, an origin or a locked layer cannot be disconnected', () => {

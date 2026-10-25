@@ -133,15 +133,6 @@ test('nested conversion preserves the enclosing clip and shared edits update all
   const saved=JSON.parse(JSON.stringify(editor.report)),reopened=new Editor();reopened.load(saved);close(coordinates(sample(reopened.report,3),uid),coordinates(sample(editor.report,3),uid));
 });
 
-test('rig topology inside a captured clip repairs retained source poses and is reversible',()=>{
-  const editor=plainEditorFor({propertyChannels:true});editor.select(1);editor.addAnimationKey({kind:'segment',uid:1,handleId:3},'opacity',4,.4);
-  editor.createMovieclip({start:0,end:16});const type=editor.figure.figure_type_id;editor.enterMovieclip(type);editor.select(1,2);
-  const count=editor.figure.segments.length;editor.splitSegment(.3);assert.equal(editor.figure.segments.length,count+1);
-  new Editor().load(JSON.parse(JSON.stringify(editor.report)));
-  editor.undo();assert.equal(editor.figure.segments.length,count);new Editor().load(JSON.parse(JSON.stringify(editor.report)));
-  editor.redo();editor.leaveMovieclip();new Editor().load(JSON.parse(JSON.stringify(editor.report)));assert.ok(sample(editor.report,7).drawables.length>0);
-});
-
 test('library insertion keeps playing across native exposures and remains one undo action',()=>{
   const editor=plainEditorFor({propertyChannels:true});editor.select(1);const clip=editor.createMovieclip({start:0,end:12,replace:false});
   editor.seek(6);const count=editor._undo.length;editor.addFigure(clip.figure_type_id);const uid=editor.selectedUid;

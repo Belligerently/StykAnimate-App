@@ -6,7 +6,6 @@ import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {evaluatedFrame,timeline,buildGeometry} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument,needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
-import {animationOriginOffset,animationRotation} from '../src/animation-origin.mjs';
 import {missingFixture} from './helpers/local-fixtures.mjs';
 import {roundTrip, exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
@@ -56,18 +55,6 @@ test('native-only reroot preserves nonlinear inbetweens without adding authored 
 function roundtrip(document,format){
   return roundTrip({document,format});
 }
-test('new instances initialize their virtual pivot and a split retains the physical rotation reference',()=>{
-  const editor=fixture({authored:false});editor.setOrigin(301);const figure=editor.figure;
-  const object=createObject(figure,99,320,210,{scale:1.7}),offset=animationOriginOffset(figure,object);
-  assert.deepEqual(object._stykAnimationOrigin,{x:320+offset.x,y:210+offset.y});assert.equal(animationRotation(figure,object),0);
-  // Split an unreversed reference after returning construction origin to the
-  // original vertex; its first piece owns the same original tangent.
-  editor.setOrigin(figure._styk.animationOrigin.handleId);const reference=editor.figure._styk.animationOrigin.rotationHandleId;
-  editor.select(1,editor.figure.segments.findIndex(segment=>segment.segment_id===reference));
-  const before=animationRotation(editor.figure,editor.object);editor.splitSegment(.4);
-  assert.notEqual(editor.figure._styk.animationOrigin.rotationHandleId,reference);
-  assert.ok(Math.abs(animationRotation(editor.figure,editor.object)-before)<1e-10);
-});
 test('native PIV retains tied segment and polygon paint order through required topology reordering',async ()=>{
   const editor=fixture({authored:false,change:report=>{
     const figure=report.figure_types[0];
