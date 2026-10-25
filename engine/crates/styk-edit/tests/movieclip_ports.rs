@@ -239,6 +239,30 @@ fn capturing_a_drawing_layer_gives_the_clip_cels_and_drawing_keys_of_its_own() {
 }
 
 #[test]
+fn a_clip_of_drawings_gets_a_figure_layer_of_its_own_above_the_drawing_layer() {
+    let mut session = with_a_cel();
+    let order = |session: &Session| -> Vec<String> {
+        session.report().path(&["_styk", "layers", "order"]).and_then(Value::elements).unwrap().iter().filter_map(|id| id.as_str().map(str::to_string)).collect()
+    };
+    assert_eq!(order(&session), ["layer-1", "layer-2"]);
+    ok_drawn(&mut session, "createMovieclip", r#"[{"start":0,"end":6,"uids":[50]}]"#, 0, &[]);
+    // Drawing layers hold only drawing cels: the clip is on a figure layer made directly above the drawing layer, named after the clip.
+    assert_eq!(order(&session), ["layer-1", "layer-2", "layer-3"]);
+    let layers = session.report().path(&["_styk", "layers"]).unwrap().clone();
+    let layer = layers.path(&["byId", "layer-3"]).unwrap();
+    assert!(layer.get("drawing").is_none(), "a figure layer, not a drawing layer");
+    assert_eq!(layer.get("name").and_then(Value::as_str), Some("Movieclip"));
+    assert_eq!(layers.get("nextId").and_then(Value::as_f64), Some(4.0));
+    let owners: Vec<&str> = layers.get("assignments").and_then(Value::as_obj).unwrap().iter().filter(|(_, layer)| layer.as_str() == Some("layer-3")).map(|(uid, _)| &**uid).collect();
+    assert_eq!(owners.len(), 1, "the clip's instance is on the new layer");
+    let track = session.report().path(&["_styk", "layerSheet", "tracks", "layer-3"]).unwrap();
+    assert!(track.get("keys").and_then(Value::elements).is_some_and(|keys| !keys.is_empty()), "the new layer has the clip's exposure");
+    assert_eq!(undo_label(&mut session), "Create movieclip");
+    ok(&mut session, "undo", "[]");
+    assert_eq!(order(&session), ["layer-1", "layer-2"], "undo takes the layer back");
+}
+
+#[test]
 fn copied_drawing_keys_show_cels_of_their_own() {
     let mut session = with_a_cel();
     let first = cels(&session)[0].clone();
