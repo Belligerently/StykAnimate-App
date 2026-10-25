@@ -61,6 +61,26 @@ function spatialFrame(raw) {
   return frame;
 }
 
+/** The order a figure's joints are worked out in: its roots in the figure's order, then each joint's children, breadth first.
+ * The groups list the joints in this order, as the editor's own geometry did, so a pick that breaks a tie between
+ * coincident joints by their order picks the same one. */
+const jointOrders = new WeakMap();
+function jointOrder(fig) {
+  let order = jointOrders.get(fig.segments);
+  if (order) return order;
+  const ids = new Set(fig.segments.map(segment => Number(segment.segment_id))), children = new Map();
+  order = [];
+  fig.segments.forEach((segment, index) => {
+    const parent = Number(segment.parent_id);
+    if (!ids.has(parent)) order.push(index);
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push(index);
+  });
+  for (let q = 0; q < order.length; q++) order.push(...children.get(Number(fig.segments[order[q]].segment_id)) ?? []);
+  jointOrders.set(fig.segments, order);
+  return order;
+}
+
 /** The `flags` of a segment row (styk_eval::geometry::interface). */
 const START = 1, END = 2, POINTS = 4, CONNECTOR = 8, SPATIAL = 16;
 
@@ -72,8 +92,8 @@ function hydrate(raw, slot, frame, report, defs) {
   const root = point(raw.root);
   const joints = new Map([[0, root]]);
   const {ends, raws, startRaws} = raw;
-  for (let i = 0; i < fig.segments.length && 2 * i < ends.length; i++) {
-    if (ends[2 * i] === null) continue;
+  for (const i of jointOrder(fig)) {
+    if (2 * i >= ends.length || ends[2 * i] === null) continue;
     const joint = {x: ends[2 * i], y: ends[2 * i + 1]}, rawPoint = rawAt(raws, i);
     if (rawPoint) joint.rawPoint = rawPoint;
     joints.set(Number(fig.segments[i].segment_id), joint);

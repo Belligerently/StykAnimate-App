@@ -205,3 +205,10 @@ test('a motion-path edit shows the pose it makes at the playhead, and its geomet
     assert.equal(editor._drag, null);
   } finally { owner.release(); }
 });
+
+test('a group lists its joints in the order they are worked out: roots first, then the children of each joint', {skip: !engineBuilt}, async () => {
+  // The demo figure: the order the editor's own geometry listed them in (a tie between coincident joints keeps its pick).
+  const {editor} = await ownedEditor(options, createDemo());
+  const group = editor.geometry.objects.values().next().value;
+  assert.deepEqual([...group.joints.keys()], [0, 1, 7, 9, 2, 3, 5, 8, 10, 4, 6]);
+});
