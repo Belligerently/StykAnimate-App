@@ -381,9 +381,6 @@ fn info(path: &str) -> i32 {
         if d.sheet.is_some() { ", layer sheet" } else { "" }
     );
     println!("  opened in {ms:.1} ms");
-    if !d.unsupported.is_empty() {
-        println!("  not evaluated yet: {}", d.unsupported.join(", "));
-    }
     0
 }
 

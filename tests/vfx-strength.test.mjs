@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
-import {createVfx,activeVfx,resolvedVfx,interpolateVfx,vfxPadding,validateVfxStack} from '../src/vfx.mjs';
+import {createVfx,activeVfx,resolvedVfx,vfxPadding,validateVfxStack} from '../src/vfx.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 
 test('strength defaults preserve old stacks, interpolate and become a true no-op at zero',()=>{
@@ -9,7 +9,6 @@ test('strength defaults preserve old stacks, interpolate and become a true no-op
  assert.equal(resolvedVfx(old).params.effectStrength,1);assert.equal(old.params.effectStrength,undefined);
  const a=createVfx('turbulence','t'),b={...a,params:{...a.params,effectStrength:0}};
  assert.equal(activeVfx([b]).length,0);assert.equal(vfxPadding([b]),0);
- assert.equal(interpolateVfx({figure:[a]},{figure:[b]},.5).figure[0].params.effectStrength,.5);
  assert.equal(vfxPadding([a],2),24);
  assert.throws(()=>validateVfxStack([{...a,params:{...a.params,effectStrength:1.1}}]));
 });

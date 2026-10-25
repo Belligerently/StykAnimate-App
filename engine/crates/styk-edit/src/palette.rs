@@ -1,4 +1,4 @@
-//! The project palette (src/editor-colors.mjs): colours added, removed and reordered, each
+//! The project palette: colours added, removed and reordered, each
 //! one `palette` history entry that touches no frame or figure (`publishPalette`).
 
 use styk_doc::{Obj, Value};

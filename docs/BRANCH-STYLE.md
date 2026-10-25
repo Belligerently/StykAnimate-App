@@ -24,6 +24,6 @@ The separate numeric opacity fields described here are an intentional convenienc
 
 [native-property-edit.mjs](../src/native-property-edit.mjs) is the inspector's gesture over the engine's calls: a branch edit is the authored path above, and a branch of a shared definition without property channels is no command of the engine, so it is refused.
 
-[Branch opacity model checks](../tests/branch-opacity.test.mjs) and the [native property checks](../tests/native-property-edit.test.mjs) cover enclosed polygons, distinct endpoint RGB, authored overrides, scoped targets, one-step Undo, and exact Cancel restoration.
+[Branch opacity model checks](../tests/branch-opacity.test.mjs) cover enclosed polygons, distinct endpoint RGB, authored overrides, scoped targets, one-step Undo, and exact Cancel restoration.
 
 The [Builder aids report](../artifacts/builder-aids/report.json) includes actual branch width editing and one Undo.

@@ -3,7 +3,7 @@ export function documentCheckpoint(editor, token, epoch) {
   return { report: editor.report, token, revision: editor.revision, draftRevision: editor.frameDraftRevision, epoch };
 }
 
-export function sameDocumentCheckpoint(a, b) {
+function sameDocumentCheckpoint(a, b) {
   return Boolean(a && b && a.report === b.report && a.token === b.token &&
     a.revision === b.revision && a.draftRevision === b.draftRevision && a.epoch === b.epoch);
 }

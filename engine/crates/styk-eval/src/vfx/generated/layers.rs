@@ -1,4 +1,4 @@
-//! The vocabulary of generated-effect layers (src/vfx-generator-layers.mjs):
+//! The vocabulary of generated-effect layers:
 //! the sub-emitters that effect styles compile into ([`super::styles`]) and the
 //! batch packs into records ([`super::batch`]). Sizes and speeds are stage
 //! pixels and pixels per frame; lives are frames.

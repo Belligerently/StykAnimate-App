@@ -28,7 +28,6 @@ fn outline_triangles(doc: styk_eval::doc::Document) -> usize {
 #[test]
 fn a_figure_outline_strokes_its_text() {
     let doc = open();
-    assert!(doc.unsupported.is_empty(), "{:?}", doc.unsupported);
     assert!(outline_triangles(doc) > 0, "outlined text draws its outline");
 }
 

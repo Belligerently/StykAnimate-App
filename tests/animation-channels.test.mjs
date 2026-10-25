@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {animationChannelId, sampleAnimationChannel, animationEndTick, validateAnimationDocument} from '../src/animation-channels.mjs';
+import {animationChannelId, animationEndTick, validateAnimationDocument} from '../src/animation-channels.mjs';
 
-const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
 const target = uid => ({kind: 'figure', uid});
 function fixture() {
   const report = emptyDocument(), figure = report.figure_types[0];
@@ -15,14 +14,6 @@ function channel(target, property, values) {
   return {id: animationChannelId(target, property), target, property, keys: values.map(([tick, value, interpolation = 'linear'], i) => ({id: `k${i}`, tick, value, interpolation}))};
 }
 function set(report, channels) { report._styk.animation = {version: 1, nextKeyId: 100, channels}; }
-
-test('sparse curves interpolate and hold accurately without sampling or baking the native animation', () => {
-  const linear = channel(target(1), 'x', [[7, 10], [100000, 40]]);
-  assert.equal(sampleAnimationChannel(linear, 6), undefined); near(sampleAnimationChannel(linear, 50003.5), 25);
-  assert.equal(sampleAnimationChannel(linear, 200000), 40);
-  linear.keys[0].interpolation = 'hold'; assert.equal(sampleAnimationChannel(linear, 99999), 10);
-  const rotation = channel(target(1), 'rotation', [[0, 0], [10, Math.PI * 2]]); near(sampleAnimationChannel(rotation, 5), Math.PI);
-});
 
 test('channel validation rejects malformed payloads and keeps hidden native pose references', () => {
   const report = fixture(), pose = channel({kind: 'camera'}, 'pose', [[0, {frameId: 'f0'}], [0, {frameId: 'f1'}], [10, null]]);

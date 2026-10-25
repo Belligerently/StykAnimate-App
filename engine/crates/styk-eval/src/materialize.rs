@@ -1,4 +1,4 @@
-//! Explicit editable movieclip expansion (src/movieclip-materialize.mjs).
+//! Explicit editable movieclip expansion.
 //! Playback keeps immutable clips; only conversion commands call this owner.
 //! Record sampling and world roots come from the existing evaluator and geometry.
 use crate::{
@@ -63,7 +63,7 @@ pub struct MaterializerState {
 
 /// One conversion's definition and identity allocator. Reuse it across frames so
 /// a nested path keeps one UID and each imported definition is shared.
-/// The largest object identity the editor allocates (`MAX_ALLOCATED_UID` of src/object-identity.mjs).
+/// The largest object identity the editor allocates.
 const MAX_ALLOCATED_UID: f64 = 2_147_483_646.0;
 
 pub struct Materializer<'a> {
@@ -86,7 +86,7 @@ impl<'a> Materializer<'a> {
         for frame in items(report.get("keyframes")).into_iter().chain(sources.into_iter().flat_map(|s| s.iter().map(|(_, f)| f.clone()))) {
             for object in items(frame.get("objects")) {
                 // Pivot writes identities above 2^31: they stay as they are and never collide with the ones allocated here
-                // (`nextUidAfter` of src/object-identity.mjs).
+                // (`nextUidAfter`).
                 if let Some(id) = num(&object, "unique_id").filter(|id| *id <= MAX_ALLOCATED_UID) {
                     next_uid = next_uid.max(id as u32 + 1);
                 }

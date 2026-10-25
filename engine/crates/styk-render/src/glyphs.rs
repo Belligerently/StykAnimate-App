@@ -1,6 +1,5 @@
 //! Masks of lone glyphs (styk-draw `K_GLYPH`, docs/engine/rendering.md): the glyph
-//! textures of the editor's WebGPU renderer (`glyphTextureDescriptor`,
-//! src/renderer-glyphs.mjs). A glyph is filled once per mask size, four samples per
+//! textures of the editor's WebGPU renderer (`glyphTextureDescriptor`). A glyph is filled once per mask size, four samples per
 //! texel, into a page of an atlas of one-channel pages, and kept across frames: every
 //! instance of that glyph and size samples the same mask. Pages are square, 1,024 texels a
 //! side until a frame needs a larger mask (then all of them grow, up to 4,096, and the masks

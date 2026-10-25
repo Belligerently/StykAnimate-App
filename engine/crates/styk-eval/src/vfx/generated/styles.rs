@@ -1,4 +1,4 @@
-//! Looks of generated effects (src/vfx-generator-styles.mjs): each effect type
+//! Looks of generated effects: each effect type
 //! and style compiles its parameters into layer specifications. Operation for
 //! operation as the editor, so the records the batch packs are the same bits.
 

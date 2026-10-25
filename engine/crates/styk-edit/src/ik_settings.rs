@@ -1,5 +1,5 @@
 //! An IK controller's settings as the inspector changes them (`getIKSettings`,
-//! `setNodeIK` and `rotateIKTarget` in src/editor-ik.mjs).
+//! `setNodeIK` and `rotateIKTarget`).
 //!
 //! Switching a controller on (pinned where the limb is drawn) or off (the limb kept as
 //! drawn), pinning and releasing it, stretching, its chain length and bend side, a 3D limb's

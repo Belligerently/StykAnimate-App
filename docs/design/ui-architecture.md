@@ -155,8 +155,6 @@ Revision 4's "nothing further than today" held only at 1440×900. Revision 4.1 m
 8. **Other runners.** For Electron smoke tests, run `env -u ELECTRON_RUN_AS_NODE npm run test:<x>:desktop`. In PowerShell, use `npm.cmd` if `npm` reports a missing `npm-cli.js`.
 9. **Known baseline failures** are not regressions:
    - `timeline-usability.browser`
-   - `theme.browser`
-   - `audio-ux.browser`
    - `vfx-expansion` and `vfx-strength` (run with `--render-only`)
    - the load-sensitive `backend-session` unit test (rerun it alone; removed with the Python codec service in the Rust engine port)
 
@@ -1282,8 +1280,8 @@ These change with test updates:
 | `workspace-clean.browser` (`selection-more`) | The figure inspector's `⋯` runs `selection-more` and opens the selection menu (today's "More figure actions…" items are in that one menu) | M4 |
 | `builder-*` tests that use today's builder context menu pages (Branch…, Arrange…, View) | The part menu lists those commands flat (Flip ▸, Arrange ▸, Isolate joint, the part deletes); `#builder-branch` stays the inspector switch they `check()`; F9, F10 and F12 are unchanged | M7a |
 | `animation-mode-sync.browser`, `settings.component.browser` (`[data-setting=timelineMode]`) | Kept: Settings › Interface › Timeline mirrors the timeline header's switch (experience §8 rule 5) | – (verify) |
-| `hotkeys-timeline.browser:91-93`, `polygon-construction.browser:89` | Focus `#fps` with a figure selected or while drawing; `#fps` now renders only in the Scene inspector, so they focus another text field of the inspector context they are in (the figure's X field, `[data-property=root_x]`; while drawing a polygon, the first field of the drawing section) for the same "typing in an input does not trigger hotkeys" check | M4 |
-| `audio-navigation.browser`, `audio-ux.browser`, `audio.browser` ("Audio" button, 6 uses) | *Audio* is a `menuitem` of *Timeline ⋯*: open the menu, then `getByRole('menuitem', { name: 'Audio' })` | M5 (with M7f for `audio-ux`) |
+| `hotkeys-timeline.browser:91-93`, `polygon-construction.browser:89` | Focus `#fps` with a figure selected or while drawing; `#fps` now renders only in the Scene inspector, so they focus another text field of the inspector context they are in (the figure's X field, `[data-property=root_x]`; while drawing a polygon in Build the inspector is the figure's, so `polygon-construction` uses its Opacity field, `[data-property=figure_opacity]`) for the same "typing in an input does not trigger hotkeys" check | M4 (`polygon-construction` done) |
+| `audio-navigation.browser`, `audio-ux.browser`, `audio.browser` ("Audio" button, 6 uses) | Done: *Audio* stays a labelled button in the timeline header (a `menuitem` of *Timeline ⋯* only at the minimal tier), so `getByRole('button', { name: 'Audio' })` still finds it | – |
 | `onion-timeline-range.browser`, `onion-controls.desktop`, `timeline-context.browser`, `timeline-usability.browser` ("Onion skin settings" button) | *Onion skin settings…* is a `menuitem` of *Timeline ⋯*: open the menu first; the dialog keeps its name | M5 |
 | `pistol-3d`, `scythe-asset`, `skateboard-asset`, `spatial-controls` (button "Pose") | Unchanged: Pose │ Rotate keeps `role=button` with `aria-pressed` (§4.3); verify only | M4 (verify) |
 | `figure-z-index.browser` | Unchanged: `data-property=figure_z_order` lives in the figure's Arrange core section (visible at rest, as today) | M4 |
@@ -1293,7 +1291,10 @@ These change with test updates:
 | `timeline-polish.browser:59` (menu text `Add FrameA`) | Menu item anatomy and sentence case | M5 |
 | `timeline-organization.browser` (`.timeline-footer`) | The footer moves into the hidden log | M5 |
 | `settings.component.browser` (computed colours), `settings-tabs.desktop` (`.hotkey-row` grid), `export-panel-layout.desktop` (3 columns), `export-experience.browser` | Restyle | M6 |
-| `user-library-ux.desktop:41` (thumbnail `rgb(52,59,71)`), `tweener.browser:22`, `audio-ux.browser:91`, `color-picker-eyedropper:63-67` | Restyle | M7c / M7g / M7f / M7g |
+| `user-library-ux.desktop:41` (thumbnail `rgb(52,59,71)`), `tweener.browser:22`, `color-picker-eyedropper:63-67` | Restyle | M7c / M7g / M7g |
+
+**Re-pointed at the current interface (2026-10-25).** These browser tests drifted with surfaces changed after this plan and now read what the app does:
+`audio-ux` (the audio rows start below the sticky Scene row and the section toolbar), `background-dialog` (Fill is edited in the paint picker; the dialog's own coordinate fields stay hidden), `builder-toolbar` (the rail's quick set is Whole branch and the part commands; Smart snapping is a strip button), `canvas-workspace` (the zoom menu returns focus to its button; Front and Back are the inspector's tiles), `inspector-header` (a joint's tiles are Front, Back and Flip limb; Isolate is in the ⋯ menu), `inspector-kit` (fields are 36px), `layer-timeline-modern` (settings toggles are `role="switch"`), `localization-foundation` (renderer status keys left with the JavaScript renderer), `overlays` (Auto key, Smart snapping and Follow with camera are in the command catalog), `release-ux`, `rig-smart-stretch` (a connector opens on its Slider; Smart stretch is under its Segment), `stage-chrome` (Isolate left the stage header), `theme` (helper text is `.styk-settings-hint`; the focus ring is on the tile), `ui-chrome` (options bars carry `data-options-for`; control rows are 32px and quick tiles are 52px words over glyphs), `workspace-drag` (Build's Structure starts in its strip), `onion-selection` (ghosts list the farthest skin first), `polygon-construction` (the draft's instruction covers the header's Cancel and Finish). `localization-packs` cannot pass until the language packs hold the 305 English messages added since they were completed.
 
 **Delete** (with the dead modules in M1, after porting their useful cases into the new unit tests):
 

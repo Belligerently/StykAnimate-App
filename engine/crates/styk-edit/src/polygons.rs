@@ -1,4 +1,4 @@
-//! Polygons of the selected figure's definition (src/editor-builder.mjs): created,
+//! Polygons of the selected figure's definition: created,
 //! reshaped, reordered and deleted, each one `figure` history entry (`editDefinition`).
 //! Colour edits of a figure on show are recoloured ([`crate::recolor`]), opacity edits keyed;
 //! a face visibility surface is checked against the joints of the figure on show.

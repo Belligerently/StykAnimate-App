@@ -41,11 +41,11 @@ try {
   async function phase(name,operation){
     await page.waitForTimeout(500);await client.send('Profiler.start');
     const result=await page.evaluate(async operation=>{
-      const start=performance.now(),bytes=styk.editor.historySize;
+      const start=performance.now();
       const result=await (0,eval)(operation);
       const commandMs=performance.now()-start;
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-      return {commandMs,paintMs:performance.now()-start,historyBytes:styk.editor.historySize-bytes,result,start,
+      return {commandMs,paintMs:performance.now()-start,result,start,
         longTasks:__insert.longTasks.filter(task=>task.start>=start)};
     },operation);
     const {profile}=await client.send('Profiler.stop');
@@ -81,8 +81,7 @@ try {
       }))mismatches.push(tick);
     });
     styk.editor.seek(start);
-    const command=styk.editor._undo.at(-1),sources=command.commands.flatMap(c=>c.frameSourceChanges??[]);
-    return {ticks:__insert.captureTicks,mismatches,historyBytes:command.bytes,sourceFrames:sources.length,sourceObjects:sources.reduce((n,s)=>n+s.after.value.objects.length,0)};
+    return {ticks:__insert.captureTicks,mismatches};
   });
   assert.deepEqual(clipCheck.mismatches,[],'Movieclip conversion preserves the dense scene before, inside and after its range.');
   await phase('clip-copy','styk.editor.copySelection()');

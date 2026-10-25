@@ -6,15 +6,15 @@
 //! else about the pose stays authored. Nothing here mutates a document: a solve
 //! returns a [`Solution`] that geometry reads in place of the pose's channels.
 //!
-//! | Module | JavaScript it ports |
+//! | Module | Holds |
 //! | --- | --- |
-//! | [`solve`] | `solveIKPoints`, `ikBendReference` (src/ik.mjs) |
-//! | [`layout`] | `ikChain`, `ikFollowerIndices`, `ikFollowers`, `ikAttachments` (src/ik.mjs) |
-//! | [`object`] | `solveObjectIK` (src/ik.mjs) |
-//! | [`rig`] | `rigIKContext` (src/ik-rig.mjs), `authoredRigTarget` (src/rig-constraints.mjs) |
-//! | [`spatial`] | src/ik-spatial.mjs, `quaternionPose`/`betweenVectors` (src/rig-spatial.mjs) |
-//! | [`joined`] | `ikComponents`, `joinedIKGraph`, `solveJoinedIK` (src/ik-joined.mjs) |
-//! | [`interpolate`] | `interpolateIK` (src/ik.mjs) and its call in `evaluatedNativeFrame` |
+//! | [`solve`] | the point solver and the bend reference |
+//! | [`layout`] | chains, follower branches and attachment offsets |
+//! | [`object`] | the solve of every pinned controller of one skeleton |
+//! | [`rig`] | the adapter to rig relationships and the inverse of a rig joint's local space |
+//! | [`spatial`] | 3D target space and the quaternion helpers only IK uses |
+//! | [`joined`] | assemblies of joined figures |
+//! | [`interpolate`] | the tween of controllers between keys |
 //! | [`parse`] | the `_stykIK` table of a pose object |
 //!
 //! The arithmetic follows the JavaScript operation by operation: the editor is

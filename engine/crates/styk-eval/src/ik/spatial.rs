@@ -1,4 +1,4 @@
-//! 3D target space of spatial rigs (src/ik-spatial.mjs), with the two
+//! 3D target space of spatial rigs, with the two
 //! quaternion helpers of src/rig-spatial.mjs that only IK uses.
 //!
 //! Quaternions are `[x, y, z, w]`. A spatial limb keeps a depth, a pole

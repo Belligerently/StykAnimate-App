@@ -9,7 +9,7 @@
 import {holdsRevision} from './engine-open.mjs';
 
 /** Keys of engine packets: the stage renderer draws these with the engine. */
-export const ENGINE_KEY = 'engine:';
+const ENGINE_KEY = 'engine:';
 /** Generation, settings/resource epoch and the exact sample share one native owner. */
 export function engineTicket(key) {
   if (typeof key !== 'string' || key.length > 96 || !key.startsWith(ENGINE_KEY)) return null;
@@ -20,7 +20,6 @@ export function engineTicket(key) {
   if (parts[1] !== String(generation) || parts[2] !== String(epoch) || parts[3] !== String(tick)) return null;
   return {generation, epoch, tick};
 }
-export const engineTick = key => engineTicket(key)?.tick ?? null;
 // These are metadata tickets, not prepared frames. Native residency remains
 // governed by its existing byte budget; a discarded ticket can be recreated.
 const MAX_ENGINE_TICKETS = 120;

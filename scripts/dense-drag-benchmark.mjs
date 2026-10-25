@@ -90,7 +90,7 @@ async function locate(page,scenario,prior){
 }
 
 async function state(page){
-  return page.evaluate(()=>({revision:styk.editor.revision,frameIndex:styk.editor.frameIndex,selected:[...styk.editor.selectedUids],historyBytes:styk.editor.historySize,
+  return page.evaluate(()=>({revision:styk.editor.revision,frameIndex:styk.editor.frameIndex,selected:[...styk.editor.selectedUids],undoSteps:styk.editor._undo.length,
     objects:styk.editor.evaluatedFrame.objects.map(o=>({uid:o.unique_id,root:[o.root_x,o.root_y],scale:o.scale,angles:[...o.angles||[]],lengths:[...o.lengths||[]],bends:[...o.bends||[]]})),
     definitions:styk.editor.report.figure_types.map(f=>({id:f.figure_type_id,segments:f.segments.map(s=>[s.length,s.angle_rad,s.bend_rad])}))}));
 }
@@ -203,7 +203,7 @@ export async function benchmarkDrags(page,result,output,{source,cpu=false}){
       const after=await state(page),changed=changes(before,after);
       if(!changed.objects&&!changed.definitions)throw new Error(`${name} did not edit the document.`);
       if(scenario.group&&changed.roots!==scenario.group)throw new Error(`${name} moved ${changed.roots} roots instead of ${scenario.group}.`);
-      const row={name,scenario:scenario.id,trial,repeat,frameIndex:after.frameIndex,target,picked,changed,historyBytes:after.historyBytes-before.historyBytes,wallMs:data.end-data.start,
+      const row={name,scenario:scenario.id,trial,repeat,frameIndex:after.frameIndex,target,picked,changed,undoSteps:after.undoSteps-before.undoSteps,wallMs:data.end-data.start,
         applicationErrors:[...new Set(result.errors.slice(scenarioErrorStart))],renderingFailed:!data.frames.length,...summary(data)};
       result.phases.push(row);await writeFile(path.join(output,`${name}.json`),JSON.stringify({row,checkpoints,...data},null,2));
       await writeFile(path.join(output,'report.json'),JSON.stringify(result,null,2));

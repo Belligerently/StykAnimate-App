@@ -1,4 +1,4 @@
-//! Audio tracks and clips (src/editor-audio.mjs): track and clip settings changed, tracks
+//! Audio tracks and clips: track and clip settings changed, tracks
 //! and clips deleted, each one `audio` history entry that touches no frame or figure
 //! (`publish`). Commands that make new identities (adding, importing, splitting, duplicating,
 //! pasting) take them from the values the editor draws (D18).

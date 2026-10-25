@@ -22,13 +22,14 @@ try{
  await page.locator('#file-input').setInputFiles(source);await page.waitForFunction(()=>styk.editor.report.source?.endsWith?.('before.piv')||styk.editor.name==='before');
  await page.evaluate(async()=>{styk.editor.select(styk.editor.evaluatedFrame.objects[0].unique_id);styk.fit();styk.editor.updateFigureStyle({name:'Existing native edit'});styk.editor.markSaved();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   window.polygonBaseline={undo:styk.editor._undo.length,redo:styk.editor._redo.length,report:JSON.stringify(styk.editor.report),revision:styk.editor.revision};
+  // Only the draft's own curve (many samples) counts: the overlay also closes a four-point rectangle in the same blue.
   const ctx=document.querySelector('#overlay').getContext('2d'),original={};let path=[];window.polygonPaths=[];window.openArcFills=0;window.openArcCloses=0;
   for(const key of ['beginPath','moveTo','lineTo','stroke','fill','closePath'])original[key]=ctx[key].bind(ctx);
   ctx.beginPath=function(){path=[];return original.beginPath();};
   ctx.moveTo=function(x,y){path.push({x,y});return original.moveTo(x,y);};
   ctx.lineTo=function(x,y){path.push({x,y});return original.lineTo(x,y);};
-  ctx.fill=function(...args){if(styk.state.polygon?.handles.length===2&&path.length>2)window.openArcFills++;return original.fill(...args);};
-  ctx.closePath=function(){if(styk.state.polygon?.handles.length===2&&path.length>2)window.openArcCloses++;return original.closePath();};
+  ctx.fill=function(...args){if(styk.state.polygon?.handles.length===2&&path.length>10)window.openArcFills++;return original.fill(...args);};
+  ctx.closePath=function(){if(styk.state.polygon?.handles.length===2&&path.length>10)window.openArcCloses++;return original.closePath();};
   ctx.stroke=function(){if(this.strokeStyle==='#0d99ff'&&this.lineWidth===2&&path.length>3)window.polygonPaths.push(path.slice());return original.stroke();};
  });
  const stable=()=>page.evaluate(()=>{const e=styk.editor,b=window.polygonBaseline;return e._undo.length===b.undo&&e._redo.length===b.redo&&JSON.stringify(e.report)===b.report&&e.revision===b.revision;});
@@ -43,7 +44,8 @@ try{
  check('Ctrl click follows the shortest native segment chain',JSON.stringify(await handles())==='[0,1,2,3]');
  check('draft connections leave native document and history untouched',await stable());
  for(const key of ['Delete','Backspace','Control+d','F6','Space']){await page.keyboard.press(key);check(key+' cannot mutate the document during polygon construction',JSON.stringify(await handles())==='[0,1,2,3]'&&await stable());}
- for(const action of ['delete','play']){const button=page.locator(`[data-action="${action}"]:visible`).first();if(await button.isEnabled())await button.click();check(action+' toolbar action cannot mutate an active polygon draft',JSON.stringify(await handles())==='[0,1,2,3]'&&await stable());}
+ // Delete has no visible tile while a draft is open, so only Play may be there to press.
+ for(const action of ['delete','play']){const button=page.locator(`[data-action="${action}"]:visible`).first();if(await button.count()&&await button.isEnabled())await button.click();check(action+' toolbar action cannot mutate an active polygon draft',JSON.stringify(await handles())==='[0,1,2,3]'&&await stable());}
  await page.keyboard.press('Control+z');check('one draft Undo removes the complete Ctrl connection group',JSON.stringify(await handles())==='[0]');
  await page.keyboard.press('Enter');check('Enter cannot commit fewer than three joints',JSON.stringify(await handles())==='[0]'&&await stable());
  await page.keyboard.press('Control+z');await page.keyboard.press('Control+z');
@@ -86,10 +88,12 @@ try{
  const cancelled=()=>page.evaluate(()=>!styk.state.polygon&&JSON.stringify(styk.editor.report)===window.cancelBaseline.report&&styk.editor._undo.length===window.cancelBaseline.undo&&styk.editor._redo.length===window.cancelBaseline.redo);
  await start();await click(0);await click(3,true);await page.keyboard.press('Escape');check('Escape discards draft and preserves existing document Redo',await cancelled());
  await start();await click(0);await click(3,true);await page.locator('[data-tool="hand"]').click();check('changing tool discards draft without a document command',await cancelled());
- await start();await click(0);await click(3,true);await page.locator('[data-action="cancel-polygon"]').click();check('Cancel button discards only the draft',await cancelled());
- await start();await click(0);await click(3,true);const fps=page.locator('#fps');if(await fps.isEnabled())await fps.focus();
- check('timing input is disabled or leaves construction before editing',await fps.isDisabled()?JSON.stringify(await handles())==='[0,1,2,3]':await cancelled());await page.keyboard.press('Escape');
- await start();await click(0);await click(3,true);await page.locator('[data-action="first-frame"]:visible').click();check('seeking a stored frame cancels the draft without changing document history',await cancelled());
+ await start();await click(0);await click(3,true);// The draft's instruction covers the header's Cancel button while it shows (Esc and the command still cancel it).
+ await page.evaluate(()=>styk.actions['cancel-polygon']());check('the cancel-polygon command discards only the draft',await cancelled());
+ // The frame-rate field is only in the Scene inspector now; the figure's opacity field stands in for it.
+ await start();await click(0);await click(3,true);const field=page.locator('[data-property="figure_opacity"]');await field.focus({timeout:2000}).catch(()=>{});await page.keyboard.type('5');
+ check('typing in an inspector field during construction changes neither the draft nor the document',JSON.stringify(await handles())==='[0,1,2,3]'?await page.evaluate(()=>JSON.stringify(styk.editor.report)===window.cancelBaseline.report&&styk.editor._undo.length===window.cancelBaseline.undo&&styk.editor._redo.length===window.cancelBaseline.redo):await cancelled());await page.keyboard.press('Escape');
+ await start();await click(0);await click(3,true);await page.evaluate(()=>styk.actions['first-frame']());check('seeking a stored frame (the First frame command: Build hides the timeline buttons and the key is held back) cancels the draft without changing document history',await cancelled());
  await start();await click(0);await click(3,true);
  await page.evaluate(()=>styk.editor.markSaved());
  await page.locator('#file-input').setInputFiles(exported.piv);await page.waitForFunction(()=>styk.editor.name==='curved');

@@ -10,21 +10,13 @@ import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from './drawing-tiles
 import {applyTileChanges} from './drawing-pixels.mjs';
 import {tileStoreFromList} from './drawing-tile-codec.mjs';
 import {presenterScratch,retainedPresenterScratch,levelStore,invalidateLevels} from './drawing-raster.mjs';
-import {prepareDrawingChanges,needsDrawingPreparation,validateDrawingChanges,adoptDrawingPreparation} from './drawing-preparation.mjs';
+import {prepareDrawingChanges, needsDrawingPreparation, validateDrawingChanges} from './drawing-preparation.mjs';
 
-const owners=new WeakMap(),clipboardPixels=new WeakMap();
-export const drawingClipboardPixels=clipboard=>clipboardPixels.get(clipboard);
+const owners=new WeakMap();
 export const drawingResourcesFor=report=>owners.get(report);
 /** Whether a cel's pixels differ from the published ones (or are being loaded): the engine
  * draws it from the live tiles (engine/engine-live-cels.mjs) until they are published. */
 export const entryUnpublished=entry=>Boolean(entry.store||entry.deferred?.length)&&entry.published?.revision!==entry.revision;
-/** Whether any drawing cel of `report` has pixels that are not published yet. */
-export function drawingUnpublished(report){
-  const resources=owners.get(report);
-  if(!resources)return false;
-  for(const entry of resources.entries.values())if(!entry.transient&&entryUnpublished(entry))return true;
-  return false;
-}
 export async function drawingBarrier(report,options={}) {
   await owners.get(report)?.flush(options);
   const seen=options.seen??new Set();if(seen.has(report))return;seen.add(report);
@@ -34,7 +26,7 @@ export async function drawingBarrier(report,options={}) {
 /** Persistent stroke worker handle: one per DrawingResources so a heavy encode
  * or fill on the pixel worker never blocks painting. The Worker is spawned
  * lazily so this stays safe in non-DOM contexts. */
-export class StrokeWorker {
+class StrokeWorker {
   open(){if(!this.worker){this.worker=new Worker(new URL('./drawing-stroke-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing stroke'});this.worker.onmessage=({data})=>this.onmessage?.(data);this.worker.onerror=event=>{event.preventDefault();this.onerror?.((event.message ? new Error(event.message) : messageError(new Error(''), "errors.drawingResources.drawingStrokeWorkerStopped")));};this.worker.onmessageerror=()=>this.onerror?.(messageError(new Error(''), "errors.drawingResources.strokePixelsCouldNotBeTransferred", {}));}}
   post(message,transfer){if(this.closed)return;this.open();this.worker.postMessage(message,transfer??[]);}
   // dispose() stays respawnable for crash recovery; close() is permanent.
@@ -105,7 +97,6 @@ export class DrawingResources {
    * tiles, so shared tiles count once, not once per entry. */
   *surfaces(){yield* this.entries.values();yield* this.transients;}
   residentMemory(){return this.pixelMemory.sync(this.surfaces());}
-  residentPixels(){return new Set(this.residentMemory().references.keys());}
   get stats(){let tiles=0,levelBytes=0,scratchBytes=0,unpublished=0,deferredBytes=0;const deferred=new Set();for(const e of this.surfaces()){if(e.store)tiles+=e.store.size;for(const step of e.deferred??[])if(!deferred.has(step.changes)&&!this.history?.owns(step.changes)){deferred.add(step.changes);deferredBytes+=historyPixelBytes(step.changes);}for(const level of e.levels??[])levelBytes+=level?.bytes??0;for(const s of e._scratches?.values()??[])if(s.canvas)scratchBytes+=s.canvas.width*s.canvas.height*4;if(!e.transient&&(e.store||e.deferred?.length)&&e.published?.revision!==e.revision)unpublished++;}return {tiles,bytes:this.residentMemory().bytes,historyBytes:this.history?.residentBytes??0,deferredBytes,workingBytes:this.workingBytes,levelBytes,scratchBytes:scratchBytes+(this.previews?.bytes??0),entries:this.entries.size,transients:this.transients.size,unpublished,inFlight:this.encoding?1:0,workers:[this.worker,this.decodeWorker,this.thumbnailWorker,this.strokeWorker,this.previews?.worker,this.history?.disk].filter(w=>w?.worker).length,decodes:this.decodes,lastEncode:this.lastEncode};}
   dropScratch(e){this.previews?.drop(e);const map=e._scratches;if(!map)return;for(const s of map.values())if(s.canvas)s.canvas.width=s.canvas.height=1;e._scratches=null;}
   /** Rebuildable presenter scratch canvases yield to newer work first. */
@@ -307,7 +298,6 @@ export class DrawingResources {
   }
   needsPreparation(command,direction){return needsDrawingPreparation(command,direction);}
   prepareChanges(command,direction,options){return prepareDrawingChanges(this,command,direction,options);}
-  adoptPrepared(command,direction,tiles){return adoptDrawingPreparation(this,command,direction,tiles);}
   apply(figure,changes,direction,prepared,options) {return this.applyEntry(this.entry(figure),figure,changes,direction,prepared,options);}
   /** Applies a commit's tiles to a cel's entry. `figure` is the document's definition of the cel, which takes the new revision and
    * bounds, or null while the document has none (a creation undone: the entry keeps the pixels for its redo). */
@@ -341,25 +331,6 @@ export class DrawingResources {
     const pending=new Map();const visit=c=>{if(c.commands){for(const child of direction==='before'?[...c.commands].reverse():c.commands)visit(child);}else if(c.kind==='drawing-pixels'){validateDrawingChanges(c.tiles);let tiles=pending.get(c.celId);if(!tiles)pending.set(c.celId,tiles=new Map());for(const tile of c.tiles)tiles.set(tileKey(tile.tx,tile.ty),sideBytes(tile[direction]));}};visit(command);
     let added=0;for(const [id,tiles] of pending){const changes=[...tiles].map(([key,bytes])=>{const [tx,ty]=key.split(',').map(Number);return{tx,ty,pixels:bytes?{byteLength:bytes}:null};});added+=this.replacementBytes(this.entries.get(id)??{},changes,'pixels');}
     this.reserve(Math.max(0,added-(prepared?.bytes??0)));
-  }
-  captureClipboard(clipboard){
-    const snapshots=new Map();for(const figure of clipboard.figures??[]){if(!drawingMetadata(figure))continue;const e=this.entry(figure);snapshots.set(e.id,{published:e.published?{...e.published}:null,revision:e.revision,store:e.store?.fork()??null,deferred:e.deferred.slice()});}clipboardPixels.set(clipboard,snapshots);
-  }
-  checkClipboard(forks,clipboard){let bytes=0;const snapshots=clipboardPixels.get(clipboard);for(const [figure] of forks)bytes+=snapshots?.get(drawingMetadata(figure).celId)?.store?.bytes??0;this.reserve(bytes);}
-  pasteClipboard(forks,clipboard){
-    const snapshots=clipboardPixels.get(clipboard);
-    for(const [old,copy] of forks){const source=snapshots?.get(drawingMetadata(old).celId);if(!source)continue;const e=this.entry(copy);
-      e.published=source.published?{...source.published}:null;e.revision=source.revision;e.store=source.store?source.store.fork():null;e.deferred=source.deferred?.slice()??[];e.levels=null;e.levelKnown=null;this.dropScratch(e);
-      this.schedule();}
-    this.residentMemory();
-  }
-  /** Forks share tiles copy-on-write, so only tiles already evicted to a
-   * data URL (or replaced later) add unique bytes; the delta check stays a
-   * cheap estimate and apply() enforces the real budget at write time. */
-  checkForks(figures){
-    const resident=this.residentPixels();let added=0;
-    for(const figure of figures){const store=this.entry(figure).store;if(!store)continue;for(const t of store)if(!resident.has(t.pixels))added+=t.pixels.byteLength;}
-    this.reserve(added);
   }
   fork(old,copy) {
     const source=this.entry(old),target=this.entry(copy);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {audioState, validateAudioState, audibleClips, clipGainAt} from '../src/audio-model.mjs';
+import {audioState, audibleClips, clipGainAt} from '../src/audio-model.mjs';
 import {inspectWave, pcmWave, wavePeaks, mixAudio} from '../src/audio-pcm.mjs';
 import {documentChunks, applyDocumentChunk} from '../src/document-transport.mjs';
 import {buildContainerV2, decodeDocument} from './support/native-files.mjs';
@@ -36,7 +36,8 @@ test('invalid clip edits, missing media and invalid imports reject before public
   assert.equal(editor.revision,revision); assert.equal(audioState(editor.report),state);
   const broken = structuredClone(editor.report); broken._styk.audio.assets = {};
   assert.throws(()=>editor.load(broken)); assert.equal(audioState(editor.report),state);
-  assert.throws(()=>validateAudioState({...state,assets:{'sound-test':{...asset(),chunks:[{data_base64:'not data'}]}}}));
+  assert.throws(()=>editor.importAudio({...asset(),id:'sound-bad',chunks:[{data_base64:'not data'}]},{start:0}));
+  assert.equal(editor.revision,revision); assert.equal(audioState(editor.report),state);
 });
 test('asset deletion is undoable and track mute/solo determine the same mix', () => {
   const editor = editorWithAudio(), first = audioState(editor.report).tracks[0], second = editor.addAudioTrack('Effects');
@@ -52,9 +53,10 @@ test('audio clipboard survives document replacement and pastes one independent c
   assert.equal(state.tracks[0].clips[0].duration,1);editor.undo();assert.equal(audioState(editor.report).tracks.length,0);
 });
 test('overlap admission bounds the mixer and prototype names cannot impersonate an asset', () => {
-  const editor=editorWithAudio(),state=structuredClone(audioState(editor.report)),clip=state.tracks[0].clips[0];
-  state.tracks[0].clips=Array.from({length:33},(_,index)=>({...clip,id:`clip-${index}`}));assert.throws(()=>validateAudioState(state),/32 audio/);
-  state.tracks[0].clips=[{...clip,assetId:'toString'}];assert.throws(()=>validateAudioState(state),/missing recording/);
+  const editor=editorWithAudio(),track=audioState(editor.report).tracks[0];
+  for(let i=1;i<32;i++)editor.importAudio({...asset(),id:`sound-${i}`},{trackId:track.id,start:0});
+  assert.throws(()=>editor.importAudio({...asset(),id:'sound-33'},{trackId:track.id,start:0}),/32 audio/);
+  const broken=structuredClone(editor.report);broken._styk.audio.tracks[0].clips[0].assetId='toString';assert.throws(()=>editor.load(broken),/missing recording/);
 });
 test('FPS edits leave recording speed and source offsets unchanged', () => {
   const editor = editorWithAudio(), state = audioState(editor.report); editor.setFPS(60); assert.equal(audioState(editor.report),state);

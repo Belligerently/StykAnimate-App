@@ -1,11 +1,9 @@
 # Engine: evaluation
 
 How the engine turns a document and a tick into world-space geometry and a
-draw list (`engine/crates/styk-eval`). The JavaScript editor's evaluation
-(`geometry.mjs`, `layer-sheet.mjs`, `animation-pose.mjs`, …) is what the recorded fixtures were made from
+draw list (`engine/crates/styk-eval`). The recorded fixtures were made from the JavaScript editor's evaluation
 ([README](README.md#fixtures)); the recordings are frozen and are the oracle now. The interface evaluates nothing:
-`src/pivot/geometry.mjs` and the geometry modules around it (`geometry-pose`, `geometry-definition`, `geometry-order`,
-`movieclip-geometry`, `playback-geometry-cache`, and the evaluation in `spatial-mesh`, `movieclip-mesh`, `surfaces`) are deleted.
+the JavaScript keeps only what a document stores (the validation of its records, `src/pivot/read-view.mjs`) and the views it reads from the engine.
 
 ## Contract
 
@@ -33,8 +31,8 @@ draw list (`engine/crates/styk-eval`). The JavaScript editor's evaluation
 1. Native keyframes tween with Pivot's rules: easing,
    Auto curves, colour and background transitions, IK controllers. Property
    channels then apply ([below](#property-channels)).
-2. A layer sheet samples each layer's own pose track (`sampleLayerSheet`),
-   applies its keys' movieclip replacements (`replaceMovieclipFrame`) and
+2. A layer sheet samples each layer's own pose track,
+   applies its keys' movieclip replacements and
    composes layers in order. Imported keys sample the native timeline with the
    sheet's `legacyAnimation` channels; when every layer, the scene and the camera
    share one native sample (or a layer has nothing), that sample is the frame,
@@ -46,38 +44,36 @@ draw list (`engine/crates/styk-eval`). The JavaScript editor's evaluation
 
 ## Property channels
 
-Sparse keyed curves over the native timeline (`_styk.animation`, src/animation-channels.mjs,
-src/animation-pose.mjs; `styk_eval::channels`). A document opened in the app has a layer
-sheet, and its channels are the sheet's `legacyAnimation`, which the imported keys sample
-(`legacySheetReport`); a native document (and a movieclip's own document) uses
+Sparse keyed curves over the native timeline (`_styk.animation`, validated by src/animation-channels.mjs; `styk_eval::channels`). A document opened in the app has a layer
+sheet, and its channels are the sheet's `legacyAnimation`, which the imported keys sample; a native document (and a movieclip's own document) uses
 `_styk.animation`. The loader reads them leniently into typed channels (`channels::parse`:
 target, property, keys with their curves and flags; a channel the editor would refuse is left
 out and noted), cached by record like effect clips. `Prepared` builds each pose channel's key
 track once (`channels::Compiled`), and every native evaluation (`Prepared::native_at`, a
 movieclip's fractional frames) applies them at the tick:
 
-- **Pose channels** (`channels::pose`, `composePoseChannels`): a figure or layer channel
+- **Pose channels** (`channels::pose`): a figure or layer channel
   replaces the figures it owns (a figure channel its figure, a layer channel the layer's other
-  figures) with their pose in the frame its key track samples (`buildVirtualPoseTrack`: a
+  figures) with their pose in the frame its key track samples (a
   native timeline of the keys' source poses at the document's version, hidden keys lasting
   nothing, a key without `interpolation` keeping its source's easing; `maskedRanges` show
   nothing, `useBasePose` the native pose, `nativeProperties` keep the native scale,
   transparency, colour, depth and outline). Joins are resolved again by identity: a figure
   whose parent left, or whose joint is gone, stays where its own frame drew it; a joined figure
-  turns by the change of its parent's joint direction (`handleOrientation`, through the
+  turns by the change of its parent's joint direction (through the
   original tree for a figure with an animation origin). Unreplaced figures keep their slots,
   arrivals follow; each layer keeps its sampled pose's stacking order, an `orderAnchor` figure
   right after its anchor. The camera's and the scene's tracks set the camera and the
   background, colour key and scene effects (blank before their first key).
-- **Scalar channels** (`channels::scalar`, `composeAnimationChannels`): sampled with
-  `sampleAnimationChannel` (easing modes, Auto with neighbouring Auto keys, held and discrete
+- **Scalar channels** (`channels::scalar`): sampled with
+  `Channel::sample_at` (easing modes, Auto with neighbouring Auto keys, held and discrete
   properties, `passthrough` intervals that hand the property back, Pivot's monotone cubic for
   `nativeCurve` keys, `nativeRotation` along the shortest turn, `nativeValueMode` colour and
   opacity through Pivot's bytes, colours per byte rounded, effect colours through
-  `interpolateVfxColor`), effect stacks first, then fill styles, then the rest in saved order:
-  effect parameters onto the tweened stacks (`applyVfxParameter`: clamped numbers, colours as
+  `vfx::paint::interpolate`), effect stacks first, then fill styles, then the rest in saved order:
+  effect parameters onto the tweened stacks (clamped numbers, colours as
   keyed, `enabled`, whole stacks, the scope), the camera, the background and colour key, a
-  figure's colour override and depth, style overlays (`setAnimationStyle`, resolved again with
+  figure's colour override and depth, style overlays (resolved again with
   the instance's sprite; a definition-scoped channel wins over the unscoped one, a missing node
   stays dormant), and last the figures' scale, transparency and rotation from the roots down
   (a rotation carries into the figures joined below, ghost bones included), origins corrected,
@@ -106,7 +102,7 @@ bones are ghosts. A pose stores its pivot (`_stykAnimationOrigin`: `x`, `y`, a l
   angles of the original tree relative to their parents there, as before Set Origin; with a
   support graph the bones are interpolated as their own tree, ghosts included.
 - Every native interval (exact keys included) then places each unjoined figure's root so
-  its pivot lands where the pose says (`correctAnimationOrigins`), with V8's trigonometry
+  its pivot lands where the pose says, with V8's trigonometry
   (`styk-math`). Poses a layer sheet shows directly, and edit frames, come as the editor
   left them.
 - The figure's rotation (`animationRotation`: the rotation reference's turn) is what rigs,
@@ -257,38 +253,38 @@ boundary before JavaScript evaluation is deleted. The work queue in the plan ord
 
 ## The evaluated frame as records
 
-A gesture commits by storing the frame the editor shows: `snapshotPoseFrame(
-editor.evaluatedFrame)` becomes a pose source. `styk_eval::records` produces that record,
-byte for byte, so the commit can run in the engine ([editing.md](editing.md)). It mirrors
-the record-level shape of the editor's evaluation (which record a pose comes from, which
-keys a tween writes and in which order: `sampleLayerSheet`, the native tween,
-`buildVirtualPoseTrack`, `applyLayerOrder`,
-`snapshotPoseFrame`) and takes every interpolated number from the typed evaluator, so the
-arithmetic has one implementation. Frames it does not produce yet answer `Unported` with
-the reason.
+A gesture commits by storing the frame the editor shows as a pose source. `styk_eval::records` produces that record,
+byte for byte, so the commit runs in the engine ([editing.md](editing.md)). It follows
+the record-level shape the recordings fixed (which record a pose comes from, which
+keys a tween writes and in which order: the layer sheet, the native tween,
+virtual pose tracks, layer order, the stored pose) and takes every interpolated number from the typed evaluator, so the
+arithmetic has one implementation. A read of the frame on show never refuses for a document that opened: opening validates the
+channels, joins and sources records read (a hand-built document with an unreadable channel answers `Unported`), what the
+typed evaluator does not read of a pose (an effect stack, a 3D pose or an animation origin it ignored) is left as the record
+holds it, as the typed evaluator draws it, and layer poses that join each other in a ring leave one figure loose.
 
 - Covered: imported layers (the native timeline, exact and tweened), layers with authored
   pose keys (virtual pose tracks), the whole-pose shortcut and the per-layer composition,
-  tweened IK controllers (`interpolateIK`), figure and scene effect stacks
-  (`interpolateVfx`, parameters resolved in the registry's order, paints normalized),
+  tweened IK controllers (`ik::tween`), figure and scene effect stacks
+  (`vfx::interpolate`, parameters resolved in the registry's order, paints normalized),
   layers that mix imported and authored keys (the window of keys around the playhead),
-  movieclip frame replacements (`replaceMovieclipFrame`, tweened along their own track),
+  movieclip frame replacements (tweened along their own track),
   movieclips leaving the frame outside their span, layer order, 3D poses between keys
-  (`interpolateSpatialPose`'s record), hidden pose keys, and property channels (below).
-- Not yet (each answers `Unported`): figures joined to a hidden movieclip and a movieclip's
-  own retained-source document. A tweened camera keeps its baked camera-motion
-  offset (`_parallaxMotionOffset`) as the editor writes it.
+  (the record of a spatial pose tween), hidden pose keys, and property channels (below).
+- A figure joined to a movieclip instance that is not shown (its placement ended, or a once-clip finished) comes loose
+  where the whole frame had it (its root is the geometry of the frame with the instance in it, its join `null`), in the
+  record and in the typed frame alike (`Prepared::apply_movieclips`). A tweened camera keeps its baked camera-motion offset
+  (`_parallaxMotionOffset`) as the editor writes it.
 - **Property channels as records** (`styk_eval::records` `channels.rs`): where the editor
   composes them, so do records: on the native timeline a layer sheet's imported keys sample
   (`sampleLegacy`, with the sheet's `legacyAnimation`; a native document's own
   `_styk.animation`), which also lasts until the channels' end, and on the frame a property
   edit writes (`Records::compose_channels`: `at(report, tick)` with the one-key channels
-  `_sheetPropertyEntries` builds). `composePoseChannels` and `composeAnimationChannels` are
-  mirrored on the records (owners, replacements, joins re-resolved by identity, native
+  the editor's property-entry builder makes). Pose and scalar channels compose on the
+  records the same way (owners, replacements, joins re-resolved by identity, native
   appearance, stacking anchors; effect stacks first, then fill styles, style overlays with
   scopes winning, the camera copied with its defaults, transforms from the roots down), and
-  `animationPropertyValue` reads a property from a frame record
-  (`Records::property_value`). Values come from the drawing path's sampling
+  `Records::property_value` reads a property from a frame record. Values come from the drawing path's sampling
   (`Channel::sample_at`): a key's own value as saved (a paint or stack exactly as written),
   an interpolated one as the typed curve works it out; geometry (a joined figure's position,
   a figure that comes loose) from the typed view of the record. The Bézier easings' `t ** 3`
@@ -405,9 +401,10 @@ playhead's. `src/engine/engine-shown.mjs` asks `EditSession.query` (`Session::qu
   stay visible after its end (`generated::clip_tail`), whether the clip is on at the tick (`Clip::active_at`) and whether the
   inspector lists it there (on, or its generated effects still showing). The effects timeline draws the tail and lists the
   clips from it (`src/vfx-clip-views.mjs`). `vfxGroup` names, for a figure, the figures its connected effects filter together
-  at the playhead (`FrameVfx`'s attached group, owner first), or nothing when it owns no group; the effects gizmo measures them
-  from the geometry it holds. A movieclip instance's geometry is its handle alone, so `vfxExtent` gives the gizmo what the
-  instances among some figures paint, content included (`styk_eval::drawlist::objects_artwork_bounds`, `[x, y, width, height]`).
+  at the playhead (`FrameVfx`'s attached group, owner first, from `Prepared::frame_vfx`: the effects the stage draws, a crop's
+  inherited effect clips included), or nothing when it owns no group; the effects gizmo measures them from the geometry it holds.
+  A movieclip instance's geometry is its handle alone, so `vfxExtent` gives the gizmo what the instances among some figures
+  paint, content included (`styk_eval::drawlist::objects_artwork_bounds`, `[x, y, width, height]`).
 
 The same fixtures judge them: the evaluation fixtures (`tests/fixtures/eval/follow-*`, the camera records) for the
 camera, and `styk-edit/src/views_tests.rs` and `tests/onion-skins.test.mjs`, `tests/motion-trails.test.mjs`,

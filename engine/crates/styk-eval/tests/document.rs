@@ -62,7 +62,6 @@ fn movieclips_nested_deeper_than_a_file_opens_match_the_editor_down_to_the_inner
         let mut value = read(&folder, &format!("{name}.json"));
         assert_eq!(depth(&mut value), levels, "{name} nests that many clips");
         let document = styk_eval::from_value(&value, name).unwrap();
-        assert!(document.unsupported.is_empty(), "{name}: {:?}", document.unsupported);
         let prepared = styk_eval::prepare(document);
         let report = parity::compare(&prepared, &reference);
         assert!(report.frames == 5 && report.primitives > 0 && report.joints > 0, "{name}");
@@ -96,7 +95,6 @@ fn a_saved_frame_draft_changes_nothing_the_engine_evaluates() {
         assert!(draft.get("baseline").is_some() && draft.get("animationBaseline").is_some(), "{name}: the draft keeps the stored pose and animation");
         assert_eq!(value.path(&["_styk", "layerSheet"]).is_some(), name.ends_with("sheet"), "{name}");
         let document = styk_eval::from_value(&value, name).unwrap();
-        assert!(document.unsupported.is_empty(), "{name}: {:?}", document.unsupported);
         let report = parity::compare(&styk_eval::prepare(document), &reference);
         assert!(report.frames == 5 && report.primitives > 0 && report.joints > 0, "{name}");
         assert!(report.matches(), "{name}: {:?}", report.bad_frames);
@@ -109,7 +107,7 @@ fn a_saved_frame_draft_changes_nothing_the_engine_evaluates() {
 fn an_animation_with_no_keys_loads_and_has_no_artwork() {
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/document");
     let document = styk_eval::from_value(&read(&folder, "empty-animation.json"), "empty").unwrap();
-    assert!(document.keyframes.is_empty() && document.unsupported.is_empty());
+    assert!(document.keyframes.is_empty());
     let assets = styk_eval::assets::Assets::build(&document);
     let prepared = styk_eval::prepare(document);
     let frame = prepared.evaluate(0.0);

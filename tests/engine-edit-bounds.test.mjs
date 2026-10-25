@@ -1,34 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {appBoundsMarker, captureEditBounds, markAppBounds, MAX_BOUNDS_SAMPLES} from '../src/engine/engine-edit-bounds.mjs';
+import {appBoundsMarker, markAppBounds} from '../src/engine/engine-edit-bounds.mjs';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
-import {appBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
+import {appBounds} from './support/edit-bounds-callbacks.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
-const editor = {tick: 3, frameIndex: 0, selectedUids: new Set([7, 2])};
-const entry = {obj: {unique_id: 7}};
-test('bounds bridge records existing requests once, preserves callback receiver and frame range properties', () => {
-  const result = {minX: -4, minY: 3, maxX: 8, maxY: 9}, receiver = {}, range = Object.assign([0], {sheetTicks: [3, 6]});
-  let calls = 0;
-  const callback = function (given) { calls++; assert.equal(this, receiver); assert.equal(given, entry); return result; };
-  const capture = captureEditBounds('centerCamera', ['both', range, {boundsOf: callback}], editor);
-  assert.equal(calls, 0); assert.equal(capture.args[2].boundsOf.call(receiver, entry), result); assert.equal(calls, 1);
-  const args = JSON.parse(capture.payload()), data = args[2].boundsOf['@measuredBounds'];
-  assert.deepEqual(data.input, ['both', {'@array': [0], sheetTicks: [3, 6]}]);
-  assert.deepEqual(data.samples, [{uid: 7, bounds: result}]); assert.deepEqual(data.selectedUids, [7, 2]);
-});
-
-test('an app-registered callback reaches the engine as a marker and is never run for it; any other callback is recorded', () => {
+test('an app-registered callback reaches the engine as a marker; any other callback has none', () => {
   const own = markAppBounds(() => { throw new Error('the engine measures the app callback itself'); }), other = () => null;
   assert.deepEqual(appBoundsMarker(own), {'@boundsCallback': 'app'});
   assert.equal(appBoundsMarker(other), undefined); assert.equal(appBoundsMarker({'@boundsCallback': 'app'}), undefined); assert.equal(appBoundsMarker(undefined), undefined);
-  const args = ['x', 'start', {boundsOf: own, ticks: [1, 4]}], capture = captureEditBounds('alignSelection', args, editor);
-  assert.equal(capture.args, args);
-  assert.deepEqual(JSON.parse(capture.payload()), ['x', 'start', {boundsOf: {'@boundsCallback': 'app'}, ticks: [1, 4]}]);
-  const recorded = captureEditBounds('alignSelection', ['x', 'start', {boundsOf: other}], editor);
-  assert.notEqual(recorded.args[2].boundsOf, other); assert.ok(JSON.parse(recorded.payload())[2].boundsOf['@measuredBounds']);
 });
 
 test('recorded app bounds depend on hidden construction strokes, anchored media and effect reach', {skip: !engineBuilt}, () => {
@@ -45,33 +27,6 @@ test('recorded app bounds depend on hidden construction strokes, anchored media 
     assert.notDeepEqual(appBounds()(bare), full, 'fixture does not depend on the anchored media extent');
   } finally { owner.release(); }
 });
-test('nonplain results, getters, callback throws and oversized tapes keep callback behavior and refuse transport', () => {
-  let reads = 0;
-  const options = {get boundsOf() { reads++; return () => null; }};
-  const accessor = captureEditBounds('centerCamera', ['x', [0], options], editor);
-  assert.equal(reads, 0); assert.equal(accessor.args[2], options); assert.equal(accessor.payload(), null);
-  for (const result of [Object.create({minX: 1}), 3, {get minX() { throw new Error('getter must not be read by capture'); }}]) {
-    const capture = captureEditBounds('alignSelection', ['x', 'start', {boundsOf: () => result}], editor);
-    assert.equal(capture.args[2].boundsOf(entry), result); assert.equal(capture.payload(), null);
-  }
-  const thrown = new Error('same callback error'), capture = captureEditBounds('centerCamera', ['x', [0], {boundsOf: () => { throw thrown; }}], editor);
-  assert.throws(() => capture.args[2].boundsOf(entry), error => error === thrown); assert.equal(capture.payload(), null);
-  const bounded = captureEditBounds('centerCamera', ['x', [0], {boundsOf: () => null}], editor);
-  for (let n = 0; n <= MAX_BOUNDS_SAMPLES; n++) assert.equal(bounded.args[2].boundsOf(entry), null);
-  assert.equal(bounded.payload(), null);
-});
-
-test('unsupported nested option data leaves getters, toJSON and the original call untouched', () => {
-  let invoked = 0;
-  const callback = () => null;
-  for (const nested of [{get ticks() { invoked++; return []; }}, {toJSON() { invoked++; return null; }}, {data: 1n}]) {
-    const args = ['both', [0], {boundsOf: callback, extra: nested}];
-    const capture = captureEditBounds('centerCamera', args, editor);
-    assert.equal(capture.args, args); assert.equal(capture.payload(), null);
-  }
-  assert.equal(invoked, 0);
-});
-
 /** The editor owned by the real engine, as the app has it: the session its open started edits the document. */
 const owned = editor => installEngineOwner(editor);
 test('the engine measures the app\'s bounds callback itself; any other callback is refused', {skip: !engineBuilt}, async () => {

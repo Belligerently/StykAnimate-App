@@ -1,4 +1,4 @@
-//! Disconnect segment (src/editor-disconnect.mjs, Animate's own command): the selected segment and everything hanging
+//! Disconnect segment (Animate's own command): the selected segment and everything hanging
 //! from it become a figure of their own in every pose of the figure, posed where they were.
 //!
 //! One history entry (a batch) holds three: a `disconnect` command that inserts the new figure's poses beside the

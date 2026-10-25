@@ -1,4 +1,4 @@
-//! Rig relationships of the selected figure's definition (src/editor-rig-constraints.mjs):
+//! Rig relationships of the selected figure's definition:
 //! behaviours of a joint (stretch, follow, response, angle locks, angle paths, weighted
 //! joints, attachments), Smart Stretch over a branch, angle locks measured from the figure on
 //! show, and parts bound to a stretch driver. Each is one `native-properties` history entry

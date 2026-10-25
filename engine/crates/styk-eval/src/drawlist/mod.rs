@@ -924,7 +924,7 @@ fn object_fx<'s>(scene: &'s Scene, it: &Item) -> Option<&'s ObjectVfx> {
 }
 
 /// `objectBounds` of a frame's whole artwork, as the editor measures it to fit a library
-/// preview (`src/library-preview-worker.mjs`): every item's box grown by half its stroke,
+/// preview (the library's preview): every item's box grown by half its stroke,
 /// its outline, three units and the reach of the effects on it (`drawableVfxPadding`: its
 /// object's figure stack, its node's stack, and the figure stacks of the movieclip
 /// instances it is drawn in). `[x, y, width, height]` in whole units; `None` when the
@@ -1142,8 +1142,7 @@ fn encode_scene(assets: &Assets, live: Option<LiveView<'_>>, scene: &Scene, hidd
     Encoded { runs, objects, of_slot, fx }
 }
 
-/// The mask an object is drawn from when it is one solid glyph (`glyphTextureDescriptor`,
-/// src/renderer-glyphs.mjs): one text item, outside movieclips, with one visible
+/// The mask an object is drawn from when it is one solid glyph (`glyphTextureDescriptor`): one text item, outside movieclips, with one visible
 /// character whose glyph has stored bounds, no effects of its own (`hasDrawableVfx`),
 /// no figure outline and no gradient. The view decides whether the mask is used
 /// ([`GlyphMask::layout`]).

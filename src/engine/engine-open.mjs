@@ -109,7 +109,6 @@ export class Opening {
       report, opening: this, nextFrameIdentity: indexes.nextFrameIdentity, nextUid: indexes.nextUid,
       layerUidCounts: new Map(indexes.layerUidCounts), layerSeenUids: new Set(indexes.layerSeenUids),
       layerGroups: new Map(indexes.layerGroups.map(([id, uids]) => [id, new Set(uids)])),
-      figureNames: new Map(indexes.figureNames), tracks: indexes.tracks,
     };
   }
 
@@ -212,7 +211,7 @@ export function openJson(document, name, {engine, layerTimeline, signal} = {}) {
 }
 
 /** Opens a small document on this thread, at once: a new document, a tutorial's. */
-export function openJsonNow(document, name, {engine, layerTimeline} = {}) {
+function openJsonNow(document, name, {engine, layerTimeline} = {}) {
   engine = engineOf(engine);
   try { return new Opening(engine, engine.handle.open_document_now(jsonBytes(document), name ?? 'Untitled animation', 'json', optionsText({layerTimeline}))); }
   catch (error) { throw openFailure(error); }

@@ -3,23 +3,9 @@ import {validateDrawingSets} from './movieclip-drawings.mjs';
 import {validateMovieclipMeshes} from './movieclip-mesh.mjs';
 /** Movieclip assets are immutable figure definitions. Scene poses contain only
  * a small playback descriptor; sampled scenes and geometry never enter history. */
-export const MOVIECLIP_VERSION = 1;
+const MOVIECLIP_VERSION = 1;
 export const isMovieclip = figure => Boolean(figure?._styk?.movieclip);
 export const movieclipAsset = figure => figure?._styk?.movieclip;
-/** Published clip documents are immutable: entering a clip owns a clone and
- * leaving publishes a replacement. Clipboard/history need their own editable
- * figure shell, but can retain the captured animation without copying it. */
-export function snapshotFigureDefinition(figure) {
-  const asset = movieclipAsset(figure), mesh = figure?._styk?.spatialMesh;
-  // Immutable meshes are shared by every snapshot, like clip meshes below.
-  if (mesh) {const {spatialMesh, ...rest} = figure._styk, copy = snapshotFigureDefinition({...figure, _styk: rest}); copy._styk.spatialMesh = mesh; return copy;}
-  if (!asset) return structuredClone(figure);
-  const {document, spatialMeshes, ...settings} = asset;
-  const copy = structuredClone({...figure, _styk: {...figure._styk, movieclip: settings}});
-  copy._styk.movieclip.document = document;
-  if(spatialMeshes)copy._styk.movieclip.spatialMeshes=spatialMeshes;
-  return copy;
-}
 export function movieclipAssetFigures(figure){
   const figures=[],documents=new Set(),queue=[figure];
   for(let i=0;i<queue.length;i++){
@@ -48,7 +34,7 @@ export function validatePlayback(settings) {
     throw messageError(new Error(''), "errors.movieclips.invalidMovieclipRestartKeys", {});
   return value;
 }
-export function movieclipSourceTime(asset, settings, tick, fps) {
+function movieclipSourceTime(asset, settings, tick, fps) {
   const keys=settings.restarts??[];let low=0,high=keys.length;
   while(low<high){const mid=(low+high)>>>1;if(keys[mid].tick<=tick)low=mid+1;else high=mid;}
   const phase=low?keys[low-1]:{tick:settings.start,offset:settings.offset};

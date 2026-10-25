@@ -44,8 +44,8 @@ result; a fixture is edited only when the contract it states changes, never to m
 `engine/tools/` keeps only what does not run the JavaScript engine: `math-fixtures.mjs` (V8's own `Math` results
 for `styk-math`, which must stay V8-exact, [D16](decisions/0016-v8-exact-math.md)) and `v8-pin.mjs` (pins Node's
 `Math.pow` for the JavaScript tests that load the engine), `container-fixtures.mjs` and `container-parity.mjs` (the
-native container files, written and checked through the app's own save path), `piv/` (the Python codec's recorder)
-and `edit-bounds-callbacks.mjs` (the app's bounds callback, which the owner tests import).
+native container files, written and checked through the app's own save path) and `piv/` (the Python codec's recorder).
+The app's bounds callback, which the owner tests import, is `tests/support/edit-bounds-callbacks.mjs`.
 
 For `figures`, `movieclips` and `channels`, default editing requires exact behavior,
 a matching checkpoint and actual core adoption. Full paired cost may be at most 5%

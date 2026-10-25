@@ -35,7 +35,6 @@ fn fixtures() -> Vec<String> {
 
 fn prepared(name: &str) -> Prepared {
     let document = styk_eval::open(&folder().join(format!("{name}.json"))).unwrap_or_else(|e| panic!("{name}: {e}"));
-    assert!(document.unsupported.is_empty(), "{name}: not evaluated: {:?}", document.unsupported);
     styk_eval::prepare(document)
 }
 

@@ -7,7 +7,6 @@ import {packMotionLanes} from '../src/camera-motion-timeline.mjs';
 import {motionRowSize,motionLaneBox,sheetRowLayout} from '../src/timeline-rows.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
-import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {pivotDocument} from './support/engine-export.mjs';
 const refs=ownerReferences(import.meta.url);
 const near=(a,b,tolerance=.002)=>assert.ok(Math.abs(a-b)<tolerance,`${a} != ${b}`);
@@ -54,10 +53,16 @@ test('seeded motion seeks identically, overlaps add, and boundaries return neutr
   const a=sample(clip,24);for(const t of [57,10,35,13,0])sample(clip,t);assert.deepEqual(sample(clip,24),a);
   assert.deepEqual(sample(clip,58),[0,0,0,1]);
   assert.notDeepEqual(a,sample({...clip,params:{...clip.params,seed:4}},24));
-  // Two clips add: the shot moves by about the sum of what each does alone (the zoom and roll they add bend the offset a little).
-  const alone=shot(e,24).x-e.evaluatedFrame.camera.x,second=e.addCameraMotion('shake',{start:10,duration:48});
+  // Two clips add: their offsets and rolls sum and their zooms multiply, and the shot is the authored camera moved by that through its
+  // final scale. Each clip's own part is the engine's sample of it alone.
+  const second=e.addCameraMotion('shake',{start:10,duration:48});
   e.setCameraMotion(second,{params:{seed:clip.params.seed}});
-  assert.ok(Math.abs(alone)>.01);near(shot(e,24).x-e.evaluatedFrame.camera.x,alone*2,.05*Math.abs(alone));
+  const [dx,dy,roll,zoom]=e.getCameraMotions().map(c=>sample(c,24)).reduce((sum,part)=>[sum[0]+part[0],sum[1]+part[1],sum[2]+part[2],sum[3]*part[3]],[0,0,0,1]);
+  const camera=shot(e,24),authored=e.evaluatedFrame.camera,base=authored?.is_default?{}:authored??{};
+  const scale=(base.scale??1)/zoom,angle=(base.angle_rad??0)+roll;
+  assert.ok(Math.abs(dx)>.01);
+  near(camera.x,(base.x??0)+scale*(Math.cos(angle)*dx-Math.sin(angle)*dy),1e-9);near(camera.y,(base.y??0)+scale*(Math.sin(angle)*dx+Math.cos(angle)*dy),1e-9);
+  near(camera.scale,scale,1e-9);near(camera.angle_rad,angle,1e-9);
 });
 test('motion rejects invalid input atomically and only retains camera metadata in history',()=>{
   const e=fixture(),objects=e.report.keyframes.map(f=>f.objects),before=e.serialize(),history=e._undo.length;
@@ -71,6 +76,22 @@ test('motion changes output camera but never authored pose; hidden camera bypass
   assert.notDeepEqual(matrix,[1,0,0,1,0,0]);assert.deepEqual(f.camera,base);
   e.setLayerVisible('camera',false);assert.deepEqual(cameraMatrix({report:e.report,frame:seen}),[1,0,0,1,0,0]);
 });
+test('parallax reference holds composition, disabled camera bypasses depth, and joins inherit root response',()=>{
+  // The shift a layer's parallax gives its figures is baked into the Pivot export (the engine's), where it reads as their roots moving.
+  const e=fixture(),uid=e.selectedUid,layer=e.activeLayerId,rootX=id=>pivotDocument(e).keyframes[0].objects.find(o=>o.unique_id===id).root_x;
+  const authored=rootX(uid);
+  e.setCameraValues({x:50});e.setLayerParallax(layer,{enabled:true,x:.25});
+  near(rootX(uid),authored);
+  e.setCameraValues({x:150});near(rootX(uid),authored+75);
+  // A figure on another layer that answers the camera more strongly moves by its own response...
+  const other=e.createLayer('Other');e.setLayerParallax(other.id,{enabled:true,x:2,y:2,reference:{x:0,y:0}});
+  e.selectSheetLayer(other.id);e.addFigure();const child=e.selectedUid;
+  near(rootX(child),authored-150);
+  // ...until it is joined to the first: a joined figure moves with the layer of the figure at the root of its chain.
+  e.joinFigure(uid,0);near(rootX(child),authored+75);near(rootX(uid),authored+75);
+  // A hidden camera track bypasses depth everywhere.
+  e.setLayerVisible('camera',false);near(rootX(child),authored);near(rootX(uid),authored);
+});
 test('Pivot materialization bakes motion and parallax once without changing editable project',()=>{
   const e=fixture();e.setLayerParallax(e.activeLayerId,{enabled:true,x:.5});e.setCameraValues({x:60});e.addCameraMotion('impact',{start:0,duration:12});
   const before=e.serialize(),frame=at(e,0),out=pivotDocument(e.report);near(out.keyframes[0].objects[0].root_x,frame.objects[0].root_x+30);
@@ -82,9 +103,6 @@ refs.test('baking retains camera output and parallax at every output tick and un
   e.bakeCameraMotion();assert.equal(e._undo.length,history+1);assert.ok(e.getCameraMotions().every(c=>!c.enabled));
   sameShots(samples,shots(e));sameStored(stored(e),exported);
   e.undo();assert.deepEqual(e.serialize(),before);e.redo();validateAnimationDocument(e.report);
-});
-test('pose snapshots omit the derived motion clock and retain the authored camera',()=>{
-  const e=fixture();e.addCameraMotion('impact');const frame=at(e,3),saved=snapshotPoseFrame(frame);assert.equal(saved._cameraMotionTick,undefined);assert.deepEqual(saved.camera,frame.camera);
 });
 for(const interpolation of ['constant','linear','bezier','auto'])refs.test(`partial bake preserves all output ticks across ${interpolation} camera spans`,take=>{
   const e=ownedFixture(take);e.addCameraMotion('handheld',{duration:60});e.addCameraMotion('impact',{start:5,duration:30});

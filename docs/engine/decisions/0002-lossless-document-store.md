@@ -12,7 +12,7 @@ Saves must be byte-identical for unchanged documents and unknown fields must sur
 
 ## Evidence
 
-All 461 native files of the corpus decode to the same document as `src/native-container.mjs`; all 448 version 2 files rewrite byte-identical. An edit that replaces one keyframe converts one keyframe (`tests/incremental.rs`).
+All 461 native files of the corpus decode to the same document as the JavaScript container reader the recordings were made with; all 448 version 2 files rewrite byte-identical. An edit that replaces one keyframe converts one keyframe (`tests/incremental.rs`).
 
 ## Consequences
 

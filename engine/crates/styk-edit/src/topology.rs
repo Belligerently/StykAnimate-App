@@ -1,5 +1,5 @@
 //! Topology edits of a figure definition (`_topologyEdit` in src/editor.mjs and the builder's
-//! segment commands in src/editor-builder*.mjs, src/editor-rig-constraints.mjs): segments
+//! segment commands): segments
 //! added, drawn as a chain, deleted one at a time or with their branch, unsplit, flipped,
 //! moved in the hierarchy, split and duplicated; rig joints appended (connectors, weighted
 //! joints). Every pose of the figure, in the keyframes and the pose sources, follows the new

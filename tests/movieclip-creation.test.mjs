@@ -37,7 +37,7 @@ test('conversion boundaries preserve eased poses, stacking, reopen and exact und
 
 test('a locked replacement layer rejects creation without publishing a partial definition',()=>{
   const e=fixture();e.select(1);e.setLayerLocked('layer-1',true);
-  const before=e.serialize(),history=e._undo.length,bytes=e.historySize;
+  const before=e.serialize(),history=e._undo.length;
   assert.throws(()=>e.createMovieclip({start:3,end:17}),/Unlock/);
-  assert.deepEqual(e.serialize(),before);assert.equal(e._undo.length,history);assert.equal(e.historySize,bytes);
+  assert.deepEqual(e.serialize(),before);assert.equal(e._undo.length,history);
 });

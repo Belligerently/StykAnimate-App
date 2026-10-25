@@ -452,7 +452,7 @@ impl Editor {
         self.layer_edit_publication("Set layer color", updates, false, publication)
     }
 
-    /// `setLayerParallax(id, patch)` (src/editor-camera-motion.mjs): a figure layer's
+    /// `setLayerParallax(id, patch)`: a figure layer's
     /// response to camera travel, its reference the camera on show unless set.
     pub(crate) fn set_layer_parallax(&mut self, id: &Value, patch: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         let (id, parallax) = self.parallax_after(id, patch)?;

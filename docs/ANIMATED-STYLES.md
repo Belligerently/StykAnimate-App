@@ -12,7 +12,7 @@ The inspector displays percentages. Segment targets use native handle IDs, not s
 
 ## Evaluation and storage
 
-[animation-channels.mjs](../src/animation-channels.mjs) samples these channels into a small `_stykStyle` record on the selected evaluated object. [animation-style.mjs](../src/animation-style.mjs) resolves that record into a temporary figure definition, copying only changed segment/global-style records. Image data, embedded glyphs, unrelated segments, other instances, and source definitions retain their references.
+The engine (`styk_eval::channels`) samples these channels into a small `_stykStyle` record on the evaluated object; [animation-channels.mjs](../src/animation-channels.mjs) validates them. [animation-style.mjs](../src/animation-style.mjs) resolves that record into a temporary figure definition, copying only changed segment/global-style records. Image data, embedded glyphs, unrelated segments, other instances, and source definitions retain their references.
 
 The geometry builder resolves the temporary definition before drawing. Canvas, WebGPU vectors and compatibility textures, prepared playback, and SVG therefore consume the same native alpha fields. Native inverse transparency is `round((1 − opacity) × 255)`. Style-only changes preserve interpolated segment lengths and bends.
 

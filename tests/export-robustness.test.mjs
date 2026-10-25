@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {exportMemoryPlan} from '../src/export-memory.mjs';
-import {downsampleExportPixels} from '../src/export-sampling.mjs';
 import {exportAnimation} from '../src/image-export.mjs';
 import {encodeNativeVideo} from '../src/native-video-export.mjs';
 import {encodeVfwVideo} from '../src/vfw-video-export.mjs';
@@ -33,13 +32,6 @@ test('larger memory tiers admit larger exports and small tiers fall back to the 
   assert.equal(plan.width, 8192);
   assert.equal(plan.maxWorkingBytes, 1024 * MiB);
   assert.equal(exportMemoryPlan(8192, 8192, 'edges', {deviceMemory: 32}).maxWorkingBytes, 2048 * MiB);
-});
-
-test('2× downsampling averages premultiplied color without transparent color fringes', () => {
-  const pixels = new Uint8ClampedArray([255,0,0,0, 0,0,255,255, 0,0,255,255, 0,0,255,255]);
-  assert.deepEqual([...downsampleExportPixels(pixels, 1, 1)], [0,0,255,191]);
-  assert.deepEqual([...downsampleExportPixels(new Uint8ClampedArray(16), 1, 1)], [0,0,0,0]);
-  assert.throws(() => downsampleExportPixels(new Uint8Array(15), 1, 1));
 });
 
 function environment(t, respond = message => ({id: message.id, ok: true})) {

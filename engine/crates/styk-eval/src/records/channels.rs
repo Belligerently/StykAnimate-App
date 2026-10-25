@@ -1,5 +1,5 @@
-//! Property channels on the editor's records: `composePoseChannels` (src/animation-pose.mjs),
-//! `composeAnimationChannels` and `animationPropertyValue` (src/animation-channels.mjs) on
+//! Property channels on the editor's records: `composePoseChannels`,
+//! `composeAnimationChannels` and `animationPropertyValue` on
 //! record frames, byte for byte.
 //!
 //! They run where the editor runs them: on the native timeline a layer sheet's imported keys
@@ -467,7 +467,7 @@ impl Records<'_> {
     }
 
     /// `buildGeometry(report, frame)` of a frame record, read into a typed frame.
-    fn geometry_of(&self, frame: &Value) -> Result<crate::geometry::Scene, Error> {
+    pub(super) fn geometry_of(&self, frame: &Value) -> Result<crate::geometry::Scene, Error> {
         let doc = &self.prepared.doc;
         let typed = crate::load::Loader::new().edit_frame(frame, None, doc).map_err(|error| Error::Invalid(error.to_string()))?;
         Ok(crate::geometry::build(doc, &typed))
@@ -697,7 +697,11 @@ impl Records<'_> {
             let mut slot = start;
             while !done[slot] {
                 if !visiting.insert(slot) {
-                    return Err(Error::Invalid("errors.animationPose.theseLayerPosesCreateACyclicFigureAttachment".into()));
+                    // Layer poses that join each other in a ring (the editor refuses to make one; a file can hold it): the
+                    // figure that closes the ring comes loose where its own pose has it.
+                    objects[slot].set("join", Value::Null);
+                    objects[slot].remove("runtime_segments");
+                    break;
                 }
                 path.push(slot);
                 match parent_of(&objects[slot]) {
@@ -775,13 +779,14 @@ impl Records<'_> {
 
     /// A sampled value as the record takes it: a key's own value as saved, an interpolated one
     /// as computed. `None` where the key has no value (the channel then does not apply).
-    fn sampled_value(bound: &Bound, sampled: Sampled) -> Result<Option<Value>, Error> {
-        Ok(match sampled {
+    fn sampled_value(bound: &Bound, sampled: Sampled) -> Option<Value> {
+        match sampled {
             Sampled::Key(index) => bound.record.get("keys").and_then(|keys| keys.item(index)).and_then(|key| key.get("value").cloned()),
             Sampled::Value(KeyValue::Num(value)) | Sampled::Value(KeyValue::Param(ParamValue::Num(value))) => Some(Value::Num(value)),
             Sampled::Value(KeyValue::Param(ParamValue::Paint(paint))) => Some(paint_record(&paint)),
-            Sampled::Value(other) => return Err(Error::Unported(format!("an interpolated channel value {other:?}"))),
-        })
+            // Sampling interpolates numbers and effect colours only; every other kind of value is a key's own.
+            Sampled::Value(_) => None,
+        }
     }
 
     /// `composeAnimationChannels`: every other channel that controls its property at the tick
@@ -790,7 +795,7 @@ impl Records<'_> {
         let mut active: Vec<(&Bound, Value)> = Vec::new();
         for bound in channels.iter().filter(|b| b.channel.property != Property::Pose) {
             let Some(sampled) = bound.channel.sample_at(tick) else { continue };
-            if let Some(value) = Records::sampled_value(bound, sampled)? {
+            if let Some(value) = Records::sampled_value(bound, sampled) {
                 active.push((bound, value));
             }
         }
@@ -1089,7 +1094,7 @@ impl Records<'_> {
         let channel = crate::channels::channel(&Value::object(record), &mut Vec::new()).map_err(|why| Error::Invalid(why.to_string()))?;
         let Some(bound) = self.legacy.iter().find(|bound| bound.channel.target == channel.target && bound.channel.property == channel.property) else { return Ok(None) };
         match bound.channel.sample_at(tick) {
-            Some(value) => Self::sampled_value(bound, value),
+            Some(value) => Ok(Self::sampled_value(bound, value)),
             None => Ok(None),
         }
     }

@@ -1,4 +1,4 @@
-//! A 3D rig's perspective and part proportions (src/editor-spatial-shape.mjs): small authored
+//! A 3D rig's perspective and part proportions: small authored
 //! values on the pose (`_stykSpatial`), evaluated by the rig graph and the projection as ever.
 //!
 //! Ported: `setSpatialCamera`, `setSpatialProportions` and `resetSpatialProportions`. The reads

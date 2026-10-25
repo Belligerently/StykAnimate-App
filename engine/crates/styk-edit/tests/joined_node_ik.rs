@@ -1,5 +1,5 @@
-//! IK settings on figures joined into an assembly (`setNodeIK` and `rotateIKTarget` in
-//! src/editor-ik.mjs on a joined graph): switching a controller on from nothing, its chain,
+//! IK settings on figures joined into an assembly (`setNodeIK` and `rotateIKTarget`
+//! on a joined graph): switching a controller on from nothing, its chain,
 //! stretch and bend, releasing, pinning again and switching it off, the refusals, and posing
 //! the limb afterwards. Every edit is one history entry that undo and redo take back and
 //! give again exactly.

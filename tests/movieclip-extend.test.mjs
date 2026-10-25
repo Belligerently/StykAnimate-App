@@ -4,8 +4,8 @@ import {newOwnedEditor, ownedEditorSync} from './support/owned-editor.mjs';
 import {ownerReferences} from './support/owner-references.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
-import {presencePlayback} from '../src/movieclip-presence.mjs';
-import {frameOrder,setOrder} from '../src/pivot/structure.mjs';
+import {presencePlayback} from './support/movieclip-playback.mjs';
+import {frameOrder,setOrder} from './support/frame-order.mjs';
 import {applyLayerOrder} from '../src/layers.mjs';
 const refs=ownerReferences(import.meta.url);
 function fixtureReport(){

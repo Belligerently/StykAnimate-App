@@ -1,4 +1,4 @@
-//! Combine connected figures (src/editor-combine.mjs): a figure and everything joined to it become one native figure in the
+//! Combine connected figures: a figure and everything joined to it become one native figure in the
 //! keyframe at the playhead, drawn as they were drawn (curves, circles, fills, colours, paint order) with the root's identity.
 //! One `figure-splice` history entry holds the new definition and the keyframe before and after.
 //!

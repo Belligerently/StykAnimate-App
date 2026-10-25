@@ -1,4 +1,4 @@
-//! Per-instance style overlays as Pivot figure types (src/pivot-style-materialize.mjs and `resolveInstanceFigure` of
+//! Per-instance style overlays as Pivot figure types (`resolveInstanceFigure` of
 //! src/animation-style.mjs): native Pivot stores a segment's or an outline's appearance on reusable figure types, so each
 //! distinct overlay an export meets becomes one more figure type, shared by every instance that looks alike.
 

@@ -1,4 +1,4 @@
-//! Effect clips on the timeline (src/editor-vfx-clips.mjs): a clip's timing, switch,
+//! Effect clips on the timeline: a clip's timing, switch,
 //! strength, fades and effects, its parameters and their keys, its place among the clips
 //! of its target, deleting it; and the gizmo edit that previews several changes and records
 //! them once (`beginVfxClipEdit`). Each change is one `vfx-clips` history entry, the layer

@@ -52,29 +52,3 @@ export function easedProgress(key, fraction) {
   if (!mode) validateKeyEasing(key);
   return mode.sample(t, key);
 }
-export function usesLegacyNativeEasing(report, index) {
-  return Boolean(report.auto_easing && !report.keyframes[index]?._styk?.easing);
-}
-
-/** Monotone cubic Hermite interpolation. Neighbours are optional {value, duration}
- * samples from adjoining Auto intervals. Shared, duration-weighted tangents give
- * continuous velocity inside an Auto run without overshooting either endpoint.
- * Missing neighbours stop the run with a horizontal tangent. O(1) per value.
- */
-export function autoValue(a, b, fraction, duration, previous, following) {
-  if (fraction <= 0 || !(duration > 0)) return a;
-  if (fraction >= 1) return b;
-  if (a === b) return a;
-  const slope = (b - a) / duration;
-  const tangent = (other, h, before) => {
-    if (!other || !(other.duration > 0) || !Number.isFinite(other.value)) return 0;
-    const d = before ? (a - other.value) / other.duration : (other.value - b) / other.duration;
-    if (!d || Math.sign(d) !== Math.sign(slope)) return 0;
-    const w1 = 2 * h + other.duration, w2 = h + 2 * other.duration;
-    return (w1 + w2) / (w1 / d + w2 / slope);
-  };
-  const m0 = tangent(previous, duration, true), m1 = tangent(following, duration, false);
-  const t = fraction, t2 = t * t, t3 = t2 * t;
-  const value = a + (b - a) * (3 * t2 - 2 * t3) + duration * ((t3 - 2 * t2 + t) * m0 + (t3 - t2) * m1);
-  return Math.max(Math.min(a, b), Math.min(Math.max(a, b), value));
-}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {geometryOfDocument} from './support/engine-geometry.mjs';
-import {solveIKPoints, ikChain, validateIK} from '../src/ik.mjs';
+import {ikChain, validateIK} from '../src/ik.mjs';
 import {getPivotHandles} from '../src/canvas-interactions.mjs';
 import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 
@@ -228,14 +228,6 @@ test('releasing a stretched pin bakes only its own chain and leaves other pinned
 });
 
 test('Both preserves either incoming bend side while Left and Right choose opposite solutions', () => {
-  for (const n of [2, 4]) for (const side of [-1, 1]) {
-    const input = Array.from({length: n + 1}, (_, i) => ({x: i * 6, y: Math.sin(Math.PI * i / n) * 6 * side}));
-    const lengths = Array.from({length: n}, (_, i) => Math.hypot(input[i + 1].x - input[i].x, input[i + 1].y - input[i].y));
-    const automatic = structuredClone(input), opposite = structuredClone(input), target = {x: n * 5, y: 0};
-    solveIKPoints(automatic, lengths, target, 0); solveIKPoints(opposite, lengths, target, -side);
-    point(automatic.at(-1), target, .01); point(opposite.at(-1), target, .01);
-    assert.ok(automatic[1].y * side > 0); assert.ok(opposite[1].y * side < 0);
-  }
   const e = fixture(); e.setNodeIK({enabled: true}); assert.equal(e.getIKSettings().bendDirection, 0);
   for (const pinned of [true, false]) for (const side of [-1, 1]) {
     e.setNodeIK({pinned, bendDirection: side}); e.poseJoint(400, 150);
@@ -327,27 +319,6 @@ test('target movement interpolates, while pin state changes are discrete', () =>
   b.objects[0]._stykIK[22].pinned = false;
   const m = between(e, a, b); geometryAt(m, .5);
   assert.equal(m.evaluatedFrame.objects[0]._stykIK[22].pinned, true);
-});
-
-test('analytic solver handles unreachable, folded, straight, zero length and bend-side cases', () => {
-  for (const target of [{x: 5, y: 5}, {x: 100, y: 0}, {x: 0, y: 0}, {x: -5, y: -2}]) for (const side of [-1, 1]) {
-    const points = [{x: 0, y: 0}, {x: 10, y: 0}, {x: 20, y: 0}];
-    solveIKPoints(points, [10, 10], target, side);
-    for (let i = 0; i < 2; i++) near(Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y), 10);
-    if (Math.hypot(target.x, target.y) <= 20) point(points[2], target);
-  }
-  const zero = [{x: 0, y: 0}, {x: 0, y: 0}, {x: 0, y: 0}]; solveIKPoints(zero, [0, 0], {x: 3, y: 4});
-  assert.ok(zero.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)));
-});
-
-test('long-chain solve is bounded, escapes straight singularity and preserves every length', () => {
-  for (const n of [3, 8, 64]) {
-    const points = Array.from({length: n + 1}, (_, i) => ({x: i * 10, y: 0})), lengths = Array(n).fill(10);
-    const result = solveIKPoints(points, lengths, {x: n * 7, y: 5});
-    assert.ok(result.iterations <= 32);
-    for (let i = 0; i < n; i++) near(Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y), 10);
-    assert.ok(result.error < .1, `${n}-chain residual ${result.error}`);
-  }
 });
 
 test('stable handle IDs, chain bounds, overlapping controllers and malformed metadata are guarded', () => {

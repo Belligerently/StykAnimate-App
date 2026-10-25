@@ -1,5 +1,5 @@
-//! IK targets with their 3D parts as editing sees them (`capture` and `poseIKTarget` in
-//! src/editor-ik.mjs, `captureSpatialIK` in src/ik-spatial.mjs, the 3D IK commands of
+//! IK targets with their 3D parts as editing sees them (`capture` and `poseIKTarget`,
+//! `captureSpatialIK`, the 3D IK commands of
 //! src/editor-spatial.mjs).
 //!
 //! Ported: the capture of a limb with its 3D target and followers' orientations, kept for

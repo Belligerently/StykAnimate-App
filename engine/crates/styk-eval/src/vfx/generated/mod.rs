@@ -1,5 +1,5 @@
 //! Generated effects: particles, auras, beams, explosions and smoke
-//! (src/vfx-generators.mjs and its modules; docs/engine/vfx.md, Generated effects).
+//! (docs/engine/vfx.md, Generated effects).
 //!
 //! Each frame, the generator clips active at its tick (and those of movieclips
 //! drawn in it) compile into layers ([`styles`]), which [`batch::build`] packs

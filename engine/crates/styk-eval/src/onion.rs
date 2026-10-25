@@ -1,5 +1,4 @@
-//! Where onion skins go in the painter order (`composeSceneGroups` in
-//! src/scene-order.mjs).
+//! Where onion skins go in the painter order (`composeSceneGroups`).
 //!
 //! A ghost is drawn behind the frame being edited, layer by layer: with a layer
 //! table, each ghost object sits immediately behind the current artwork of its own

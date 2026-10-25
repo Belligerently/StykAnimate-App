@@ -12,7 +12,7 @@ Commands still run in JavaScript on the editor's document. The engine must evalu
 
 ## Decision
 
-`src/engine/engine-mirror.mjs` sends what changed, record by record: properties as JSON, figures, backgrounds, keyframes and pose sources as lifted records (skeleton JSON plus binary sections), table order as "which old record sits where". Changes are staged per batch and committed atomically by revision (`styk_engine::mirror`); an invalid batch changes nothing. Definitions sync before a frame is drawn; frames sync in slices in the background. An edit frame crosses as the pose on screen, with `null` for every object whose geometry the editor did not rebuild; onion ghosts are poses kept by an id.
+The mirror (since deleted: the engine loads documents into its own store) sent what changed, record by record: properties as JSON, figures, backgrounds, keyframes and pose sources as lifted records (skeleton JSON plus binary sections), table order as "which old record sits where". Changes are staged per batch and committed atomically by revision (`styk_engine::mirror`); an invalid batch changes nothing. Definitions sync before a frame is drawn; frames sync in slices in the background. An edit frame crosses as the pose on screen, with `null` for every object whose geometry the editor did not rebuild; onion ghosts are poses kept by an id.
 
 ## Evidence
 

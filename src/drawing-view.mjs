@@ -38,15 +38,15 @@ export const BRUSH_PRESETS = [
   {id:'blender',name:'Blender',description:"Smudges and blends existing paint",...TIP,blend:'smudge',size:36,hardness:.4,opacity:.8,pressureOpacity:true,spacingRatio:.06,smudgeLength:.85},
   {id:'oil',name:'Oil',description:"Mixes the brush colour into wet paint",...TIP,blend:'smudge',size:28,hardness:.75,spacingRatio:.05,smudgeLength:.6,colorRate:.35},
 ];
-export const BRUSH_TIP_LABELS=[messageTuple(['round',interfaceText("drawingView.round")], {1: {key: "drawingView.round", params: {}}}),messageTuple(['chalk',interfaceText("drawingView.chalk")], {1: {key: "drawingView.chalk", params: {}}}),messageTuple(['bristle',interfaceText("drawingView.bristle")], {1: {key: "drawingView.bristle", params: {}}}),messageTuple(['sponge',interfaceText("drawingView.sponge")], {1: {key: "drawingView.sponge", params: {}}})];
-export const BRUSH_GRAIN_LABELS=[messageTuple(['noise',interfaceText("drawingView.noise")], {1: {key: "drawingView.noise", params: {}}}),messageTuple(['paper',interfaceText("drawingView.paper")], {1: {key: "drawingView.paper", params: {}}}),messageTuple(['canvas',interfaceText("drawingView.canvas")], {1: {key: "drawingView.canvas", params: {}}})];
+const BRUSH_TIP_LABELS=[messageTuple(['round',interfaceText("drawingView.round")], {1: {key: "drawingView.round", params: {}}}),messageTuple(['chalk',interfaceText("drawingView.chalk")], {1: {key: "drawingView.chalk", params: {}}}),messageTuple(['bristle',interfaceText("drawingView.bristle")], {1: {key: "drawingView.bristle", params: {}}}),messageTuple(['sponge',interfaceText("drawingView.sponge")], {1: {key: "drawingView.sponge", params: {}}})];
+const BRUSH_GRAIN_LABELS=[messageTuple(['noise',interfaceText("drawingView.noise")], {1: {key: "drawingView.noise", params: {}}}),messageTuple(['paper',interfaceText("drawingView.paper")], {1: {key: "drawingView.paper", params: {}}}),messageTuple(['canvas',interfaceText("drawingView.canvas")], {1: {key: "drawingView.canvas", params: {}}})];
 export const BRUSH_BLEND_LABELS=[messageTuple(['normal',interfaceText("drawingView.normal")], {1: {key: "drawingView.normal", params: {}}}),messageTuple(['behind',interfaceText("drawingView.behind")], {1: {key: "drawingView.behind", params: {}}}),messageTuple(['multiply',interfaceText("drawingView.multiply")], {1: {key: "drawingView.multiply", params: {}}}),messageTuple(['screen',interfaceText("drawingView.screen")], {1: {key: "drawingView.screen", params: {}}}),messageTuple(['overlay',interfaceText("drawingView.overlay")], {1: {key: "drawingView.overlay", params: {}}}),messageTuple(['color',interfaceText("drawingView.color")], {1: {key: "drawingView.color", params: {}}}),messageTuple(['smudge',interfaceText("drawingView.smudge")], {1: {key: "drawingView.smudge", params: {}}})];
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 
 /** A small stroke drawn by the real brush engine, cached per preset tip. Smudge
  * presets drag two colour bands so the thumbnail shows what they do. */
 const thumbnails=new Map();
-export function presetThumbnail(p){
+function presetThumbnail(p){
   if(typeof document==='undefined')return '';
   const key=p.id+':'+JSON.stringify(BRUSH_KEYS.map(k=>p[k]));
   const hit=thumbnails.get(key);if(hit)return hit;
@@ -67,7 +67,7 @@ const presetButton=(p,s)=>`<button class="drawing-preset" data-draw-preset="${es
 export const presetGrid=(drawing)=>{const s=drawing.settings,custom=drawing.library?.presets??[];return `<div class="drawing-presets" role="group" aria-label="Brush presets" data-i18n-aria-label="drawingView.brushPresets">${[...BRUSH_PRESETS,...custom].map(p=>presetButton(p,s)).join('')}</div>`;};
 /** The colours Draw offers: the project's, the recent ones or a personal
  * palette, whichever the colour picker shows, so the rail and every picker agree. */
-export const drawingPalette=drawing=>paletteFor(projectColors(drawing.editor?.report),drawing.library?.recent??[]);
+const drawingPalette=drawing=>paletteFor(projectColors(drawing.editor?.report),drawing.library?.recent??[]);
 const paletteLabelMessage=({view})=>view==='mine'?null:{key:view==='project'?'colorPicker.projectColors':'colorPicker.recent'};
 const paletteLabel=palette=>escape(palette.view==='mine'?palette.name:interfaceText(paletteLabelMessage(palette).key));
 const paletteLabelAttributes=palette=>{const ref=paletteLabelMessage(palette);return ref?messageAttributes(ref.key,{},'aria-label'):'';};
@@ -79,7 +79,7 @@ const paletteSwatches=drawing=>{
 // The rail shows this many colours; +N opens the picker with the rest.
 const RAIL_COLORS=8;
 /** Main and second colour as an overlapping pair (X swaps), with the hex. */
-export const colorPair=(s,{hex=true}={})=>`<div class="draw-colors"><div class="draw-color-pair"><input type="color" class="draw-color-primary" data-draw-setting="color" value="${s.color}" aria-label="Drawing color" title="Main color · Alt-click the canvas to pick" data-i18n-aria-label="drawingView.drawingColor" data-i18n-title="drawingView.mainColorAltClickTheCanvasToPick"><input type="color" class="draw-color-secondary" data-draw-setting="color2" value="${s.color2??'#ffffff'}" aria-label="Second color" title="Second color" data-i18n-aria-label="drawingView.secondColor" data-i18n-title="drawingView.secondColor"></div><button class="icon-button draw-color-swap" data-draw-action="swap-colors" title="Swap colors · X" aria-label="Swap colors" data-i18n-title="drawingView.swapColorsX" data-i18n-aria-label="drawingView.swapColors">${icon('loop')}</button>${hex?`<span class="hex-label">${s.color.toUpperCase()}</span>`:''}</div>`;
+const colorPair=(s,{hex=true}={})=>`<div class="draw-colors"><div class="draw-color-pair"><input type="color" class="draw-color-primary" data-draw-setting="color" value="${s.color}" aria-label="Drawing color" title="Main color · Alt-click the canvas to pick" data-i18n-aria-label="drawingView.drawingColor" data-i18n-title="drawingView.mainColorAltClickTheCanvasToPick"><input type="color" class="draw-color-secondary" data-draw-setting="color2" value="${s.color2??'#ffffff'}" aria-label="Second color" title="Second color" data-i18n-aria-label="drawingView.secondColor" data-i18n-title="drawingView.secondColor"></div><button class="icon-button draw-color-swap" data-draw-action="swap-colors" title="Swap colors · X" aria-label="Swap colors" data-i18n-title="drawingView.swapColorsX" data-i18n-aria-label="drawingView.swapColors">${icon('loop')}</button>${hex?`<span class="hex-label">${s.color.toUpperCase()}</span>`:''}</div>`;
 
 /** Tool properties use the shared inspector sections; timing stays in the timeline.
  * The canvas quick bar owns everyday settings (colour, size, opacity, flow,

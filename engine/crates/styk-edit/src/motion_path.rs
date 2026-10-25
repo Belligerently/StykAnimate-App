@@ -1,4 +1,4 @@
-//! Motion-path edits (src/editor-motion-path.mjs, src/motion-path-falloff.mjs): a dragged
+//! Motion-path edits (the falloff weights the overlay draws stay in src/motion-path-falloff.mjs): a dragged
 //! trail point rewrites the pose at its own tick while the playhead stays put. The session
 //! poses a copy of the frame evaluated there (`snapshotPoseFrame`) and commits once through the
 //! sheet plan, as gestures on a layer sheet do (`_sheetPoseDraftBegin`, `_sheetPoseDraftWrite`,
@@ -1041,9 +1041,6 @@ impl Editor {
 
     fn posed_frame(&self, record: &Value) -> Result<(Arc<Prepared>, Frame), EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         Ok((prepared, frame))
     }
@@ -2059,8 +2056,7 @@ mod tests {
     use super::*;
 
     /// Every weight a falloff can give, for every shape, radius and distance, is V8's: the
-    /// digest of their bits that engine/tools/edit-scenarios-motion-path.mjs records from the
-    /// editor's `falloffWeight`.
+    /// digest of their bits that the recorded editor's `falloffWeight` gave.
     #[test]
     fn falloff_weights() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/motion-path-falloff.weights.json");

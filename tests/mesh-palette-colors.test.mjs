@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
-import {figurePalette,validateRecolor} from '../src/figure-colors.mjs';
+import {figurePalette} from '../src/figure-colors.mjs';
 import {resolveInstanceFigure,validateAnimationStyle} from '../src/animation-style.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
@@ -74,7 +74,7 @@ test('mesh palettes reject malformed and out-of-definition indices before editin
     assert.throws(()=>validateAnimationStyle(object,e.figure));
     const invalid=structuredClone(before);invalid.keyframes[0].objects[0]._stykStyle={meshColors};assert.throws(()=>validateScene(invalid));
   }
-  for(const indices of [[-1],[1024],[0,0],['0'],new Array(1)])assert.throws(()=>validateRecolor({mode:'replace',color:'#112233',targets:{segments:[],polygons:[],meshColors:indices}}));
+  for(const indices of [[-1],[1024],[0,0],['0'],new Array(1)])assert.throws(()=>e.replaceFigureColor('#d29164','#112233',{targets:{segments:[],polygons:[],meshColors:indices}}));
   assert.throws(()=>e.replaceFigureColor('#d29164','#123456',{targets:{segments:[],polygons:[],meshColors:[2]}}));
   assert.deepEqual(e.serialize(),before);
 });

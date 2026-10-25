@@ -1,4 +1,4 @@
-//! Handle Edit Mode (src/editor-handle-edit.mjs): a handle of the current pose moved to
+//! Handle Edit Mode: a handle of the current pose moved to
 //! the pointer, the segments that meet there keeping their arcs (a bend edit keeps the
 //! moved end's tangent), the figures joined at it moving with it; one gesture
 //! (`beginHandleEditDrag`, `editHandlePosition`, `commitHandleEditDrag`,

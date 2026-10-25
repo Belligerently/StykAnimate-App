@@ -1,5 +1,5 @@
 //! A reusable native figure: the displayed pose of a figure, a set of figures or a movieclip with its definition, as a
-//! document of its own (src/native-figure.mjs, with `portableFigure` of src/clipboard-assets.mjs). Library files, the
+//! document of its own. Library files, the
 //! rig test and `.stkz`/`.stykmov` exports save it.
 
 use styk_doc::{Obj, Value};

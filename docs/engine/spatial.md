@@ -34,7 +34,7 @@ the recorded fixtures were made from the JavaScript editor and are frozen
   Drawables gain `ItemKind::Mesh` (a painter-order bucket of a mesh's faces:
   `Item::mesh`, `Item::faces`), and a polygon that is a depth-tested surface carries
   one depth per point (`Item::depth`). `Item::depth_surface` is `depthSurface`.
-- `Document::unsupported` names no 3D feature, and the interface refuses no 3D document: drawings a spatial bone
+- The interface refuses no 3D document: drawings a spatial bone
   turns (`drawingRotation`) are evaluated too (step 6 below). `Movieclip::drawing_sets`
   and `Movieclip::drawing_rotation` hold a clip's forms and their rotation;
   `ObjectSpatial` keeps each joint's authored angle and a bone's start before perspective
@@ -47,17 +47,17 @@ Operation for operation as the editor, with V8's trigonometry and `Math.hypot`
 decided by a tolerance of 2e-7 relative to the face, so the last bits matter.
 
 1. **Spatial poses between keys** (`spatial::interpolate_pose`, called from
-   `eval::tween_object`): `interpolateSpatialPose`. The camera is always present (a
+   `eval::tween_object`). The camera is always present (a
    key without one takes strength 0, distance 600, its own root as centre), each
    value linear within its limits; proportions of the bones either key names.
-2. **Bones** (`rig::evaluate_spatial`, `evaluateSpatial`): the pose's perspective
-   (`spatial::Camera::of`, `projection`) projects every joint
-   (`projectSpatial`, near limit 0.05) and keeps the unprojected point; part
+2. **Bones** (`rig::evaluate_spatial`): the pose's perspective
+   (`spatial::Camera::of`, projection) projects every joint
+   (near limit 0.05) and keeps the unprojected point; part
    proportions move points radially (`shapeOffset`, also blended over the bindings
    of skin points); a hidden pose choice scales about the bone's origin by its
    stretch (`choiceScale`). Every spatial joint and every weighted joint with a depth
    anchor records its depth guide. Inverse kinematics evaluates without perspective,
-   as `createRigEvaluation(..., {project: false})`.
+   without projecting the rig.
 3. **Surfaces** (`spatial::evaluate_surface`, `project_face`): a depth-tested face of
    a perspective pose is clipped against the near plane before projection (a
    triangle may become a quad) and takes its corners' perspective depths; otherwise
@@ -81,18 +81,17 @@ decided by a tolerance of 2e-7 relative to the face, so the last bits matter.
    weights); otherwise placed flat by the instance's angle, scale and reflection. The
    form is `floor(local time)` clamped to the clip's forms. Faces are kept by their
    outward winding and clipped like surfaces.
-6. **Rotated drawings** (`geometry::rotated_drawing`, `rotatedDrawing`,
-   `drawingRotationReference`, `buildMovieclipGeometrySteps`): a movieclip joined to a
+6. **Rotated drawings** (`geometry::rotated_drawing`): a movieclip joined to a
    spatial bone shows the single frame its bone selects in the instance's form
-   (`drawingSelection`: the set holding the instance's frame): the bone's rotation as bend,
+   (`drawingSelection` in `src/movieclip-drawings.mjs` selects the set holding the instance's frame): the bone's rotation as bend,
    turn and pitch on the Euler branch nearest the native angles of its turn and tilt
-   controls up the chain (`rig::quaternion_pose`, `quaternionPose`), the turn rounded to one
+   controls up the chain (`rig::quaternion_pose`), the turn rounded to one
    of `steps` directions and the pitch past the tilt threshold choosing the up or down
    views. The instance is placed at the bone's start, turned by the bend (reflected with its
    parent) and the figure's rotation, scaled by the bone's stretch and, in perspective, by
    its depth (`1 / max(.05, 1 - k z)`), all with V8's trigonometry (`styk-math`).
 7. **Records** (`records.rs`): a tween of `_stykSpatial` is written as
-   `interpolateSpatialPose`'s record (camera, then proportions in ascending handle
+   the recorded spatial pose (camera, then proportions in ascending handle
    order), from the typed tween.
 
 ## Drawing
@@ -173,7 +172,7 @@ fixture matches; each stops matching without its
 meshes, its surfaces or its 3D poses, and without the part it is about (view
 targets, blended vertices, the depth-order offset, splitting primitives, instance
 palettes, reflection, mechanical joints, the hidden expression, depth guides); three
-reach the near-plane clip. 120 recorded `interpolateSpatialPose` results match bit for
+reach the near-plane clip. 120 recorded spatial pose tweens match bit for
 bit. Records: 512 recorded ticks of every editor-built fixture are produced and
 byte-identical, 102 of them spatial (34 with a tweened 3D pose).
 
@@ -196,8 +195,7 @@ pixels where near-coplanar faces meet ([rendering.md](rendering.md#measured)).
 - Invalid meshes are left out and noted where the editor refuses the file.
 - Faces nearly in one plane resolve by each renderer's last bits (on a GPU, its own vertex
   arithmetic): the CPU rasterizer and a GPU can pick different faces there.
-- The editor lowers raster densities when a scene exceeds its preview budget
-  (`previewRasterScale`); the engine does not (as for effects).
+- The engine does not lower raster densities when a scene exceeds a preview budget (as for effects).
 
 ### JavaScript behaviours reproduced that look wrong
 

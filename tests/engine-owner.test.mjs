@@ -7,16 +7,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readdirSync, readFileSync} from 'node:fs';
-import {withDraws} from '../src/editor-draws.mjs';
+import {withDraws} from './support/with-draws.mjs';
 import {holdsRevision, registeredEngine} from '../src/engine/engine-open.mjs';
 import {createDrawingFigure, drawingMetadata} from '../src/drawing-model.mjs';
 import {hasPinnedIK} from '../src/ik.mjs';
 import {MotionTrails} from '../src/motion-path.mjs';
-import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
+import {snapshotPoseFrame} from './support/pose-snapshot.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditor} from './support/owned-editor.mjs';
 import {CLOCKS, canonical, ownerReferences} from './support/owner-references.mjs';
-import {recordedBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
+import {recordedBounds} from './support/edit-bounds-callbacks.mjs';
 
 const refs = ownerReferences(import.meta.url);
 const folder = new URL('../engine/tests/edit/', import.meta.url);
@@ -58,7 +58,7 @@ const decode = value => Array.isArray(value) ? value.map(decode) : value === nul
  * owner emits them once the playhead is where the call left it (so the playhead's own fields are not compared),
  * and a flag that is off is the same as one that is missing. */
 const eventText = events => JSON.stringify(events.map(event => Object.fromEntries(Object.entries(event ?? {}).filter(([key, value]) => value !== false && key !== 'tick' && key !== 'frameIndex'))));
-/** Event details as plain data, as the recording keeps them (engine/tools/edit-replay.mjs). */
+/** Event details as plain data, as the recording keeps them. */
 const plain = (value, depth = 4) => {
   if (value === null || ['number', 'string', 'boolean'].includes(typeof value)) return value;
   if (value instanceof Set) return plain([...value], depth);

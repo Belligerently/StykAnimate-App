@@ -1,4 +1,4 @@
-//! Raw-record side of animation-origin gesture mutations (src/editor-origin-mutations.mjs).
+//! Raw-record side of animation-origin gesture mutations.
 //! Numeric tree/support arithmetic stays in styk_eval::origin; unknown record fields
 //! survive synchronization and reflection, including ghost metadata.
 use std::collections::HashMap;

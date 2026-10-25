@@ -4,10 +4,21 @@ import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 
-import {spatialPoint,quatRotate,quatMultiply} from '../src/rig-spatial.mjs';
-import {spatialWorldQuaternion,spatialWorldVector,inverseQuaternion} from '../src/ik-spatial.mjs';
-import {validateIK,interpolateIK} from '../src/ik.mjs';
-import {spatialControlsView} from '../src/spatial-controls.mjs';
+import {spatialPoint,quatRotate,quatMultiply,spatialQuaternion} from '../src/rig-spatial.mjs';
+import {animationRotation} from '../src/animation-origin.mjs';
+import {validateIK} from '../src/ik.mjs';
+import {spatialControlsView} from './support/control-views.mjs';
+const inverseQuaternion=q=>[-q[0],-q[1],-q[2],q[3]];
+/** A figure-space vector in the world, under the figure's turn and mirror. */
+function spatialWorldVector(v,figure,object,inverse=false){
+ const a=animationRotation(figure,object),c=Math.cos(a),s=Math.sin(a),m=object.image_text_flags?-1:1;
+ return inverse?[v[0]*c+v[1]*s,(-v[0]*s+v[1]*c)*m,v[2]]:[v[0]*c-v[1]*m*s,v[0]*s+v[1]*m*c,v[2]];
+}
+/** A figure-space orientation in the world, under the figure's turn and mirror. */
+function spatialWorldQuaternion(q,figure,object,inverse=false){
+ const a=animationRotation(figure,object),reflect=v=>object.image_text_flags?[-v[0],v[1],-v[2],v[3]]:v;
+ return inverse?reflect(quatMultiply(spatialQuaternion(-a,0,0),q)):quatMultiply(spatialQuaternion(a,0,0),reflect(q));
+}
 /** `setup(editor, ids)` edits the document through an editor the engine owns: the editor the test uses opens the document it leaves. */
 function fixture(setup){
  const q=construction();q.add(0,0,0,'Figure rotation');
@@ -53,12 +64,8 @@ test('knee swivel changes the bend plane while keeping foot position and orienta
  const knee=state(e,upper),before=state(e,foot),ankle=state(e,lower);e.setNodeIK({swivel:1.2});assert.ok(Math.hypot(...state(e,upper).p.map((v,i)=>v-knee.p[i]))>10);
  near(state(e,lower).end.x,ankle.end.x);near(state(e,lower).end.y,ankle.end.y);sameOrientation(state(e,foot).q,before.q);
 });
-test('spatial targets reject invalid orientations and interpolate rotations on the short arc',()=>{
- const{e,lower}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});const a=structuredClone(e.object),b=structuredClone(a),c=b._stykIK[lower];
- c.spatialFollowers[Object.keys(c.spatialFollowers)[0]]=[0,0,1,0];const sample=interpolateIK(a,b,.5);validateIK({_stykIK:sample});
- const q=Object.values(sample[lower].spatialFollowers)[0],v=quatRotate(q,[1,0,0]);near(v[0],0);near(v[1],1);
- a._stykIK[lower].joinedSpatialFollowers={5:{99:[0,0,0,1]}};b._stykIK[lower].joinedSpatialFollowers={5:{99:[0,0,1,0]}};
- const joined=interpolateIK(a,b,.5)[lower].joinedSpatialFollowers[5][99];near(quatRotate(joined,[1,0,0])[1],1);
+test('spatial targets reject invalid orientations',()=>{
+ const{e,lower}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});const b=structuredClone(e.object),c=b._stykIK[lower];
  c.spatialTarget.depth=Infinity;assert.throws(()=>validateIK(b),/spatial IK/);c.spatialTarget.depth=0;c.spatialFollowers[99]=[0,0,0,2];assert.throws(()=>validateIK(b),/spatial IK/);
 });
 test('planting both feet is one undoable edit and retains selection',()=>{

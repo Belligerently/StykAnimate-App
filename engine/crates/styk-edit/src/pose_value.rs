@@ -1,6 +1,6 @@
 //! A pose property at one value in every chosen frame: the inspector's number fields (`root_x`, `group_width`, `rotation`,
 //! `joint_angle`, ...) with several keys chosen on the timeline ("Edit together"). The value is absolute: each frame is brought to it
-//! from where it stands there (src/native-property-ranges.mjs, `mutatePose`). The frames are planned like any figure operation across
+//! from where it stands there (`mutatePose`). The frames are planned like any figure operation across
 //! frames ([`crate::range_plan`]) and committed as one history entry ([`crate::range`]).
 //!
 //! The selected figures are the ones that change, and with them everything joined below: `root_x`, `root_y` and the group keys also

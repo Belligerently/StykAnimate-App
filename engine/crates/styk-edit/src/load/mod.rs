@@ -1,4 +1,4 @@
-//! The editor's load normalization in the engine (`prepareEditorLoadSteps` of src/editor-load.mjs).
+//! The editor's load normalization in the engine (`prepareEditorLoadSteps`).
 //!
 //! Opening a document runs the same transformation and the same refusals as the JavaScript editor, in the
 //! same order, on the document store: pose sequences expanded, a zero-key animation given its working frame,
@@ -12,7 +12,7 @@
 //! `EditError::Invalid` with the editor's message key (or its plain message where it has none, or
 //! [`js::TYPE_ERROR`] where the JavaScript throws a `TypeError` on a malformed document). Their parameters
 //! (the labels in `must be a finite number`) are not carried yet. The checks are transcribed from the
-//! JavaScript and recorded against it (`engine/tools/load-fixtures.mjs`, `tests/load.rs`).
+//! JavaScript and recorded against it (`tests/load.rs` replays the recordings).
 
 mod animation;
 mod drawings;
@@ -128,7 +128,7 @@ pub struct Track {
 }
 
 impl Prepared {
-    /// The indexes as JSON: the shape `engine/tools/load-fixtures.mjs` records from the editor.
+    /// The indexes as JSON: the shape the load recordings hold.
     pub fn indexes(&self) -> Value {
         let number = |n: f64| Value::Num(n);
         let pairs = |items: Vec<Value>| Value::array(items);

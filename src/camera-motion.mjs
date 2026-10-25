@@ -5,8 +5,7 @@ import {motionParameterMessages} from './camera-motion-localization.mjs';
 const CAMERA_MOTION_LIMIT = 256;
 const FOLLOW_TARGET_LIMIT = 16;
 const FOLLOW_FRAME_LIMIT = 100000;
-const FOLLOW_DEFAULTS = Object.freeze({strength: 1, followX: 1, followY: 1, offsetX: 0, offsetY: 0, lag: 8, deadZone: 0,
-  lookAhead: 0, zoomFit: 0, padding: .2, maxZoom: 3, fadeIn: 6, fadeOut: 6});
+const FOLLOW_KEYS = Object.freeze(['strength', 'followX', 'followY', 'offsetX', 'offsetY', 'lag', 'deadZone', 'lookAhead', 'zoomFit', 'padding', 'maxZoom', 'fadeIn', 'fadeOut']);
 function validateFollowTargets(targets) {
   if (!Array.isArray(targets) || !targets.length || targets.length > FOLLOW_TARGET_LIMIT) throw messageError(new Error(''), "errors.cameraFollow.follow1Figures", {FOLLOW_TARGET_LIMIT: FOLLOW_TARGET_LIMIT});
   const uids = new Set();
@@ -17,7 +16,7 @@ function validateFollowTargets(targets) {
   }
 }
 export const CAMERA_MOTION_TYPES = Object.freeze({follow:'Follow',shake:'Shake',handheld:'Handheld',wobble:'Wobble',impact:'Impact punch',pulse:'Zoom pulse'});
-const defaults = Object.freeze({strength:1,moveX:12,moveY:12,roll:1,zoom:0,frequency:8,roughness:.5,direction:0,recovery:5,phase:0,fadeIn:2,fadeOut:4,seed:1});
+const KEYS = Object.freeze(['strength', 'moveX', 'moveY', 'roll', 'zoom', 'frequency', 'roughness', 'direction', 'recovery', 'phase', 'fadeIn', 'fadeOut', 'seed']);
 export const MOTION_PARAMETERS = Object.freeze({
   strength:['Strength',0,2,.01,'%'],moveX:['Move X',0,2000,.5,'px'],moveY:['Move Y',0,2000,.5,'px'],
   roll:['Roll',0,90,.1,'°'],zoom:['Zoom',-0.8,4,.01,'%'],frequency:['Speed',.05,60,.05,'Hz'],
@@ -29,14 +28,8 @@ export const MOTION_PARAMETERS = Object.freeze({
 });
 const WHOLE=new Set(['seed','fadeIn','fadeOut','lookAhead','lag']);
 /** The parameters a clip of this type stores, in display order. */
-export const motionParameterKeys=type=>Object.keys(type==='follow'?FOLLOW_DEFAULTS:defaults);
+export const motionParameterKeys=type=>[...(type==='follow'?FOLLOW_KEYS:KEYS)];
 export const isWholeMotionParameter=key=>WHOLE.has(key);
-export function createCameraMotion(type,id,start=0,duration=24,{targets}={}) {
-  if(!Object.hasOwn(CAMERA_MOTION_TYPES,type))throw messageError(new Error(''), "errors.cameraMotion.chooseACameraMotionPreset", {});
-  if(type==='follow'){validateFollowTargets(targets);return {id,type,start,duration,enabled:true,targets:targets.map(t=>({uid:t.uid,weight:t.weight})),params:{...FOLLOW_DEFAULTS}};}
-  const preset=type==='handheld'?{moveX:3,moveY:2,roll:.3,frequency:.7}:type==='wobble'?{moveX:5,moveY:2,roll:2,frequency:1.5}:type==='impact'?{moveX:18,moveY:18,roll:1.5,zoom:.04,fadeIn:0,fadeOut:0,frequency:6}:type==='pulse'?{moveX:0,moveY:0,roll:0,zoom:.08,fadeIn:0,fadeOut:0}:{};
-  return {id,type,start,duration,enabled:true,params:{...defaults,...preset}};
-}
 export function validateCameraMotion(state) {
   if(state===undefined)return;
   if(!state||state.version!==1||!Array.isArray(state.clips)||state.clips.length>CAMERA_MOTION_LIMIT)throw messageError(new Error(''), "errors.cameraMotion.invalidCameraMotionTableMaximum256Clips", {});

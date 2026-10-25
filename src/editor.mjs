@@ -1,7 +1,6 @@
 import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 import {editorSpatialMethods} from './editor-spatial.mjs';
-import {invalidateVfxRenderFrame} from './vfx-clips.mjs';
 import {timeline} from './pivot/read-view.mjs';
 import {validateScene, syncDerived} from './pivot/model.mjs';
 import {resolveJoinSelection} from './pivot/structure.mjs';
@@ -46,14 +45,13 @@ const event = detail => {
  * The interface's view of the open document: its records as the engine session last published them (the engine owner patches
  * them copy-on-write, engine-owner.mjs), and what the interface moves itself: the selection, the playhead, the active layer
  * and the layer focus. Every edit is a call the session runs (SESSION_COMMANDS, docs/engine/editing.md): the editor holds no
- * body of one, only the views, the document's load and the history stacks the owner mirrors (and `transaction`, which the
- * inspector bindings still call, with the record it makes).
+ * body of one, only the views, the document's load and the history stacks the owner mirrors.
  */
 export class Editor extends EventTarget {
   constructor({demo = true, historyLimit = 80, historyBytes = 48 * 1024 * 1024, propertyChannels = false, layerTimeline = false} = {}) {
     super(); this.historyLimit = historyLimit; this.historyBytes = historyBytes; this.propertyChannels = propertyChannels;
     this.layerTimeline=layerTimeline;
-    this._undo = []; this._redo = []; this._historySize = 0; this._nextUid = 1;
+    this._undo = []; this._redo = []; this._nextUid = 1;
     this._revision = 0; this._savedRevision = 0; this._revisionSerial = 0;
     this.load(demo ? createDemo() : emptyDocument());
   }
@@ -107,7 +105,6 @@ export class Editor extends EventTarget {
     else { this._savedRevision = this._revision; this._emit('saved'); }
   }
   get dragging() { return Boolean(this._drag); }
-  get historySize() { return this._historySize; }
   get drawingResources() { return drawingResourcesFor(this.report) ?? new DrawingResources(this.report, {onPublished: figure => this._drawingPublished(figure)}); }
   get revision() { return this._revision; }
   get definitionRevision() { return this._definitionRevision ?? 0; }
@@ -121,7 +118,6 @@ export class Editor extends EventTarget {
     else if(detail.layers||detail.structural||kind==='history')this.reconcileLayerFocus();
     if(kind==='seek')this._followSheetSelection();
     if(kind==='selection'&&!detail.sheetSelection)this._sheetSelection=null;
-    if(detail.structural&&kind!=='document'){this._loadedFigureNames=null;this._loadedTimelineTracks=null;}
     if (kind === 'document' || detail.definition || (detail.structural && !detail.layerSheet)) this._definitionRevision = this.definitionRevision + 1;
     if (this._layerEventPending && ['edit', 'history', 'document'].includes(kind)) {
       detail = {layers: true, layerRevision: this.layerRevision, ...detail}; this._layerEventPending = false;
@@ -129,10 +125,7 @@ export class Editor extends EventTarget {
     this.dispatchEvent(event({kind, frameIndex: this.frameIndex, tick: this.tick,
       structural: false, timing: false, ...detail}));
   }
-  _invalidate({timing = false, viewOnly = false} = {}) {
-    // Authored gesture drafts mutate in place; their composed VFX view must
-    // follow each pose change even while the clip records stay unchanged.
-    if(!viewOnly)invalidateVfxRenderFrame(this._authoredPoseEdit?.frame);
+  _invalidate({timing = false} = {}) {
     this._geometry = null; this._evaluated = null;
     if (timing) this._timeline = null;
   }
@@ -140,7 +133,7 @@ export class Editor extends EventTarget {
   _restoreSelection(state) {
     const frameIndex = clamp(state.frameIndex, 0, this.report.keyframes.length - 1), tick = clamp(state.tick, 0, Math.max(0, this.totalTicks - 1));
     // The frame on show is cached for the playhead: moving the playhead must not read the old one.
-    if (frameIndex !== this.frameIndex || tick !== this.tick) { this.frameIndex = frameIndex; this.tick = tick; this._invalidate({viewOnly: true}); }
+    if (frameIndex !== this.frameIndex || tick !== this.tick) { this.frameIndex = frameIndex; this.tick = tick; this._invalidate(); }
     const existing = new Set((this.selectionFrame?.objects ?? []).filter(o=>!this.isFigureFocusLocked(o.unique_id)).map(o => o.unique_id));
     this.selectedUid = existing.has(state.uid) ? state.uid : null;
     this.selectedUids = new Set((state.uids ?? [state.uid]).filter(uid => existing.has(uid)));
@@ -199,15 +192,12 @@ export class Editor extends EventTarget {
     this.report = report; this.name = name?.replace(/\.(piv|stk|styk)$/i, '') || report._styk?.name || 'Untitled animation';
     this._documentToken = {};
     this.frameIndex = index; this.tick = 0; this.selectedUid = report.keyframes[index].objects[0]?.unique_id ?? null; this.selectedJoint = -1;
-    this._undo = []; this._redo = []; this._historySize = 0; this._drag = null;
+    this._undo = []; this._redo = []; this._drag = null;
     this._animationEdit = null; this._authoredPoseEdit = null;
-    this._pendingSourceLayerChanges = null; this._authoredCommandLabel = null; this._pendingSourceBytes = 0;
     this._revision = this._savedRevision = ++this._revisionSerial;
     this._nextUid = prepared.nextUid; this._nextFrameIdentity = prepared.nextFrameIdentity;
-    this._generatedFrameSources = new Set(); this._sourceTableWasPresent = report._styk.frameSources !== undefined;
     this._layerUidCounts = prepared.layerUidCounts; this._layerSeenUids = prepared.layerSeenUids; this._layerGroups = prepared.layerGroups;
     this._layerRevision = (this._layerRevision ?? 0) + 1; this._layerDescriptors = null; this._layerUidArrays = new Map();
-    this._loadedFigureNames = prepared.figureNames; this._loadedTimelineTracks = prepared.tracks;
     this._invalidate({timing: true}); invalidateFrameIndex(report);
     this.tick=initial.tick;this._timeline=initial.timeline;this._timelineAnimation=initial.animation;this._timelineEndTick=animationEndTick({_styk:{animation:initial.animation}});
     const published = performance.now();
@@ -244,7 +234,7 @@ export class Editor extends EventTarget {
     const next = clamp(Math.trunc(finite(index, 'Frame index')), 0, this.report.keyframes.length - 1);
     this.frameIndex = next;
     this.tick = this.timeline[this.frameIndex]?.start ?? 0;
-    this.selectedJoint = -1; this._invalidate({viewOnly: true}); this._emit('seek'); return this.frame;
+    this.selectedJoint = -1; this._invalidate(); this._emit('seek'); return this.frame;
   }
   seek(tick, {evaluate = true, allowBeyondEnd = false} = {}) {
     this.commitVfxClipEdit();
@@ -252,7 +242,7 @@ export class Editor extends EventTarget {
     const nextTick = clamp(finite(tick, 'Timeline tick'), 0, allowBeyondEnd ? 10000000 : Math.max(0, this.totalTicks - 1));
     let low = 0, high = this.timeline.length - 1;
     while (low < high) { const mid = Math.ceil((low + high) / 2); if (this.timeline[mid].start <= nextTick) low = mid; else high = mid - 1; }
-    this.tick = nextTick; this.frameIndex = low; this._invalidate({viewOnly: true}); this._emit('seek'); return evaluate ? this.evaluatedFrame : this.frame;
+    this.tick = nextTick; this.frameIndex = low; this._invalidate(); this._emit('seek'); return evaluate ? this.evaluatedFrame : this.frame;
   }
 
 

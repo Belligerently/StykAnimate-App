@@ -1,5 +1,4 @@
-//! World-space geometry of an evaluated frame (`buildGeometrySteps` in
-//! src/pivot/geometry.mjs): joints, segment primitives and polygons in the
+//! World-space geometry of an evaluated frame (`buildGeometrySteps`): joints, segment primitives and polygons in the
 //! exact painter order the JavaScript editor uses.
 //!
 //! Objects are resolved level by level along their joins; every level builds in
@@ -176,7 +175,7 @@ enum Measure {
     Shapes,
 }
 
-/// `figureBounds` in src/camera-follow.mjs, accumulated point by point.
+/// `figureBounds`, accumulated point by point.
 #[derive(Clone, Copy, Debug)]
 struct Bounds {
     rect: [f64; 4],

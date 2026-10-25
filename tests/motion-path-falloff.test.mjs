@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {evaluatedAt, geometryOfDocument} from './support/engine-geometry.mjs';
-import {falloffWeight, planFalloff, normalizeFalloff} from '../src/motion-path-falloff.mjs';
+import {falloffWeight} from '../src/motion-path-falloff.mjs';
 
 const near = (a, b, tolerance = 1e-3) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 const root = {kind: 'node', uid: 1, handleId: 0, joint: -1};
@@ -34,22 +34,6 @@ test('falloff weights are 1 at the grab, positive inside the radius and 0 beyond
   }
   assert.ok(falloffWeight(2, 8, 'sharp') < falloffWeight(2, 8, 'linear'));
   assert.ok(falloffWeight(2, 8, 'linear') < falloffWeight(2, 8, 'smooth'));
-  assert.equal(normalizeFalloff({radius: 0}), null);
-  assert.deepEqual(normalizeFalloff({radius: 9.4, shape: 'nope'}), {radius: 9, shape: 'smooth'});
-  assert.equal(normalizeFalloff({radius: 5000}).radius, 240);
-});
-
-test('the plan moves keys inside the influence and holds long tweens with edge keys', () => {
-  const plan = planFalloff({tick: 20, radius: 15, keys: [0, 10, 20, 30, 40], totalTicks: 41});
-  assert.deepEqual(plan.map(w => [w.tick, w.kind]), [[4, 'edge'], [10, 'key'], [20, 'grab'], [30, 'key'], [36, 'edge']]);
-  near(plan[1].weight, falloffWeight(10, 15));
-  // A key exactly at the edge, or no key beyond it, needs no edge key.
-  assert.deepEqual(planFalloff({tick: 20, radius: 9, keys: [0, 10, 20, 30, 40], totalTicks: 41}).map(w => w.kind), ['grab']);
-  assert.deepEqual(planFalloff({tick: 20, radius: 15, keys: [20], totalTicks: 41}).map(w => w.kind), ['grab']);
-  // A neighbour whose weight is negligible does not justify an edge key.
-  assert.deepEqual(planFalloff({tick: 20, radius: 10, keys: [0, 10, 20, 30, 40], totalTicks: 41}).map(w => w.kind), ['key', 'grab', 'key']);
-  // An in-between grab in a long tween holds both sides.
-  assert.deepEqual(planFalloff({tick: 15, radius: 4, keys: [0, 40], totalTicks: 41}).map(w => [w.tick, w.kind]), [[10, 'edge'], [15, 'grab'], [20, 'edge']]);
 });
 
 for (const [mode, make] of Object.entries(modes)) {

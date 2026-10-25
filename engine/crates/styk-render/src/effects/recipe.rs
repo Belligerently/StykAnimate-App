@@ -1,5 +1,5 @@
 //! Effect recipes: an effect stack recorded as the passes that filter one layer, pass for
-//! pass as the editor's WebGPU executor runs them (`VfxWebGPU.run` in src/vfx-webgpu.mjs).
+//! pass as the editor's WebGPU executor runs them (`VfxWebGPU.run`).
 //!
 //! A run is a list of [`Step`]s over numbered working slots (0 holds the layer): fragment
 //! passes of `passes.wgsl`, each with its [`Uniform`] record, and copies. It is the same

@@ -1,5 +1,5 @@
 //! Frame identities, stored pose sequences and the simple timeline's working frame on load
-//! (src/editor-frames.mjs, src/pose-sequence-storage.mjs, src/pose-sequences.mjs and
+//! (`validateFrameIdentities` of src/editor-frames.mjs, src/pose-sequence-storage.mjs and
 //! `validateSimpleFrameDraft` of src/editor-frame-draft.mjs).
 
 use std::collections::HashMap;

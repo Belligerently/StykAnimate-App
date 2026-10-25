@@ -1,12 +1,9 @@
 import {messageError} from './localized-error.mjs';
 /** Set Origin changes construction topology while authored transforms retain
  * their original pivot and the native tween retains its original joint basis. */
-import {originSupportLayout, originSupportPose, originSupportOffset, initializeOriginSupport} from './animation-origin-support.mjs';
+import {originSupportPose, originSupportOffset, initializeOriginSupport} from './animation-origin-support.mjs';
 const layouts = new WeakMap();
-export function hasAnimationOrigins(report) {
-  return report.figure_types?.some(figure => figure._styk?.animationOrigin) ?? false;
-}
-export function animationOriginLayout(figure) {
+function animationOriginLayout(figure) {
   const origin = figure?._styk?.animationOrigin;
   if (!origin || origin.support) return null;
   let cached = layouts.get(figure);
@@ -28,20 +25,10 @@ export function animationOriginLayout(figure) {
 }
 /** Retimed attachments retain the original physical vertex's tangent, even
  * when that endpoint has become the construction root or a reversed edge. */
-export function animationOriginHandleOrientation(figure,object,handle){
-  const support=originSupportLayout(figure);
-  if(support){const node=support.support.vertices[handle];if(node===undefined)return null;
-    const index=node<0?support.support.rotation:node,pose=originSupportPose(figure,object,index,support);
-    return pose.angle_rad+(node<0?0:pose.bend_rad);}
-  const layout=animationOriginLayout(figure);if(!layout)return undefined;
-  if(handle===layout.origin.handleId){const index=layout.ids.get(layout.origin.rotationHandleId);return animationOriginAngle(figure,object,index,layout.origin.reversed);}
-  const index=layout.endpoints.get(handle);if(index===undefined)return null;
-  const reverse=Boolean(layout.reversed[index]);return animationOriginAngle(figure,object,index,reverse)+animationOriginBend(figure,object,index,reverse);
-}
-export function animationOriginBend(figure,object,index,reversed=false){
+function animationOriginBend(figure,object,index,reversed=false){
   const value=Number(object?.bend_flag?object.bends[index]:figure.segments[index].bend_rad??0);return reversed?-value:value;
 }
-export function animationOriginAngle(figure,object,index,reversed=false){
+function animationOriginAngle(figure,object,index,reversed=false){
   const value=Number(object?.angles?.[index]??figure.segments[index].angle_rad??0);
   return value+(reversed?animationOriginBend(figure,object,index)+Math.PI:0);
 }
@@ -64,7 +51,7 @@ function animationOriginPathOffset(figure,object){
   }
   return{x,y};
 }
-export function animationOriginOffset(figure,object){
+function animationOriginOffset(figure,object){
   const point=animationOriginPathOffset(figure,object),origin=object._stykAnimationOrigin;
   if(origin&&(origin.offsetX||origin.offsetY)){
     const angle=animationRotation(figure,object),scale=Number(object.scale??1),x=origin.offsetX??0,y=origin.offsetY??0;
@@ -78,17 +65,4 @@ export function synchronizeAnimationOrigin(figure,object,{initialize=false}={}){
   if(initialize&&!object._stykAnimationOrigin?.ghosts)initializeOriginSupport(figure,object);
   const offset=animationOriginOffset(figure,object);
   object._stykAnimationOrigin={...object._stykAnimationOrigin,x:Number(object.root_x)+offset.x,y:Number(object.root_y)+offset.y};return object;
-}
-/** Correct native tween roots after interpolating the original pivot XY. */
-export function correctAnimationOrigins(report,frame){
-  if(!frame||!hasAnimationOrigins(report))return frame;
-  const types=new Map(report.figure_types.map(figure=>[figure.figure_type_id,figure]));let objects;
-  frame.objects.forEach((object,slot)=>{
-    const figure=types.get(object.figure_type_id),origin=object._stykAnimationOrigin;
-    if(!figure?._styk?.animationOrigin||!origin||object.join)return;
-    const offset=animationOriginOffset(figure,object),x=origin.x-offset.x,y=origin.y-offset.y;
-    if(Math.abs(x-object.root_x)<1e-10&&Math.abs(y-object.root_y)<1e-10)return;
-    objects??=[...frame.objects];objects[slot]={...object,root_x:x,root_y:y,runtime_segments:undefined};
-  });
-  return objects?{...frame,objects}:frame;
 }

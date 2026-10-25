@@ -3,7 +3,7 @@ import {drawingMetadata, isDrawingLayer, createDrawingFigure} from './drawing-mo
 import {sheetKeyAt} from './layer-sheet.mjs';
 import {createObject} from './demo.mjs';
 
-export function assertDrawingTargets(editor,ids) {
+function assertDrawingTargets(editor,ids) {
   if(!ids.length)throw messageError(new Error(''), "errors.editorDrawing.chooseADrawingLayer", {});
   for(const id of ids){const layer=editor.getLayer(id);if(!isDrawingLayer(layer))throw messageError(new Error(''), "errors.editorDrawing.chooseADrawingLayerOrCreateANew", {});if(layer.locked||!layer.visible)throw messageError(new Error(''), "errors.editorDrawing.showAndUnlockBeforeDrawing", {name: layer.name});}
 }

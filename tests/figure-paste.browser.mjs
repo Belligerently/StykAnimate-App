@@ -66,7 +66,7 @@ try {
   await page.evaluate(async()=>{
     const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
     const {movieclipFigure}=await import('/src/movieclips.mjs');
-    const {presencePlayback}=await import('/src/movieclip-presence.mjs');
+    const {presencePlayback}=await import('/tests/support/movieclip-playback.mjs');
     const child=emptyDocument();child.keyframes=[createFrame([createObject(child.figure_types[0],1,200,250)])];
     const clip=movieclipFigure(2,'Paste test clip',child,{duration:1});
     const report=emptyDocument();report.figure_types.push(clip);

@@ -44,7 +44,6 @@ fn every_origin_fixture_evaluates_like_the_editor() {
     assert!(names.len() >= 3, "fixtures are missing: the origin fixtures are frozen recordings (restore them from version control)");
     for name in &names {
         let document = open(name);
-        assert!(document.unsupported.is_empty(), "{name}: not evaluated: {:?}", document.unsupported);
         assert!(document.notes.is_empty(), "{name}: read leniently: {:?}", document.notes);
         assert!(document.figures.iter().any(|f| f.origin.is_some()), "{name}: no figure with an origin");
         let report = compare(name, document);

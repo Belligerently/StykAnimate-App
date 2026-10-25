@@ -315,9 +315,6 @@ impl Editor {
     /// missing at and 4 when the body's position is given.
     pub(crate) fn interface_trails(&self, args: &Value) -> Result<String, EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("trails with {feature}")));
-        }
         let mut targets: Vec<Target> = Vec::new();
         for target in args.get("targets").and_then(Value::elements).into_iter().flat_map(|targets| targets.iter()).take(MAX_TARGETS) {
             let target = Target::parse(&target)?;
@@ -490,9 +487,6 @@ impl Editor {
             return Ok(answer.clone());
         }
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("a pose with {feature}")));
-        }
         let source = match &live {
             Some(live) => Source { report: &live.report, prepared: &live.prepared, draft: live.draft.as_deref() },
             None => Source { report: &self.report, prepared: &prepared, draft: None },

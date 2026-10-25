@@ -259,9 +259,6 @@ impl Editor {
     /// This shares the existing Prepared lineage and latest typed view owner.
     pub(crate) fn evaluate_frame(&self) -> Result<(Arc<Prepared>, styk_eval::eval::Frame), EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let record = self.shown_frame()?;
         let frame = self.eval.borrow_mut().edit_frame(&record, &prepared).map_err(|error| EditError::Invalid(error.to_string()))?;
         Ok((prepared, frame))
@@ -1309,15 +1306,6 @@ mod tests {
         assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_shape(Some(&[0])).err().unwrap()));
         assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_joint_shape(Some(0), 0).err().unwrap()));
         assert!(Arc::ptr_eq(editor.eval.borrow().latest_typed.as_ref().unwrap(), &coherent), "conversion error never installs a partial typed frame");
-        let mut document = (*prepared.doc).clone();
-        document.unsupported.push("shape query unsupported control".into());
-        let loader = editor.eval.borrow().loader.clone();
-        editor.adopt_prepared(loader, Arc::new(Prepared::new(Arc::new(document))));
-        let old = editor.evaluate_only(Some(&[0])).err().unwrap();
-        assert!(matches!(&old, EditError::Unported(_)));
-        assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_shape(Some(&[0])).err().unwrap()), "unsupported preparation precedes malformed shown-frame conversion");
-        assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_joint_shape(Some(0), 0).err().unwrap()), "joint query retains preparation-before-conversion priority");
-        assert!(editor.eval.borrow().latest_typed.is_none());
     }
 
 }
