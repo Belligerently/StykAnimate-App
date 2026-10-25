@@ -5,9 +5,8 @@ import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {solveIKPoints, ikChain, validateIK} from '../src/ik.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
-import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {getPivotHandles} from '../src/canvas-interactions.mjs';
+import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 
 const near = (a, b, tolerance = 1e-4) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 const point = (a, b, tolerance) => { near(a.x, b.x, tolerance); near(a.y, b.y, tolerance); };
@@ -155,7 +154,7 @@ test('stretch reaches distant targets without changing rest lengths or unrelated
 test('stretched native and baked Pivot exports reproduce the pose without modifying the source', () => {
   const e = fixture(); e.setNodeIK({enabled: true, allowStretch: true}); e.poseJoint(600, 200);
   const original = JSON.stringify(e.serialize()), displayed = g(e);
-  for (const report of [e.serialize(), nativeFigureDocument(e.report, {figureUid: 1}), materializePivotDocument(e.report)]) {
+  for (const report of [e.serialize(), figureDocument(e.report, {figureUid: 1}), pivotDocument(e.report)]) {
     const reopened = new Editor({demo: false}).load(report), actual = g(reopened);
     for (const [id, p] of displayed.joints) point(actual.joints.get(id), p);
   }
@@ -306,7 +305,7 @@ test('pins solve at interpolated ticks and native export bakes identical visible
   const target = g(e).joints.get(22), a = structuredClone(e.frame), b = structuredClone(e.frame);
   delete a._styk; delete b._styk; b.objects[0].root_x += 20; b.objects[0].root_y -= 12;
   e.report.keyframes = [a, b]; e._invalidate({timing: true});
-  const before = JSON.stringify(e.report), materialized = materializePivotDocument(e.report);
+  const before = JSON.stringify(e.report), materialized = pivotDocument(e.report);
   for (let tick = 0; tick < 8; tick++) {
     const frame = evaluatedFrame(e.report, 0, tick / 8, tick), live = buildGeometry(e.report, frame).objects.get(0);
     point(live.joints.get(22), target); angleNear(live.segments[2].angle,0);

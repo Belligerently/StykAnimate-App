@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {performance} from 'node:perf_hooks';
 import {Editor} from '../src/editor.mjs';
-import {isStatic} from '../src/pivot/geometry.mjs';
+import {isStatic} from '../src/pivot/read-view.mjs';
 
 import {corpusPath} from './support/corpus.mjs';
 import {nodeCodec} from './support/codec.mjs';

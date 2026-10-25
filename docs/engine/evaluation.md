@@ -338,18 +338,23 @@ selection is the editor's to tell with a call, and the frame does not depend on 
   handles and the pickers read (`{objects: Map<slot, group|null>, orderedObjects, drawables, token, changedSlots,
   warnings}`; a group `{slot, obj, fig, root, joints, segments, polys, bounds, solvedAngles, solvedLengths}`, `drawables`
   built when read, with Stick Nodes shapes expanded). The groups carry no drawables for a 3D mesh or a movieclip's contents: the
-  stage draws them in the engine, and a click on artwork paints the pose built for it (`artworkScene` in `src/app.mjs`).
+  stage draws them in the engine, and a click on artwork asks the engine which figure the stage's frame paints at the point ([rendering.md](rendering.md#picking-artwork)).
 - A geometry read names the read the interface holds (`since`). The session sends the groups of the figures whose
   pose record is not the one the held read was built from, and of every figure joined to them (one component: an
   assembly's inverse kinematics reaches across joins), or all of them when a figure definition changed. The groups held
   stay as they are, so the descriptors the canvas keeps by their identity stay valid while a gesture moves other figures.
   Unchanged: the same geometry object comes back.
 - The values the interface shows of the frame (`animationValue`, `vfxEffects`, `segmentAnimationTarget`,
-  `getIKSettings`) are the session's reads too (`Editor::interface_query`, at the editor's whole view): a document the
-  session does not answer them for (one that is not on a layer sheet) is read by the
+  `getIKSettings`, `getSpatialPose` and `getSpatialMotion` of the selected 3D bone, `sampleVfxClip`: an effect clip's
+  effects with their keys sampled at a tick) are the session's reads too (`Editor::interface_query`, at the editor's
+  whole view): a document the session does not answer them for (one that is not on a layer sheet) is read by the
   editor from the frame and geometry the engine gave it (`unported: …`). The other queries the owner leaves to the editor
-  (`animationChannel`, `nativePoseChannel`, `sampleVfxClip`, `getSpatialPose`, `resolveTranslationSelection`, …) read
+  (`animationChannel`, `nativePoseChannel`, `getSpatialCamera`, `resolveTranslationSelection`, …) read stored
   records and the engine's frame and geometry; none evaluates a pose at the playhead.
+- `previewGeometry` is the geometry of a frame the document does not hold: the first stroke on a drawing layer previews
+  the frame on show with the new cel's figure and object added (`Editor::interface_preview_geometry`: the document with
+  that figure and layer assignment, the given frame read against it, the full geometry of the result;
+  `drawing-controller.mjs` reads it once for a gesture).
 - The stage draws the same frame inside the engine (`Stage::edit_session`, [rendering.md](rendering.md)): the session's
   record, with its `tick` (and the camera-motion tick), is read against the open document with the effect clips sampled at
   the tick, as a prepared frame's are.

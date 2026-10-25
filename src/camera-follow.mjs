@@ -1,5 +1,6 @@
 import {messageError} from './localized-error.mjs';
-import {evaluatedFrame, buildGeometry, timeline, evaluationGeneration, evaluationGeometryGeneration} from './pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry, evaluationGeneration, evaluationGeometryGeneration} from './pivot/geometry.mjs';
+import {timeline} from './pivot/read-view.mjs';
 import {layerIdForUid} from './layers.mjs';
 
 /**

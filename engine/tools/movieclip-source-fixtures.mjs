@@ -2,7 +2,8 @@
 import {fileURLToPath} from 'node:url';
 import {writeFileSync, mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {timeline, evaluatedFrame} from '../../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../../src/pivot/geometry.mjs';
+import {timeline} from '../../src/pivot/read-view.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 import {documentOf, limb, open, nextKey, createFrame, writeProject, writeReference} from './fixture-kit.mjs';
 const out = fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-source/', import.meta.url));

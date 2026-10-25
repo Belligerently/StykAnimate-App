@@ -54,7 +54,7 @@ const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxCl
 
 /** The editor's reads the session answers where it holds the document (`Editor::interface_query`): the values the interface
  * shows of the frame on show, from the engine's own evaluation. */
-const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings'];
+const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings', 'getSpatialPose', 'getSpatialMotion', 'sampleVfxClip'];
 /** What the session's error says when it does not answer for a document (`styk_edit::session::UNPORTED`). */
 const UNPORTED = 'unported: ';
 

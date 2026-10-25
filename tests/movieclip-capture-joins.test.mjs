@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
-import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
+import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 const sample=(report,tick)=>{const rows=timeline(report),index=Math.max(0,rows.findLastIndex(r=>r.start<=tick)),row=rows[index];return buildGeometry(report,evaluatedFrame(report,index,row.count?(tick-row.start)/row.count:0,tick));};
 const joined=()=>{
  const document=emptyDocument(),figure=document.figure_types[0];document.keyframes=[createFrame([1,2,3,4].map(uid=>createObject(figure,uid,100+uid*100,180)),10)];

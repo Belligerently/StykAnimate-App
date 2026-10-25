@@ -1594,6 +1594,8 @@ export default Object.freeze({
   "errors.clipboardWorkerClient.theClipboardWorkerFailed": "The clipboard worker failed.",
   "errors.clipboardWorkerClient.theClipboardWorkerStopped": "The clipboard worker stopped.",
   "errors.documentExport.theDocumentExportWorkerStopped": "The document export worker stopped.",
+  "errors.documentExport.exportRequiresTheEditorRevision": "Export needs the version of the document it saves.",
+  "errors.documentExport.theEngineCannotMakeThisFileHere": "This kind of file cannot be made here. Use the desktop app or a page that allows shared memory.",
   "errors.documentExport.documentExportFailed": "Document export failed.",
   "errors.drawingHistory.theDrawingUndoWorkerStoppedRetryUndo": "The drawing undo worker stopped. Retry undo.",
   "errors.drawingResources.drawingWorkerCouldNotLoadRetryTheOperation": "Drawing worker could not load. Retry the operation.",

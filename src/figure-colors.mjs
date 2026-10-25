@@ -2,7 +2,7 @@ import {messageError} from './localized-error.mjs';
 /** Display colors and copy-on-write recoloring. No geometry or asset copies. */
 import {resolveInstanceFigure, styleColor, polygonIdentity, meshPaletteColor} from './animation-style.mjs';
 import {segmentPaint, normalizePaint, parseColor, hexColor, samplePaint} from './paint.mjs';
-import {color, mixColor} from './pivot/geometry.mjs';
+import {color, mixColor} from './pivot/read-view.mjs';
 
 export const usesSegmentColors = (report, figure, object) => report.version >= 5 || figure?._styk?.colorMode === 'segments' || object?._styk?.colorMode === 'segments';
 export function displayedColor(report, figure, object, rgb) {

@@ -28,6 +28,7 @@ mod camera_views;
 mod clipboards;
 mod figure_clipboard;
 mod figure_transform;
+pub mod export;
 mod args;
 mod owner;
 mod preview;

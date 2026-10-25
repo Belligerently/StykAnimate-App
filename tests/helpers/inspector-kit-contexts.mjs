@@ -19,7 +19,7 @@ import {builderDrawables} from '../../src/editor-builder-style.mjs';
 import {resolveInstanceFigure} from '../../src/animation-style.mjs';
 import {BRUSH_BLEND_LABELS} from '../../src/drawing-view.mjs';
 import {sheetKeyAt} from '../../src/layer-sheet.mjs';
-import {isStatic} from '../../src/pivot/geometry.mjs';
+import {isStatic} from '../../src/pivot/read-view.mjs';
 
 const degrees = radians => radians * 180 / Math.PI;
 const hex = rgb => `#${(rgb || [43, 43, 43]).map(n => Math.round(n).toString(16).padStart(2, '0')).join('')}`;

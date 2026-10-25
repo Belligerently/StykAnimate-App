@@ -70,6 +70,8 @@ pub struct Stage {
     /// Bytes of pictures the last frame uploaded to the atlas.
     upload_bytes: usize,
     pub(crate) edit: EditScene,
+    /// What a click on artwork draws with ([`Stage::pick_artwork`]).
+    picker: styk_export::pick::Picker,
     /// The onion skins drawn behind the frame ([`Stage::set_onions`]): the set the session planned and how each is drawn.
     skins: Option<(Arc<styk_edit::OnionSet>, Vec<Skin>)>,
     /// Effects are drawn (the editor's effects preview is on).
@@ -187,6 +189,7 @@ impl Stage {
             pictures: PICTURES_COMPLETE,
             upload_bytes: 0,
             edit: EditScene::default(),
+            picker: Default::default(),
             skins: None,
             effects: true,
             rotation: 0.0,
@@ -395,6 +398,25 @@ impl Stage {
 
     /// A cold followed pose is accepted but awaits the engine worker's shared path.
     pub fn camera_pending(&self) -> bool { self.edit.camera_pending().is_some() }
+
+    /// The figure whose artwork is under a point of the frame on show, for a click: `request` is
+    /// `{x, y, scale, hidden: [uid], locked: [uid]}` (the point in scene units, the view's scale, the figures
+    /// that cannot be picked), the answer `{slot, uid}` of the topmost figure drawn there, or `null`
+    /// ([`styk_export::pick`]).
+    pub fn pick_artwork(&mut self, request: &str) -> Result<String, JsError> {
+        let request = styk_doc::json::parse(request.as_bytes()).map_err(js_error)?;
+        let number = |key: &str| request.get(key).and_then(styk_doc::Value::as_f64).ok_or_else(|| js_error(format!("a pick needs {key}")));
+        let uids = |key: &str| -> std::collections::HashSet<u32> { request.get(key).and_then(styk_doc::Value::elements).map(|list| list.iter().filter_map(|uid| uid.as_f64()).map(|uid| uid as u32).collect()).unwrap_or_default() };
+        let (generation, frame) = match (self.engine.generation(), self.edit.frame()) {
+            (Some(generation), Some(frame)) => (generation, frame),
+            _ => return Ok("null".into()),
+        };
+        let hit = styk_export::pick::artwork(&mut self.picker, &generation.prepared.doc, &generation.assets, &frame, [number("x")?, number("y")?], request.get("scale").and_then(styk_doc::Value::as_f64).unwrap_or(1.0), &uids("hidden"), &uids("locked")).map_err(js_error)?;
+        Ok(match hit {
+            Some(hit) => format!("{{\"slot\":{},\"uid\":{}}}", hit.slot, hit.uid),
+            None => "null".into(),
+        })
+    }
 
     /// Draws the edit frame with the onion skins set by [`Stage::set_onions`]. `hidden` lists object slots not drawn;
     /// `translations` holds `slot, dx, dy` triples of dragged objects; `background` is an ARGB canvas colour

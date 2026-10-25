@@ -4,7 +4,8 @@ import {messageError} from './localized-error.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {planAuthoredClipboard} from './frame-clipboard-authored.mjs';
 import {animationEndTick,animationChannelId} from './animation-channels.mjs';
-import {nativeTimeline,evaluatedFrame} from './pivot/geometry.mjs';
+import {evaluatedFrame} from './pivot/geometry.mjs';
+import {nativeTimeline} from './pivot/read-view.mjs';
 import {movieclipTypes,playbackSettings} from './movieclips.mjs';
 
 export function placeAddedMovieclips(editor,frame){

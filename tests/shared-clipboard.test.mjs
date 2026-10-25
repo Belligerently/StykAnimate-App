@@ -6,6 +6,7 @@ import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {SharedClipboard, clipboardSnapshot, restoreClipboard, pasteSheetClipboard} from '../src/shared-clipboard.mjs';
 import {librarySnapshot} from '../src/library-files.mjs';
 import {libraryDragData, readLibraryDrag, LIBRARY_DRAG_TYPE} from '../src/library-drag.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 const {SharedClipboard: NativeClipboard, FORMAT} = createRequire(import.meta.url)('../desktop/shared-clipboard.cjs');
 
 function systemClipboard() {
@@ -161,7 +162,7 @@ test('document switch during a shared read does not modify the new clipboard or 
 });
 
 for (const layers of [false, true]) test(`library drop placement preserves sets and one undo (layers=${layers})`, () => {
-  const source = new Editor(); source.select(1); source.select(3, {add:true});
+  const source = ownedEditorFor(); source.select(1); source.select(3, {add:true});
   const doc = librarySnapshot(source), editor = new Editor({propertyChannels:true, layerTimeline:layers});
   const before = editor.serialize(), history = editor._undo.length;
   editor.importFigure(doc, {position:{x:123,y:87}});
