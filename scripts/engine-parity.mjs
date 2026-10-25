@@ -79,4 +79,6 @@ if (args.has('--corpus')) {
   else results.push({name: 'Pivot codec replay (no recording: engine/tools/piv/parity.sh makes one)', ok: true, seconds: 0});
 }
 
-
+console.log('\nEngine parity');
+for (const {name, ok, seconds} of results) console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name} (${seconds.toFixed(1)} s)`);
+process.exit(results.every(result => result.ok) ? 0 : 1);
