@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 
 const near = (a, b, tolerance = .001) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 const point = (a, b) => {near(a.x, b.x); near(a.y, b.y);};
-function rig(joined = true, {constructionPivot = false, alone = false, ...options} = {}) {
+function rig(joined = true, {constructionPivot = false, ...options} = {}) {
   const document = emptyDocument(), baseFigure = document.figure_types[0], base = baseFigure.segments[0];
   const s = (id, parent, length, angle, fixed = false) => ({...base, segment_id:id, parent_id:parent, length, angle_rad:angle, is_static:fixed, aux_code:fixed ? 1 : 0});
   const groups = [
@@ -28,7 +28,7 @@ function rig(joined = true, {constructionPivot = false, alone = false, ...option
   if (joined) for (const [slot, parent, handle] of [[1,0,11],[2,1,constructionPivot ? 23 : 22],[3,1,22]])
     objects[slot].join = {target_object_slot:parent,target_unique_id:parent+1,target_handle_id:handle};
   document.keyframes = [createFrame(objects,8)];
-  const e = alone ? new Editor({demo:false, ...options}).load(document) : plainEditorFor({demo:false, ...options}, document); e.select(joined ? 2 : 1, joined ? 0 : 2); return e;
+  const e = ownedEditorFor({demo:false, layerTimeline:true, ...options}, document); e.select(joined ? 2 : 1, joined ? 0 : 2); return e;
 }
 function shapes(e) {return new Map([...e.geometry.objects.values()].flatMap(g => g.segments.map(s => [s.seg.segment_id,s])));}
 function sameRig(a,b) {
@@ -37,17 +37,15 @@ function sameRig(a,b) {
 }
 
 test('moving pins carries a joined component once, including range edits', () => {
-  for (const layerTimeline of [false, true]) {
-    const e = rig(true, {layerTimeline}); e.setNodeIK({enabled: true}); e.poseJoint(365, 265);
-    e.selectMany([1, 2]);
-    const before = new Map([...shapes(e)].map(([id, s]) => [id, {...s.end}]));
-    e.beginTranslationDrag(); e.moveSelection(25, -15, {fromStart: true, movePins: true}); e.commitDrag();
-    for (const [id, p] of before) point(shapes(e).get(id).end, {x: p.x + 25, y: p.y - 15});
-    e.undo();
-    e.moveSelectionInFrames(25, -15, [0], {movePins: true});
-    for (const [id, p] of before) point(shapes(e).get(id).end, {x: p.x + 25, y: p.y - 15});
-    e.undo(); for (const [id, p] of before) point(shapes(e).get(id).end, p);
-  }
+  const e = rig(true); e.setNodeIK({enabled: true}); e.poseJoint(365, 265);
+  e.selectMany([1, 2]);
+  const before = new Map([...shapes(e)].map(([id, s]) => [id, {...s.end}]));
+  e.beginTranslationDrag(); e.moveSelection(25, -15, {fromStart: true, movePins: true}); e.commitDrag();
+  for (const [id, p] of before) point(shapes(e).get(id).end, {x: p.x + 25, y: p.y - 15});
+  e.undo();
+  e.moveSelectionInFrames(25, -15, [0], {movePins: true});
+  for (const [id, p] of before) point(shapes(e).get(id).end, {x: p.x + 25, y: p.y - 15});
+  e.undo(); for (const [id, p] of before) point(shapes(e).get(id).end, p);
 });
 
 test('joined IK crosses figure boundaries and matches an equivalent single-figure rig', () => {
@@ -80,8 +78,7 @@ test('shin attachments follow the bone while polygon-connected foot branches fol
 
 test('unpinned target drags preserve outgoing orientation and bake reversible poses', () => {
   for (const joined of [false,true]) for (const propertyChannels of [false,true]) {
-    // session gap: with property channels on a native timeline the editor runs the drag, and the session's geometry does not show the unpinned solution.
-    const e = rig(joined, {propertyChannels, alone: propertyChannels}); e.setNodeIK({enabled:true}); e.poseJoint(365,265);
+    const e = rig(joined, {propertyChannels}); e.setNodeIK({enabled:true}); e.poseJoint(365,265);
     e.setNodeIK({pinned:false});
     const before = shapes(e), orientations = new Map([33,34,35].map(id => [id, before.get(id).angle]));
     e.beginDrag();
@@ -131,12 +128,12 @@ test('foot polygon vertices retain target-space positions while shin attachments
 test('a polygon foot keeps every vertex distance with legacy partial follower tables', () => {
   for (const joined of [false,true]) {
     // The legacy tables are written into the saved document, which the engine then opens.
-    const legacy = rig(joined, {alone: true}); legacy.setNodeIK({enabled:true});
+    const legacy = rig(joined); legacy.setNodeIK({enabled:true});
     const c = legacy.object._stykIK[22];
     c.followers = joined ? {} : {33:0}; c.joinedFollowers = joined ? {3:{33:0}} : {};
     // Metadata from the rejected attachment heuristic must not split this foot.
     c.attachmentOffsets = {24:-.9,35:-.5}; c.joinedAttachmentOffsets = {3:{35:-.5},4:{41:-.9}};
-    const e = plainEditorFor({demo:false}, legacy.serialize()); e.select(joined ? 2 : 1, joined ? 0 : 2);
+    const e = ownedEditorFor({demo:false}, legacy.serialize()); e.select(joined ? 2 : 1, joined ? 0 : 2);
     const vertices = [22,33,34,35], points = () => vertices.map(id=>shapes(e).get(id).end);
     const distances = values => values.flatMap((a,i)=>values.slice(i+1).map(b=>Math.hypot(a.x-b.x,a.y-b.y)));
     const before = distances(points());
@@ -262,8 +259,8 @@ test('unpinned root transforms carry the foot and re-pinning captures its curren
 
 test('pasting a joined rig remaps controller parenting to the pasted foot', () => {
   const e=rig(); e.setNodeIK({enabled:true}); e.rotateIKTarget(.4);
-  e._selectIds([1,2,3,4]); e.copySelection(); e.pasteSelection();
-  const copies=e.frame.objects.slice(4), shin=copies.find(o=>o._stykIK?.[22]), foot=copies.find(o=>o.join?.target_unique_id===shin.unique_id);
+  e.selectMany([1,2,3,4]); e.copySelection(); e.pasteSelection();
+  const copies=e.evaluatedFrame.objects.slice(4), shin=copies.find(o=>o._stykIK?.[22]), foot=copies.find(o=>o.join?.target_unique_id===shin.unique_id);
   assert.ok(Object.hasOwn(shin._stykIK[22].joinedFollowers,String(foot.unique_id)));
   assert.equal(Object.keys(shin._stykIK[22].joinedFollowers).length,1);
   e.select(shin.unique_id,0); e.poseJoint(380,280);
@@ -315,7 +312,7 @@ test('overlapping chains across joins are rejected and isolated geometry stays r
 test('splitting a joined ancestor preserves the IK chain base and child articulation', () => {
   const e=rig(); e.setNodeIK({enabled:true}); e.poseJoint(365,265); const before=e.serialize(), foot=shapes(e).get(33).end;
   e.select(1,0); e.splitSegment();
-  assert.equal(e.frame.objects[1]._stykIK[22].chainLength,3);
+  assert.equal(e.evaluatedFrame.objects[1]._stykIK[22].chainLength,3);
   point(shapes(e).get(22).end,{x:365,y:265}); near(shapes(e).get(33).angle,0);
   e.undo(); assert.deepEqual(e.serialize(),before);
   e.select(3,0); e.splitSegment();
@@ -338,7 +335,7 @@ test('joined IK interpolation is identical to a monolithic rig and independent o
   const [joined,single]=[rig(),rig(false)].map(e=>{
     e.setNodeIK({enabled:true}); e.poseJoint(360,260); const a=structuredClone(e.frame); delete a._styk;
     e.select(1,-1); e.moveSelection(20,-10); const b=structuredClone(e.frame); delete b._styk;
-    return plainEditorFor({demo:false},{...e.serialize(),keyframes:[a,b]});
+    return ownedEditorFor({demo:false},{...e.serialize(),keyframes:[a,b]});
   });
   for (const t of [.7,.1,.9,.5]) {
     const a=buildGeometry(joined.report,evaluatedFrame(joined.report,0,t)), b=buildGeometry(single.report,evaluatedFrame(single.report,0,t));

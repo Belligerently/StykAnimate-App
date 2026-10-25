@@ -262,16 +262,16 @@ test('Build’s rig keeps every control while its behaviours are on, each block 
 });
 
 test('text, image, connector, two-tone and IK joints keep every control', () => {
-  const text = plainEditorFor({demo: false});
+  const text = engineEditor({demo: false, layerTimeline: true});
   text.importFigure(compileTextFigure({text: 'Hello', fontSize: 42, color: [70, 40, 170]}, fonts[0]));
   assertNothingLost({editor: text}, 'text');
-  const image = plainEditorFor({demo: false});
+  const image = engineEditor({demo: false, layerTimeline: true});
   image.importFigure(createImageFigure({dataUrl: PNG, width: 1, height: 1, name: 'Placed <sprite> & "co"'}));
   assertNothingLost({editor: image}, 'image');
   image.select(image.selectedUid, 0);
   assertNothingLost({editor: image}, 'an image segment');
 
-  const rig = plainEditorFor({demo: false}, rigExampleDocument('sliding-carriage'));
+  const rig = engineEditor({demo: false, layerTimeline: true}, rigExampleDocument('sliding-carriage'));
   rig.select(1, 2);
   assertNothingLost({editor: rig}, 'a connector (slider)');
   assertNothingLost({editor: rig, builder: true}, 'a connector in the builder');
@@ -280,7 +280,7 @@ test('text, image, connector, two-tone and IK joints keep every control', () => 
   rig.select(1, 0);
   assertNothingLost({editor: rig}, 'an anchor segment');
 
-  const tone = plainEditorFor({demo: false});
+  const tone = engineEditor({demo: false, layerTimeline: true});
   tone.addFigure();
   tone.select(tone.selectedUid, 0);
   tone.updateSegmentStyle({color: '#f8356a', opacity: 0.7, gradient: {color: '#2cd876', opacity: 0.6}});
@@ -292,7 +292,7 @@ test('text, image, connector, two-tone and IK joints keep every control', () => 
   tone.figure.segments[0].secondary = null;
   assertNothingLost({editor: tone}, 'a circle without a second colour');
 
-  const ik = plainEditorFor();
+  const ik = engineEditor({layerTimeline: true});
   ik.select(1, 4);
   ik.setNodeIK({enabled: true});
   assertNothingLost({editor: ik}, 'an IK joint');
@@ -535,7 +535,7 @@ test('connector joints: the Connector section opens with Segment │ Slider; the
 });
 
 test('second colour: a titled section whose switch sits after its title and which opens while it is on', () => {
-  const editor = plainEditorFor({demo: false});
+  const editor = engineEditor({demo: false, layerTimeline: true});
   editor.addFigure();
   editor.select(editor.selectedUid, 0);
   editor.updateSegmentStyle({color: '#f8356a', opacity: 0.7, gradient: {color: '#2cd876', opacity: 0.6}});

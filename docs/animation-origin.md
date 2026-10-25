@@ -73,8 +73,9 @@ thus keep their original meaning while the construction follows native Delete
 and Unsplit behavior. The static evidence and its scope are recorded in
 `artifacts/native-static/builder-delete-reroot.md`.
 
-`tests/editor-origin-support.test.mjs` checks 201 continuous samples for native
-and authored animation with and without easing, branch reconnection, Unsplit
-endpoints and transform curves, repeated origins, splitting, fresh instances,
-exact undo/redo, and actual STYK/PIV codec roundtrips. Native export materializes
-the evaluated visible poses and strips both support and ghost metadata.
+The recorded edit tapes (`engine/tests/edit/origin-topology-*` and
+`origin-reroot-*`) check native and authored animation with and without
+easing, branch reconnection, Unsplit endpoints and transform curves, repeated
+origins, splitting, fresh instances and exact undo/redo. Native export
+materializes the evaluated visible poses and strips both support and ghost
+metadata.

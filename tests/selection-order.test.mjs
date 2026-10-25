@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
-import {newPlainEditor} from './support/plain-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {builderDrawables} from '../src/editor-builder-style.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
@@ -81,8 +80,8 @@ test('a branch with attached figures orders the complete selection without chang
   e.redo(); assert.deepEqual(order(e), [3, 4, 1, 2]);
 });
 
-for (const layerTimeline of [false, true]) for (const propertyChannels of [false, true])
-test(`single-segment joints and joined branches move in scene order (sheet=${layerTimeline}, properties=${propertyChannels})`, () => {
+for (const propertyChannels of [false, true])
+test(`single-segment joints and joined branches move in scene order (properties=${propertyChannels})`, () => {
   const report = emptyDocument(), figure = report.figure_types[0];
   figure.segments = [figure.segments[0]]; figure.segment_count = 1;
   const ids = [70, 10, 80, 30, 50, 20], before = [30, 70, 20, 10, 50, 80];
@@ -93,7 +92,7 @@ test(`single-segment joints and joined branches move in scene order (sheet=${lay
     frame.object_draw_order_unique_ids = [...before]; frame.object_draw_order = before.map(uid => ids.indexOf(uid));
     return frame;
   });
-  const e = (layerTimeline ? newOwnedEditor : newPlainEditor)({demo: false, layerTimeline, propertyChannels}).load(report);
+  const e = newOwnedEditor({demo: false, layerTimeline: true, propertyChannels}).load(report);
   e.select(70, 0);
   e.orderSelection('front'); assert.deepEqual(order(e), [30, 20, 10, 50, 80, 70]);
   e.undo(); assert.deepEqual(order(e), before);
@@ -119,7 +118,7 @@ test(`single-segment joints and joined branches move in scene order (sheet=${lay
   e.orderSelection('front'); e.orderSelection(1); assert.equal(e._undo.length, endHistory);
   while (e._undo.length > history) e.undo(); assert.deepEqual(order(e), before);
   while (e._redo.length) e.redo(); assert.deepEqual(order(e), after);
-  const restored = newOwnedEditor({demo: false, layerTimeline, propertyChannels}).load(e.serialize());
+  const restored = newOwnedEditor({demo: false, layerTimeline: true, propertyChannels}).load(e.serialize());
   assert.deepEqual(order(restored), after);
   restored.seek(10); assert.deepEqual(order(restored), before);
 });

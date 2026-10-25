@@ -23,7 +23,7 @@ try {
     editor.beginDrag('Performance sample');
     for (let i=0;i<150;i++) {
       const start = performance.now();
-      editor.poseIKTarget(point.x+25*Math.sin(i*.08),point.y-25+20*Math.cos(i*.08));
+      editor.poseJoint(point.x+25*Math.sin(i*.08),point.y-25+20*Math.cos(i*.08));
       const g=editor.geometry, evaluated=performance.now();
       objectBounds(g.drawables);
       const bounded=performance.now();

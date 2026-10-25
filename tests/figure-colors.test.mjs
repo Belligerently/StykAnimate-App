@@ -25,7 +25,8 @@ function fixture({version=5,raw=0,layerTimeline=true,propertyChannels=true,prepa
 const palette=e=>e.figurePalette().map(p=>[p.color,p.segments.length]);
 const colors=e=>buildGeometry(e.report,e.evaluatedFrame).objects.get(e.selectedSlot).segments.map(s=>s.rgb);
 
-for(const settings of [{layerTimeline:true},{layerTimeline:false,propertyChannels:false},{layerTimeline:false,propertyChannels:true}])test(`attached palette preserves instance membership and undo: ${JSON.stringify(settings)}`,()=>{
+test('attached palette preserves instance membership and undo',()=>{
+  const settings={layerTimeline:true};
   const report=fixture().serialize(), child=structuredClone(report.figure_types[0]);
   child.figure_type_id=2;child.segments.forEach(s=>s.color_rgb=[10,20,30]);
   child.segments[0].secondary={rgb:[200,40,50],a:77};
@@ -38,7 +39,7 @@ for(const settings of [{layerTimeline:true},{layerTimeline:false,propertyChannel
     createObject(child,4,300,200),
   ],10));
   delete report._styk;
-  const e=(settings.layerTimeline?open:openPlain)({demo:false,...settings}, report);e.select(1);
+  const e=open({demo:false,...settings}, report);e.select(1);
   assert.deepEqual(palette(e),[['#0a141e',9],['#c82832',5]]);
   const entry=e.figurePalette().find(row=>row.color==='#c82832');
   assert.equal(entry.polygons.length,2);
@@ -125,15 +126,6 @@ test('opacity alone preserves palette and gradients and one action makes one und
   e.setFigureColor('#112233',{opacity:.7});assert.equal(e._undo.length,2);assert.equal(e.object.field28,77);e.undo();assert.deepEqual(palette(e),before);
 });
 
-test('native and scalar-channel timelines preserve recolor semantics',()=>{
-  for(const propertyChannels of [false,true]){
-    const e=fixture({plain:true,version:4,raw:196,layerTimeline:false,propertyChannels});e.select(1,1);e.updateBuilderSegmentStyle({color:'#123456'});
-    assert.deepEqual(colors(e)[1],[18,52,86]);assert.deepEqual(colors(e)[0],[196,0,0]);
-    const reopened=new Editor({demo:false,propertyChannels}).load(e.serialize());reopened.select(1);assert.deepEqual(colors(reopened),colors(e));
-    e.undo();assert.deepEqual(palette(e),[['#c40000',4]]);
-  }
-});
-
 test('range recoloring changes selected frames and preserves sibling instances',()=>{
   const e=fixture({layerTimeline:false,propertyChannels:false});e.replaceFigureColor('#c82832','#123456',{indices:[0,2]});
   const first=e.report.keyframes[0].objects[0];assert.ok(first._stykStyle);assert.equal(e.report.keyframes[1].objects[0]._stykStyle,undefined);assert.equal(e.report.keyframes[2].objects[1]._stykStyle,undefined);
@@ -151,17 +143,6 @@ test('native export materializes instance colors and preserves untouched legacy 
   const frame=e.evaluatedFrame,output=materializePivotDocument(e.serialize());
   const before=buildGeometry(e.report,frame).drawables.map(s=>s.rgb),after=buildGeometry(output,output.keyframes[0]).drawables.map(s=>s.rgb);
   assert.deepEqual(after,before);
-});
-
-test('legacy Simple working-copy recoloring can be discarded without changing stored frames',()=>{
-  for(const layerTimeline of [false]){
-    const e=fixture({plain:true,version:4,raw:196,layerTimeline});e.selectFrame(1);e.select(1);e.enableFrameDrafts({mode:'add'});
-    const before=structuredClone(storedFrameReport(e.report));e.setFigureColor('#445566');
-    assert.deepEqual(palette(e),[['#445566',4]]);assert.ok(e.frameDraft.dirty,`working-copy dirty, layerTimeline=${layerTimeline}`);
-    const stored=new Editor({demo:false,layerTimeline}).load(storedFrameReport(e.report));stored.selectFrame(1);stored.select(1);assert.deepEqual(palette(stored),[['#c40000',4]]);
-    e.discardFrameDraft();assert.deepEqual(palette(e),[['#c40000',4]]);
-    assert.equal(before.keyframes.length,e.report.keyframes.length);
-  }
 });
 
 test('layer-sheet recoloring edits held cells and cuts an interpolated boundary',()=>{

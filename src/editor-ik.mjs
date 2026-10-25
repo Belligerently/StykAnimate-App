@@ -4,7 +4,6 @@ import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {quatMultiply,spatialQuaternion} from './rig-spatial.mjs';
 import {captureSpatialIK} from './ik-spatial.mjs';
 import {ikLayout, ikChain, ikFollowers, ikFollowerIndices, ikBendReference, solveObjectIK, MAX_IK_CHAIN} from './ik.mjs';
-import {rigIKAllowed} from './rig-constraints.mjs';
 import {ikComponents, joinedIKGraph} from './ik-joined.mjs';
 import {layerLocked} from './layers.mjs';
 
@@ -30,22 +29,6 @@ function captureFor(editor, geometry, handle, controller, graph) {
   return {target: {...unprojectJoint(geometry.joints.get(handle)), rotation}, followers, joinedFollowers,...(Object.keys(spatialFollowers).length?{spatialFollowers}:{}),...(Object.keys(joinedSpatialFollowers).length?{joinedSpatialFollowers}:{}),
     bendDirection: controller.bendDirection,
     bendReference: ikBendReference([shapes[0].start, ...shapes.map(s => s.end)], shapes.map(s => Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y)), controller.bendReference)};
-}
-
-function bakeGraph(editor, graph, scene, lengthEntries = []) {
-  editor._expandIKDrag(graph.slots);
-  for (const slot of graph.slots) {
-    const object = editor.frame.objects[slot], geometry = scene.objects.get(slot);
-    editor._bakeIKFollowers(object, geometry);
-    if (geometry.solvedAngles) object.angles = geometry.solvedAngles.slice();
-    const entries = lengthEntries.filter(e => e.slot === slot);
-    if (geometry.solvedLengths && entries.length) {
-      const lengths = object.len_flag ? object.lengths.slice() : geometry.fig.segments.map(s => s.length);
-      for (const e of entries) lengths[e.index] = geometry.solvedLengths[e.index] ?? lengths[e.index];
-      if (entries.some(e => lengths[e.index] !== (object.len_flag ? object.lengths[e.index] : geometry.fig.segments[e.index].length))) {object.len_flag = 1; object.lengths = lengths;}
-    }
-    delete object.runtime_segments;
-  }
 }
 
 function poseGraph(editor, graph, handle, controller, geometry, target) {
@@ -178,62 +161,6 @@ export const editorIKMethods = {
       }
     }
   },
-  setNodeIK(patch) {
-    if(Object.keys(patch).length===1&&patch.swivel!==undefined&&this.getSpatialIKPole())return this.setSpatialIKTarget({swivel:patch.swivel});
-    if(patch.enabled&&this.figure&&!rigIKAllowed(this.figure,this.selectedJoint))throw messageError(new Error(''), "errors.editorIk.applyIkToTheDrivingBonesConnectorWeighted", {});
-    const {handle} = controllerAt(this);
-    if (!handle) return false;
-    const settings = this.getIKSettings(), next = {...settings, ...patch}; delete next.maxLength;
-    if (Object.keys(patch).some(k => !['enabled', 'pinned', 'allowStretch', 'chainLength', 'bendDirection', 'swivel'].includes(k))) throw messageError(new Error(''), "errors.editorIk.unknownIkSetting", {});
-    if (!Number.isInteger(next.chainLength) || next.chainLength < 1 || next.chainLength > settings.maxLength)
-      throw messageError(new Error(''), "errors.editorIk.chainLengthMustBeBetween1And", {maxLength: settings.maxLength});
-    if (typeof next.enabled !== 'boolean' || typeof next.pinned !== 'boolean' || typeof next.allowStretch !== 'boolean' || ![-1, 0, 1].includes(next.bendDirection))
-      throw messageError(new Error(''), "errors.editorIk.invalidIkSetting", {});
-    // Enabling creates a pinned controller at the displayed endpoint, without a jump.
-    if (patch.enabled === true && !settings.enabled && patch.pinned === undefined) next.pinned = true;
-    const graph = context(this), virtualHandle = graph?.maps.get(this.selectedSlot).get(handle);
-    if (next.enabled) {
-      const chain = new Set(graph ? graph.chain(this.selectedSlot, handle, next.chainLength) : ikChain(this.figure, handle, next.chainLength));
-      for (const [id, other] of Object.entries(graph?.object._stykIK ?? this.object._stykIK ?? {})) if (Number(id) !== (virtualHandle ?? handle) && other.enabled &&
-          ikChain(graph?.figure ?? this.figure, id, other.chainLength, graph?.layout).some(i => chain.has(i)))
-        throw messageError(new Error(''), "errors.editorIk.ikChainsCannotShareBonesShortenTheChain", {});
-    }
-    if(patch.swivel!==undefined){if(!Number.isFinite(patch.swivel)||Math.abs(patch.swivel)>1e6||!settings.spatialTarget)throw messageError(new Error(''), "errors.editorIk.chooseAFiniteSpatialBendDirection", {});next.spatialTarget={...settings.spatialTarget,swivel:patch.swivel};delete next.swivel;}
-    const scene = this.geometry, geometry = scene.objects.get(this.selectedSlot);
-    const solved = geometry.ik?.get(handle);
-    if (solved?.followers) Object.assign(next, {followers: solved.followers}, solved.joinedFollowers ? {joinedFollowers: solved.joinedFollowers} : {});
-    return this._objectEdit('Configure IK', object => {
-      if (graph) bakeGraph(this, graph, scene, !next.enabled || !next.pinned ? graph.chain(this.selectedSlot, handle, settings.chainLength).map(i => graph.entries[i]) : []);
-      else if (geometry.solvedAngles) {this._bakeIKFollowers(object, geometry); object.angles = geometry.solvedAngles.slice();}
-      if (!graph && geometry.solvedLengths && (!next.enabled || !next.pinned)) {
-        // Releasing one controller must not change another limb's rest lengths.
-        const chain = ikChain(this.figure, handle, settings.chainLength);
-        const rest = i => object.len_flag ? object.lengths[i] : this.figure.segments[i].length;
-        if (chain.some(i => geometry.solvedLengths[i] !== rest(i))) {
-          const lengths = this.figure.segments.map((_, i) => rest(i));
-          for (const i of chain) lengths[i] = geometry.solvedLengths[i];
-          object.len_flag = 1; object.lengths = lengths;
-        }
-      }
-      if (!settings.enabled || patch.pinned === true && !settings.pinned || patch.chainLength !== undefined)
-        Object.assign(next, captureFor(this, geometry, handle, next, graph));
-      if (settings.enabled && patch.chainLength !== undefined) {
-        next.target = settings.target; next.bendDirection = settings.bendDirection;
-      }
-      if (patch.bendDirection !== undefined) {
-        next.bendDirection = patch.bendDirection;
-        if (next.bendDirection === 0) next.bendReference = captureFor(this, geometry, handle, next, graph).bendReference;
-      }
-      // A spatial limb keeps a disabled record so its IK switch stays in the
-      // rig panel; solvers ignore controllers that are not enabled.
-      if (!next.enabled && next.spatialTarget) object._stykIK = {...object._stykIK, [handle]: {...next, pinned: false}};
-      else if (!next.enabled) {
-        object._stykIK = {...object._stykIK}; delete object._stykIK[handle];
-        if (!Object.keys(object._stykIK).length) delete object._stykIK;
-      } else object._stykIK = {...object._stykIK, [handle]: next};
-      delete object.runtime_segments;
-    });
-  },
   /** `flat` solves a spatial two-bone limb as on a flat figure (see
    * _flatSpatialIKPole); otherwise its stored bend direction is kept. */
   poseIKTarget(x, y, {flat = false} = {}) {
@@ -290,28 +217,5 @@ export const editorIKMethods = {
     const bendReference = ikBendReference(points, points.slice(1).map((p, i) => Math.hypot(p.x - points[i].x, p.y - points[i].y)), c.bendReference);
     object._stykIK = {...object._stykIK, [handle]: {...c, target: {...c.target, x: tip.x, y: tip.y}, bendReference,
       bendDirection: c.bendDirection && bendReference.side}};
-  },
-  rotateIKTarget(radians) {
-    if (!Number.isFinite(radians)) throw messageError(new Error(''), "errors.editorIk.ikRotationMustBeFinite", {});
-    const {handle, controller} = controllerAt(this);
-    if (!controller?.enabled) return false;
-    const geometry = this.geometry.objects.get(this.selectedSlot), graph = context(this);
-    return this._objectEdit('Rotate IK target', object => {
-      const current = object._stykIK[handle];
-      const next = {...current, target: {...current.target, rotation: radians}};
-      if (!current.pinned) {
-        // A free controller bakes explicit rotation into the displayed pose;
-        // capture current articulation before rotating so re-pinning is smooth.
-        Object.assign(next, captureFor(this, geometry, handle, current, graph), {target: {...current.target, rotation: radians}});
-        const figure = graph?.figure ?? this.figure, layout = graph?.layout ?? ikLayout(figure);
-        const id = graph?.maps.get(this.selectedSlot).get(handle) ?? handle;
-        const indices = ikFollowerIndices(figure, id, layout), visited = new Set(indices);
-        for (let q = 0; q < indices.length; q++) for (const child of layout.children.get(figure.segments[indices[q]].segment_id) ?? [])
-          if (!visited.has(child)) {visited.add(child); indices.push(child);}
-        this._applyJointRotation(indices.map(i => graph ? [graph.entries[i].slot, graph.entries[i].index] : [this.selectedSlot, i]), radians - current.target.rotation);
-      }
-      object._stykIK = {...object._stykIK, [handle]: next};
-      delete object.runtime_segments;
-    }, {posed: true});
   },
 };

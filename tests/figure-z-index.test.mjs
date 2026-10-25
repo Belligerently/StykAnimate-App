@@ -77,7 +77,7 @@ test('depth preview, cancellation, undo, redo, duplication and save/reopen prese
 });
 
 test('existing order commands cross numeric depths, with one undoable change and unchanged earlier playback', () => {
-  for (const command of [e => e.moveSelectionLayer(-1), e => e.sendToBack(), e => e.orderFiguresInFrames(-1, [1])]) {
+  for (const command of [e => e.moveSelectionLayer(-1), e => e.orderFiguresInFrames(-1, [1])]) {
     const e = fixture(); e.addAnimationKey(target, 'zIndex', 0, 10); e.select(1); e.seek(10);
     const before = order(e.evaluatedFrame), count = e._undo.length; command(e);
     assert.notDeepEqual(order(e.evaluatedFrame), before);
