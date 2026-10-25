@@ -45,7 +45,6 @@ async function agree(document, steps, {digits} = {}) {
   alone.kept.forEach((entry, at) => assert.deepEqual(owned.kept[at], entry, `step ${at} (${entry.label ?? 'start'})`));
   assert.deepEqual(owned.refused, [], 'the session refused a call');
   assert.ok(alone.depth > 0, 'the steps changed the document');
-  if (process.env.ORIGINS_DEBUG) console.log(alone.kept.filter(entry => entry.error).map(entry => entry.label + ': ' + entry.error), 'depth', alone.depth, 'steps', steps.length);
   return alone;
 }
 
