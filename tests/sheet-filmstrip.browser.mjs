@@ -9,9 +9,9 @@ const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('
 try {
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   check('Hidden mount defers selection reveal and thumbnail work',await page.evaluate(async()=>{
-    const {Editor}=await import('/src/editor.mjs'),{createDemo}=await import('/src/demo.mjs'),{SheetFilmstrip}=await import('/src/sheet-filmstrip.mjs');
+    const {pageEditor}=await import('/tests/support/page-editor.mjs'),{createDemo}=await import('/src/demo.mjs'),{SheetFilmstrip}=await import('/src/sheet-filmstrip.mjs');
     const report=createDemo();report.keyframes=Array.from({length:240},(_,i)=>structuredClone(report.keyframes[i%24]));
-    const editor=new Editor({demo:false,layerTimeline:true}).load(report);editor.selectFrame(200);
+    const editor=pageEditor().load(report);editor.selectFrame(200);
     const host=document.createElement('div');host.style.cssText='position:fixed;left:20px;top:100px;width:640px;height:260px;z-index:10000';
     host.style.setProperty('display','none','important');document.body.append(host);
     window.filmstripTest={editor,host,painted:0,release:null,hold:false};const state=filmstripTest;

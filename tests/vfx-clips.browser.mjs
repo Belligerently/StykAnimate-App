@@ -63,12 +63,12 @@ try{
  await page.waitForFunction(()=>document.querySelectorAll('.vfx-clip').length===1);await page.evaluate(()=>styk.editor.seek(30));await page.waitForFunction(()=>document.querySelectorAll('.vfx-clip').length===2);
  await page.evaluate(id=>{styk.editor.deleteVfxClip(id);styk.editor.seek(19);},inactive);
  const roundtrip=await page.evaluate(async()=>{
- const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{Editor}=await import('/src/editor.mjs');
- const saver=new DocumentExporter(),importer=new ImportClient();try{const original=styk.editor.report._styk.vfxClips,blob=await saver.export(styk.editor.report,{format:'styk',name:'Effect clips'}),imported=await importer.importFile(new File([blob],'clips.styk')),reopened=new Editor({demo:false}).load(imported.document);return JSON.stringify(original)===JSON.stringify(reopened.report._styk.vfxClips);}finally{saver.dispose();importer.dispose();}
+ const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{ pageEditor }=await import('/tests/support/page-editor.mjs');
+ const saver=new DocumentExporter(),importer=new ImportClient();try{const original=styk.editor.report._styk.vfxClips,blob=await saver.export(styk.editor.report,{format:'styk',name:'Effect clips'}),imported=await importer.importFile(new File([blob],'clips.styk')),reopened=pageEditor({demo:false}).load(imported.document);return JSON.stringify(original)===JSON.stringify(reopened.report._styk.vfxClips);}finally{saver.dispose();importer.dispose();}
  });assert.equal(roundtrip,true);
  await page.mouse.move(500,100);await page.waitForTimeout(500);await fs.mkdir('artifacts/vfx',{recursive:true});await page.screenshot({path:'artifacts/vfx/clips-inspector.png'});
  await page.getByRole('button',{name:'Add effect',exact:true}).click();await page.locator('.vfx-catalog [data-catalog-mode="presets"]').click();await page.locator('.vfx-catalog [data-choice="Power up"]').click();
- await page.getByLabel('Strength',{exact:true}).fill('65');await page.getByLabel('Strength',{exact:true}).press('Tab');
+ await page.getByRole('spinbutton',{name:'Strength',exact:true}).fill('65');await page.getByRole('spinbutton',{name:'Strength',exact:true}).press('Tab');
  const group=await page.evaluate(()=>styk.editor.getVfxClips().at(-1));assert.equal(group.effects.length,2);assert.equal(group.strength,.65);
  await page.getByRole('button',{name:'Add to group',exact:true}).click();await page.locator('.vfx-catalog [data-choice="blur"]').click();assert.equal(await page.evaluate(()=>styk.editor.getVfxClips().at(-1).effects.length),3);
  await page.locator('.vfx-detail .vfx-clip-effect>summary').last().click();await page.locator('.vfx-detail .vfx-clip-effect').last().getByRole('button',{name:'Effect actions',exact:true}).click();await page.getByRole('menuitem',{name:'Remove',exact:true}).click();assert.equal(await page.evaluate(()=>styk.editor.getVfxClips().at(-1).effects.length),2);

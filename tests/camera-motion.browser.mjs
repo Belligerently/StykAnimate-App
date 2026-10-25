@@ -43,11 +43,11 @@ try{
   await panel.locator('[data-parallax-field="linked"]').uncheck();await panel.locator('[data-parallax-field="y"]').fill('75');await panel.locator('[data-parallax-field="y"]').press('Enter');
   check('Unlinked parallax axes edit independently',await page.evaluate(()=>styk.editor.getLayer('layer-1').parallax.x===.25&&styk.editor.getLayer('layer-1').parallax.y===.75));
   const persistence=await page.evaluate(async()=>{
-    const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{Editor}=await import('/src/editor.mjs'),{cameraMatrix}=await import('/src/renderer-geometry.mjs'),{parallaxResolver}=await import('/src/layer-parallax.mjs');
+    const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{ pageEditor }=await import('/tests/support/page-editor.mjs'),{cameraMatrix}=await import('/src/renderer-geometry.mjs'),{parallaxResolver}=await import('/src/layer-parallax.mjs');
     const e=styk.editor,exporter=new DocumentExporter(),importer=new ImportClient();
     const samples=e=>Array.from({length:e.totalTicks},(_,tick)=>{e.seek(tick);const f=e.evaluatedFrame,m=cameraMatrix({report:e.report,frame:f}),p=parallaxResolver(e.report,f);return f.objects.map(o=>{const d=p(o.unique_id),x=o.root_x+d.x,y=o.root_y+d.y;return [m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]];});});
-    try{const expected=samples(e),styk=await exporter.export(e.report,{format:'styk',name:'motion-test'}),decoded=await importer.importFile(new File([styk],'motion-test.styk')),loaded=new Editor({demo:false,layerTimeline:true}).load(decoded.document),actual=samples(loaded);
-      const piv=await exporter.export(e.report,{format:'piv',name:'motion-test'}),native=await importer.importFile(new File([piv],'motion-test.piv')),pivot=samples(new Editor({demo:false,layerTimeline:true}).load(native.document));
+    try{const expected=samples(e),styk=await exporter.export(e.report,{format:'styk',name:'motion-test'}),decoded=await importer.importFile(new File([styk],'motion-test.styk')),loaded=pageEditor({demo:false,layerTimeline:true}).load(decoded.document),actual=samples(loaded);
+      const piv=await exporter.export(e.report,{format:'piv',name:'motion-test',revision:e.revision}),native=await importer.importFile(new File([piv],'motion-test.piv')),pivot=samples(pageEditor({demo:false,layerTimeline:true}).load(native.document));
       let max=0;expected.forEach((frame,t)=>frame.forEach((p,i)=>p.forEach((n,k)=>max=Math.max(max,Math.abs(n-pivot[t][i][k])))));
       return {exact:JSON.stringify(expected)===JSON.stringify(actual),pivotMax:max,stykBytes:styk.size,pivBytes:piv.size,clips:loaded.getCameraMotions().length};
     }finally{exporter.dispose();importer.dispose();}

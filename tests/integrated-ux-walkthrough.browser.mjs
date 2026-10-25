@@ -507,8 +507,8 @@ try {
   await step("simple-initial-reveal", async () => {
     const hidden = await page.evaluate(async () => {
       const { SheetFilmstrip } = await import("/src/sheet-filmstrip.mjs");
-      const { Editor } = await import("/src/editor.mjs");
-      const editor = new Editor({ demo: true, layerTimeline:true });
+      const { pageEditor } = await import("/tests/support/page-editor.mjs");
+      const editor = pageEditor({ demo: true, layerTimeline:true });
       editor.selectFrame(23);
       const host = document.createElement("div");
       host.id = "simple-hidden-mount";

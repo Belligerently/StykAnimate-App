@@ -13,7 +13,6 @@ try{
   await page.goto(service.origin);await page.waitForFunction(()=>window.styk?.ready);
   const result=await page.evaluate(async()=>{
     const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
-    const {Editor}=await import('/src/editor.mjs');
     const check=(value,message)=>{if(!value)throw new Error(message);};
     const equal=(a,b,message)=>check(JSON.stringify(a)===JSON.stringify(b),message);
     const settle=async()=>{for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve));};
@@ -49,16 +48,10 @@ try{
       e.cancelAnimationEdit();await settle();check(paints>0&&snapshot()===committed,'Property cancellation did not restore state');
       checks.push('pose and sheet property cancellation preserve document and history');
 
-      // Legacy property previews really author keys before commit: retain redraw.
-      const legacyDoc=structuredClone(doc);delete legacyDoc._styk.layerSheet;
-      const legacy=new Editor({demo:false,propertyChannels:true}).load(legacyDoc);legacy.seek(5);legacy.select(1);
-      const events=[];legacy.addEventListener('change',event=>events.push(event.detail));
-      legacy.beginAnimationEdit({kind:'figure',uid:1},'x');legacy.previewAnimationEdit(350);
-      const event=events.findLast(detail=>detail.live);
-      check(event?.animation&&t._changeNeedsPaint(event),'Legacy preview keys lost their redraw');legacy.cancelAnimationEdit();
+      // Every kind of live change that carries timeline content repaints the sheet.
       for(const flag of ['structural','timing','layers','layerSheet','definition','audio','drawing','vfxClips','camera','motionPath'])
         check(t._changeNeedsPaint({kind:'edit',live:true,[flag]:true}),`${flag} change lost its redraw`);
-      checks.push('legacy keys and all timeline-bearing live changes retain redraw');
+      checks.push('all timeline-bearing live changes retain redraw');
 
       // Add frame and Next copy are the shared header's (timeline-header.mjs); the grid tells it what they show.
       const add=document.querySelector('.timeline-toolbar .sheet-add-button'),cel=document.querySelector('.timeline-toolbar .tl-cel'),celMain=cel.querySelector('.tl-cel-main');

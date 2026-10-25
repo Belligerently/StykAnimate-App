@@ -10,22 +10,21 @@ const settle = () => page.evaluate(() => new Promise(resolve => requestAnimation
 const check = (name, value) => {assert.ok(value, name); checks.push(name); console.log('PASS', name);};
 async function setup(paths = false) {
   await page.evaluate(async paths => {
-    const {Editor} = await import('/src/editor.mjs');
+    const { pageEditor } = await import('/tests/support/page-editor.mjs');
     const {emptyDocument,createObject,createFrame} = await import('/src/demo.mjs');
     const {worldToScreen} = await import('/src/renderer-geometry.mjs');
-    const {buildGeometry} = await import('/src/pivot/geometry.mjs');
     const report=emptyDocument(), f=report.figure_types[0], base=f.segments[0];
     f.segments=[{...base,segment_id:11,parent_id:0,length:90,angle_rad:.8,is_static:false,aux_code:0},
       {...base,segment_id:22,parent_id:11,length:90,angle_rad:2,is_static:false,aux_code:0},
       {...base,segment_id:33,parent_id:22,length:35,angle_rad:0,is_static:false,aux_code:0}];f.segment_count=3;
     report.keyframes=[createFrame([createObject(f,1,240,150)],8)];
-    const e=new Editor({demo:false}).load(report);e.select(1,1);e.setNodeIK({enabled:true});e.poseJoint(350,220);
-    const r=e.serialize(), pose=structuredClone(r.keyframes[0].objects[0]);
+    const e=pageEditor({demo:false}).load(structuredClone(report));e.select(1,1);e.setNodeIK({enabled:true});e.poseJoint(350,220);
+    const r=structuredClone(report), pose=structuredClone(e.evaluatedFrame.objects[0]);
     r.keyframes=[0,1,2].map(i=>{const o=structuredClone(pose);o.root_x+=i*140;o._stykIK[22].target.x+=i*140;return createFrame([o],8);});
     styk.editor.load(r);styk.editor.seek(paths?16:0);styk.editor.select(1);styk.state.tool='select';
     styk.settingsUI.commit({motionPaths:paths,motionPathRange:0,motionPathJoints:'selected',showHandles:!paths});styk.fit();
     globalThis.__ikScreen=p=>{const s=worldToScreen(p,{report:styk.editor.report,frame:styk.editor.evaluatedFrame,view:styk.state.view}),r=document.querySelector('#viewport').getBoundingClientRect();return{x:r.left+s.x,y:r.top+s.y};};
-    globalThis.__ikPose=()=>{const e=styk.editor,g=e._drag?.motionPath?buildGeometry(e.report,e._drag.grab?.working??e._drag.working).objects.get(0):e.geometry.objects.get(0);return {joints:Object.fromEntries(g.joints),pin:g.obj._stykIK[22],history:e._undo.length,drag:styk.state.drag?.kind,tick:e.tick};};
+    globalThis.__ikPose=()=>{const e=styk.editor,g=e.geometry.objects.get(0);return {joints:Object.fromEntries(g.joints),pin:g.obj._stykIK[22],history:e._undo.length,drag:styk.state.drag?.kind,tick:e.tick};};
   }, paths);
   await settle();
   if (paths) await page.waitForTimeout(250);

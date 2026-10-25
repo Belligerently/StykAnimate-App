@@ -23,7 +23,7 @@ try{
     await page.evaluate(()=>styk.editor.undo());await settle();assert.equal(await snapshot(),before);await gallery();
   }
   await page.locator('#dialog [data-action="close-dialog"]').first().click();
-  await page.evaluate(async()=>{const {Editor}=await import('/src/editor.mjs');const {buildRotatingCube}=await import('/tests/helpers/rotating-cube.mjs');const e=new Editor({demo:false});buildRotatingCube(e);styk.editor.load(e.serialize());styk.editor.select(styk.editor.frame.objects[0].unique_id,0);styk.builder.enter();styk.editor.selectPolygon(styk.editor.selectedUid,0);});await settle();
+  await page.evaluate(async()=>{const { pageEditor }=await import('/tests/support/page-editor.mjs');const {buildRotatingCube}=await import('/tests/helpers/rotating-cube.mjs');const e=pageEditor({demo:false});buildRotatingCube(e);styk.editor.load(e.serialize());styk.editor.select(styk.editor.evaluatedFrame.objects[0].unique_id,0);styk.builder.enter();styk.editor.selectPolygon(styk.editor.selectedUid,0);});await settle();
   const initial=await snapshot(),side=page.locator('[data-polygon-side="0"]');assert.equal(await side.inputValue(),'front');
   await page.locator('[data-polygon-flip="0"]').click();await settle();assert.equal(await page.locator('[data-polygon-flip="0"]').getAttribute('aria-pressed'),'true');
   await page.evaluate(()=>styk.editor.undo());await settle();assert.equal(await snapshot(),initial);

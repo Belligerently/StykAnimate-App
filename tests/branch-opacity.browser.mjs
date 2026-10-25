@@ -14,9 +14,9 @@ try{
   const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),e=window.styk.editor;e.load(emptyDocument());e.addFigure();e.select(e.selectedUid,2);const f=e.figure;
   f.segments[2].secondary={rgb:[255,20,30],a:80};f.segments[3].secondary={rgb:[20,255,30],a:120};
   f.polyfills=[{polyfill_id:1,segment_ids:[1,3,4],color_rgb:[10,20,30],alpha_raw:60,color_alpha:1-60/255,z_order:.5}];
-  e.frame.objects.push(createObject(f,900,120,300,{object_slot:1}));e.frame.object_draw_order.push(1);e.frame.object_draw_order_unique_ids.push(900);e.frame.duration_raw=12;e.report.keyframes.push(createFrame(e.frame.objects.map(o=>structuredClone(o))));e._invalidate({timing:true});
+  e.evaluatedFrame.objects.push(createObject(f,900,120,300,{object_slot:1}));e.frame.object_draw_order.push(1);e.frame.object_draw_order_unique_ids.push(900);e.frame.duration_raw=12;e.report.keyframes.push(createFrame(e.evaluatedFrame.objects.map(o=>structuredClone(o))));e._invalidate({timing:true});
   e.addAnimationKeys([{target:{kind:'segment',uid:e.selectedUid,handleId:3},property:'opacity',tick:0,value:.2,exactTarget:true},{target:{kind:'segment',uid:e.selectedUid,handleId:3,figureTypeId:f.figure_type_id},property:'opacity',tick:0,value:.7,exactTarget:true}]);
-  e.frame.objects[0]._stykStyle={segments:{3:{gradientOpacity:.3}}};e._invalidate();e.seek(6);e._undo=[];e._redo=[];e.markSaved();
+  e.evaluatedFrame.objects[0]._stykStyle={segments:{3:{gradientOpacity:.3}}};e._invalidate();e.seek(6);e._undo=[];e._redo=[];e.markSaved();
   window.__branch={uid:e.selectedUid,figure:JSON.stringify(f),sources:JSON.stringify(e.report.keyframes),original:e.report,global:e.animationChannels.find(c=>c.property==='opacity'&&c.target.figureTypeId===undefined).id};
  });
  const field=k=>page.locator(`input[data-property="${k}"]`),set=async(k,v)=>{await field(k).fill(String(v));await field(k).press('Enter');};

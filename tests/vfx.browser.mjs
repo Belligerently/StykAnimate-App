@@ -8,13 +8,13 @@ try{
  await page.goto(process.env.STYK_TEST_URL||'http://127.0.0.1:47832');
  await page.waitForFunction(()=>window.styk?.ready,{timeout:60000});
  const saved=await page.evaluate(async()=>{
-  const {Editor}=await import('/src/editor.mjs'),{emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{initializeLayerSheet}=await import('/src/editor-layer-sheet.mjs');
-  const doc=emptyDocument();doc.keyframes=[createFrame([createObject(doc.figure_types[0],1,200,200)],20)];const e=new Editor({demo:false}).load(doc);initializeLayerSheet(e.report);e._invalidate({timing:true});
+  const { pageEditor }=await import('/tests/support/page-editor.mjs'),{emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs');
+  const doc=emptyDocument();doc.keyframes=[createFrame([createObject(doc.figure_types[0],1,200,200)],20)];const e=styk.editor.load(doc);
   e.select(1);const figure={kind:'figure',uid:1},node={kind:'segment',uid:1,figureTypeId:e.object.figure_type_id,handleId:e.figure.segments[0].segment_id},scene={kind:'scene'};
   e.addVfx(figure,'glow');e.addVfx(node,'outline');e.addVfx(scene,'noise');e.sheetInsertKey([e.layerForUid(1)],10);e.seek(10);const id=e.vfxEffects(figure)[0].id;e.setVfxParameter(figure,id,'radius',30);
   e.setVfxParameter(figure,id,'color',{type:'radial',angle:30,stops:[{offset:0,color:[255,80,40],opacity:.4},{offset:1,color:[40,100,255],opacity:1}]});
   const exporter=new DocumentExporter(),importer=new ImportClient();const sample=editor=>[0,5,10,19].map(t=>{editor.seek(t);return [editor.vfxEffects(figure),editor.vfxEffects(node),editor.vfxEffects(scene)];});
-  try{const expected=JSON.stringify(sample(e)),blob=await exporter.export(e.report,{format:'styk',name:'VFX roundtrip'}),imported=await importer.importFile(new File([blob],'vfx.styk')),reopened=new Editor({demo:false}).load(imported.document);let blocked=false;try{await exporter.export(e.report,{format:'piv'});}catch(error){blocked=/cannot preserve VFX/.test(error.message);}
+  try{const expected=JSON.stringify(sample(e)),blob=await exporter.export(e.report,{format:'styk',name:'VFX roundtrip',revision:e.revision}),imported=await importer.importFile(new File([blob],'vfx.styk')),reopened=pageEditor({demo:false}).load(imported.document);let blocked=false;try{await exporter.export(e.report,{format:'piv',revision:e.revision});}catch(error){blocked=/cannot preserve VFX/.test(error.message);}
    return {bytes:blob.size,identical:expected===JSON.stringify(sample(reopened)),blocked};
   }finally{exporter.dispose();importer.dispose();}
  });

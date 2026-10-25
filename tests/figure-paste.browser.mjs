@@ -54,12 +54,12 @@ try {
   assert.ok(await page.evaluate(()=>styk.editor.selectedObjects.every(o=>o.figure_type_id!==1)));
   console.log('PASS right-click instance and unique copy actions');
   const saved=await page.evaluate(async()=>{
-    const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{Editor}=await import('/src/editor.mjs');
+    const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{ pageEditor }=await import('/tests/support/page-editor.mjs');
     const exporter=new DocumentExporter(),importer=new ImportClient(),e=styk.editor;
     try{
       const blob=await exporter.export(e.report,{format:'styk',name:'figure-paste'});
       const imported=await importer.importFile(new File([blob],'figure-paste.styk'));
-      const reopened=new Editor({demo:false,layerTimeline:true}).load(imported.document);reopened.seek(e.tick);
+      const reopened=pageEditor({demo:false,layerTimeline:true}).load(imported.document);reopened.seek(e.tick);
       const clean=editor=>editor.evaluatedFrame.objects.map(o=>({uid:o.unique_id,figure:o.figure_type_id,join:o.join,angles:o.angles,x:o.root_x,y:o.root_y}));
       return JSON.stringify(clean(reopened))===JSON.stringify(clean(e));
     }finally{exporter.dispose();importer.dispose();}
