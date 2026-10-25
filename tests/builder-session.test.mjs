@@ -6,7 +6,7 @@ import {BuilderSession} from '../src/builder-session.mjs';
 import {emptyDocument, createObject, createFrame, defaultFigure} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {isDrawingLayer} from '../src/drawing-model.mjs';
-import {figureDocument} from './support/engine-export.mjs';
+import {figureDocument, readsFiguresFromEngine} from './support/engine-export.mjs';
 
 /** One scene with two figures: the bound figure has two instances, the other
  * figure is an unjoined neighbor used to prove builder edits stay scoped. */
@@ -18,7 +18,7 @@ function fixture({plain = false} = {}) {
     createObject(walker, 2, 640, 160),
     createObject(report.figure_types[1], 3, 480, 320),
   ], 4));
-  return (plain ? plainEditorFor : ownedEditorFor)({demo: false}, report);
+  return plain ? readsFiguresFromEngine(plainEditorFor({demo: false}, report)) : ownedEditorFor({demo: false}, report);
 }
 /** An editor the engine owns, on a document with a drawing layer (the active one) the session made. */
 const editorWithDrawing = options => { const editor = ownedEditorFor(options); editor.createDrawingLayer(); return editor; };
@@ -126,7 +126,9 @@ test('import-new restores the original and adds the edited figure as a new type'
   const object = session.resolve('import-new');
   assert.deepEqual(figure(editor, originalId), original);
   const added = editor.report.figure_types.find(f => f.figure_type_id !== originalId && f.name === 'Edited');
-  assert.deepEqual(added.segments, edited.segments);
+  // The engine's figure document carries the display aliases an editor the engine owns has already.
+  const withoutAliases = segments => segments.map(({flag_bits, is_static, ...segment}) => segment);
+  assert.deepEqual(withoutAliases(added.segments), withoutAliases(edited.segments));
   assert.equal(object.figure_type_id, added.figure_type_id);
   assert.ok(editor.selectionFrame.objects.some(o => o.unique_id === object.unique_id));
   // One undoable import command on top of the restored baseline.
@@ -146,7 +148,7 @@ for (const mode of ['native', 'simple', 'advanced']) test(`import-new preserves 
     _stykStyle: {segments: {'1': {color: 0x465a28, opacity: .8, thickness: 13}}},
   });
   report.keyframes = [createFrame([pose, createObject(definition, 2, 500, 160)], 4)];
-  const editor = (layerTimeline ? ownedEditorFor : plainEditorFor)({demo: false, propertyChannels: layerTimeline, layerTimeline}, report);
+  const editor = layerTimeline ? ownedEditorFor({demo: false, propertyChannels: layerTimeline, layerTimeline}, report) : readsFiguresFromEngine(plainEditorFor({demo: false, propertyChannels: layerTimeline, layerTimeline}, report));
   if (mode === 'simple') editor.enableFrameDrafts();
   editor.select(1);
   if (layerTimeline) editor.updateObject({root_x: 200});

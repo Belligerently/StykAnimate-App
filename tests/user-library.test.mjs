@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newPlainEditor} from './support/plain-editor.mjs';
+import {readsFiguresFromEngine} from './support/engine-export.mjs';
+
+/** A source editor of the tests of the editor's own bodies: the library saves what the engine reads of its document. */
+const sourceEditor = options => readsFiguresFromEngine(newPlainEditor(options));
 import {librarySnapshot} from '../src/library-files.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {frameOrder} from '../src/pivot/structure.mjs';
 
 for (const layerTimeline of [false,true]) test(`figure sets preserve pose, order, distinct IDs and undo in ${layerTimeline?'layer':'native'} timeline`,()=>{
-  const source=newPlainEditor(); source.select(1); source.select(3,{add:true});
+  const source=sourceEditor(); source.select(1); source.select(3,{add:true});
   const saved=librarySnapshot(source); assert.equal(saved.keyframes[0].objects.length,2); assert.equal(saved._styk.libraryKind,'set');
   const target=newPlainEditor({propertyChannels:true,layerTimeline}), before=target.selectedObjects.length, count=target.selectionFrame.objects.length, history=target._undo.length;
   target.importFigure(saved); assert.equal(target.selectedObjects.length,2); assert.equal(target.selectionFrame.objects.length,count+2); assert.equal(target._undo.length,history+1);
@@ -16,18 +20,18 @@ for (const layerTimeline of [false,true]) test(`figure sets preserve pose, order
   assert.equal(frameOrder(target.selectionFrame).length,count+2); target.undo(); assert.equal(target.selectionFrame.objects.length,count); target.redo(); assert.equal(target.selectedObjects.length,2);
 });
 test('single selection saves the displayed pose without mutating scene or clipboard',()=>{
-  const editor=newPlainEditor({propertyChannels:true,layerTimeline:true}); editor.select(1); editor.seek(5); editor.moveSelection(45,20);
+  const editor=sourceEditor({propertyChannels:true,layerTimeline:true}); editor.select(1); editor.seek(5); editor.moveSelection(45,20);
   const before=JSON.stringify(editor.report), saved=librarySnapshot(editor); assert.equal(saved.keyframes[0].objects[0].root_x,editor.object.root_x); assert.equal(JSON.stringify(editor.report),before);
   saved.keyframes[0].objects[0].root_x+=10; assert.equal(JSON.stringify(editor.report),before);
 });
 test('movieclip asset keeps nested animation and imports with playback at the destination',()=>{
-  const source=newPlainEditor({propertyChannels:true}); source.select(1); source.createMovieclip({start:0,end:12}); const saved=librarySnapshot(source);
+  const source=sourceEditor({propertyChannels:true}); source.select(1); source.createMovieclip({start:0,end:12}); const saved=librarySnapshot(source);
   assert.equal(saved._styk.libraryKind,'movieclip'); assert.equal(saved.figure_types[0]._styk.movieclip.duration,12);
   const target=newPlainEditor({propertyChannels:true,layerTimeline:true}); target.seek(5); target.importFigure(saved);
   assert.equal(target.figure._styk.movieclip.duration,12); assert.equal(target.object._stykMovieclip.clock,'presence'); assert.equal(target.object._movieclipSample,0); assert.ok(buildGeometry(target.report,target.selectionFrame).drawables.length);
 });
 test('joined sets retain internal attachments; saving a child alone detaches at its visible location',()=>{
-  const source=newPlainEditor(); source.select(1); const child=source.duplicateFigure().unique_id; source.joinTo(1,3);
+  const source=sourceEditor(); source.select(1); const child=source.duplicateFigure().unique_id; source.joinTo(1,3);
   source.select(1,{add:true}); const saved=librarySnapshot(source), objects=saved.keyframes[0].objects;
   assert.equal(objects.length,2); assert.ok(objects[1].join); assert.equal(objects[1].join.target_object_slot,0);
   const target=newPlainEditor({propertyChannels:true,layerTimeline:true}); target.importFigure(saved); assert.equal(target.selectedObjects.length,2);

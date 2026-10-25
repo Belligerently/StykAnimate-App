@@ -58,3 +58,13 @@ export function keepsStoredFrames(source, request) {
   const document = source instanceof Editor ? source.report : source;
   return isDeepStrictEqual(pivotDocument(source, request).keyframes, document.keyframes.map(stored));
 }
+
+/**
+ * For the tests of the editor's own bodies (tests/support/plain-editor.mjs): an editor the engine does not own reads the figure
+ * document the builder and the library save as the app does, from the engine, which opens a copy of the editor's document.
+ * Everything else the editor asks of the engine it answers for itself.
+ */
+export function readsFiguresFromEngine(editor) {
+  editor._shown = new Proxy({}, {get: (_, name) => name === 'figureDocument' ? request => figureDocument(editor.serialize(), request) : () => null});
+  return editor;
+}

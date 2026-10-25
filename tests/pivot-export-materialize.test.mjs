@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
 import {plainEditorFor} from './support/plain-editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
@@ -56,7 +57,7 @@ test('untouched native documents retain the exact original export path', () => {
   const native = emptyDocument();
   // Native exposures have no authored per-frame easing metadata.
   native.keyframes = [createFrame([createObject(native.figure_types[0], 1, 40, 200)], 4)];
-  const editor = plainEditorFor({demo: false}, native);
+  const editor = engineEditor({demo: false}, native);
   assert.equal(keepsStoredFrames(editor), true);
 });
 

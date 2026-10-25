@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {createDemo} from '../src/demo.mjs';
 import {Editor} from '../src/editor.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
