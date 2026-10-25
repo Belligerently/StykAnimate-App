@@ -44,9 +44,13 @@ import {appBoundsMarker} from './engine-edit-bounds.mjs';
 import {createShown} from './engine-shown.mjs';
 import {createClipboards} from './engine-clipboards.mjs';
 import {SESSION_COMMANDS, REFUSED_CALLS, VIEW_CALLS} from './engine-commands.mjs';
+import {yieldLoadTask} from '../yield-task.mjs';
 
 /** How many values of each kind a call that draws many identities is handed. */
 const MANY_DRAWS = 512;
+
+/** How long one slice of a bake may take: the interface thread is given back between slices. */
+const BAKE_SLICE_MS = 6;
 
 /** The calls that end an edit, and the editor's field that holds it: with none open they change
  * nothing and answer false, which the owner knows without asking the session. */
@@ -54,7 +58,7 @@ const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxCl
 
 /** The editor's reads the session answers where it holds the document (`Editor::interface_query`): the values the interface
  * shows of the frame on show, from the engine's own evaluation. */
-const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings'];
+const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings', 'getSpatialPose', 'getSpatialMotion', 'sampleVfxClip'];
 /** What the session's error says when it does not answer for a document (`styk_edit::session::UNPORTED`). */
 const UNPORTED = 'unported: ';
 
@@ -599,6 +603,30 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   };
   /** The frame the session retained, while the editor still shows it. */
   let retainedShown = null;
+  /** `bakeMovieclip()`: the session samples the clip in slices (`bakeMovieclipBegin`, `bakeMovieclipSample`, `bakeMovieclipPublish`,
+   * `movieclip_bake.rs`) and the interface gets the thread back between them, so a long bake never stalls it (D7). Each slice is sized
+   * from how long the last one took. An edit between slices ends the bake, as the session ends its job. */
+  const bakeCall = async () => {
+    callSession('bakeMovieclipBegin', []);
+    const report = editor.report, revision = editor.revision;
+    let slice = 1, done = false;
+    try {
+      while (!done) {
+        const started = performance.now();
+        ({done} = callSession('bakeMovieclipSample', [slice]));
+        const took = Math.max(performance.now() - started, 0.25);
+        slice = Math.max(1, Math.min(slice * 2, Math.round(slice * BAKE_SLICE_MS / took), 1024));
+        if (done) break;
+        await yieldLoadTask();
+        if (editor.report !== report || editor.revision !== revision) throw messageError(new Error(''), 'errors.editorMovieclips.theSceneChangedWhileBakingTryAgain', {});
+      }
+      return callSession('bakeMovieclipPublish', []);
+    } catch (error) {
+      if (editor.report === report) { try { callSession('bakeMovieclipCancel', []); } catch { /* the bake's own error is the one raised */ } }
+      throw error;
+    }
+  };
+
   /** `movieclipBatch(label, operation)`: the session records what `operation` does as one history entry. */
   const batchCall = args => {
     const [label, operation] = args;
@@ -681,6 +709,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
     layer[name] = DRAWING_COMMITS.has(name) ? function owned(...args) { return drawings[name](args); } : function owned(...args) { return callSession(name, args); };
   }
   layer.movieclipBatch = function owned(...args) { return batchCall(args); };
+  layer.bakeMovieclip = function owned() { return bakeCall(); };
   for (const name of REFUSED_CALLS) layer[name] = function refused() { throw refuse(name, 'a native timeline has no engine command'); };
   // The reads the session answers.
   for (const name of SESSION_READS) {

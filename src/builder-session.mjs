@@ -25,7 +25,6 @@ import {t as interfaceText} from './localization.mjs';
  * sources, which a definition-only snapshot could not.
  */
 import {isMovieclip} from './movieclips.mjs';
-import {nativeFigureDocument} from './native-figure.mjs';
 import {drawingMetadata, isDrawingLayer} from './drawing-model.mjs';
 
 const clone = value => structuredClone(value);
@@ -144,9 +143,7 @@ export class BuilderSession {
     // The definition alone is not the displayed figure: native poses, paint
     // overrides and rig controls belong to its instance. Capture both before
     // undo restores the original, using the same portable format as the library.
-    const edited = clone(nativeFigureDocument(editor.report, {
-      figureUid: this.preferredUid, tick: editor.tick, sourceFrame: editor.selectionFrame,
-    }));
+    const edited = editor._shown.figureDocument({figureUid: this.preferredUid, tick: editor.tick});
     this.undoSession();
     const source = editor.selectionFrame.objects.find(object => object.unique_id === this.uid)
       ?? editor.selectionFrame.objects.find(object => object.figure_type_id === this.typeId);
@@ -169,12 +166,8 @@ export class BuilderSession {
     if (this.typeId === null || !editor.report.figure_types.some(figure => figure.figure_type_id === this.typeId)) return;
     this._removeCreatedFigure(this.typeId);
   }
-  /** The creation of the figure left the history: its instances are deleted as the user's Delete does (the engine's command), and
-   * the definition stays in the library, unused. */
+  /** The creation of the figure left the history: its instances in every frame and its definition go, as one entry of the engine. */
   _removeCreatedFigure(typeId) {
-    const editor = this.editor, uids = editor.selectionFrame.objects.filter(object => object.figure_type_id === typeId).map(object => object.unique_id);
-    if (!uids.length) return;
-    editor.selectMany(uids);
-    editor.deleteSelection();
+    this.editor.discardNewFigure(typeId, {label: interfaceText("builderSession.discardNewFigure"), labelKey: "builderSession.discardNewFigure"});
   }
 }

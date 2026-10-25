@@ -345,6 +345,16 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
         return false;
       }
     },
+    /**
+     * The figure whose artwork the frame last drawn shows at `point` (scene units), for a click: `{slot, uid}` of the topmost
+     * one, or null. `hiddenUids` and `lockedUids` list the figures that cannot be picked (docs/engine/rendering.md,
+     * "Picking artwork").
+     */
+    pickArtwork(point, {scale = 1, hiddenUids = [], lockedUids = []} = {}) {
+      if (destroyed || lost || side.failed || !engineShown) return null;
+      try { return JSON.parse(stage.pick_artwork(JSON.stringify({x: point.x, y: point.y, scale, hidden: [...hiddenUids], locked: [...lockedUids]}))); }
+      catch (error) { options.onError?.(error); return null; }
+    },
     // Prepared playback frames: a packet is a ticket for a tick the engine has ready.
     hasPreparedFrame(key) {
       const ticket = engineTicket(key);

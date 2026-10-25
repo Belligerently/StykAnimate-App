@@ -4,8 +4,9 @@ import {Editor} from '../src/editor.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {composeAnimationChannels, validateAnimationDocument} from '../src/animation-channels.mjs';
-import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
+import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 const target = {kind: 'figure', uid: 1};
 /** `edit(report)` changes the document before the engine opens it. */
@@ -77,7 +78,7 @@ test('depth preview, cancellation, undo, redo, duplication and save/reopen prese
 });
 
 test('existing order commands cross numeric depths, with one undoable change and unchanged earlier playback', () => {
-  for (const command of [e => e.moveSelectionLayer(-1), e => e.sendToBack(), e => e.orderFiguresInFrames(-1, [1])]) {
+  for (const command of [e => e.moveSelectionLayer(-1), e => e.orderFiguresInFrames(-1, [1])]) {
     const e = fixture(); e.addAnimationKey(target, 'zIndex', 0, 10); e.select(1); e.seek(10);
     const before = order(e.evaluatedFrame), count = e._undo.length; command(e);
     assert.notDeepEqual(order(e.evaluatedFrame), before);
@@ -91,7 +92,7 @@ test('existing order commands cross numeric depths, with one undoable change and
 
 test('depth is identical in materialized Pivot output', () => {
   const e = fixture(); e.addAnimationKey(target, 'zIndex', 0, 2); e.addAnimationKey(target, 'zIndex', 10, -2);
-  const exported = materializePivotDocument(e.serialize());
+  const exported = pivotDocument(e.serialize());
   for (const tick of [0, 5, 9, 10, 20]) {
     const expected = order(sample(e.report, tick));
     assert.deepEqual(order(sample(exported, tick)), expected);

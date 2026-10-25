@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyDocument, createFrame, createObject } from '../src/demo.mjs';
-import { evaluatedNativeFrame as evaluatedFrame, buildGeometry, nativeTimeline as timeline } from '../src/pivot/geometry.mjs';
+import {evaluatedNativeFrame as evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
+import {nativeTimeline as timeline} from '../src/pivot/read-view.mjs';
 import { composePoseChannels, buildVirtualPoseTrack, invalidatePoseCache } from '../src/animation-pose.mjs';
 
 function fixture() {

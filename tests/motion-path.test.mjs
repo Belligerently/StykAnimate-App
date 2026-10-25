@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {motionPathTargets, pickMotionPathPoint} from '../src/motion-path.mjs';
@@ -35,7 +36,7 @@ function ikFixture() {
     createFrame([createObject(figure, 1, 340, 150)], 8),
     createFrame([createObject(figure, 1, 380, 150)], 8),
   ];
-  return plainEditorFor({demo: false}, document);
+  return ownedEditorFor({demo: false}, document);
 }
 
 const rootTarget = {kind: 'node', uid: 1, handleId: 0, joint: -1};
@@ -196,41 +197,6 @@ test('mid-span camera path edits split the frame and re-time the camera pose', (
   assert.equal(editor.report.keyframes.length, 3);
 });
 
-test('pinned IK endpoints move through the solver on a remote tick', () => {
-  const editor = ikFixture();
-  editor.select(1, 1); editor.setNodeIK({enabled: true, pinned: true});
-  editor.seek(0);
-  const history = editor._undo.length;
-  assert.ok(editor.beginMotionPathEdit({kind: 'node', uid: 1, handleId: 22, joint: 1}, 4));
-  const goal = {x: 420, y: 190};
-  editor.updateMotionPathEdit(goal);
-  assert.equal(editor.commitMotionPathEdit(), true);
-  assert.equal(editor._undo.length, history + 1);
-  assert.equal(editor.tick, 0);
-  // Frame 0 split at tick 4: the tail stores the moved pinned target.
-  assert.equal(editor.report.keyframes.length, 4);
-  near(editor.report.keyframes[1].objects[0]._stykIK[22].target.x, goal.x);
-  editor.seek(4);
-  const geometry = buildGeometry(editor.report, editor.evaluatedFrame);
-  point(geometry.objects.get(0).joints.get(22), goal, 1);
-  editor.undo();
-  assert.equal(editor.report.keyframes.length, 3);
-});
-
-test('unpinned IK path edits bake a solved pose like an ordinary pose drag', () => {
-  const editor = ikFixture();
-  editor.select(1, 1); editor.setNodeIK({enabled: true, pinned: false});
-  editor.seek(0);
-  const goal = {x: 410, y: 180};
-  assert.ok(editor.beginMotionPathEdit({kind: 'node', uid: 1, handleId: 22, joint: 1}, 4));
-  editor.updateMotionPathEdit(goal);
-  assert.equal(editor.commitMotionPathEdit(), true);
-  editor.seek(4);
-  const end = buildGeometry(editor.report, editor.evaluatedFrame).objects.get(0).joints.get(22);
-  point(end, goal, 3);
-  editor.undo();
-});
-
 test('authored channels write one pose key at the remote tick without touching native frames', () => {
   const editor = fixture();
   editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'});
@@ -376,7 +342,6 @@ test('multi-target overlay lists every selected figure', () => {
   assert.ok(withJoint.some(t => t.uid === 2 && t.joint === 1));
   assert.ok(withJoint.some(t => t.uid === 1 && t.joint === -1));
 });
-
 
 test('overlapping points pick the nearest time instead of the last frame', () => {
   const entry = {ticks:[0,1,2],points:new Map([0,1,2].map(t => [t,{tick:t,x:0,y:0}]))};

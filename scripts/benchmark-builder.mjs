@@ -1,11 +1,13 @@
 import {ConstructionIndex} from '../src/builder-construction.mjs';
+import '../tests/support/register-engine.mjs';
 import {Editor} from '../src/editor.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {builderFixture} from './builder-benchmark-fixture.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 const label=process.argv[2]||'baseline';const results=[];
 const stats=a=>{a.sort((x,y)=>x-y);return {medianMs:a[Math.floor(a.length/2)],p95Ms:a[Math.ceil(a.length*.95)-1],maxMs:a.at(-1)};};
 for(const [segments,instances] of [[1000,1],[5000,1],[15000,1],[100,500]]){
- const e=new Editor();e.load(builderFixture(segments,instances));e.select(1,0);
+ const e=new Editor();e.load(builderFixture(segments,instances));const owner=installEngineOwner(e);if(!owner.ready())throw new Error('The engine did not open the document.');e.select(1,0);
  const times={add:[],chain:[],style:[],drag:[],commit:[],snap:[]};
  for(let i=0;i<7;i++){
   e.select(1,0);let t=performance.now();e.addSegment({length:20,angle:.7});times.add.push(performance.now()-t);e.undo();
@@ -15,6 +17,7 @@ for(const [segments,instances] of [[1000,1],[5000,1],[15000,1],[100,500]]){
   t=performance.now();e.addSegments(Array.from({length:32},()=>({length:20,angle:.7})));times.chain.push(performance.now()-t);e.undo();
   const index=new ConstructionIndex(e.geometry.objects.get(0));t=performance.now();for(let j=0;j<1000;j++)index.snap({x:480+(j%101),y:280+(j%59)},{radius:8,origin:{x:480,y:280}});times.snap.push((performance.now()-t)/1000);
  }
+ owner.release();
  results.push({segments,instances,visibleSegments:segments*instances,timings:Object.fromEntries(Object.entries(times).map(([k,v])=>[k,stats(v)]))});
  console.log(JSON.stringify(results.at(-1)));
 }

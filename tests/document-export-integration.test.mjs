@@ -11,7 +11,7 @@ import {ownedEditorFor} from './support/owned-editor.mjs';
 class WorkerFacade extends EventTarget {
   constructor() {
     super();
-    this.worker = new NodeWorker(new URL('./document-export-node-worker.mjs', import.meta.url));
+    this.worker = new NodeWorker(new URL('./document-export-node-worker.mjs', import.meta.url), {execArgv: []});
     this.worker.on('message', data => { const event = new Event('message'); event.data = data; this.dispatchEvent(event); });
     this.worker.on('error', error => { const event = new Event('error', {cancelable: true}); event.message = error.message; this.dispatchEvent(event); });
     this.worker.on('messageerror', () => this.dispatchEvent(new Event('messageerror')));
@@ -132,7 +132,7 @@ test('real portable movieclip worker packs keys, prunes archives, and leaves the
   assert.ok(clip, 'movieclip creation succeeds');
   const figure = editor.report.figure_types.find(figure => figure._styk?.movieclip);
   const before = structuredClone(editor.report);
-  const output = await exporter.export(editor.report, {format: 'stykmov', figureTypeId: figure.figure_type_id});
+  const output = await exporter.export(editor.report, {format: 'stykmov', figureTypeId: figure.figure_type_id, revision: editor.revision});
   const reopened = await openDocument(new Uint8Array(await output.arrayBuffer()), 'stykmov', {verifySource: false});
   assert.equal(reopened.figure_types[0]._styk.movieclip.document._stykSource, undefined);
   assert.equal(reopened.figure_types[0]._styk.movieclip.document._styk?.movieclipSource?.document?._stykSource, undefined);

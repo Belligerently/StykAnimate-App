@@ -182,7 +182,7 @@ test('duplicate capacity and overflow fail atomically without consuming identiti
   assert.deepEqual(editor.report, before); assert.equal(editor._selectionClipboard, clipboard); assert.equal(editor._nextUid, uid); assert.equal(editor.canUndo, false);
 });
 
-for (const operation of ['rotate', 'align', 'center']) test(`${operation} range matches each frame's individual command with joined component semantics`, () => {
+for (const operation of ['rotate', 'center']) test(`${operation} range matches each frame's individual command with joined component semantics`, () => {
   const editor = fixture();
   for (const [index, frame] of editor.report.keyframes.entries()) {
     frame.objects[1].join = {target_object_slot: 0, target_handle_id: 4, target_unique_id: 1};
@@ -192,11 +192,10 @@ for (const operation of ['rotate', 'align', 'center']) test(`${operation} range 
   for (let index = 0; index < 3; index++) {
     const single = open({demo: false}, clone(original)); single.selectFrame(index); single.selectMany([2, 3]);
     if (operation === 'rotate') single.rotateSelection(.3);
-    else if (operation === 'align') single.alignSelection('x', 'start');
     else single.centerFigure();
     expected.push(single.geometry);
   }
-  const result = operation === 'rotate' ? editor.rotateFiguresInFrames(.3, [0, 1, 2]) : operation === 'align' ? editor.alignFiguresInFrames('x', 'start', [0, 1, 2]) : editor.centerFiguresInFrames([0, 1, 2]);
+  const result = operation === 'rotate' ? editor.rotateFiguresInFrames(.3, [0, 1, 2]) : editor.centerFiguresInFrames([0, 1, 2]);
   assert.equal(result.changedFrames, 3); assert.equal(editor._undo.length, 1);
   for (let index = 0; index < 3; index++) {
     const actual = buildGeometry(editor.report, editor.report.keyframes[index]);

@@ -50,8 +50,22 @@ impl Transform {
     }
 }
 
+/// What a conversion has allocated so far: the definitions it made and the identities it gave. A conversion in slices
+/// (`Materializer::into_state`, `Materializer::resume`) carries it from one slice to the next.
+pub struct MaterializerState {
+    figures: Vec<Value>,
+    identities: Obj,
+    types: HashMap<(usize, u32), u32>,
+    signatures: HashMap<String, u32>,
+    next_type: u32,
+    next_uid: u32,
+}
+
 /// One conversion's definition and identity allocator. Reuse it across frames so
 /// a nested path keeps one UID and each imported definition is shared.
+/// The largest object identity the editor allocates (`MAX_ALLOCATED_UID` of src/object-identity.mjs).
+const MAX_ALLOCATED_UID: f64 = 2_147_483_646.0;
+
 pub struct Materializer<'a> {
     report: &'a Value,
     prepared: &'a Prepared,
@@ -71,13 +85,24 @@ impl<'a> Materializer<'a> {
         let mut next_uid = 1u32;
         for frame in items(report.get("keyframes")).into_iter().chain(sources.into_iter().flat_map(|s| s.iter().map(|(_, f)| f.clone()))) {
             for object in items(frame.get("objects")) {
-                if let Some(id) = num(&object, "unique_id") {
-                    next_uid = next_uid.max((id as u32).checked_add(1).ok_or_else(|| Error::Unported("materialization exhausted native identities".into()))?);
+                // Pivot writes identities above 2^31: they stay as they are and never collide with the ones allocated here
+                // (`nextUidAfter` of src/object-identity.mjs).
+                if let Some(id) = num(&object, "unique_id").filter(|id| *id <= MAX_ALLOCATED_UID) {
+                    next_uid = next_uid.max(id as u32 + 1);
                 }
             }
         }
         let signatures = figures.iter().filter_map(|f| Some((signature(f), num(f, "figure_type_id")? as u32))).collect();
         Ok(Self { report, prepared, figures, identities: Obj::new(), types: HashMap::new(), signatures, next_type, next_uid })
+    }
+    /// The conversion carried on from `state`, over the same document.
+    pub fn resume(report: &'a Value, prepared: &'a Prepared, state: MaterializerState) -> Self {
+        let MaterializerState { figures, identities, types, signatures, next_type, next_uid } = state;
+        Self { report, prepared, figures, identities, types, signatures, next_type, next_uid }
+    }
+    /// What the conversion has allocated, to carry on with later.
+    pub fn into_state(self) -> MaterializerState {
+        MaterializerState { figures: self.figures, identities: self.identities, types: self.types, signatures: self.signatures, next_type: self.next_type, next_uid: self.next_uid }
     }
     pub fn figures(&self) -> &[Value] {
         &self.figures

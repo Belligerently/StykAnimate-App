@@ -10,8 +10,7 @@ the recorded fixtures were made from the JavaScript editor and are frozen
 `src/spatial-projection.mjs`,
 `src/rig-spatial.mjs`, `src/pivot/surfaces.mjs`, `src/spatial-mesh.mjs`,
 `src/movieclip-mesh.mjs`, the polygon and mesh steps of `buildGeometrySteps`
-(`src/pivot/geometry.mjs`), and for drawing `src/surface-raster.mjs`,
-`src/renderer-mesh-raster.mjs` and the raster path of `src/renderer.mjs`.
+(`src/pivot/geometry.mjs`).
 
 ## Contract
 

@@ -36,7 +36,7 @@ fn key(id: f64) -> String {
 }
 
 /// `rgbOf(color)`: a packed `0xRRGGBB` as three bytes.
-fn rgb_of(color: f64) -> [f64; 3] {
+pub(crate) fn rgb_of(color: f64) -> [f64; 3] {
     let n = to_uint32(color);
     [(n >> 16 & 255) as f64, (n >> 8 & 255) as f64, (n & 255) as f64]
 }
@@ -188,7 +188,7 @@ fn mesh_colors(figure: &Value) -> usize {
 }
 
 /// `alphaByte(opacity)`.
-fn alpha_byte(opacity: f64) -> f64 {
+pub(crate) fn alpha_byte(opacity: f64) -> f64 {
     js_round((1.0 - opacity) * 255.0)
 }
 

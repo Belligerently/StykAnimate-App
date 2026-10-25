@@ -76,6 +76,36 @@ draws of a cel that only a gesture's draft holds goes through `EngineHandle.set_
 `Engine::open` (bytes and an extension, no normalization) remains for the command-line tools and the
 Rust tests that open recorded documents as they are.
 
+## Exports of the document
+
+The files that cannot hold the editable document are made from the document the engine holds: Pivot animations and
+figures (`.piv`, `.stk`), figure files (`.stkz`) and movieclip files (`.stykmov`). A `.styk` save is not among them: it
+needs no evaluation, so the interface sends the editable document to the export worker in bounded chunks and the worker
+writes the container.
+
+The document export worker (`src/document-export-worker.mjs`) joins the engine as the export renderer does, and calls
+`export_document` (`styk-wasm`, `styk_engine::document_export`) on the document the engine holds at the revision the
+interface exports (the editor's revision; the interface waits briefly for a change still being published, and a
+different revision is a cancelled export). Nothing of the document crosses to the worker, and the interface thread
+takes no part in the work (D7). The work is `styk_edit::export`:
+
+- **Pivot animation** (`pivot.rs`): the stored frames, or, when authored tracks, camera motion, parallax, layers, styles,
+  movieclips or IK are in play, one stored frame for each tick with them baked in (hidden poses keep their zero-duration
+  exposures). An imported layer sheet that is the identity of its native keys exports the stored frames as they are. A
+  working frame (`simpleFrameDraft`) is left out, the editor's identities and caches are dropped, and the result is
+  validated as a native document. Pivot cannot keep VFX, connectors, Smart Stretch, one-sided fills, Stick Nodes shapes
+  or gradient fills: each is a refusal naming the feature (`telemetryCode: unsupported_feature`).
+- **Pivot figure** (`style.rs`): one figure type with the style of the selected instance at the requested tick; instances
+  that look alike share a figure type.
+- **Figure files** (`figure.rs`, `pose_sequences.rs`): a figure, a set of figures or a movieclip with the pose it shows as a
+  document of its own, portable (without the project's source), with the poses its channels share stored once.
+
+The answer is the document as JSON (figure files, which the worker writes as a container) or the body of the codec's
+export request with the document in it (Pivot files, which the codec encodes). Drawing cels that Pivot cannot carry
+are flagged and flattened into pictures by the worker. The engine returns an error, never a panic, for what it
+refuses; the worker passes it on with its message key. The export asks `cancelled()` (a flag in shared memory) between
+the ticks it bakes, and a worker that joined gives its thread back before it ends (`release`).
+
 ## Invariants
 
 - No silent loss: a field the engine does not understand stays in the tree and

@@ -1,6 +1,6 @@
 import {messageError} from '../localized-error.mjs';
 // Editing operations work on frame data, preserving figure definitions and assets.
-import {isStatic} from './geometry.mjs';
+import {isStatic} from './read-view.mjs';
 export function nextIdentity(report) {
   let max = 0;
   for (const f of report.keyframes)
@@ -8,6 +8,21 @@ export function nextIdentity(report) {
   if (max >= 0x7ffffffe)
     throw messageError(new Error(''), "errors.structure.noPositiveObjectIdentitiesRemain", {});
   return max + 1;
+}
+/** Find a complete branch in linear time, retaining the document's segment order. */
+export function segmentBranchIndices(segments, handleId) {
+  const children = new Map();
+  for (const segment of segments) {
+    const list = children.get(segment.parent_id);
+    if (list) list.push(segment.segment_id); else children.set(segment.parent_id, [segment.segment_id]);
+  }
+  const ids = new Set([handleId]), queue = [handleId];
+  for (let i = 0; i < queue.length; i++) for (const child of children.get(queue[i]) ?? []) {
+    if (!ids.has(child)) { ids.add(child); queue.push(child); }
+  }
+  const indices = [];
+  for (let i = 0; i < segments.length; i++) if (ids.has(segments[i].segment_id)) indices.push(i);
+  return indices;
 }
 export function frameOrder(frame) {
   return (frame.object_draw_order || frame.objects.map((_, i) => i))

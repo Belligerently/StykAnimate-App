@@ -336,3 +336,130 @@ fn the_settings_of_a_controller_are_the_defaults_over_what_the_node_has() {
     assert!(across >= 1.0);
     assert_eq!(joined.get("chainLength").and_then(Value::as_f64), Some(across.min(2.0)));
 }
+
+#[test]
+fn a_bone_reads_back_the_rotation_it_was_given() {
+    let (mut session, _) = tape("spatial-turn-sheet");
+    // No bone is selected: nothing to read.
+    let none = read(&mut session, "getSpatialPose", "[]");
+    assert_eq!(none.get("v"), Some(&Value::Null), "{}", json(&none));
+    call(&mut session, "select", "[1,5]");
+    let rest = read(&mut session, "getSpatialPose", "[]");
+    let rest = rest.get("v").unwrap();
+    assert!(["bend", "turn", "pitch"].iter().all(|key| rest.get(key).and_then(Value::as_f64).is_some_and(f64::is_finite)), "{}", json(rest));
+    call(&mut session, "setSpatialPose", r#"[{"turn":0.3,"pitch":-0.2,"bend":0.1}]"#);
+    let turned = read(&mut session, "getSpatialPose", "[]");
+    let turned = turned.get("v").unwrap();
+    for (key, expected) in [("turn", 0.3), ("pitch", -0.2), ("bend", 0.1)] {
+        let got = turned.get(key).and_then(Value::as_f64).unwrap();
+        assert!((got - expected).abs() < 1e-9, "{key}: {got} != {expected}");
+    }
+    // A joint named by the call is read instead of the selected one; one that is not a bone reads nothing.
+    let named = read(&mut session, "getSpatialPose", "[5]");
+    assert_eq!(json(named.get("v").unwrap()), json(turned));
+    let missing = read(&mut session, "getSpatialPose", "[999]");
+    assert_eq!(missing.get("v"), Some(&Value::Null));
+    // A bone that is not a mechanism has no travel.
+    let motion = read(&mut session, "getSpatialMotion", "[]");
+    assert_eq!(motion.get("v"), Some(&Value::Null));
+}
+
+#[test]
+fn a_mechanical_joint_reads_its_travel_between_the_ends_of_its_range() {
+    let (mut session, _) = tape("spatial-mechanism-sheet");
+    call(&mut session, "select", "[1,8]");
+    call(&mut session, "setSpatialMotion", r#"[0.25,{"fraction":true}]"#);
+    let read_motion = read(&mut session, "getSpatialMotion", "[]");
+    let motion = read_motion.get("v").unwrap();
+    assert!(matches!(motion.get("type").and_then(Value::as_str), Some("slide" | "hinge")), "{}", json(motion));
+    let (min, max, value, driver, applied) = ["min", "max", "value", "driver", "applied"].map(|key| motion.get(key).and_then(Value::as_f64).unwrap()).into();
+    assert!(max > min);
+    assert!(((value - min) / (max - min) - 0.25).abs() < 1e-9, "{}", json(motion));
+    assert!((motion.get("fraction").and_then(Value::as_f64).unwrap() - 0.25).abs() < 1e-9);
+    assert!((applied - driver - value).abs() < 1e-9, "the travel is the applied value less its driver's share");
+    // A joint that is not a mechanism has none.
+    call(&mut session, "select", "[1,5]");
+    assert_eq!(read(&mut session, "getSpatialMotion", "[]").get("v"), Some(&Value::Null));
+}
+
+#[test]
+fn a_clip_is_sampled_at_the_playhead_through_its_keys() {
+    let (mut session, steps) = tape("vfx-clips-sheet");
+    // The tape keys the tint clip's mix and colour at tick 4 (steps 1-21 set it up), then moves them.
+    for step in &steps[1..=21] {
+        let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+        let method = call[0].as_str().unwrap().trim_start_matches('@').to_string();
+        let args = json(&Value::array(call[1..].to_vec()));
+        let view = view(&session);
+        session.call(&method, &args, &view);
+    }
+    let clip = session.editor.report().path(&["_styk", "vfxClips", "clips"]).unwrap().elements().unwrap().iter().find(|c| c.get("id").and_then(Value::as_str) == Some("clip-tint")).unwrap();
+    let keys = clip.path(&["keys", "vfx1:tint:fx-tint:mix"]).unwrap_or_else(|| panic!("{}", json(&clip)));
+    let first = keys.item(0).unwrap();
+    let (start, offset) = (clip.get("start").and_then(Value::as_f64).unwrap(), clip.get("offset").and_then(Value::as_f64).unwrap());
+    let at = start - offset + first.get("tick").and_then(Value::as_f64).unwrap();
+    let expected = first.get("value").and_then(Value::as_f64).unwrap();
+    let mix = |session: &mut Session, tick: f64| {
+        let sampled = read(session, "sampleVfxClip", &format!(r#"["clip-tint",{tick}]"#));
+        let effects = sampled.get("v").unwrap_or_else(|| panic!("{}", json(&sampled))).clone();
+        let tint = effects.elements().unwrap().iter().find(|e| e.get("id").and_then(Value::as_str) == Some("fx-tint")).unwrap();
+        tint.path(&["params", "mix"]).and_then(Value::as_f64).unwrap()
+    };
+    assert!((mix(&mut session, at) - expected).abs() < 1e-12, "the keyed value at its key");
+    // One key holds before and after it.
+    assert!((mix(&mut session, at + 5.0) - expected).abs() < 1e-12 || keys.array_len().unwrap() > 1);
+    assert!((mix(&mut session, 0.0) - expected).abs() < 1e-12 || keys.array_len().unwrap() > 1, "before the first key the first key holds");
+    // The glow's radius is keyed too (step 15): sampled it is the key's, and everything else stays as stored.
+    let glow = read(&mut session, "sampleVfxClip", r#"["clip-glow",4]"#);
+    let stored = session.editor.report().path(&["_styk", "vfxClips", "clips"]).unwrap().elements().unwrap().iter().find(|c| c.get("id").and_then(Value::as_str) == Some("clip-glow")).unwrap().get("effects").unwrap().item(0).unwrap();
+    let sampled = glow.get("v").unwrap().item(0).unwrap();
+    assert_eq!(stored.path(&["params", "radius"]).and_then(Value::as_f64), Some(12.0));
+    assert_eq!(sampled.path(&["params", "radius"]).and_then(Value::as_f64), Some(30.0));
+    let mut expected = stored.as_obj().unwrap().clone();
+    let mut params = expected.get("params").and_then(Value::as_obj).cloned().unwrap();
+    params.set("radius", Value::Num(30.0));
+    expected.set("params", Value::object(params));
+    assert_eq!(json(&sampled), json(&Value::object(expected)));
+    // No such clip.
+    let error = session.query("sampleVfxClip", r#"["nope",4]"#, &view(&session)).unwrap_err();
+    assert_eq!(error, "errors.editorVfxClips.selectAnEffectClip");
+}
+
+#[test]
+fn a_frame_with_a_figure_the_document_lacks_has_its_geometry_read_against_that_figure() {
+    let (mut session, _) = tape("startup-sheet");
+    let record = session.editor.shown_frame().unwrap();
+    let objects: Vec<Value> = record.get("objects").unwrap().elements().unwrap().iter().collect();
+    let layer = session.report().path(&["_styk", "layers", "order"]).unwrap().item(0).unwrap().as_str().unwrap().to_string();
+    // A copy of the first figure's definition under a new type, and an object of it that the frame does not hold.
+    let mut figure = session.report().get("figure_types").unwrap().item(0).unwrap().as_obj().unwrap().clone();
+    figure.set("figure_type_id", Value::Num(99.0));
+    let mut object = objects[0].as_obj().unwrap().clone();
+    let root_x = object.get("root_x").and_then(Value::as_f64).unwrap() + 123.0;
+    object.set("unique_id", Value::Num(99.0));
+    object.set("figure_type_id", Value::Num(99.0));
+    object.set("root_x", Value::Num(root_x));
+    object.set("object_slot", Value::Num(objects.len() as f64));
+    object.set("join", Value::Null);
+    let mut frame = record.as_obj().unwrap().clone();
+    let mut with = objects.clone();
+    with.push(Value::object(object));
+    frame.set("objects", Value::array(with));
+    frame.remove("object_draw_order");
+    frame.remove("object_draw_order_unique_ids");
+    let mut request = styk_doc::Obj::new();
+    request.set("frame", Value::object(frame));
+    request.set("figure", Value::object(figure));
+    request.set("uid", Value::Num(99.0));
+    request.set("layerId", Value::str(&layer));
+    let read = read(&mut session, "previewGeometry", &json(&Value::object(request)));
+    assert_eq!(read.get("full"), Some(&Value::Bool(true)));
+    assert_eq!(read.get("count").and_then(Value::as_f64), Some(objects.len() as f64 + 1.0));
+    assert_eq!(slots_of(&read), (0..=objects.len()).collect::<Vec<_>>());
+    let preview = group(&read, objects.len());
+    assert_ne!(preview, Value::Null, "the figure the document does not hold yet has geometry");
+    assert_eq!(point(preview.get("root").unwrap())[0], root_x);
+    // The document itself is untouched: its read has the figures it had.
+    let own = geometry(&mut session, None);
+    assert_eq!(own.get("count").and_then(Value::as_f64), Some(objects.len() as f64));
+}

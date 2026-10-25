@@ -5,7 +5,8 @@ import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback,continuations,usesPresence} from '../src/movieclip-presence.mjs';
 import {createSheetMembershipSampler} from '../src/movieclip-membership.mjs';
-import {evaluatedFrame,timeline,nativeTimeline,movieclipPresenceIndex,invalidateEvaluationCaches} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame, movieclipPresenceIndex, invalidateEvaluationCaches} from '../src/pivot/geometry.mjs';
+import {timeline, nativeTimeline} from '../src/pivot/read-view.mjs';
 
 function fixture() {
   const child=defaultFigure(),document=emptyDocument();

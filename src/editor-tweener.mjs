@@ -1,6 +1,7 @@
 import {messageError} from './localized-error.mjs';
 import {interpolateSpatialPose} from './spatial-projection.mjs';
-import {evaluatedFrame, evaluatedNativeFrame, shortest} from './pivot/geometry.mjs';
+import {evaluatedFrame, evaluatedNativeFrame} from './pivot/geometry.mjs';
+import {shortest} from './pivot/read-view.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
 import {layerLocked, layerVisible} from './layers.mjs';
 import {snapshotPoseFrame} from './pose-snapshot.mjs';

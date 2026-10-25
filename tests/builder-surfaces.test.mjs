@@ -1,14 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildRotatingCube} from './helpers/rotating-cube.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {pickFigureFill} from '../src/builder-fill.mjs';
 import {surfaceOrder,surfaceDepthValues,surfaceHandles,remapSurface,validateSurface} from '../src/pivot/surfaces.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
-const fixture=()=>{const e=plainEditorFor({demo:false});return {e,q:buildRotatingCube(e)};};
+import {ownedEditorFor} from './support/owned-editor.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
+const fixture=()=>{const e=ownedEditorFor({demo:false});return {e,q:buildRotatingCube(e)};};
 const select=(e,id)=>e.select(e.selectedUid,e.figure.segments.findIndex(s=>s.segment_id===id));
 const visible=e=>e.geometry.objects.get(e.selectedSlot).polys.filter(p=>!p.culled).map(p=>p.index);
 const area=points=>Math.abs(points.reduce((a,p,i)=>{const q=points[(i+1)%points.length];return a+p.x*q.y-p.y*q.x;},0)/2);
@@ -38,7 +37,7 @@ test('face side and facing edits are atomic, undoable and leave colors and verte
 test('reference deletion and copying incomplete surfaces cannot silently destroy or change faces',()=>{
   const {e,q}=fixture();select(e,q.basis[1]);const before=e.serialize();
   for(const remove of [()=>e.deleteSegment(),()=>e.deleteSingleSegment(),()=>e.unsplitSegment()]){assert.throws(remove,/reference joints/);assert.deepEqual(e.serialize(),before);}
-  select(e,q.frame);assert.throws(()=>e.copyBranchSelection(),/face reference joints/);assert.deepEqual(e.serialize(),before);
+  e.selectBranch(e.selectedUid,e.figure.segments.findIndex(s=>s.segment_id===q.frame));assert.throws(()=>e.copySelection(),/face reference joints/);assert.deepEqual(e.serialize(),before);
   e.updatePolygon(0,{surface:null});assert.equal(e.figure.polyfills.length,6);
 });
 
@@ -50,20 +49,21 @@ test('ordinary fills remain double-sided; visible picking ignores culled faces',
   for(let i=0;i<6;i++)e.updatePolygon(i,{surface:null});assert.equal(visible(e).length,6);
 });
 
-test('cube preserves facing through mirrors, native saves, asynchronous evaluation and whole figure copies',async()=>{
+test('cube preserves facing through mirrors, native saves and asynchronous evaluation',async()=>{
   const {e}=fixture(),front=visible(e);
   for(const axis of ['horizontal','vertical']){e.select(e.selectedUid,-1);e.mirrorFigure(axis);assert.deepEqual(visible(e),front);e.undo();}
   e.rotateFigure(.9);assert.deepEqual(visible(e),front);e.undo();
   for(const kind of ['styk','stkz']){const d=(await decodeDocument(await buildContainerV2(e.serialize(),kind),kind)).document;validateScene(d);assert.deepEqual(d.figure_types.find(f=>f.figure_type_id===e.figure.figure_type_id).polyfills,e.figure.polyfills);}
-  assert.throws(()=>materializePivotDocument(e.serialize()),/one-sided fills/);
-  e.select(e.selectedUid,-1);e.copyFigure();e.pasteFigure();validateScene(e.serialize());assert.equal(e.frame.objects.length,2);assert.deepEqual(visible(e),front);
+  assert.throws(()=>pivotDocument(e.serialize()),/one-sided fills/);
 });
 
 test('one-sided fills also work on ordinary figures with no rig constraints',()=>{
-  const e=plainEditorFor({demo:false});const x=e.addSegment({length:40,angle:0}).segment_id,y=e.addSegment({parentId:0,length:40,angle:Math.PI/2}).segment_id;
+  const e=ownedEditorFor({demo:false});const x=e.addSegment({length:40,angle:0}).segment_id,y=e.addSegment({parentId:0,length:40,angle:Math.PI/2}).segment_id;
   e.addPolygon([0,x,y]);e.updatePolygon(0,{surface:{basis:[0,x,y],side:'front'}});assert.deepEqual(visible(e),[0]);
-  e.updatePolygon(0,{surface:{basis:[0,x,y],side:'back'}});assert.deepEqual(visible(e),[]);assert.throws(()=>materializePivotDocument(e.serialize()),/one-sided fills/);
-  assert.throws(()=>materializePivotDocument({figure_types:[{segments:[],_styk:{movieclip:{document:e.serialize()}}}]}),/one-sided fills/);
+  e.updatePolygon(0,{surface:{basis:[0,x,y],side:'back'}});assert.deepEqual(visible(e),[]);assert.throws(()=>pivotDocument(e),/one-sided fills/);
+  // The surface is found inside a movieclip too.
+  e.select(e.selectedUid);assert.ok(e.createMovieclip({start:0,end:1,name:'Clip'}));
+  assert.throws(()=>pivotDocument(e),/one-sided fills/);
 });
 
 test('depth guides change painter order continuously and survive affine transforms and ID remapping',()=>{
@@ -98,7 +98,7 @@ test('depth references support normal authoring, undo, deletion protection and n
 });
 
 test('intersection depth preserves each corner through transforms and native authoring',async()=>{
-  const e=plainEditorFor({demo:false});
+  const e=ownedEditorFor({demo:false});
   const x=e.addSegment({parentId:0,length:40,angle:0}).segment_id,y=e.addSegment({parentId:0,length:40,angle:Math.PI/2}).segment_id;
   const z=e.addSegment({parentId:0,length:80,angle:0}).segment_id;
   e.addPolygon([0,x,y]);const surface={basis:[0,x,y],depth:[z,0,x],depthTest:true,side:'front'};

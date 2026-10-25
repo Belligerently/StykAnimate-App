@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {snapshotPoseObject} from '../src/pose-snapshot.mjs';
 import {cloneTopologySnapshot,topologyHistoryBytes} from '../src/topology-history.mjs';
-import {Editor} from '../src/editor.mjs';
-import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 
 test('pose snapshots own numeric storage and metadata without retaining render caches', () => {
   const pose = {unique_id:1, angles:[0,-0,Math.PI], lengths:[1,2,3], bends:[],
@@ -37,18 +35,3 @@ test('native history retains independent imported runtime lengths and bends', ()
   assert.equal(copy.frames[0].objects[0].angles[0],0);
 });
 
-// session gap: reads the editor's own topology history command, which the engine's history does not hold
-test('dense shared definition history remains exact through independent edits and repeated replay', () => {
-  const report=emptyDocument(),figure=report.figure_types[0],base=figure.segments[0];
-  figure.segments=Array.from({length:300},(_,i)=>({...base,segment_id:i+1,parent_id:i,length:2,angle_rad:i/200,aux_code:1}));
-  figure.segment_count=figure.segments.length;
-  report.keyframes=Array.from({length:8},(_,frame)=>createFrame(Array.from({length:12},(_,i)=>createObject(figure,i+1,50+i*8,50+frame))));
-  const editor=new Editor({demo:false}).load(report);editor.select(1,5);
-  const before=editor.serialize(),end=editor.geometry.objects.get(0).segments[5].end;
-  editor.editRigJoint(end.x+1,end.y+2);
-  const after=editor.serialize(),command=editor._undo.at(-1),history=structuredClone(command);
-  assert.equal(command.kind,'topology');
-  editor.select(1);editor.beginTranslationDrag();editor.moveSelection(13,9);editor.commitDrag();editor.undo();
-  assert.deepEqual(editor.serialize(),after);assert.deepEqual(command,history);
-  for(let i=0;i<3;i++){editor.undo();assert.deepEqual(editor.serialize(),before);editor.redo();assert.deepEqual(editor.serialize(),after);assert.deepEqual(command,history);}
-});

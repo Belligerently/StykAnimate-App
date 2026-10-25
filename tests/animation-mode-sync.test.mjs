@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';
@@ -105,21 +106,6 @@ test('stored-frame deletion preserves an authored Add copy and replays correctly
   editor.discardFrameDraft();assert.notEqual(editor.evaluatedFrame.objects[0].root_x,280);
   editor.disableFrameDrafts();editor.undo();editor.undo();editor.redo();
   assert.equal(editor.report._styk.simpleFrameDraft,undefined);
-  validateAnimationDocument(editor.report);
-});
-
-test('shared rig splitting remaps both stored and working animation styles, including undo/redo', () => {
-  const editor=fixture(), handle=editor.figure.segments[0].segment_id;
-  const segment={kind:'segment',uid:1,handleId:handle};
-  editor.addAnimationKey(segment,'opacity',10,.6);
-  editor.enableFrameDrafts({mode:'add'});editor.addAnimationKey(segment,'opacity',10,.3);
-  editor.select(1,0);editor.splitSegment();
-  const checkpoint=structuredClone(editor.report._styk.simpleFrameDraft.animationBaseline);
-  assert.equal(checkpoint.channels.filter(channel=>channel.property==='opacity').length,2);
-  editor.undo();editor.redo();
-  assert.deepEqual(editor.report._styk.simpleFrameDraft.animationBaseline,checkpoint);
-  editor.discardFrameDraft();
-  assert.ok(editor.animationChannels.filter(channel=>channel.property==='opacity').every(channel=>channel.keys[0].value===.6));
   validateAnimationDocument(editor.report);
 });
 

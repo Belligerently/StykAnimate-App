@@ -331,6 +331,42 @@ impl Editor {
         self.vfx_clips().into_iter().find(|c| object_is(c.get("id"), Some(id))).ok_or_else(|| invalid("errors.editorVfxClips.selectAnEffectClip"))
     }
 
+    /// `sampleVfxClip(id, tick)`: the clip's effects as stored, with each keyed switch and parameter at the value its keys give
+    /// at `tick` (the clip's own time, before its first key and after its last the nearest key holds).
+    pub(crate) fn sample_vfx_clip(&self, id: &Value, tick: f64) -> Result<Value, EditError> {
+        let record = self.vfx_clip(id)?;
+        let mut state = Obj::new();
+        state.set("version", Value::Num(1.0));
+        state.set("clips", Value::array(vec![record.clone()]));
+        let mut notes = Vec::new();
+        let clips = styk_eval::vfx::parse::clips(Some(&Value::object(state)), &mut notes);
+        let Some(clip) = clips.as_ref().and_then(|clips| clips.clips.first()) else {
+            return Err(EditError::Unported(format!("an effect clip the engine does not read ({})", notes.join("; "))));
+        };
+        let age = clip.time(tick);
+        let mut effects = list(record.get("effects"));
+        for channel in &clip.channels {
+            let value = styk_eval::vfx::clips::sample_keys(&channel.keys, age, channel.discrete, channel.color);
+            let Some(effect) = effects.get_mut(channel.effect).and_then(Value::make_obj) else { continue };
+            match channel.field {
+                styk_eval::vfx::Field::Enabled => effect.set("enabled", Value::Bool(match &value {
+                    styk_eval::vfx::ParamValue::Num(n) => *n != 0.0 && !n.is_nan(),
+                    styk_eval::vfx::ParamValue::Paint(_) => true,
+                })),
+                styk_eval::vfx::Field::Param(index) => {
+                    let name = clip.effects[channel.effect].kind().specs()[index].name;
+                    let mut params = effect.get("params").and_then(Value::as_obj).cloned().unwrap_or_default();
+                    params.set(name, match &value {
+                        styk_eval::vfx::ParamValue::Num(n) => Value::Num(*n),
+                        styk_eval::vfx::ParamValue::Paint(paint) => styk_eval::records::paint_record(paint),
+                    });
+                    effect.set("params", Value::object(params));
+                }
+            }
+        }
+        Ok(Value::array(effects))
+    }
+
     /// `unlocked(editor, target)`: the layer of the clip's target must not be locked.
     fn vfx_unlocked(&self, target: Option<&Value>) -> Result<(), EditError> {
         let layers = self.report.path(&["_styk", "layers"]);

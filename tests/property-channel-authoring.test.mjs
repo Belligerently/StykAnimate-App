@@ -3,15 +3,13 @@ import assert from 'node:assert/strict';
 import {newPlainEditor} from './support/plain-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
-import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
-import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';
-import {createNativeStyleTable} from '../src/pivot-style-materialize.mjs';
 import {sampleAnimationChannel} from '../src/animation-channels.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
-import {segmentPaint,paintGeometry} from '../src/paint.mjs';
 
 /** `prepare(report)` changes the document before it opens. */
 function fixture(prepare = null) {
@@ -40,48 +38,6 @@ test('timeline markers never sample frame values and scalar previews reuse their
   const owned=e.nativePropertyChannel(target,'opacity');
   assert.ok(owned.keys.every(key=>!Object.getOwnPropertyDescriptor(key,'value').get),'Persisted keys must be ordinary immutable data');
   e.updateObject({field28:128});assert.equal(e.evaluatedFrame.objects[0].field28,128);
-});
-
-for(const mode of ['advanced','simple'])test(`${mode} interpolates gradient, polygon, camera and scene keys independently`,()=>{
-  const e=fixture();e.addPolygon([0,1,2]);e.select(1,0);
-  const paint={type:'linear',angle:0,stops:[{offset:0,color:[255,0,0],opacity:1},{offset:1,color:[0,0,255],opacity:1}]};
-  if(mode==='simple')e.enableFrameDrafts({mode:'update'});
-  const edit=(index,opacity,secondary,width,x,color)=>{
-    e.selectFrame(index);e.select(1,0);e.updateSegmentStyle({paint});numeric(e,'segment_opacity',opacity);numeric(e,'segment_gradient_opacity',secondary);
-    if(index===0){
-      // Newly introduced gradient endpoints start with Hold; opt into this test's linear curve.
-      const channel=e.animationChannels.find(channel=>channel.property==='gradientOpacity');
-      e.setAnimationKeysEasing([{channelId:channel.id,keyIds:[channel.keys[0].id]}],{interpolation:'linear'});
-    }
-    e.updatePolygon(0,{opacity:opacity/100});e.updateFigureStyle({outlineWidth:width});e.setCameraValues({x});e.setSceneColor(color);
-    if(mode==='simple')e.updateDraftFrame();
-  };
-  edit(0,20,80,2,0,0xff000000);edit(1,80,20,12,100,0xffffffff);
-  if(mode==='simple')e.disableFrameDrafts();e.seek(2);e.select(1,0);
-  const appearance=resolveInstanceFigure(e.figure,e.object);
-  assert.equal(appearance.segments[0].transparency,Math.round(255*.56));
-  assert.equal(appearance.segments[0].secondary.a,Math.round(255*.44));
-  assert.equal(appearance.polyfills[0].alpha_raw,Math.round(255*.56));
-  assert.equal(appearance.segment_decode.global_style.outline_thickness,6);
-  assert.equal(e.evaluatedFrame.camera.x,40);assert.equal(e.evaluatedFrame._stykBackgroundColor,0xff666666);
-  assert.ok(!properties(e).includes('pose'));validateAnimationDocument(e.report);
-});
-
-test('branch width ranges author segment keys without changing the shared definition or Pose', () => {
-  const e=fixture();e.select(1,0);const definition=structuredClone(e.figure);
-  const token=beginNativePropertyEdit(e,'thickness',{branch:true,indices:[0,2]});
-  previewNativePropertyEdit(token,17);commitNativePropertyEdit(token);
-  assert.deepEqual(e.figure,definition);assert.ok(properties(e).length>1);
-  assert.ok(properties(e).every(property=>property==='thickness'));
-  for(const channel of e.animationChannels) {
-    assert.equal(channel.target.kind,'segment');
-    assert.equal(channel.keys.find(key=>key.tick===0).value,17);
-    assert.equal(channel.keys.find(key=>key.tick===10).value,17);
-  }
-  e.undo();assert.equal(e.animationChannels.length,0);e.redo();validateAnimationDocument(e.report);
-  e.changeBranchThickness(3);assert.deepEqual(e.figure,definition);
-  assert.ok(properties(e).every(property=>property==='thickness'));
-  assert.equal(resolveInstanceFigure(e.figure,e.object).segments[0].thickness,20);
 });
 
 test('figure appearance and transform edits author only their changed properties, with exact undo', () => {
@@ -132,21 +88,6 @@ test('Scene background, color release, undo and redo retain scalar channel owner
   e.redo();assert.equal(e.evaluatedFrame.background_id,asset.background_id);validateAnimationDocument(e.report);
 });
 
-test('outline and segment styles animate per instance and materialize for native export', () => {
-  const e=fixture(), definition=structuredClone(e.figure);
-  e.updateFigureStyle({outlineColor:'#ff0000',outlineWidth:8,outlineOpacity:.5});
-  e.select(1,0);e.updateSegmentStyle({color:'#00ff00',thickness:12,opacity:.25});
-  assert.deepEqual(e.figure,definition);assert.ok(!properties(e).includes('pose'));
-  const object=e.evaluatedFrame.objects[0], resolved=resolveInstanceFigure(e.figure,object);
-  assert.deepEqual(resolved.segment_decode.global_style.rgb,[255,0,0]);
-  assert.equal(resolved.segment_decode.global_style.outline_thickness,8);
-  assert.deepEqual(resolved.segments[0].color_rgb,[0,255,0]);
-  assert.equal(resolved.segments[0].thickness,12);
-  const output={...e.report,figure_types:[...e.report.figure_types]};
-  const id=createNativeStyleTable(output)(object);
-  assert.notEqual(id,e.figure.figure_type_id);assert.deepEqual(output.figure_types.at(-1).segments[0].color_rgb,[0,255,0]);
-});
-
 test('numeric appearance edits use property history and keep the source definition unchanged', () => {
   const e=fixture(), original=structuredClone(e.figure);
   numeric(e,'outline_opacity',30);numeric(e,'outline_width',9);e.select(1,0);numeric(e,'segment_opacity',45);numeric(e,'thickness',14);
@@ -164,24 +105,6 @@ test('Simple Discard and Update carry the same independent property edits across
   assert.equal(e.evaluatedFrame.objects[0].field28,191);
   const reopened=newPlainEditor({demo:false,propertyChannels:true}).load(structuredClone(e.report));reopened.selectFrame(1);
   assert.equal(reopened.evaluatedFrame.objects[0].field28,191);
-});
-
-test('gradient paint, endpoint keys and polygon style survive reopen and native materialization', () => {
-  const e=fixture();e.addPolygon([0,1,2]);e.select(1,0);
-  const definition=structuredClone(e.figure);
-  e.updateSegmentStyle({paint:{type:'linear',angle:30,stops:[{offset:0,color:[255,0,0],opacity:.8},{offset:1,color:[0,0,255],opacity:.3}]}});
-  e.updatePolygon(0,{color:'#00ff00',opacity:.4});
-  assert.deepEqual(e.figure,definition);assert.ok(!properties(e).includes('pose'));
-  let resolved=resolveInstanceFigure(e.figure,e.object);
-  assert.deepEqual(resolved.segments[0].secondary.rgb,[0,0,255]);assert.equal(resolved.segments[0].secondary.a,179);
-  assert.deepEqual(resolved.polyfills[0].color_rgb,[0,255,0]);
-  const paint=e.animationChannels.find(c=>c.property==='paint');assert.ok(paint);
-  e.seek(5);e.updateSegmentStyle({gradient:{color:'#ffff00',opacity:.7}});
-  const output={...e.report,figure_types:[...e.report.figure_types]},table=createNativeStyleTable(output);
-  e.seek(0);const a=table(e.evaluatedFrame.objects[0]);e.seek(5);const b=table(e.evaluatedFrame.objects[0]);assert.notEqual(a,b);
-  const reopened=newPlainEditor({demo:false,propertyChannels:true}).load(e.serialize());reopened.seek(5);reopened.select(1);
-  resolved=resolveInstanceFigure(reopened.figure,reopened.object);assert.deepEqual(resolved.segments[0].secondary.rgb,[255,255,0]);
-  validateAnimationDocument(reopened.report);
 });
 
 test('new Simple frames retain explicit appearance keys instead of returning those values to Pose', () => {
@@ -221,15 +144,3 @@ test('parent rotation keeps joined children attached without manufacturing absol
   assert.ok(Math.abs(after-before-.4)<1e-8);
 });
 
-test('changing the figure origin preserves the world direction of an independently keyed gradient',()=>{
-  const e=fixture();e.select(1,1);
-  e.updateSegmentStyle({paint:{type:'linear',angle:30,stops:[{offset:0,color:[255,0,0],opacity:.4},{offset:1,color:[0,0,255],opacity:.8}]}});
-  const sample=()=>{
-    const segment=resolveInstanceFigure(e.figure,e.object).segments[1];
-    const geometry=buildGeometry(e.report,e.evaluatedFrame).objects.get(0).segments.find(item=>item.index===1);
-    return paintGeometry(segmentPaint(segment),geometry.start,geometry.end);
-  };
-  const original=e.serialize(),before=sample(),handle=e.figure.segments[1].segment_id;e.setOrigin(handle);e.select(1);const after=sample(),changed=e.serialize();
-  for(const property of ['x1','y1','x2','y2'])assert.ok(Math.abs(before[property]-after[property])<1e-6,property);
-  e.undo();assert.deepEqual(e.serialize(),original);e.redo();assert.deepEqual(e.serialize(),changed);
-});

@@ -1,18 +1,18 @@
 import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
-import {editorSpatialMethods,spatialBone,spatialSkin} from './editor-spatial.mjs';
+import {editorSpatialMethods} from './editor-spatial.mjs';
+import {spatialBone,spatialSkin} from './rig-spatial.mjs';
 import {resolveInstanceFigure} from './animation-style.mjs';
 import {remapSurface,surfaceHandles,protectSurfaceReferences} from './pivot/surfaces.mjs';
 import {UserActionError} from './user-action-error.mjs';
-import {editorRigConstraintMethods} from './editor-rig-constraints.mjs';
-import {editorColorMethods, applyPaletteCommand} from './editor-colors.mjs';
 import {editorVfxClipMethods} from './editor-vfx-clips.mjs';
 import {invalidateVfxRenderFrame, figureVfxClips, frameWithVfxTime} from './vfx-clips.mjs';
 import {frameWithCameraTime} from './camera-motion.mjs';
 import {editorCameraMotionMethods} from './editor-camera-motion.mjs';
 import {authoredRigTarget,hasRigConstraints} from './rig-constraints.mjs';
 import {editorTweenerMethods} from './editor-tweener.mjs';
-import {buildGeometry, evaluatedFrame, timeline, shortest, isStatic, invalidateEvaluationCaches} from './pivot/geometry.mjs';
+import {buildGeometry, evaluatedFrame, invalidateEvaluationCaches} from './pivot/geometry.mjs';
+import {timeline, shortest, isStatic} from './pivot/read-view.mjs';
 import {validateScene, validateObjectChanges, syncDerived} from './pivot/model.mjs';
 import {normalizeFrame, frameOrder, setOrder, deleteObject, moveLayer as reorderLayer, rotationEdits, resolveJoinSelection} from './pivot/structure.mjs';
 import {createDemo, emptyDocument, createObject, createFrame, defaultFigure} from './demo.mjs';
@@ -20,10 +20,6 @@ import {createStartupDocument} from './startup-document.mjs';
 import {editorRangeMethods} from './editor-ranges.mjs';
 import {applyFrameTiming,captureTimingGeometry,restoreTimingGeometry} from './frame-timing-history.mjs';
 import {RetainedGeometryCache} from './playback-geometry-cache.mjs';
-import {editorBuilderMethods, segmentBranchIndices} from './editor-builder.mjs';
-import {editorCombineMethods} from './editor-combine.mjs';
-import {editorDisconnectMethods, applyDisconnectFrames} from './editor-disconnect.mjs';
-import {editorRigMethods} from './editor-rig.mjs';
 import {editorSelectionMethods} from './editor-selection.mjs';
 import {editorLayerMethods} from './editor-layers.mjs';
 import {editorLayerFolderMethods} from './editor-layer-folders.mjs';
@@ -37,9 +33,6 @@ import {invalidateFrameIndex} from './frame-ids.mjs';
 import {editorAuthoredPoseMethods} from './editor-authored-pose.mjs';
 import {applyNativePropertyCommand} from './native-property-edit.mjs';
 import {editorCameraMethods} from './editor-camera.mjs';
-import {editorHandleEditMethods} from './editor-handle-edit.mjs';
-import {editorFigureTransformMethods} from './editor-figure-transform.mjs';
-import {editorDuplicateDragMethods} from './editor-duplicate-drag.mjs';
 import {editorRangeCommandMethods} from './editor-range-commands.mjs';
 import {editorSceneMethods} from './editor-scene.mjs';
 import {editorVfxMethods} from './editor-vfx.mjs';
@@ -337,7 +330,6 @@ export class Editor extends EventTarget {
   _applyCommand(command, direction, drawingPrepared) {
     if(applyDrawingCommand(this,command,direction,drawingPrepared))return;
     if(applyAudioCommand(this,command,direction))return;
-    if(applyPaletteCommand(this,command,direction))return;
     if(applyLayerSheetCommand(this,command,direction))return;
     if (command.kind === 'movieclip-batch') {
       for (const child of direction === 'before' ? [...command.commands].reverse() : command.commands) this._applyCommand(child,direction,drawingPrepared);
@@ -367,7 +359,6 @@ export class Editor extends EventTarget {
     else if(command.kind==='camera-motion'){if(value==null)delete this.report._styk.cameraMotion;else this.report._styk.cameraMotion=value;}
     else if (command.kind === 'scene') this._applySceneSnapshot(value);
     else if (command.kind === 'figure-range') this._applyFigureRangeCommand(command, direction);
-    else if (command.kind === 'disconnect') applyDisconnectFrames(this, command, direction);
     else if (command.kind === 'splice') {
       const previous = command[direction === 'before' ? 'after' : 'before'];
       this.report.keyframes.splice(command.index, previous.length, ...value);
@@ -892,9 +883,7 @@ export class Editor extends EventTarget {
       setOrder(frame, before.map(uid => { const group = groups.get(this.layerForUid(uid)); return group.order[group.cursor++]; }));
     }, {structural: true});
   }
-  copySelection({wholeFigures = false, inPlace = false} = {}) {
-    if (!wholeFigures && this._branchSelection?.uid === this.selectedUid && this._branchSelection?.joint === this.selectedJoint)
-      return this.copyBranchSelection();
+  copySelection({inPlace = false} = {}) {
     const selected = this.selectedObjects; if (!selected.length) return 0;
     const geometry = selected.some(object=>object.join) ? this.geometry : null, ids = new Set(selected.map(o => o.unique_id));
     const figures = [...new Set(selected.map(o => o.figure_type_id))].map(id => snapshotFigureDefinition(this.report.figure_types.find(f => f.figure_type_id === id)));
@@ -927,9 +916,9 @@ export class Editor extends EventTarget {
     if (result.insertedUids.length && offset !== 0) clipboard.pastes++;
     return this.selectedObjects;
   }
-  duplicateSelection({pasteMode = 'instance', offset, wholeFigures = false} = {}) {
+  duplicateSelection({pasteMode = 'instance', offset} = {}) {
     const groupClipboard = this._selectionClipboard, singleClipboard = this._figureClipboard;
-    try { if (!this.copySelection({wholeFigures})) return []; return this.pasteSelection({newIdentities: true, pasteMode, offset}); }
+    try { if (!this.copySelection()) return []; return this.pasteSelection({newIdentities: true, pasteMode, offset}); }
     finally { this._selectionClipboard = groupClipboard; this._figureClipboard = singleClipboard; }
   }
   _frameSplice(label, index, remove, insert) {
@@ -1715,12 +1704,7 @@ export class Editor extends EventTarget {
 }
 
 Object.assign(Editor.prototype, editorRangeMethods);
-Object.assign(Editor.prototype, editorColorMethods);
-Object.assign(Editor.prototype, editorBuilderMethods);
-Object.assign(Editor.prototype, editorCombineMethods);
-Object.assign(Editor.prototype, editorDisconnectMethods);
-Object.assign(Editor.prototype, editorRigMethods);
-Object.assign(Editor.prototype, editorRigConstraintMethods, editorSpatialMethods);
+Object.assign(Editor.prototype, editorSpatialMethods);
 Object.assign(Editor.prototype, editorSelectionMethods);
 Object.assign(Editor.prototype, editorLayerMethods, editorLayerFolderMethods, editorLayerFocusMethods);
 Object.assign(Editor.prototype, editorLayerAsyncMethods);
@@ -1728,13 +1712,10 @@ Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(edito
 Object.assign(Editor.prototype, editorFrameMethods);
 Object.assign(Editor.prototype, editorAuthoredPoseMethods);
 Object.assign(Editor.prototype, editorCameraMethods, editorCameraMotionMethods);
-Object.assign(Editor.prototype, editorHandleEditMethods);
 Object.assign(Editor.prototype, editorIKMethods);
 Object.assign(Editor.prototype, editorMovieclipMethods);
 Object.assign(Editor.prototype, editorLayerSheetMethods);
 Object.assign(Editor.prototype, editorDrawingMethods);
-Object.assign(Editor.prototype, editorFigureTransformMethods);
-Object.assign(Editor.prototype, editorDuplicateDragMethods);
 Object.assign(Editor.prototype, editorRangeCommandMethods);
 Object.assign(Editor.prototype, editorSceneMethods);
 Object.assign(Editor.prototype, editorVfxMethods, editorVfxClipMethods);

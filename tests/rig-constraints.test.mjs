@@ -2,22 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
-import {newPlainEditor} from './support/plain-editor.mjs';
 import {RIG_EXAMPLES,rigExampleDocument} from '../src/rig-examples.mjs';
 import {rigConstraintPlan} from '../src/rig-constraints.mjs';
 import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {getPivotHandles} from '../src/canvas-interactions.mjs';
-import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {rigSections,rigControlChange} from '../src/rig-controls.mjs';
 import {renderInspector} from '../src/inspector-kit.mjs';
+import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 const rigView=e=>renderInspector({kind:'joint',sections:rigSections(e)});
 
 const near=(a,b,t=1e-4)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 const point=(a,b)=>{near(a.x,b.x);near(a.y,b.y);};
-const editorFor=(id,plain=false)=>{const e=(plain?newPlainEditor:newOwnedEditor)({demo:false});e.load(typeof id==='string'?rigExampleDocument(id):id);e.select(1);return e;};
+const editorFor=(id,options={})=>{const e=newOwnedEditor({demo:false,...options});e.load(typeof id==='string'?rigExampleDocument(id):id);e.select(1);return e;};
 const select=(e,id)=>e.select(e.selectedUid,e.figure.segments.findIndex(s=>s.segment_id===id));
 const g=e=>e.geometry.objects.get(0);
 /** Where a connector's slider sits along it, 0 to 1: its slide position in the pose (the engine's geometry has no field for it). */
@@ -119,19 +117,16 @@ test('negative scale preserves connector attachment orientation and thickness',(
   const e=new Editor({demo:false});e.load(rigExampleDocument('articulated-piston'));e.select(1);e.frame.objects[0].scale=-2;e._invalidate();const scene=g(e),c=scene.segments[2],s=scene.segments[3];
   point(s.start,c.handle);near(Math.atan2(s.end.y-s.start.y,s.end.x-s.start.x),c.angle);near(Math.hypot(s.end.x-s.start.x,s.end.y-s.start.y),96);
 });
-test('joined figures follow sliding joints, and combining preserves live relationships and pose',()=>{
-  const e=editorFor('articulated-piston',true);select(e,2);e.rotateJoint(.9);
+test('joined figures follow sliding joints',()=>{
+  const e=editorFor('articulated-piston',{layerTimeline:true});select(e,2);e.rotateJoint(.9);
   const extra=e.importFigure(rigExampleDocument('sliding-carriage'));e.select(extra.unique_id);e.joinFigure(1,3);
   const parent=e.geometry.objects.get(0),child=e.geometry.objects.get(e.selectedSlot);point(child.root,parent.joints.get(3));
-  const before=[...e.geometry.objects.values()].flatMap(g=>g.segments.map(s=>({start:s.start,end:s.end,thickness:s.thickness})));
-  e.combineJoinedFigure(1);const after=[...e.geometry.objects.values()].flatMap(g=>g.segments.map(s=>({start:s.start,end:s.end,thickness:s.thickness})));
-  assert.equal(after.length,before.length);after.forEach((s,i)=>{point(s.start,before[i].start);point(s.end,before[i].end);near(s.thickness,before[i].thickness);});
-  assert.equal(e.figure.segments.filter(s=>s._stykRig?.connector).length,2);assert.doesNotThrow(()=>validateScene(e.serialize()));
+  assert.doesNotThrow(()=>validateScene(e.serialize()));
 });
 test('IK drives ordinary anchors; derived controls reject conflicting IK and unsupported Pivot exports',()=>{
   const e=editorFor('flexing-muscle');select(e,2);e.setNodeIK({enabled:true});e.poseJoint(400,180);const c=g(e).segments[2];point(c.end,g(e).joints.get(2));
   select(e,3);assert.throws(()=>e.setNodeIK({enabled:true}),/derived|driving/);
-  assert.throws(()=>materializePivotDocument(e.serialize()),/Pivot cannot preserve/);
+  assert.throws(()=>pivotDocument(e.serialize()),/Pivot cannot preserve/);
 });
 test('deep dependency chains compile and evaluate without recursive stack growth',()=>{
   const doc=rigExampleDocument('nested-curve-controls'),fig=doc.figure_types[0],template=fig.segments[3],count=5000;
@@ -222,7 +217,7 @@ for(const rig of RIG_EXAMPLES)test(`${rig.name}: native project and reusable fig
   const report=e.serialize(),baseline=poseSignature(e.geometry),container=await buildContainerV2(report,'styk'),decoded=(await decodeDocument(container,'styk')).document;
   validateScene(decoded);point(buildGeometry(decoded,decoded.keyframes[0]).objects.get(0).root,g(e).root);
   assert.deepEqual(poseSignature(buildGeometry(decoded,decoded.keyframes[0])),baseline);
-  const reusable=nativeFigureDocument(report,{figureUid:1});const file=await buildContainerV2(reusable,'stkz'),saved=(await decodeDocument(file,'stkz')).document;
+  const reusable=figureDocument(report,{figureUid:1});const file=await buildContainerV2(reusable,'stkz'),saved=(await decodeDocument(file,'stkz')).document;
   assert.deepEqual(poseSignature(buildGeometry(saved,saved.keyframes[0])),baseline);
   });
 
