@@ -205,7 +205,7 @@
     "settings.smoothZoomAuto": "Tự động",
     "settings.smoothZoomOn": "Bật",
     "settings.smoothZoomOff": "Tắt",
-    "settings.smoothZoomNote": "Con lăn chuột chuyển mượt giữa các mức thu phóng. Chế độ Tự động tắt tính năng này trong Chế độ tương thích, khi đó mỗi nấc lăn sẽ thu phóng ngay để các cảnh lớn vẫn phản hồi nhanh.",
+    "settings.smoothZoomNote": "Con lăn chuột chuyển mượt giữa các mức thu phóng. Chế độ Tự động tắt tính năng này với đồ họa chậm hơn, khi đó mỗi nấc lăn sẽ thu phóng ngay để các cảnh lớn vẫn phản hồi nhanh.",
     "settings.boxSelection": "Chọn bằng khung",
     "settings.boxBounds": "Ranh giới hình",
     "settings.boxOrigins": "Gốc tọa độ của hình",

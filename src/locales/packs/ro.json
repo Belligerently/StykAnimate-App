@@ -209,7 +209,7 @@
     "settings.smoothZoomAuto": "Automat",
     "settings.smoothZoomOn": "Activat",
     "settings.smoothZoomOff": "Dezactivat",
-    "settings.smoothZoomNote": "Rotița mouse-ului trece lin de la un nivel de zoom la altul. Modul automat îl dezactivează în modul de compatibilitate, unde fiecare pas al rotiței aplică imediat zoomul, ca scenele mari să rămână fluide.",
+    "settings.smoothZoomNote": "Rotița mouse-ului trece lin de la un nivel de zoom la altul. Modul automat îl dezactivează pe o grafică mai lentă, unde fiecare pas al rotiței aplică imediat zoomul, ca scenele mari să rămână fluide.",
     "settings.boxSelection": "Selecție dreptunghiulară",
     "settings.boxBounds": "Limitele figurilor",
     "settings.boxOrigins": "Originile figurilor",

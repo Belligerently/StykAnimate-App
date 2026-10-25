@@ -207,7 +207,7 @@
     "settings.smoothZoomAuto": "Automatikus",
     "settings.smoothZoomOn": "Be",
     "settings.smoothZoomOff": "Ki",
-    "settings.smoothZoomNote": "Az egérgörgő egyenletesen vált a nagyítási szintek között. Az automatikus beállítás kompatibilitási módban kikapcsolja, ott minden görgetési lépés azonnal nagyít, hogy a nagy jelenetek is gyorsan reagáljanak.",
+    "settings.smoothZoomNote": "Az egérgörgő egyenletesen vált a nagyítási szintek között. Az automatikus beállítás lassabb grafika esetén kikapcsolja, ott minden görgetési lépés azonnal nagyít, hogy a nagy jelenetek is gyorsan reagáljanak.",
     "settings.boxSelection": "Téglalapos kijelölés",
     "settings.boxBounds": "Figurák határolókerete",
     "settings.boxOrigins": "Figurák origója",

@@ -205,7 +205,7 @@
     "settings.smoothZoomAuto": "Otomatis",
     "settings.smoothZoomOn": "Aktif",
     "settings.smoothZoomOff": "Nonaktif",
-    "settings.smoothZoomNote": "Roda mouse berpindah dengan halus di antara tingkat zoom. Opsi Otomatis menonaktifkannya di mode kompatibilitas, tempat setiap putaran roda langsung melakukan zoom agar adegan besar tetap responsif.",
+    "settings.smoothZoomNote": "Roda mouse berpindah dengan halus di antara tingkat zoom. Opsi Otomatis menonaktifkannya pada grafis yang lebih lambat, tempat setiap putaran roda langsung melakukan zoom agar adegan besar tetap responsif.",
     "settings.boxSelection": "Seleksi kotak",
     "settings.boxBounds": "Batas figur",
     "settings.boxOrigins": "Titik asal figur",

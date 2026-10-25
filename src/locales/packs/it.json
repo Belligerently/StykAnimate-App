@@ -209,7 +209,7 @@
     "settings.smoothZoomAuto": "Automatico",
     "settings.smoothZoomOn": "Attivo",
     "settings.smoothZoomOff": "Disattivo",
-    "settings.smoothZoomNote": "La rotellina del mouse passa gradualmente da un livello di zoom all’altro. In modalità Automatica è disattivato in modalità di compatibilità, dove ogni scatto applica subito lo zoom per mantenere reattive le scene grandi.",
+    "settings.smoothZoomNote": "La rotellina del mouse passa gradualmente da un livello di zoom all’altro. In modalità Automatica è disattivato con una grafica più lenta, dove ogni scatto applica subito lo zoom per mantenere reattive le scene grandi.",
     "settings.boxSelection": "Selezione rettangolare",
     "settings.boxBounds": "Ingombri delle figure",
     "settings.boxOrigins": "Origini delle figure",

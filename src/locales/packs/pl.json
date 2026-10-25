@@ -211,7 +211,7 @@
     "settings.smoothZoomAuto": "Automatyczne",
     "settings.smoothZoomOn": "Włączone",
     "settings.smoothZoomOff": "Wyłączone",
-    "settings.smoothZoomNote": "Kółko myszy płynnie przechodzi między poziomami powiększenia. Tryb automatyczny wyłącza to w trybie zgodności, w którym każdy skok kółka od razu zmienia powiększenie, aby duże sceny działały sprawnie.",
+    "settings.smoothZoomNote": "Kółko myszy płynnie przechodzi między poziomami powiększenia. Tryb automatyczny wyłącza to przy wolniejszej grafice, gdzie każdy skok kółka od razu zmienia powiększenie, aby duże sceny działały sprawnie.",
     "settings.boxSelection": "Zaznaczanie prostokątem",
     "settings.boxBounds": "Granice figur",
     "settings.boxOrigins": "Punkty początkowe figur",

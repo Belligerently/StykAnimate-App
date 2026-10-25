@@ -211,7 +211,7 @@
     "settings.smoothZoomAuto": "Automatisk",
     "settings.smoothZoomOn": "På",
     "settings.smoothZoomOff": "Av",
-    "settings.smoothZoomNote": "Musehjulet glir mellom zoomnivåer. Automatisk slår dette av i kompatibilitetsmodus, der hvert hakk zoomer med en gang slik at store scener reagerer raskt.",
+    "settings.smoothZoomNote": "Musehjulet glir mellom zoomnivåer. Automatisk slår dette av med tregere grafikk, der hvert hakk zoomer med en gang slik at store scener reagerer raskt.",
     "settings.boxSelection": "Rektangulært utvalg",
     "settings.boxBounds": "Figuravgrensninger",
     "settings.boxOrigins": "Figurorigoer",

@@ -35,7 +35,7 @@ const TEXT = Object.freeze({
   'settings.smoothZoomAuto': 'Automatic',
   'settings.smoothZoomOn': 'On',
   'settings.smoothZoomOff': 'Off',
-  'settings.smoothZoomNote': 'The mouse wheel glides between zoom levels. Automatic turns it off in Compatibility mode, where each notch zooms at once so large scenes stay responsive.',
+  'settings.smoothZoomNote': 'The mouse wheel glides between zoom levels. Automatic turns it off on slower graphics, where each notch zooms at once so large scenes stay responsive.',
   'settings.boxSelection': 'Box selection',
   'settings.boxBounds': 'Figure bounds',
   'settings.boxOrigins': 'Figure origins',

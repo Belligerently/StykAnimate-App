@@ -207,7 +207,7 @@
     "settings.smoothZoomAuto": "Automaattinen",
     "settings.smoothZoomOn": "Käytössä",
     "settings.smoothZoomOff": "Pois käytöstä",
-    "settings.smoothZoomNote": "Hiiren rulla liukuu zoomaustasolta toiselle. Automaattinen tila poistaa tämän käytöstä yhteensopivuustilassa, jossa jokainen rullan askel zoomaa heti, jotta suuret näkymät pysyvät sujuvina.",
+    "settings.smoothZoomNote": "Hiiren rulla liukuu zoomaustasolta toiselle. Automaattinen tila poistaa tämän käytöstä hitaammalla grafiikalla, jolloin jokainen rullan askel zoomaa heti, jotta suuret näkymät pysyvät sujuvina.",
     "settings.boxSelection": "Suorakulmiovalinta",
     "settings.boxBounds": "Hahmojen rajat",
     "settings.boxOrigins": "Hahmojen origot",

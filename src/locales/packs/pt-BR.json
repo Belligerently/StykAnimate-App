@@ -212,7 +212,7 @@
     "settings.smoothZoomAuto": "Automático",
     "settings.smoothZoomOn": "Ativado",
     "settings.smoothZoomOff": "Desativado",
-    "settings.smoothZoomNote": "A roda do mouse passa suavemente entre os níveis de zoom. Automático desativa esse recurso no modo de compatibilidade, em que cada clique da roda aplica o zoom na hora para que cenas grandes continuem respondendo rápido.",
+    "settings.smoothZoomNote": "A roda do mouse passa suavemente entre os níveis de zoom. Automático desativa esse recurso em gráficos mais lentos, em que cada clique da roda aplica o zoom na hora para que cenas grandes continuem respondendo rápido.",
     "settings.boxSelection": "Seleção retangular",
     "settings.boxBounds": "Limites das figuras",
     "settings.boxOrigins": "Origens das figuras",

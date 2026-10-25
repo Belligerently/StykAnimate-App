@@ -207,7 +207,7 @@
     "settings.smoothZoomAuto": "Otomatik",
     "settings.smoothZoomOn": "Açık",
     "settings.smoothZoomOff": "Kapalı",
-    "settings.smoothZoomNote": "Fare tekerleği yakınlaştırma düzeyleri arasında akıcı biçimde geçiş yapar. Otomatik seçeneği bunu uyumluluk modunda kapatır; orada tekerleğin her adımı hemen yakınlaştırır, böylece büyük sahneler hızlı tepki vermeye devam eder.",
+    "settings.smoothZoomNote": "Fare tekerleği yakınlaştırma düzeyleri arasında akıcı biçimde geçiş yapar. Otomatik seçeneği bunu daha yavaş grafiklerde kapatır; orada tekerleğin her adımı hemen yakınlaştırır, böylece büyük sahneler hızlı tepki vermeye devam eder.",
     "settings.boxSelection": "Dikdörtgenle seçim",
     "settings.boxBounds": "Figür sınırları",
     "settings.boxOrigins": "Figür orijinleri",

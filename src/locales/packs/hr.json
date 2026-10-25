@@ -209,7 +209,7 @@
     "settings.smoothZoomAuto": "Automatski",
     "settings.smoothZoomOn": "Uključeno",
     "settings.smoothZoomOff": "Isključeno",
-    "settings.smoothZoomNote": "Kotačić miša glatko prelazi između razina zumiranja. Automatski način to isključuje u kompatibilnom načinu rada, gdje svaki korak kotačića zumira odmah kako bi velike scene ostale brze.",
+    "settings.smoothZoomNote": "Kotačić miša glatko prelazi između razina zumiranja. Automatski način to isključuje na sporijoj grafici, gdje svaki korak kotačića zumira odmah kako bi velike scene ostale brze.",
     "settings.boxSelection": "Pravokutni odabir",
     "settings.boxBounds": "Granice figura",
     "settings.boxOrigins": "Ishodišta figura",

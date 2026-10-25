@@ -210,7 +210,7 @@
     "settings.smoothZoomAuto": "自动",
     "settings.smoothZoomOn": "开",
     "settings.smoothZoomOff": "关",
-    "settings.smoothZoomNote": "鼠标滚轮会在缩放级别之间平滑过渡。选择自动时，兼容模式下会关闭此功能，滚轮每格立即缩放，让大型场景保持流畅响应。",
+    "settings.smoothZoomNote": "鼠标滚轮会在缩放级别之间平滑过渡。选择自动时，在图形性能较低时会关闭此功能，滚轮每格立即缩放，让大型场景保持流畅响应。",
     "settings.boxSelection": "框选",
     "settings.boxBounds": "图形边界",
     "settings.boxOrigins": "图形原点",

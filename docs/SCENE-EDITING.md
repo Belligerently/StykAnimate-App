@@ -60,8 +60,8 @@ for panning. This preference changes the workspace view, not the document.
 
 Settings → Canvas → Smooth zooming chooses how a mouse-wheel notch moves the
 view. **Automatic** (the default) glides between zoom levels with WebGPU and
-zooms each notch at once in Compatibility mode, where every extra frame of a
-glide is a software repaint of the scene. **On** and **Off** apply everywhere.
+zooms each notch at once on slower graphics (the engine's WebGL2 backend),
+where every extra frame of a glide is a costly repaint of the scene. **On** and **Off** apply everywhere.
 A notch zooms about 1.35x either way; only the motion differs. Trackpad and
 touch pinches stay continuous, and reduced-motion system settings always zoom
 directly (`src/canvas-wheel-zoom.mjs`).

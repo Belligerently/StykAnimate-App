@@ -211,7 +211,7 @@
     "settings.smoothZoomAuto": "Automaticky",
     "settings.smoothZoomOn": "Zapnuto",
     "settings.smoothZoomOff": "Vypnuto",
-    "settings.smoothZoomNote": "Kolečko myši plynule přechází mezi úrovněmi přiblížení. Automatický režim to v režimu kompatibility vypne a každý krok kolečka přiblíží okamžitě, aby velké scény zůstaly svižné.",
+    "settings.smoothZoomNote": "Kolečko myši plynule přechází mezi úrovněmi přiblížení. Automatický režim to u pomalejší grafiky vypne a každý krok kolečka přiblíží okamžitě, aby velké scény zůstaly svižné.",
     "settings.boxSelection": "Výběr obdélníkem",
     "settings.boxBounds": "Hranice figur",
     "settings.boxOrigins": "Počátky figur",

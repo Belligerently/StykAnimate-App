@@ -252,7 +252,7 @@
     "settings.smoothZoomAuto": "Automatisch",
     "settings.smoothZoomOn": "Aan",
     "settings.smoothZoomOff": "Uit",
-    "settings.smoothZoomNote": "Het muiswiel glijdt tussen zoomniveaus. Automatisch schakelt dit uit in de compatibiliteitsmodus, waar elke stap van het wiel direct zoomt zodat grote scènes snel blijven reageren.",
+    "settings.smoothZoomNote": "Het muiswiel glijdt tussen zoomniveaus. Automatisch schakelt dit uit bij tragere graphics, waar elke stap van het wiel direct zoomt zodat grote scènes snel blijven reageren.",
     "settings.boxSelection": "Rechthoekselectie",
     "settings.boxBounds": "Figuurgrenzen",
     "settings.boxOrigins": "Figuuroorsprongen",

@@ -211,7 +211,7 @@
     "settings.smoothZoomAuto": "Samodejno",
     "settings.smoothZoomOn": "Vklopljeno",
     "settings.smoothZoomOff": "Izklopljeno",
-    "settings.smoothZoomNote": "Kolesce miške gladko prehaja med ravnmi povečave. Samodejni način to izklopi v združljivostnem načinu, kjer vsak korak kolesca poveča takoj, da se velike scene še naprej hitro odzivajo.",
+    "settings.smoothZoomNote": "Kolesce miške gladko prehaja med ravnmi povečave. Samodejni način to izklopi pri počasnejši grafiki, kjer vsak korak kolesca poveča takoj, da se velike scene še naprej hitro odzivajo.",
     "settings.boxSelection": "Pravokotni izbor",
     "settings.boxBounds": "Meje figur",
     "settings.boxOrigins": "Izhodišča figur",

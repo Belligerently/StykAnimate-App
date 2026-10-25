@@ -551,7 +551,7 @@
     "settings.smoothZoomAuto": "Automatisch",
     "settings.smoothZoomOn": "Ein",
     "settings.smoothZoomOff": "Aus",
-    "settings.smoothZoomNote": "Das Mausrad gleitet zwischen den Zoomstufen. „Automatisch“ schaltet das im Kompatibilitätsmodus aus: Dort zoomt jede Rastung sofort, damit große Szenen flüssig bleiben.",
+    "settings.smoothZoomNote": "Das Mausrad gleitet zwischen den Zoomstufen. „Automatisch“ schaltet das bei langsamerer Grafik aus: Dort zoomt jede Rastung sofort, damit große Szenen flüssig bleiben.",
     "settings.boxSelection": "Rechteckauswahl",
     "settings.boxBounds": "Figurenbegrenzungen",
     "settings.boxOrigins": "Figurenursprünge",

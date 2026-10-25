@@ -209,7 +209,7 @@
     "settings.smoothZoomAuto": "Automatique",
     "settings.smoothZoomOn": "Activé",
     "settings.smoothZoomOff": "Désactivé",
-    "settings.smoothZoomNote": "La molette de la souris passe en douceur d’un niveau de zoom à l’autre. Le mode automatique le désactive en mode de compatibilité, où chaque cran zoome immédiatement pour que les grandes scènes restent réactives.",
+    "settings.smoothZoomNote": "La molette de la souris passe en douceur d’un niveau de zoom à l’autre. Le mode automatique le désactive sur un affichage plus lent, où chaque cran zoome immédiatement pour que les grandes scènes restent réactives.",
     "settings.boxSelection": "Sélection rectangulaire",
     "settings.boxBounds": "Limites des figures",
     "settings.boxOrigins": "Origines des figures",
