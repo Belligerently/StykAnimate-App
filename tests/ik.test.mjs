@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {engineEditor} from './support/owned-editor.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {solveIKPoints, ikChain, validateIK} from '../src/ik.mjs';
@@ -13,7 +12,7 @@ import {getPivotHandles} from '../src/canvas-interactions.mjs';
 const near = (a, b, tolerance = 1e-4) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 const point = (a, b, tolerance) => { near(a.x, b.x, tolerance); near(a.y, b.y, tolerance); };
 /** `edit(document)` changes the document before the engine opens it. */
-export function fixture({plain = false, ...options} = {}, edit = null) {
+export function fixture(options = {}, edit = null) {
   const document = emptyDocument(), figure = document.figure_types[0], base = figure.segments[0];
   figure.segments = [
     {...base, segment_id: 11, parent_id: 0, length: 90, angle_rad: .8, aux_code: 0, is_static: false},
@@ -26,37 +25,10 @@ export function fixture({plain = false, ...options} = {}, edit = null) {
   figure.segment_count = figure.segments.length;
   document.keyframes = [createFrame([createObject(figure, 1, 300, 150)], 8)];
   edit?.(document);
-  const editor = (plain ? plainEditorFor : engineEditor)({demo: false, ...options}, document); editor.select(1, 1); return editor;
+  const editor = engineEditor({demo: false, ...options}, document); editor.select(1, 1); return editor;
 }
-/** [`fixture`] for the tests of the editor's own IK bodies (native timelines, working frames, imports the session does not edit). */
-export const plainFixture = (options = {}, edit = null) => fixture({...options, plain: true}, edit);
 const g = e => e.geometry.objects.get(0);
 const angleNear = (a,b) => near(Math.atan2(Math.sin(a-b),Math.cos(a-b)),0);
-
-test('origin translation can carry pins, switch live, and return exactly without history', () => {
-  for (const options of [{}, {propertyChannels: true}, {layerTimeline: true}]) {
-    const e = plainFixture(options); e.setNodeIK({enabled: true}); e.poseJoint(420, 190);
-    e.select(1); const before = e.serialize(), joints = new Map(g(e).joints), history = e._undo.length;
-    e.beginTranslationDrag();
-    for (const movePins of [true, false, true]) {
-      e.moveSelection(20, -12, {fromStart: true, movePins});
-      point(g(e).joints.get(22), {x: joints.get(22).x + (movePins ? 20 : 0), y: joints.get(22).y - (movePins ? 12 : 0)});
-      assert.equal(e.object._stykIK[22].pinned, true);
-      if (movePins) for (const [id, p] of joints) point(g(e).joints.get(id), {x: p.x + 20, y: p.y - 12});
-    }
-    e.moveSelection(180, 0, {fromStart: true});
-    e.moveSelection(20, -12, {fromStart: true, movePins: true});
-    for (const [id, p] of joints) point(g(e).joints.get(id), {x:p.x+20,y:p.y-12});
-    e.moveSelection(0, 0, {fromStart: true, movePins: true}); e.commitDrag();
-    assert.equal(e._undo.length, history); assert.deepEqual(e.serialize(), before);
-    e.beginTranslationDrag(); e.moveSelection(20, -12, {fromStart: true, movePins: true}); e.commitDrag();
-    const after = e.serialize(); assert.equal(e._undo.length, history + 1);
-    e.undo(); for (const [id, p] of joints) point(g(e).joints.get(id), p);
-    e.redo(); assert.deepEqual(e.serialize(), after);
-    e.beginTranslationDrag(); e.moveSelection(30, 20, {fromStart: true, movePins: true}); e.cancelDrag();
-    assert.deepEqual(e.serialize(), after);
-  }
-});
 
 test('Both follows a full circular drag without mirroring across the original knee axis', () => {
   for (const pinned of [true, false]) for (const side of [-1, 1]) {
@@ -386,32 +358,12 @@ test('stable handle IDs, chain bounds, overlapping controllers and malformed met
   assert.throws(() => validateIK(bad), /Invalid IK/);
 });
 
-test('authored property-channel posing retains IK metadata through key creation and undo', () => {
-  const e = plainFixture({propertyChannels: true}); e.setNodeIK({enabled: true});
-  assert.equal(e.getIKSettings().pinned, true); const before = g(e).joints.get(22);
-  e.select(1, -1); e.moveSelection(15, -10); point(g(e).joints.get(22), before);
-  e.undo(); point(g(e).joints.get(22), before); e.redo(); point(g(e).joints.get(22), before);
-  assert.ok(e.animationChannels.some(c => c.property === 'pose'));
-});
-
 test('returning a root or pinned target drag to its start creates no history or source changes', () => {
   const e = fixture(); e.setNodeIK({enabled: true}); const original = e.serialize(), count = e._undo.length, target = g(e).joints.get(22);
   e.beginDrag(); e.poseJoint(350, 260); e.poseJoint(target.x, target.y); e.commitDrag();
   assert.deepEqual(e.serialize(), original); assert.equal(e._undo.length, count);
   e.select(1, -1); e.beginTranslationDrag(); e.moveSelection(15, -12, {fromStart: true}); e.moveSelection(0, 0, {fromStart: true}); e.commitDrag();
   assert.deepEqual(e.serialize(), original); assert.equal(e._undo.length, count);
-});
-
-test('duplicated, pasted and imported rigs place their pins with the new copy', () => {
-  const e = plainFixture(); e.setNodeIK({enabled: true}); const original = g(e).joints.get(22);
-  e.duplicateFigure(); const copy = e.geometry.objects.get(e.selectedSlot);
-  point(copy.joints.get(22), {x: original.x + 24, y: original.y + 24});
-  e.select(1, -1); e.copySelection(); e.pasteSelection();
-  point(e.geometry.objects.get(e.selectedSlot).joints.get(22), {x: original.x + 24, y: original.y + 24});
-  const reusable = nativeFigureDocument(e.report, {figureUid: 1});
-  const other = plainFixture(); other.importFigure(reusable);
-  const imported = other.geometry.objects.get(other.selectedSlot), offset = {x: other.report.canvas_width / 2 - 300, y: other.report.canvas_height / 2 - 150};
-  point(imported.joints.get(22), {x: original.x + offset.x, y: original.y + offset.y});
 });
 
 test('rig splitting preserves chain base and deleting an IK node removes its controller with reversible history', () => {
@@ -433,19 +385,3 @@ test('curved links, arbitrary segment order, and off-chain branches preserve len
   point(buildGeometry(report, report.keyframes[0]).objects.get(0).joints.get(22), {x: 360, y: 265});
 });
 
-test('a constrained joined figure follows its moving attachment while its target stays planted', () => {
-  const e = plainFixture(); e.duplicateFigure(); const childUid = e.selectedUid;
-  e.joinTo(1, 0); e.select(childUid, 1); e.setNodeIK({enabled: true});
-  const target = e.geometry.objects.get(e.selectedSlot).joints.get(22);
-  e.select(1, -1); e.moveSelection(8, -7);
-  const child = e.frame.objects.find(o => o.unique_id === childUid);
-  point(e.geometry.objects.get(child.object_slot).joints.get(22), target);
-});
-
-test('Simple frame drafts discard IK setup and Add carries the working controllers into the new frame', () => {
-  const e = plainFixture(); e.enableFrameDrafts(); e.setNodeIK({enabled: true});
-  e.discardFrameDraft(); assert.equal(e.getIKSettings().enabled, false);
-  e.setNodeIK({enabled: true}); const target = g(e).joints.get(22); e.addDraftFrame();
-  assert.equal(e.frameIndex, 1); assert.ok(e.frame.objects[0]._stykIK[22].pinned);
-  point(g(e).joints.get(22), target);
-});

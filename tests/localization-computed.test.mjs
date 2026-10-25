@@ -34,7 +34,7 @@ import {exportCodecChoices,exportFormatStates,exportEncodingSummary} from '../sr
 import {plainEditorFor} from './support/plain-editor.mjs';
 
 const fixture=()=>new Editor({demo:false}).load(emptyDocument());
-const populatedFixture=()=>new Editor({demo:false}).load(createDemo());
+const populatedFixture=()=>engineEditor({demo:false,layerTimeline:true},createDemo());
 
 test('rig descriptors retain numeric captions, descriptions, anchor actions and raw authored joint names',()=>{
  const editor=populatedFixture();editor.select(1,2);editor.enableSmartStretch(true);editor.setAngleLock('parent');

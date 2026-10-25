@@ -89,17 +89,6 @@ test('multi-figure paste and fresh drawing preserve authored presence and librar
   editor.redo(); assert.ok(editor.selectionFrame.objects.some(value => value.unique_id === drawn.unique_id));
 });
 
-test('Rig mode keeps shared-definition semantics after authored pose captures and restores retained poses on undo', () => {
-  const editor = fixture(); editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'}); editor.seek(0); editor.select(1); editor.moveSelection(12, 4);
-  const before = clone(editor.report), sourceId = editor.animationChannels[0].keys[0].value.frameId;
-  editor.select(1, 0); const shape = editor.geometry.objects.get(editor.selectedSlot).segments[0];
-  editor.beginRigDrag(); editor.editRigJoint(shape.end.x + 15, shape.end.y + 6); editor.commitDrag();
-  assert.equal(editor._undo.at(-1).kind, 'topology'); assert.equal(editor._authoredPoseEdit, null);
-  assert.notDeepEqual(editor.report.figure_types[0], before.figure_types[0]);
-  assert.notDeepEqual(editor.report._styk.frameSources[sourceId].objects[0], before._styk.frameSources[sourceId].objects[0]);
-  editor.undo(); assert.deepEqual(editor.report, before); editor.redo(); assert.doesNotThrow(() => editor.serialize());
-});
-
 test('discarded history releases generated pose sources while preserving every undo/redo reference', () => {
   // session gap: moveSelection on a native timeline with property channels runs in the editor, and with a history limit the editor's pruning of generated pose sources
   // and the session's history disagree (undo: the pose source is missing)

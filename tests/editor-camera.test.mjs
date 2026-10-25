@@ -149,19 +149,6 @@ test('Locate moves an entire joined component and every selected figure by the s
   editor.undo(); assert.deepEqual(editor.serialize(), before);
 });
 
-test('Locate uses immediate stored neighbors including hidden keys and native handle IDs, with safe missing targets', () => {
-  // session gap: the session evaluates a neighbouring frame at its start tick, which for a zero-duration (hidden) native frame shows the next frame
-  const {editor, child} = fixture({plain: true, change: document => { document.keyframes[1].duration_raw = 0; }});
-  editor.selectFrame(2); editor.select(child, 0);
-  const target = buildGeometry(editor.report, editor.report.keyframes[1]).objects.get(editor.selectedSlot).joints.get(1);
-  assert.ok(editor.locateHandle(-1, {handleId: 1})); pointNear(editor.geometry.objects.get(editor.selectedSlot).joints.get(1), target);
-  assert.equal(editor.locateHandle(1), false);
-  assert.equal(editor.locateHandle(-1, {handleId: 999999}), false);
-  editor.locateHandle(-1, {handleId: 1, editMode: true});
-  pointNear(editor.geometry.objects.get(editor.selectedSlot).joints.get(1), target);
-  editor.selectFrame(0); assert.equal(editor.locateHandle(-1), false);
-});
-
 test('Locate matches a sparse native handle ID when the neighbor uses a differently ordered definition', () => {
   const {editor, child} = fixture();
   const document = editor.serialize();

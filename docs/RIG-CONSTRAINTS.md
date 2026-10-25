@@ -515,7 +515,7 @@ between frames. Collapsed/reversed spans, arbitrary seeks and undo are determini
 Widths and stretch influence are bounded. A fully compressed detail cannot be
 directly inverse-posed until its driver expands.
 
-`editor-rig-constraints.mjs` owns commands and sparse relationship history. Changes
+The engine session (`styk-edit/src/pose.rs` and the rig modules beside it) owns the commands and sparse relationship history. Changes
 invalidate affected figure instances. Duplicate/combine remap internal references
 and retain external anchors as appropriate. Derived joints reject conflicting IK;
 ordinary skeleton anchors can still be driven by IK. Shared geometry supplies

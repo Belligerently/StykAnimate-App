@@ -1,15 +1,17 @@
 /** Local regression evidence for the supplied hands pack; runs outside the UI. */
 import assert from 'node:assert/strict';
+import '../tests/support/register-engine.mjs';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {nodeCodec, exportDocument, importBytes} from '../tests/support/codec.mjs';
 import {Editor} from '../src/editor.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {synchronizeExistingDerived} from '../src/document-normalize.mjs';
 import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
 
 const directory='artifacts/figure-palette';await mkdir(directory,{recursive:true});
 const source=JSON.parse(await readFile(process.argv[2]??`${directory}/hands-source.json`,'utf8'));
-const e=new Editor({demo:false,propertyChannels:true,layerTimeline:true}).load(source);
+const e=new Editor({demo:false,propertyChannels:true,layerTimeline:true}).load(source),owner=installEngineOwner(e);assert.ok(owner.ready(),'The engine did not open the document.');
 const uid=e.evaluatedFrame.objects[0].unique_id;e.select(uid);
 const timings={},measure=(key,fn)=>{const start=performance.now(),value=fn();timings[key]=performance.now()-start;return value;};
 const initial=e.figurePalette(),count=e.figure.segments.length;
@@ -47,3 +49,4 @@ for(const tick of new Set(ticks)){
 }
 const evidence={source:{version:source.version,frames:source.keyframes.length,figureTypes:source.figure_types.length,firstFrameObjects:source.keyframes[0].objects.length},uid,segments:count,initial:initial.map(p=>[p.color,p.segments.length]),final:e.figurePalette().map(p=>[p.color,p.segments.length]),historyBytes,timings,verifiedTicks: ticks};
 await writeFile(`${directory}/roundtrip-report.json`,JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));
+owner.release();

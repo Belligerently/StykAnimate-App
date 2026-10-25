@@ -1,14 +1,19 @@
 import {messageError} from './localized-error.mjs';
 import {keyEasing, inheritedKeyEasing} from './keyframe-easing.mjs';
-import {isDiscreteAnimationProperty} from './animation-properties.mjs';
 /** A uniform scalar edit across one selected branch. Native definitions remain
  * shared unless an authored/captured style already owns an affected value. */
 import {animationChannels,animationChannelId,validateAnimationValue,composeAnimationChannels} from './animation-channels.mjs';
 import {buildGeometry} from './pivot/geometry.mjs';
 import {animationStyleValue, polygonIdentity, resolveInstanceFigure} from './animation-style.mjs';
-import {builderSelectionIndices} from './editor-builder-branch.mjs';
+import {segmentBranchIndices} from './pivot/structure.mjs';
 
 const properties={segment_opacity:'opacity',segment_gradient_opacity:'gradientOpacity',thickness:'thickness'};
+/** The selected segments (several picked ones, else the selected one, with the branch under it when `whole`). */
+function builderSelectionIndices(editor,whole=false) {
+  const ids=editor.selectedSegmentIds,segment=editor.figure?.segments[editor.selectedJoint];
+  return ids?.size>1?editor.figure.segments.flatMap((segment,index)=>ids.has(segment.segment_id)?[index]:[])
+    :whole?(segment?segmentBranchIndices(editor.figure.segments,segment.segment_id):[]):[editor.selectedJoint];
+}
 export function branchOpacityPlan(editor,key) {
   const property=properties[key],figure=editor.figure,object=editor.object;
   if(!property||!figure||!object||(property==='thickness'&&!editor.propertyChannels))return null;
@@ -108,14 +113,4 @@ export function commitBranchStyleAnimation(editor) {
   editor._invalidate({timing:true});
   if(!edit.changed){editor._emit('edit',{animation:true,label:'Cancel unchanged branch opacity'});return false;}
   editor.addAnimationKeys(edit.entries);return true;
-}
-
-/** Numeric secondary opacity preserves each existing endpoint RGB. It does not
- * invent gradients on plain segments (unlike the native combined color chooser). */
-export function branchGradientOpacityBinding(editor,plan) {
-  const indices=plan.entries.map(entry=>entry.index);
-  return {paths:indices.map(index=>['segments',index,'secondary','a']),mutate(figure,{gradientOpacity}){
-    const value=validateAnimationValue(plan.entries[0].target,'gradientOpacity',gradientOpacity);
-    for(const index of indices)figure.segments[index].secondary.a=Math.round((1-value)*255);
-  }};
 }
