@@ -319,8 +319,12 @@ export class Editor extends EventTarget {
       this._historySize -= retired.shift().bytes;
       collectSources = true;
     }
-    if (collectSources){this._pruneFrameSources();drawingResourcesFor(this.report)?.collectHistory([...this._undo,...this._redo]);}
+    if (collectSources){this._pruneFrameSources();this._collectDrawingHistory();}
   }
+  /** Lets the drawing store go of the pixels no history entry refers to any more. */
+  _collectDrawingHistory() {drawingResourcesFor(this.report)?.collectHistory([...this._undo,...this._redo]);}
+  /** The history entry the next undo (or redo) applies, as far as its pixels go: what `DrawingHistory` loads and the drawing store prepares first. */
+  historyPixels(direction) {return (direction==='undo'?this._undo:this._redo).at(-1);}
   _sourceFrame({index,sourceId,draft,sourceDepth=0}){
     let report=this.report;for(let depth=0;depth<sourceDepth;depth++)report=report._styk.movieclipSource.document;
     return draft?report._styk.simpleFrameDraft?.baseline:sourceId?report._styk.frameSources[sourceId]:report.keyframes[index];

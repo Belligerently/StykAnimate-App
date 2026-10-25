@@ -642,6 +642,11 @@ fn command_projection_checked(
             metadata.set("kind", Value::str("external"));
             0.0
         }
+        // Measured by the interface, which holds the pixels (drawing_pixels.rs).
+        CommandKind::DrawingPixels { .. } => {
+            metadata.set("kind", Value::str("drawing-pixels"));
+            0.0
+        }
         CommandKind::Topology {
             index: at,
             before,
@@ -732,7 +737,7 @@ fn command_projection_checked(
             CommandKind::Ranges { .. } => &["kind", "label", "changes", "beforeSelection", "structural", "timing", "afterSelection"],
             // These existing owners retain exact weight support. Full enumerable
             // observation needs their own recorded optional construction fields.
-            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Scene { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::Disconnect { .. } | CommandKind::External { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
+            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Scene { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::Disconnect { .. } | CommandKind::External { .. } | CommandKind::DrawingPixels { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
         };
         let mut fields = Obj::new();
         for key in order.iter().chain(["layerChanges", "layers", "beforeRevision", "afterRevision"].iter()) {

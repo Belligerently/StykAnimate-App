@@ -20,7 +20,9 @@
  * parent's takes the edit as one `Edit movieclip` entry (`publishMovieclipEdit`).
  *
  * Calls that only move the view (selecting, seeking) stay with the editor; the session
- * receives the view with every call.
+ * receives the view with every call. A drawing's pixel commits (`commitDrawingPixels`, `resampleDrawing`) are the session's too:
+ * its entries name the cel and the record of the interface's drawing store and history that hold the tiles, which
+ * `engine-owner-drawing.mjs` applies around the call.
  *
  * The clipboards the session's copies fill are shown in the editor's clipboard fields, which the interface reads and
  * writes, and reach the session before the call that pastes them (`engine-clipboards.mjs`).
@@ -41,6 +43,7 @@ import {invalidateMovieclipTypes} from '../movieclips.mjs';
 import {layerIdForUid} from '../layers.mjs';
 import {drawingMetadata} from '../drawing-model.mjs';
 import {drawingResourcesFor} from '../drawing-resources.mjs';
+import {createOwnedDrawings, DRAWING_COMMITS} from './engine-owner-drawing.mjs';
 import {appBoundsMarker} from './engine-edit-bounds.mjs';
 import {createShown} from './engine-shown.mjs';
 import {createClipboards} from './engine-clipboards.mjs';
@@ -56,11 +59,6 @@ const TABLES = ['figure_types', 'keyframes', 'backgrounds'];
  * receives the result as the view of the next call. */
 const VIEW_CALLS = new Set(['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selectBranch', 'selectConnected', 'selectMarquee',
   'selectSameDefinition', 'invertSelection', 'seek', 'setActiveLayer', 'selectSheetLayer', 'selectFrame', 'keepSelectionOnSeek']);
-
-/** Calls that carry a drawing's pixels (tile buffers): the editor applies them to the drawing
- * store and the records they change reach the session by write-back. Their pixels are never
- * turned into JSON for the session, which does not take them (a stroke is megabytes). */
-const PIXEL_CALLS = new Set(['commitDrawingPixels', 'resampleDrawing']);
 
 /** The calls that end an edit, and the editor's field that holds it: with none open they change
  * nothing and answer false, which the owner knows without asking the session. */
@@ -414,6 +412,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       editor._sheetSelection = chosen ? {...(editor._sheetSelection?.id === chosen.id ? editor._sheetSelection : {}), id: chosen.id, contents: chosen.contents} : null;
     }
     if (Array.isArray(answer.depths)) { if (writing) lastDepths = answer.depths; else mirror(answer); }
+    if (answer.drawingRetired) retired();
     if (Number.isFinite(answer.revision)) {
       editor._revision = answer.revision;
       editor._revisionSerial = Math.max(editor._revisionSerial ?? 0, answer.revision);
@@ -776,19 +775,23 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     report.refused[key] = (report.refused[key] ?? 0) + 1;
     return unsupported(name, reason);
   };
-  const callSession = (name, original, args) => {
+  /** `drawing`: the pixel step of a drawing commit (engine-owner-drawing.mjs): it runs once the answer is adopted, before the events. */
+  const callSession = (name, original, args, drawing = null) => {
     const live = ensure();
     if (!live) return original.apply(editor, args);
     if (ENDS_EDIT[name] && !editor[ENDS_EDIT[name]]) { report.calls++; report.native++; return false; }
     const flushed = performance.now();
     flush();
     if (report.ms) report.ms.flush += performance.now() - flushed;
-    if (PIXEL_CALLS.has(name)) return runInEditor(name, original, args);
+    // The session ends the edits it holds before a drawing's pixels are committed, as it does before a call the editor runs.
+    if (drawing) endSessionEdits();
     // A clip takes the pixels its drawings' definitions carry: strokes not yet published would be left out of it.
     if (name === 'createMovieclip' && drawingResourcesFor(editor.report)?.stats.unpublished) throw messageError(new Error(''), 'errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip', {});
     // A gesture or edit the editor runs (the session refused to begin it) stays with the editor to its end.
     if ((editor._drag && !editor._drag.engine) || (editor._animationEdit && !editor._animationEdit.engine) || (editor._vfxClipEdit && !editor._vfxClipEdit.engine)
         || editor._frameDraftEnabled) {
+      // A drawing's pixels are never the editor's to commit.
+      if (drawing) throw refuse(name, 'an edit the engine does not run is open');
       return runInEditor(name, original, args);
     }
     // The clipboards the call pastes are the session's: the ones the interface wrote or another project copied reach it first.
@@ -829,7 +832,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       // (counted in report.refused and report.editor). Only the commands that exist in the session alone are refused.
       const key = `${name}: ${answer.reason}`;
       if (answer.reason !== name) report.refused[key] = (report.refused[key] ?? 0) + 1;
-      if (!sessionOnly.has(name) && !ending) return runInEditor(name, original, args);
+      if (!sessionOnly.has(name) && !ending && !drawing) return runInEditor(name, original, args);
       throw refuse(name, answer.reason);
     }
     // A committed gesture's frame stays on show, as the session keeps it (`retained`),
@@ -846,6 +849,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
     if (!answer.retained && !answer.retainedKept) retainedShown = null;
     if (answer.patch?.length) take();
+    if (drawing && answer.status === 'ok') drawing.adopted(answer);
     timing.adopt += performance.now() - mark; mark = performance.now();
     emit(answer);
     timing.emit += performance.now() - mark;
@@ -883,6 +887,11 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     // does not redo under a motion-path edit, a rig edit or a camera drag, which end first as undo ends them.
     if (editor._drag && (!redo || editor._drag.motionPath || rigOrCamera)) editor.cancelDrag();
     flush();
+    // An entry that names pixel commits waits for its pixels (they may be on the disk) and applies them with the session's step.
+    return drawings.replay(redo, args[0]?.signal, pixels => perform(live, redo, args, pixels));
+  };
+  /** The session's undo or redo and the adoption of its answer; `pixels` applies the drawing store's tiles before the events. */
+  const perform = (live, redo, args, pixels) => {
     const historyView = JSON.stringify({...view(), patch: true});
     report.capture?.push({name: redo ? 'redo' : 'undo', args: '[]', view: historyView});
     const answer = JSON.parse(live.call(redo ? 'redo' : 'undo', '[]', historyView));
@@ -890,8 +899,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       const id = Number(answer.reason.slice(EXTERNAL_ENTRY.length)), [command] = entries.get(id) ?? [];
       if (!command) throw new Error(`The editor has no history entry ${id}.`);
       if ((redo ? editor._redo : editor._undo).at(-1) !== command) throw new Error('The editor\'s history is out of step with the session\'s.');
-      // The editor's own replay: drawing entries prepare their tiles first (it may wait),
-      // and it moves the entry on the editor's stacks.
+      // The editor's own replay, which moves the entry on the editor's stacks.
       depth++;
       let result;
       try { result = editor._drawingHistoryReplay(command, redo ? 'after' : 'before', args[0]?.signal); }
@@ -912,12 +920,30 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     if (answer.status !== 'ok') throw new Error(`The engine could not ${redo ? 'redo' : 'undo'}: ${answer.error ?? answer.reason}`);
     adoptState(answer);
     if (answer.patch?.length) take();
+    pixels?.(answer);
     emit(answer);
     check();
     return answer.result;
   };
 
   // --- installation ---------------------------------------------------------------------
+  // The interface's half of the drawing pixel commits (a cel's tiles live in the drawing store, not in the session).
+  const drawings = createOwnedDrawings(editor, {
+    live: () => ensure(),
+    call: (name, original, args, step) => callSession(name, original, args, step),
+    adjust(record, delta) {
+      if (session && document === editor.report) { flush(); send('@drawingBytes', [record, delta]); }
+    },
+    // Cel definitions changed in place (revision, bounds): the session's copies follow at once.
+    synced(figures) { for (const figure of figures) editor._drawingPublished(figure); flush(); },
+  });
+  /** A call retired a history entry that referred to drawings: the store lets go of what no entry refers to, once the call has ended. */
+  let collecting = false;
+  const retired = () => {
+    if (collecting) return;
+    collecting = true;
+    queueMicrotask(() => { collecting = false; if (session && document === editor.report) editor._collectDrawingHistory(); });
+  };
   /** Commands only the session has (no JavaScript body to run when it refuses). */
   const sessionOnly = new Set();
   for (const name of ['seek', 'undo', 'redo', 'markSaved', '_record', '_pruneFrameSources']) originals.set(name, editor[name]);
@@ -938,6 +964,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     layer[name] = function owned(...args) {
       // A call made by a call the editor runs belongs to it.
       if (depth > 0) return original.apply(this, args);
+      if (DRAWING_COMMITS.has(name)) return drawings[name](original, args);
       return name === 'movieclipBatch' ? batchCall(original, args) : callSession(name, original, args);
     };
   }
@@ -1008,6 +1035,15 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     pending = true;
     (hints ??= freshHints()).figures.add(index);
     settle();
+  };
+  // The drawing store keeps the pixels the session's history refers to, besides the editor's own entries.
+  const historyPixels = editor.historyPixels;
+  layer._collectDrawingHistory = function owned() {
+    const refs = session && document === editor.report ? drawings.refs() : undefined;
+    drawingResourcesFor(editor.report)?.collectHistory([...editor._undo, ...editor._redo], refs);
+  };
+  layer.historyPixels = function owned(direction) {
+    return (session && document === editor.report ? drawings.root(direction === 'redo') : null) ?? historyPixels.call(this, direction);
   };
   // Pose sources only history keeps alive are collected by the session, which holds history.
   layer._pruneFrameSources = function owned(...args) {

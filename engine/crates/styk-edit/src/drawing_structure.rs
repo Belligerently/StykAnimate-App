@@ -4,7 +4,7 @@
 //! makes with auto key. The pixels of a cel are not the document's: a copied cel's go with the call's answer
 //! (`Editor::drawing_forks`) for the interface, which holds them, to copy.
 //!
-//! Brush strokes (`commitDrawingPixels`) and resampling stay with the editor.
+//! Pixel commits and resampling are in `drawing_pixels.rs`.
 
 use styk_doc::{Obj, Value};
 
@@ -21,13 +21,33 @@ fn exposure(value: &Value, default: f64) -> Option<f64> {
     (count.fract() == 0.0 && (1.0..=65535.0).contains(&count)).then_some(count)
 }
 
+/// A figure type identity no definition has: `figure_types.reduce((n, f) => Math.max(n, f.figure_type_id + 1), 1)`.
+pub(crate) fn next_figure_type(figures: &[Value]) -> f64 {
+    figures.iter().fold(1.0f64, |largest, figure| {
+        let id = num(figure, "figure_type_id").unwrap_or(f64::NAN);
+        if largest.is_nan() || id.is_nan() { f64::NAN } else { largest.max(id + 1.0) }
+    })
+}
+
+/// What `drawingTarget` finds: the exposure under a tick of a drawing layer.
+pub(crate) struct DrawingTarget {
+    /// The identity of the layer key that shows the cel.
+    pub key: Value,
+    /// Where the exposure starts, and the tick it ends at.
+    pub start: f64,
+    pub end: f64,
+    /// The cel the exposure shows and its figure on the layer, when it shows one.
+    pub cel: Option<String>,
+    pub object: Option<Value>,
+}
+
 impl Editor {
     fn drawing_layer_state(&self, id: &str) -> Option<&Value> {
         self.report.path(&["_styk", "layers", "byId", id]).filter(|layer| layer.path(&["drawing", "version"]).and_then(Value::as_f64) == Some(1.0))
     }
 
     /// `assertDrawingTargets(editor, ids)`: each id is a drawing layer that is shown and unlocked.
-    fn assert_drawing_targets(&self, ids: &[String]) -> Result<(), EditError> {
+    pub(crate) fn assert_drawing_targets(&self, ids: &[String]) -> Result<(), EditError> {
         if ids.is_empty() {
             return Err(invalid("errors.editorDrawing.chooseADrawingLayer"));
         }
@@ -45,8 +65,9 @@ impl Editor {
         self.report.path(&["_styk", "layerSheet", "tracks", id, "end"]).and_then(Value::as_f64).unwrap_or(0.0)
     }
 
-    /// `drawingTarget(id, tick)`'s exposure: where the cel under `tick` ends. Nothing is drawn where there is no cel.
-    fn drawing_exposure(&self, id: &str, tick: f64) -> Result<(f64, f64), EditError> {
+    /// `drawingTarget(id, tick)`: the exposure under `tick` (its key, where it starts and ends) and the cel it shows. Nothing is drawn
+    /// where there is no cel.
+    pub(crate) fn drawing_target(&self, id: &str, tick: f64) -> Result<DrawingTarget, EditError> {
         self.assert_drawing_targets(&[id.to_string()])?;
         let keys = items(self.report.path(&["_styk", "layerSheet", "tracks", id, "keys"]));
         let end = self.track_end(id);
@@ -54,14 +75,21 @@ impl Editor {
         let Some(at) = at.filter(|_| tick < end) else { return Err(invalid("errors.editorDrawing.insertABlankDrawingOrCopyDrawingHere")) };
         let frame = keys[at].path(&["value", "frameId"]).and_then(Value::as_str).and_then(|frame| self.frame_by_id(frame));
         let object = frame.as_ref().and_then(|frame| crate::frame::objects_of(frame).into_iter().find(|o| crate::record::uid(o).is_some_and(|u| self.layer_of(u) == id)));
-        if let Some(object) = object {
-            let drawing = self.report.get("figure_types").and_then(Value::elements).and_then(|figures| figures.iter().find(|f| f.get("figure_type_id") == object.get("figure_type_id"))).is_some_and(|f| f.path(&["_styk", "drawing"]).is_some_and(Value::truthy));
-            if !drawing {
+        let mut cel = None;
+        if let Some(object) = &object {
+            let figure = self.report.get("figure_types").and_then(Value::elements).and_then(|figures| figures.iter().find(|f| f.get("figure_type_id") == object.get("figure_type_id")));
+            if !figure.as_ref().is_some_and(|f| f.path(&["_styk", "drawing"]).is_some_and(Value::truthy)) {
                 return Err(invalid("errors.editorDrawing.convertThisImageToADrawingBeforePainting"));
             }
+            cel = figure.and_then(|f| f.path(&["_styk", "drawing", "celId"]).and_then(Value::as_str).map(str::to_string));
         }
         let next = keys.get(at + 1).and_then(|key| num(key, "tick")).unwrap_or(end);
-        Ok((num(&keys[at], "tick").unwrap_or(f64::NAN), next))
+        Ok(DrawingTarget { key: keys[at].get("id").cloned().unwrap_or(Value::Null), start: num(&keys[at], "tick").unwrap_or(f64::NAN), end: next, cel, object })
+    }
+
+    /// `drawingTarget(id, tick)`'s exposure: where the cel under `tick` ends. Nothing is drawn where there is no cel.
+    fn drawing_exposure(&self, id: &str, tick: f64) -> Result<(f64, f64), EditError> {
+        self.drawing_target(id, tick).map(|target| (target.start, target.end))
     }
 
     /// `drawingKey(ids, tick, {blank})`: each layer shows a cel from `tick`, blank or a copy of the one it showed.
@@ -72,10 +100,7 @@ impl Editor {
         self.assert_drawing_targets(&ids)?;
         let mut plan = self.planner(&ids)?;
         let figures: Vec<Value> = items(self.report.get("figure_types"));
-        let mut next_type = figures.iter().fold(1.0f64, |largest, figure| {
-            let id = num(figure, "figure_type_id").unwrap_or(f64::NAN);
-            if largest.is_nan() || id.is_nan() { f64::NAN } else { largest.max(id + 1.0) }
-        });
+        let mut next_type = next_figure_type(&figures);
         let mut added: Vec<Value> = Vec::new();
         let mut forks: Vec<(String, String)> = Vec::new();
         let mut changed = false;

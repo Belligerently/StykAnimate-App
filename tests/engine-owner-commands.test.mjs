@@ -169,7 +169,7 @@ test('a copied drawing takes the pixels of the cel it copies', {skip: !engineBui
     // A blank cel has no pixels to take.
     assert.equal(editor.addDrawingFrame(layer.id, 30), true);
     assert.equal(cels().length, 2);
-    assert.deepEqual(owner.editor, {commitDrawingPixels: 1}, 'only the stroke ran in the editor');
+    assert.equal(owner.editor, undefined, 'nothing ran in the editor, the stroke included');
   } finally {
     owner.release();
     resources.dispose();
