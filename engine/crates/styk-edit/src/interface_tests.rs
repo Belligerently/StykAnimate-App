@@ -110,6 +110,55 @@ fn a_full_read_holds_every_segment_and_joint_of_each_figure_in_the_frame() {
     }
 }
 
+/// The numbers of an array of a group (`null` is NaN).
+fn numbers(value: &Value) -> Vec<f64> {
+    value.elements().unwrap().iter().map(|number| number.as_f64().unwrap_or(f64::NAN)).collect()
+}
+
+#[test]
+fn a_figure_in_perspective_sends_what_its_joints_and_starts_are_before_the_camera() {
+    let (mut session, _) = tape("ik-spatial-perspective-target-sheet");
+    let read = geometry(&mut session, None);
+    let g = group(&read, 0);
+    let (ends, raws, starts) = (numbers(g.get("ends").unwrap()), numbers(g.get("raws").expect("raws")), numbers(g.get("startRaws").expect("startRaws")));
+    assert_eq!(raws.len(), 3 * ends.len() / 2, "a triple for every place in the figure");
+    assert_eq!(starts.len(), raws.len());
+    // The tape's camera: strength 0.7 at distance 400 about (240, 160), the figure at scale 1.
+    let project = |raw: &[f64]| {
+        let d = (1.0 - 0.7 / 400.0 * raw[2]).max(0.05);
+        [240.0 + (raw[0] - 240.0) / d, 160.0 + (raw[1] - 160.0) / d]
+    };
+    let mut seen = 0;
+    for (i, raw) in raws.chunks(3).enumerate() {
+        if raw[0].is_nan() {
+            continue;
+        }
+        seen += 1;
+        let [x, y] = project(raw);
+        // A joint is stored as a 32-bit float.
+        assert!((x - ends[2 * i]).abs() < 1e-3 && (y - ends[2 * i + 1]).abs() < 1e-3, "joint {i} is its raw point seen through the camera: {x},{y} against {},{}", ends[2 * i], ends[2 * i + 1]);
+    }
+    assert!(seen > 0, "the bones of a 3D figure have raw points");
+    assert!(starts.chunks(3).any(|raw| !raw[0].is_nan()), "and raw starts");
+    // A flat pose sends none.
+    let (mut flat, _) = tape("channels-pose-sheet");
+    let read = geometry(&mut flat, None);
+    for slot in slots_of(&read) {
+        let g = group(&read, slot);
+        assert!(g.get("raws").is_none() && g.get("startRaws").is_none(), "slot {slot}: no camera, no raw points");
+    }
+}
+
+#[test]
+fn a_mesh_is_measured_by_its_faces_attached_to_a_figure_or_not() {
+    let (mut session, _) = tape("spatial-clip-mesh-sheet");
+    let read = geometry(&mut session, None);
+    for slot in [1, 2] {
+        let bounds = numbers(group(&read, slot).get("bounds").expect("bounds"));
+        assert!(bounds[2] - bounds[0] > 2.0 && bounds[3] - bounds[1] > 2.0, "slot {slot}: the faces give the object its extent, not the handle that paints nothing: {bounds:?}");
+    }
+}
+
 /// A call of the session by hand.
 fn call(session: &mut Session, method: &str, args: &str) {
     let answer = parse(&session.call(method, args, &view(session)));

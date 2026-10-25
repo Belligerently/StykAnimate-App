@@ -8,7 +8,11 @@ import {emptyDocument,defaultFigure,createObject,createFrame} from '../src/demo.
 import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
+import {artworkScene} from './support/artwork-scene.mjs';
 const rad=d=>d*Math.PI/180;
+// The drawing a head shows and where it is drawn are read from the pose the painter reads (support/artwork-scene.mjs):
+// the engine's groups carry only the movieclip's handle.
+const head=e=>artworkScene(e).objects.get(1);
 const sets=Array.from({length:2},(_,g)=>({name:'Form '+g,views:Array.from({length:24},(_,i)=>({name:'View '+i,frame:g*24+i}))}));
 const asset={drawingSets:sets,drawingRotation:{steps:8,tiltThreshold:rad(20)},duration:48};
 const pick=(yaw,pitch=0,roll=0,group=0)=>rotatedDrawing(asset,{_stykMovieclip:{offset:24*group}},spatialQuaternion(rad(roll),rad(yaw),rad(pitch)));
@@ -34,11 +38,11 @@ function fixture(){
 }
 for(const layerTimeline of [false,true])test('joined drawings follow live head rotation, undo, form selection and saved playback '+layerTimeline,async()=>{
  const {d,h}=fixture(),e=ownedEditorSync({demo:false,layerTimeline},d,{recorded:false}).editor;e.select(1,h-1);
- e.setSpatialPose({turn:rad(90)});assert.equal(e.geometry.objects.get(1).drawingView.frame,2);
- const fresh=buildGeometry(e.report,e.evaluatedFrame);assert.deepEqual(e.geometry.objects.get(1).drawables,fresh.objects.get(1).drawables);
+ e.setSpatialPose({turn:rad(90)});assert.equal(head(e).drawingView.frame,2);
+ // The engine's group of the head is where the head's bone puts it.
  assert.deepEqual(e.geometry.objects.get(1).root,e.geometry.objects.get(0).segments[h-1].start);
- e.setMovieclipDrawing(2,1,0);assert.equal(e.geometry.objects.get(1).drawingView.frame,26);e.undo();assert.equal(e.geometry.objects.get(1).drawingView.frame,2);e.redo();assert.equal(e.geometry.objects.get(1).drawingView.frame,26);
- for(const pitch of [-35,0,35])for(let yaw=0;yaw<360;yaw+=45){e.setSpatialPose({turn:rad(yaw),pitch:rad(pitch)});assert.equal(e.geometry.objects.get(1).drawingView.view,(pitch<0?8:pitch>0?16:0)+yaw/45);}
+ e.setMovieclipDrawing(2,1,0);assert.equal(head(e).drawingView.frame,26);e.undo();assert.equal(head(e).drawingView.frame,2);e.redo();assert.equal(head(e).drawingView.frame,26);
+ for(const pitch of [-35,0,35])for(let yaw=0;yaw<360;yaw+=45){e.setSpatialPose({turn:rad(yaw),pitch:rad(pitch)});assert.equal(head(e).drawingView.view,(pitch<0?8:pitch>0?16:0)+yaw/45);}
  e.setSpatialPose({turn:rad(90),pitch:0});
  const decoded=(await decodeDocument(await buildContainerV2(e.serialize(),'styk'),'styk')).document;
  assert.equal(buildGeometry(decoded,evaluatedFrame(decoded,0,0,0)).objects.get(1).drawingView.frame,26);
@@ -46,7 +50,7 @@ for(const layerTimeline of [false,true])test('joined drawings follow live head r
 import {createMovieclipMaterializer} from '../src/movieclip-materialize.mjs';
 test('materialization preserves the selected drawing and inherited roll',()=>{
  const{d,h}=fixture(),e=ownedEditorSync({demo:false},d,{recorded:false}).editor;e.select(1,h-1);e.setSpatialPose({turn:rad(135),pitch:rad(-35),bend:rad(25)});e.setMovieclipDrawing(2,1,0);
- const before=e.geometry.objects.get(1),materializer=createMovieclipMaterializer(e.report),frame=materializer.frame(e.evaluatedFrame),g=buildGeometry({...e.report,figure_types:materializer.figures},frame),after=g.orderedObjects.at(-1);
+ const before=head(e),materializer=createMovieclipMaterializer(e.report),frame=materializer.frame(e.evaluatedFrame),g=buildGeometry({...e.report,figure_types:materializer.figures},frame),after=g.orderedObjects.at(-1);
  assert.equal(before.drawables.length,after.drawables.length);
  for(let i=0;i<before.drawables.length;i++)for(const key of ['start','end'])for(const axis of ['x','y'])assert.ok(Math.abs(before.drawables[i][key][axis]-after.drawables[i][key][axis])<.0001);
 });
@@ -54,6 +58,6 @@ import {validateScene} from '../src/pivot/model.mjs';
 test('rotation-driven heads retain perspective at their attachment depth',()=>{
  const {d,h}=fixture();d.figure_types[0].segments[h-1]._stykRig.spatial.origin[2]=50;d.figure_types[0].segments[h-1]._stykRig.spatial.tip[2]=50;
  const e=ownedEditorSync({demo:false},d,{recorded:false}).editor;e.select(1,h-1);e.setSpatialCamera({strength:.8,distance:600});validateScene(e.serialize());
- const g=e.geometry.objects.get(1);assert.ok(Math.abs(g.drawingTransform.scale-1/(1-.8*50/600))<1e-9);assert.deepEqual(g.root,e.geometry.objects.get(0).segments[h-1].start);
+ const g=head(e);assert.ok(Math.abs(g.drawingTransform.scale-1/(1-.8*50/600))<1e-9);assert.deepEqual(g.root,artworkScene(e).objects.get(0).segments[h-1].start);
  const plain=fixture();delete plain.d.figure_types[1]._styk.movieclip.drawingRotation;const other=ownedEditorSync({demo:false},plain.d,{recorded:false}).editor;other.select(1,plain.h-1);assert.throws(()=>other.setSpatialCamera({strength:1}),/single spatial figure/);
 });

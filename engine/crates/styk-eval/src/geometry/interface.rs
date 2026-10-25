@@ -98,6 +98,23 @@ fn spatial_frame(out: &mut Vec<u8>, frame: &SpatialFrame) {
     out.push(b'}');
 }
 
+/// Points before perspective as `[x0, y0, z0, x1, y1, z1, …]`, one triple for each place in the figure (`null`s where there is none).
+fn raws(out: &mut Vec<u8>, points: impl Iterator<Item = Option<[f64; 3]>>) {
+    out.push(b'[');
+    for (i, raw) in points.enumerate() {
+        if i > 0 {
+            out.push(b',');
+        }
+        let [x, y, z] = raw.unwrap_or([f64::NAN; 3]);
+        num(out, x);
+        out.push(b',');
+        num(out, y);
+        out.push(b',');
+        num(out, z);
+    }
+    out.push(b']');
+}
+
 /// The `flags` of a segment row.
 const START: u32 = 1;
 const END: u32 = 2;
@@ -192,8 +209,9 @@ fn poly(out: &mut Vec<u8>, scene: &Scene, item: &Item) {
 
 /// The groups of `slots` of a scene built by [`super::build_shapes`], each as JSON text (`null` for
 /// an object the scene could not resolve): `root` `[x, y]`, `ends` (the joint of each segment of the figure, `[x0, y0, x1, y1, …]`,
-/// `null` where it was not built), `segs` (a row per segment built, see [`segment`]), `polys`, and as they apply `solved`, `drawn`
-/// and `bounds`. A dense frame is megabytes of text, so a row names nothing and holds nothing the reader works out (where a
+/// `null` where it was not built), `raws` and `startRaws` (where the pose has a camera: what each joint and each bone's start are before
+/// perspective, a triple for each place in the figure, see [`raws`]), `segs` (a row per segment built, see [`segment`]), `polys`, and as they
+/// apply `solved`, `drawn` and `bounds`. A dense frame is megabytes of text, so a row names nothing and holds nothing the reader works out (where a
 /// segment starts and ends are the joints of its parent and of itself unless it says otherwise). `bounds` is
 /// [`crate::drawlist::app_bounds`] of the scene, by slot.
 pub fn write_groups(scene: &Scene, slots: &[usize], bounds: &[Option<[f64; 4]>]) -> Vec<String> {
@@ -225,6 +243,17 @@ pub fn write_groups(scene: &Scene, slots: &[usize], bounds: &[Option<[f64; 4]>])
             num(&mut out, end[1]);
         }
         out.push(b']');
+        // What a 3D bone's joint and start are before perspective (`rawPoint`, `start.rawPoint`), where the pose has a camera.
+        if let Some(spatial) = &object.spatial {
+            if spatial.depths.iter().any(|depth| depth.raw.is_some()) {
+                key(&mut out, "raws");
+                raws(&mut out, spatial.depths.iter().map(|depth| depth.raw));
+            }
+            if spatial.start_raws.iter().any(Option::is_some) {
+                key(&mut out, "startRaws");
+                raws(&mut out, spatial.start_raws.iter().copied());
+            }
+        }
         key(&mut out, "segs");
         out.push(b'[');
         if fig.movieclip.is_some() {
