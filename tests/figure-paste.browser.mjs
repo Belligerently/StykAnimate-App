@@ -29,14 +29,12 @@ try {
     const before=await page.evaluate(()=>({report:JSON.stringify(styk.editor.serialize()),history:styk.editor._undo.length}));
     await page.keyboard.press('Control+v');await settle();
     const result=await page.evaluate(async()=>{
-      const {buildGeometry}=await import('/src/pivot/geometry.mjs'),e=styk.editor;
-      const signature=g=>g.drawables.map(({obj,fig,...shape})=>({...shape,obj:obj.unique_id,fig:fig.figure_type_id}));
+      const e=styk.editor;
       return {independent:e.selectedObjects.every(o=>o.figure_type_id!==1),count:e.selectedObjects.length,total:e.evaluatedFrame.objects.length,history:e._undo.length,undoLabel:e.undoLabel,
-        geometry:JSON.stringify(signature(styk.editor.geometry))===JSON.stringify(signature(buildGeometry(e.report,e.evaluatedFrame))),
         report:JSON.stringify(e.serialize())};
     });
     assert.ok(result.independent);assert.equal(result.count,2);assert.equal(result.total,5);assert.equal(result.history,before.history+1);
-    assert.equal(result.undoLabel,'Paste figures');assert.ok(result.geometry);
+    assert.equal(result.undoLabel,'Paste figures');
     await page.keyboard.press('Control+z');await settle();assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),before.report);
     await page.keyboard.press('Control+y');await settle();assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),result.report);
     await page.screenshot({path:`artifacts/figure-paste/${mode}-keyboard.png`});

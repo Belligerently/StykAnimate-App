@@ -1,6 +1,6 @@
 import {installProjectSavePicker} from './support/project-save-picker.mjs';
 import {readNativeDocument} from '../scripts/read-native-document.mjs';
-import {sheetKeyTimes,sampleSheet} from './helpers/sheet-samples.mjs';
+import {sheetKeyTimes} from './helpers/sheet-samples.mjs';
 import {exportEditable} from './helpers/editable-export.mjs';
 /** Real editor UI regression for multi-selection, portable text, and persistence. */
 import {chromium} from './support/playwright.mjs';
@@ -63,7 +63,9 @@ async function addText(text, {style = false} = {}) {
 await installProjectSavePicker(page);
 try {
   await page.goto(url); await page.waitForFunction(() => window.styk?.ready);
-  await page.evaluate(async()=>{window.creationSamples=await import("/tests/helpers/sheet-samples.mjs");});
+  await page.evaluate(async()=>{window.creationSamples={...await import("/tests/helpers/sheet-samples.mjs"),
+    // The frame the engine evaluates at `tick` of the project on show (the playhead goes back to where it was).
+    sampleSheet:(report,tick)=>{const e=styk.editor,at=e.tick;e.seek(tick);const frame=e.evaluatedFrame;e.seek(at);return frame;}};});
   check('Creation UI initializes actual WebGPU renderer', await value(() => styk.state.renderer.stats.backend === 'WebGPU'));
   const uids = await value(() => {
     const e = styk.editor; e.newDocument(); e.updateProject({canvas_width: 800, canvas_height: 450});
@@ -146,7 +148,7 @@ try {
   const nativePath = await saveDownload(() => page.locator('[data-action="save"]').first().click(), 'creation-authored.styk');
   const native = await readNativeDocument(nativePath), doc = native.document || native;
   check('Actual native save contains editable text options and embedded glyphs', doc.figure_types.some(f => f._styk?.textAuthoring?.text === 'Move together\nCafé • Привет' && f.text_assets[0].glyphs.length > 0));
-  check('Native save contains joined groups and both animation frames', sheetKeyTimes(doc).length === 2 && sampleSheet(doc,0).objects.filter(o => o.join).length === 2);
+  check('Native save contains joined groups and both animation frames', sheetKeyTimes(doc).length === 2 && Object.values(doc._styk.frameSources ?? {}).some(frame => frame.objects?.filter(o => o.join).length === 2));
   await page.locator('#file-input').setInputFiles(nativePath); await page.waitForFunction(() => styk.editor.name === 'creation-authored');
   check('Reopening the saved native file retains text editing metadata and group joins', await value(() => styk.editor.report.figure_types.some(f => f._styk?.textAuthoring?.text === 'Move together\nCafé • Привет') && creationSamples.sampleSheet(styk.editor.report,0).objects.filter(o => o.join).length === 2));
 

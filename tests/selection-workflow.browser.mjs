@@ -47,8 +47,9 @@ async function marquee(a,b,key) {
 }
 async function frames() {
   return page.evaluate(async()=>{
-    const {evaluatedFrame}=await import('/src/pivot/geometry.mjs');
-    return [0,10,20,30].map(t=>evaluatedFrame(styk.editor.report,0,0,t).objects.map(o=>({uid:o.unique_id,x:o.root_x,y:o.root_y,angles:o.angles,join:o.join})));
+    // The engine's frame at each tick (the playhead goes back to where it was).
+    const e=styk.editor,at=e.tick,sampled=[0,10,20,30].map(t=>{e.seek(t);return e.evaluatedFrame.objects.map(o=>({uid:o.unique_id,x:o.root_x,y:o.root_y,angles:o.angles,join:o.join}));});
+    e.seek(at);return sampled;
   });
 }
 async function selectRange(mode) {

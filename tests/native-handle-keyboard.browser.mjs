@@ -64,7 +64,7 @@ try{
   await page.keyboard.press('CapsLock');
 
   await setup({previous:true});await hover();const locateBefore=await values();
-  const locateTarget=await page.evaluate(async()=>{const{buildGeometry}=await import('/src/pivot/geometry.mjs');return buildGeometry(styk.editor.report,styk.editor.report.keyframes[0]).objects.get(0).joints.get(11);});
+  const locateTarget=await page.evaluate(async()=>{const e=styk.editor,at=e.tick;e.seek(e.timeline[0].start);const joint={...e.geometry.objects.get(0).joints.get(11)};e.seek(at);return joint;});
   await page.keyboard.down('r');await page.keyboard.press('l');await page.keyboard.up('r');const located=await values();
   check('Hover L in Handle Edit locates the previous frame endpoint without moving other vertices',near(located.points[11].x,locateTarget.x)&&near(located.points[11].y,locateTarget.y)&&Object.keys(locateBefore.points).filter(id=>id!=='11').every(id=>near(located.points[id].x,locateBefore.points[id].x)&&near(located.points[id].y,locateBefore.points[id].y)));
 
