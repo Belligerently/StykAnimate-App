@@ -16057,14 +16057,14 @@
   },
   "errors.editorSessions.finishTheCurrentEditFirst": {
     "locations": [
-      "src/editor-sessions.mjs:47",
-      "src/editor-sessions.mjs:69"
+      "src/editor-sessions.mjs:49",
+      "src/editor-sessions.mjs:71"
     ],
     "context": "if (busy(this)) throw messageError(new Error(''), 'errors.editorSessions.finishTheCurrentEditFirst', {});"
   },
   "errors.editorSessions.thisProjectIsNoLongerOpen": {
     "locations": [
-      "src/editor-sessions.mjs:68",
+      "src/editor-sessions.mjs:70",
       "src/project-tabs.mjs:54"
     ],
     "context": "if (!sessions.has(session)) throw messageError(new Error(''), 'errors.editorSessions.thisProjectIsNoLongerOpen', {});"
