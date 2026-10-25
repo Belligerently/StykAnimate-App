@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 11 | 7 | 8 | 0 | 10 | 22 % | 23 % | 0 % |
-| `styk-edit` | 90 | 1228 KiB | 30 | 42 | 6 | 1 | 11 | 15 % | 66 % | 11 % |
+| `styk-edit` | 90 | 1228 KiB | 28 | 42 | 8 | 1 | 11 | 17 % | 66 % | 11 % |
 | `styk-engine` | 24 | 40 KiB | 11 | 0 | 0 | 0 | 13 | 3 % | 0 % | 3 % |
-| `styk-eval` | 80 | 688 KiB | 20 | 46 | 9 | 0 | 5 | 17 % | 72 % | 0 % |
+| `styk-eval` | 80 | 688 KiB | 19 | 46 | 10 | 0 | 5 | 18 % | 72 % | 0 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 13 | 8 | 3 | 0 | 27 | 12 % | 50 % | 0 % |
-| **Total** | 356 | 3223 KiB | 121 | 113 | 27 | 23 | 72 | 26 % | 49 % | 6 % |
+| **Total** | 356 | 3223 KiB | 118 | 113 | 30 | 23 | 72 | 27 % | 49 % | 6 % |
 
 ## Engine modules
 
@@ -89,8 +89,8 @@ Engine logic: ported to Rust.
 | `src/editor-clipboard-async.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its asynchronous copy and paste) (19431 bytes) |
 | `src/editor-clipboard-sparse.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its sparse paste) (15760 bytes) |
 | `src/editor-colors.mjs` | `styk-edit` | partial | Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs) and recolouring figures (editFigureColors, setFigureColor, replaceFigureColor, resetFigureColors: styk-edit/src/recolor.rs); figurePalette for the inspector still JS |
-| `src/editor-combine.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-disconnect.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-combine.mjs` | `styk-edit` | ported | Rust: combineJoinedFigure (styk-edit/src/combine.rs): every segment and fill as the frame draws it, media, rig relationships and surfaces, one figure-splice entry; a group with Stick Nodes shapes, 3D meshes, movieclips, drawings or origins and a document with saved animation channels stay Unported (docs/engine/editing.md); the JavaScript module remains only as the fallback for a call the session refuses |
+| `src/editor-disconnect.mjs` | `styk-edit` | ported | Rust: disconnectSegment (styk-edit/src/disconnect.rs): the part and its branch as a figure of its own in every pose, also on animation-origin figures, with the topology edits that trim each definition; the JavaScript module remains only as the fallback for a call the session refuses |
 | `src/editor-drawing.mjs` | `styk-edit` | partial | Rust: the structure of a drawing layer (createDrawingLayer, drawingKey, nextDrawing, addDrawingFrame, extendDrawing, autoKeyDrawing: styk-edit/src/drawing_structure.rs) and the pixel commits (commitDrawingPixels, resampleDrawing: styk-edit/src/drawing_pixels.rs, session history entries that name the cel and the record the drawing store holds); the JavaScript bodies of the commits remain for the plain editor; prepareDrawingCel stays with the drawing store |
 | `src/editor-draws.mjs` | `styk-edit` | partial | Rust: Editor::set_draws, draw_uuid, draw_seed and draw_random take what the editor drew for a call (D18); drawing the values stays in JavaScript until the engine owns the document |
 | `src/editor-duplicate-drag.mjs` | `styk-edit` | ported | Rust: beginDuplicateDrag, finishDuplicateDrag and their commit and cancel through commitDrag/cancelDrag (styk-edit/src/duplicate_drag.rs; engine-run in the app since 2026-10-24); the JavaScript module remains only as the fallback for a call the session refuses |
@@ -213,9 +213,9 @@ Engine logic: ported to Rust.
 | `src/camera-follow.mjs` | `styk-eval::follow` | partial | Rust: typed follow sampling and V8-exact logarithm for native edit read/bake; WeakMap geometry/epoch invalidation fixed in JS; a session shapes the path of each revision it makes through the frame on show, incremental resampling across edits still JS; the inspector's framing offset is styk_eval::follow::framing_offset |
 | `src/movieclip-drawings.mjs` | `styk-eval::movieclips` | partial | Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS |
 | `src/movieclip-geometry.mjs` | `styk-eval::movieclips` | partial | Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS |
-| `src/movieclip-materialize.mjs` | `styk-eval::movieclips` | partial | Rust: shared recorded materializer/source clocks and native/sheet Bake capture; portable effect remapping shared with topology/clipboard; figures with IK limbs (as solved), rigs, origins and 3D poses expand like the editor's; meshes and drawing rotation of a movieclip still JS |
+| `src/movieclip-materialize.mjs` | `styk-eval::movieclips` | partial | Rust: shared recorded materializer/source clocks and native/sheet Bake capture; portable effect remapping shared with topology/clipboard; figures with IK limbs (as solved), rigs, origins and 3D poses expand like the editor's; meshes (bake_mesh) and turning drawings expand in the session too |
 | `src/movieclip-membership.mjs` | `styk-eval::movieclips` | partial | Rust: recorded native document/presence clocks, restart and source membership across frames with retained VFX clocks; remaining unrecorded combinations and app adoption pending |
-| `src/movieclip-mesh-materialize.mjs` | `styk-eval::movieclips` | js |  |
+| `src/movieclip-mesh-materialize.mjs` | `styk-eval::movieclips` | ported | Rust: bake_mesh (styk_eval::materialize): a 3D mesh clip as a figure of depth-tested fills, in the session's break apart and bake; still imported by the JavaScript materializer, which the editor runs only for a call the session refuses |
 | `src/movieclip-presence.mjs` | `styk-eval::movieclips` | partial | Rust: presence clock and continuations; editing still JS |
 | `src/movieclips.mjs` | `styk-eval::movieclips` | partial | Rust: movieclipTime and clip sampling; capture and editing still JS |
 | `src/animation-origin-support.mjs` | `styk-eval::origin` | partial | Rust: support-graph origins/ghost corrections and recorded whole/joint/handle/range/join/2D-rig synchronization; an origin figure with a 3D pose, mesh, movieclip or drawing runs in the editor |
