@@ -18,7 +18,7 @@ import {t as interfaceText, messageText as sayTimeline} from './localization.mjs
  * import: createTimelineHost() wires the header when it is called.
  *
  * ctx (from app.mjs): {editor, state, $, actions, guarded, audioEngine,
- * onionController, hotkeys, play, pause, finishKeyboardHandle, cancelDrag,
+ * onionController, hotkeys, play, pause, finishKeyboardHandle,
  * cancelPolygonDraft, interruptRecovery, cancelWarmPlayback, warmPlayback,
  * scheduleRecovery, requestRender, queueUI, renderInspector,
  * syncSelectionControls, rangeFrames(all), selectTrack, previewScrub,
@@ -31,7 +31,6 @@ import {t as interfaceText, messageText as sayTimeline} from './localization.mjs
  */
 import {Timeline} from './layer-timeline.mjs';
 import {SheetFilmstrip as SimpleTimeline} from './sheet-filmstrip.mjs';
-import {InsertInbetweenDialog} from './insert-inbetween-dialog.mjs';
 import {drawingResourcesFor} from './drawing-resources.mjs';
 import {refreshHotkeyHints} from './hotkey-hints.mjs';
 import {icon} from './icons.mjs';
@@ -43,7 +42,7 @@ import {TimelineLayerView} from './timeline-layer-view.mjs';
 export function createTimelineHost(ctx) {
   const {editor, state, $, actions} = ctx;
   const layerView = new TimelineLayerView(editor);
-  let timeline = null, inbetweenDialog, shownPlayback = null;
+  let timeline = null, shownPlayback = null;
   const header = createTimelineHeader(ctx, {
     get timeline() { return timeline; },
     goToFrame: (number) => goToFrame(number),
@@ -142,21 +141,6 @@ export function createTimelineHost(ctx) {
         ctx.queueUI();
       },
       renderThumbnail,
-      onInsertInbetween: (indices) => {
-        ctx.finishKeyboardHandle();
-        ctx.pause();
-        ctx.cancelDrag();
-        ctx.propertyControls()?.cancel();
-        inbetweenDialog ??= new InsertInbetweenDialog({
-          editor,
-          getSettings: () => state.settings,
-          renderThumbnail,
-          onApply: ctx.queueUI,
-          onClose: ctx.queueUI,
-          onError: ctx.fail,
-        });
-        inbetweenDialog.open(indices);
-      },
       onUpdateFrame: () => {
         if (editor.dragging) editor.commitDrag();
         ctx.queueUI();

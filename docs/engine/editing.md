@@ -709,7 +709,7 @@ it on the editor, for every document.
   not valid (`errors.engineOwner.invalidValue`). A call the session refuses (`Unported`: a document it does
   not edit) raises `errors.engineOwner.notSupported` and never runs in the editor.
 - **What still runs in the editor.** A call the session has no command for at all (it answers `unported` with the call's own
-  name) runs in the JavaScript editor on the read view (the keyframe commands of a native timeline, inbetweens,
+  name) runs in the JavaScript editor on the read view (the keyframe commands of a native timeline,
   combining figures with Stick Nodes shapes); `report.editor` counts them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
   history entry <id>`; the editor applies its own command and
@@ -781,7 +781,7 @@ made from the app:
 | combining in a document with saved animation channels (`authored`) | combineJoinedFigure | native timelines only: the app gives every document a layer sheet (a working frame open is the editor's error, `disconnectSegment` answers it) |
 
 The calls that have no command in the session at all (the keyframe commands of a native timeline such as `addFrame`,
-`deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`, and `insertInbetweenFrames`, whose dialog nothing opens any more)
+`deleteFrame`, `duplicateFrame`, `reverseFrames`, and `insertBlankFrame`)
 are not reached by the interface on a layer sheet; they run in the editor until the editor's bodies are deleted.
 
 ## Invariants

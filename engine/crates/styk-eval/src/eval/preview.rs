@@ -1,4 +1,4 @@
-//! Read-only in-between samples (`sampleInbetweenPreview`, editor-inbetween.mjs).
+//! Read-only in-between samples for the preview worker's in-between thumbnails.
 //! The caller keeps one sampling view per worker-held generation: typed poses,
 //! figures and encoded media remain shared, and no document JSON is copied.
 

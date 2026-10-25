@@ -15,7 +15,6 @@ import {presetSummary,presetTile} from '../src/vfx-preset-ui.mjs';
 import {VFX_REGISTRY,vfxProperty,validateVfxValue} from '../src/vfx.mjs';
 import {errorMessageData,restoreMessageError,messageError} from '../src/localized-error.mjs';
 import {errorText} from '../src/error-presentation.mjs';
-import {createStagePlayback} from '../src/engine/engine-playback.mjs';
 import {validateOriginSupport,validateOriginObject} from '../src/animation-origin-validation.mjs';
 import {createClipboardWireDecoder} from '../src/clipboard-wire.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
@@ -151,13 +150,10 @@ test('origin and clipboard failures translate complete diagnostics while preserv
  assert.equal(JSON.stringify(editor.serialize()),bytes);assert.equal(editor._undo.length,history);
 });
 
-test('camera fields and planning operation names retain scalar diagnostics while their display references survive transport',async()=>{
+test('camera fields retain scalar diagnostics while their display references survive transport',()=>{
  const editor=fixture(),before=JSON.stringify(editor.serialize()),history=editor._undo.length,failures=[];
  assert.throws(()=>editor.setCameraValues({x:NaN}),error=>{failures.push(error);return error.message==='Camera x must be finite.';});
  assert.throws(()=>editor.alignCameraToView({x:0,y:0,scale:1,width:NaN,height:540}),error=>{failures.push(error);return error.message==='Canvas width must be finite.';});
- const planner=createStagePlayback({report:null},{stage:()=>null});
- for(const [operation,original]of [['planInsertInbetweens','insert inbetween']])
-  await assert.rejects(planner[operation]({}),error=>{failures.push(error);return error.message===`Load a document before ${original} planning.`;});
  interfaceLocalization.setPseudo('long');
  try{
   for(const error of failures){

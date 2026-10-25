@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 11 | 7 | 8 | 0 | 10 | 22 % | 23 % | 0 % |
-| `styk-edit` | 90 | 1228 KiB | 30 | 44 | 6 | 1 | 9 | 13 % | 69 % | 9 % |
+| `styk-edit` | 90 | 1228 KiB | 30 | 42 | 6 | 1 | 11 | 15 % | 66 % | 11 % |
 | `styk-engine` | 24 | 40 KiB | 11 | 0 | 0 | 0 | 13 | 3 % | 0 % | 3 % |
 | `styk-eval` | 80 | 688 KiB | 20 | 46 | 9 | 0 | 5 | 17 % | 72 % | 0 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 13 | 8 | 3 | 0 | 27 | 12 % | 50 % | 0 % |
-| **Total** | 356 | 3223 KiB | 121 | 115 | 27 | 23 | 70 | 25 % | 50 % | 5 % |
+| **Total** | 356 | 3223 KiB | 121 | 113 | 27 | 23 | 72 | 26 % | 49 % | 6 % |
 
 ## Engine modules
 
@@ -101,8 +101,8 @@ Engine logic: ported to Rust.
 | `src/editor-handle-commands.mjs` | `styk-edit` | partial | Rust: recorded segment-value clipboard including explicit-null refusal and guarded implicit paste; handle commands include native follow projections, shaped by the session for its own revision |
 | `src/editor-handle-edit.mjs` | `styk-edit` | ported | beginHandleEditDrag, editHandlePosition, commitHandleEditDrag, cancelHandleEditDrag, handleEditSegmentPose (styk-edit/src/handle_edit.rs) |
 | `src/editor-ik.mjs` | `styk-edit` | partial | Rust: poseIKTarget, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); getIKSettings, setNodeIK, rotateIKTarget, also across joined figures (bakeGraph and captureFor on the graph; ik_settings.rs); same-call evaluated pose/full solved map reuse verified against old58-step double-capture oracle and final116full/compact+numeric/drag controls; updated controller specs still recompute; no public API/math change; actual ordinary app exact22.925/17.075ms remains aboveJS; fresh full cost/default gate next; B10 active unpinned context uses existing all-joint numeric query, full solved map/guards/default/rich fallback exact; verified215edit/12CLI241/82JS/check, shipping61537fd7901f10,241,121B; no API/math/schema change; fresh full figures cost/checkpoint/default gate next |
-| `src/editor-inbetween-async.mjs` | `styk-edit` | partial | Rust: its background planner (styk-edit/src/inbetween_planning.rs, routed by src/engine/engine-planning.mjs); staging, validation and publication of the plan still JS |
-| `src/editor-inbetween.mjs` | `styk-edit` | partial | Rust: the planner (styk-edit/src/inbetween_planning.rs, on the engine's workers): the inserted poses, retained pose sources, shifted and new keys of authored documents, matching planInsertInbetweens byte for byte on 18 recorded plans and 4 refusals (engine/tests/inbetween); sampleInbetweenPreview in styk_eval::eval::preview; layer sheets and camera-motion or effect-clip documents plan in JS (EngineUnported); staging, commit and history still JS |
+| `src/editor-inbetween-async.mjs` | `styk-edit` | removed | deleted with the Insert Inbetween dialog, which nothing opened any more: the asynchronous insertion and its planner on the engine's workers (10327 bytes) |
+| `src/editor-inbetween.mjs` | `styk-edit` | removed | deleted with the Insert Inbetween dialog, which nothing opened any more: the planner and insertInbetweenFrames; the in-between preview samples stay in styk_eval::preview (16274 bytes) |
 | `src/editor-layer-async.mjs` | `styk-edit` | partial | Rust: native and sheet migration kernels on the existing bounded Engine worker lane with cancel/stale/ACK retirement; app async facade and selection-owner handoff pending |
 | `src/editor-layer-focus.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-folders.mjs` | `styk-edit` | verified | createLayerFolder, renameLayerFolder, moveLayersToFolder, arrangeLayers, deleteLayerFolder (styk-edit/src/layers.rs); all five ordinary-sheet mutators adopt opt-in ordered layerPublication updates through the original _layerEdit tail; getLayerFolders remains a UI record projection; 236 Rust / three recordings 58 exact calls / 204 JS and Main check pass; actual default all-five adoption, Advanced timeline Ungroup, 21 paired boundaries and full undo exact; public Rust signatures/layout/math unchanged, guarded unsupported contexts retain their route |
@@ -161,7 +161,7 @@ Engine logic: ported to Rust.
 | `src/playback-geometry-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-metrics.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-patch.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
-| `src/playback-planning.mjs` | `styk-engine::playback` | removed | deleted: the layer-move and in-between planning jobs run on the engine's workers (styk-engine planning), the interface fallback in src/engine/engine-planning.mjs |
+| `src/playback-planning.mjs` | `styk-engine::playback` | removed | deleted: the layer-move planning job runs on the engine's workers (styk-engine planning) |
 | `src/playback-raster-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-resources.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-retention.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
@@ -497,7 +497,7 @@ Interface: stays in JS.
 | `src/icons.mjs` |  | stays |  |
 | `src/ik-view.mjs` |  | stays |  |
 | `src/import-notes-localization.mjs` |  | stays |  |
-| `src/insert-inbetween-dialog.mjs` |  | stays |  |
+| `src/insert-inbetween-dialog.mjs` |  | removed | deleted: nothing opened the dialog (22436 bytes) |
 | `src/inspector-bindings.mjs` |  | stays |  |
 | `src/inspector-dom.mjs` |  | stays |  |
 | `src/inspector-header.mjs` |  | stays |  |

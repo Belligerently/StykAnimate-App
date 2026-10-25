@@ -912,15 +912,6 @@ pub(crate) fn cancel_current(engine: &Engine) {
         core.schedule();
     }
 }
-/// What the editor asks of in-between planning: a ratio, the chosen native keys (ascending,
-/// once each, as the editor orders them) and its next pose-source identity.
-#[derive(Clone, Debug)]
-pub struct InbetweenRequest {
-    pub ratio: f64,
-    pub indices: Vec<usize>,
-    pub next_frame_identity: u64,
-}
-
 /// A planner's work on the worker: the engine's document in, the payload out.
 type Kernel = Box<
     dyn FnOnce(&Engine, &Core, &Value, &styk_eval::load::Loader, &Prepared) -> Result<Value, PlanError>
@@ -999,49 +990,6 @@ impl Engine {
                     |progress| core.report(engine, progress),
                     engine.inner.clock,
                 )
-            }),
-        )
-    }
-
-    /// Queue read-only in-between planning (`styk_edit::inbetween_planning`) the same way:
-    /// the plan crosses in bounded packets that each need an ACK, and a newer document
-    /// or a cancellation retires the job on the workers.
-    pub fn plan_inbetweens(&self, revision: u64, request: InbetweenRequest) -> Result<LayerJob, PlanError> {
-        if request.indices.len() > 100_000 {
-            return Err(invalid("planning request exceeds the index budget"));
-        }
-        self.plan(
-            revision,
-            Box::new(move |engine, core, tree, _, prepared| {
-                let plan = styk_edit::inbetween_planning::plan(
-                    tree,
-                    prepared,
-                    &styk_edit::inbetween_planning::Request {
-                        ratio: request.ratio,
-                        indices: &request.indices,
-                        next_frame_identity: request.next_frame_identity,
-                    },
-                    || {
-                        core.check(engine)
-                            .map_err(|error| styk_edit::EditError::Invalid(error.to_string()))
-                    },
-                    |progress| {
-                        core.report(
-                            engine,
-                            Progress {
-                                phase: progress.phase,
-                                completed: progress.completed as u32,
-                                total: progress.total as u32,
-                                source_frames: 0,
-                                object_poses: 0,
-                                segment_values: 0,
-                            },
-                        );
-                    },
-                );
-                // Cancellation, replacement and timeout keep their own identity.
-                core.check(engine)?;
-                plan.map_err(edit_error)
             }),
         )
     }

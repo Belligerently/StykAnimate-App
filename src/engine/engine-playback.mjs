@@ -6,8 +6,6 @@
  * worker threads, and a "packet" is only a ticket: the tick, the frame's camera and backgrounds for the
  * overlay, and a key the stage recognises. A packet is available (`get`) once the engine has the frame ready.
  */
-import {messageError} from '../localized-error.mjs';
-import {planEngineInbetweens, planOnInterface, isUnported} from './engine-planning.mjs';
 import {holdsRevision} from './engine-open.mjs';
 
 /** Keys of engine packets: the stage renderer draws these with the engine. */
@@ -213,35 +211,11 @@ export function createStagePlayback({stage, maxTickets}) {
         flushControls();
       }
     },
-    // The editor's background planning job: on the engine's workers for the document it holds.
-    planInsertInbetweens(request, options) { return planning('inbetweens', request, options); },
     dispose() {
       pendingHidden = pendingEffects = pendingRequest = null;
       controlLifetime++; retryScheduled = false;
       dropPackets();
     },
-  };
-  /**
-   * A planning job for the document the playback holds (the app brings it to the editor's
-   * first). The engine plans it when it holds it and has worker threads; what it does not plan
-   * is planned on the interface in slices, by the editor's own planners.
-   */
-  const planning = async (kind, request, options = {}) => {
-    const document = report;
-    if (!document) {
-      throw messageError(new Error(''), "errors.playbackPlanning.loadADocumentBeforePlanning", {value: {messageKey: 'errors.playbackPlanning.inbetweenInsertionLabel', diagnosticValue: 'insert inbetween'}});
-    }
-    const planned = report, plannedRevision = revision;
-    // The engine plans the document its session holds; a revision it does not hold leaves the plan to the interface.
-    if (report === planned && revision === plannedRevision && held()) {
-      const isCurrent = () => report === planned && revision === plannedRevision && (options.isCurrent?.() ?? true);
-      try {
-        return await planEngineInbetweens(side().engine, plannedRevision, request, {...options, isCurrent});
-      } catch (error) {
-        if (!isUnported(error)) throw error;
-      }
-    }
-    return planOnInterface(kind, document, request, options);
   };
   return playback;
 }

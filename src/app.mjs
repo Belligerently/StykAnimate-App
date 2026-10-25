@@ -5278,7 +5278,7 @@ const hotkeys = new HotkeyManager({run: guarded(runKeyboardCommand), release: gu
 overlays.hotkeys = hotkeys;
 // The timeline island: its mount, its header's controls and what the header shows (src/timeline-host.mjs).
 timelineHost = createTimelineHost({
-  editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, overlays, play, pause, finishKeyboardHandle, cancelDrag,
+  editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, overlays, play, pause, finishKeyboardHandle,
   cancelPolygonDraft, interruptRecovery, cancelWarmPlayback: () => clearTimeout(warmTimer), warmPlayback, scheduleRecovery,
   requestRender, queueUI, renderInspector, syncSelectionControls, rangeFrames, selectTrack, previewScrub, scrubAudio, stopAudioScrub,
   changeFigureLayer, confirmDiscardFrame: dialogs.confirmDiscardFrame, simpleFrameCount, fail,
@@ -6085,13 +6085,6 @@ async function init() {
   });
   installShellCommands(actions, { shell, keyboard: shellKeyboard, layout: layoutPopover });
   timelineHost.attach(shell);
-  // The editor's background planning job runs on the engine's workers against the document
-  // synced for it; the editor still checks its own document again before it publishes a plan.
-  const currentDocument = () => { const report = editor.report, revision = editor.revision; return () => editor.report === report && editor.revision === revision; };
-  editor.setInbetweenPlanner((params, options) => {
-    syncPlayback();
-    return playback.planInsertInbetweens(params, { ...options, isCurrent: currentDocument() });
-  });
   cameraMotionControls = new CameraMotionControls($('inspector'),editor,{onError:fail,onRender:()=>{queueUI();requestRender();},beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onPreview:clip=>{pause();editor.seek(clip.start);state.motionPreviewRange={start:clip.start,end:Math.min(editor.totalTicks,clip.start+clip.duration)};play();},posePicture:(pose,options)=>posePictures.picture(pose,options)});
   propertyControls = new PropertyControls($("inspector"), {
     canHandle: (key, input) =>
