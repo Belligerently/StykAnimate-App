@@ -133,7 +133,7 @@ try {
   assert.equal(await page.locator('.audio-snap-line').isVisible(), true); assert.deepEqual(await state(), snapBefore);
   await release(); assert.equal((await state()).tracks[0].clips[0].start, 2);
   await page.locator('.audio-body').press('Control+z'); await settle();
-  await page.evaluate(() => {for(let i=4;i<=18;i++)styk.editor.addAudioTrack(`Audio ${i}`); styk.timeline.audio.verticalScroll.scrollTop=styk.timeline.audioTop;}); await settle();
+  await page.evaluate(() => {for(let i=4;i<=18;i++)styk.editor.addAudioTrack(`Audio ${i}`); styk.timeline.audio.verticalScroll.scrollTop=styk.timeline.audioTop-styk.timeline.bodyTop;}); await settle();
   assert.ok(await page.locator('.audio-track').count() < 10);
   const scrollPoint = await position(id), body = await page.locator('.sheet-scroll').boundingBox();
   await gesture(scrollPoint, {x:scrollPoint.x, y:body.y + body.height - 4}, 'Shift');
@@ -148,7 +148,7 @@ try {
     const report = styk.editor.serialize(), audio = report._styk.audio, assetId = Object.keys(audio.assets)[0];
     audio.tracks = Array.from({length:32}, (_, row) => ({id:`dense-track-${row}`, name:`Track ${row + 1}`, gain:1, mute:false, solo:false,
       clips:Array.from({length:128}, (_, i) => ({id:`dense-${row}-${i}`, assetId, start:i / 10, offset:0, duration:.05, fadeIn:0, fadeOut:0, gain:1}))}));
-    styk.editor.load(report); styk.timeline.audio.setOpen(true); styk.timeline.audio.verticalScroll.scrollTop = styk.timeline.audioTop;
+    styk.editor.load(report); styk.timeline.audio.setOpen(true); styk.timeline.audio.verticalScroll.scrollTop = styk.timeline.audioTop - styk.timeline.bodyTop;
   }); await settle();
   const tiny = await page.locator('[data-clip="dense-0-0"]').boundingBox();
   await page.keyboard.down('Shift'); await page.mouse.move(tiny.x + tiny.width / 2, tiny.y + 34); await page.mouse.down();
