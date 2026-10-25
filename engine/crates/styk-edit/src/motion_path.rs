@@ -1032,6 +1032,13 @@ impl Editor {
         Ok((prepared, frame, scene))
     }
 
+    /// [`Editor::posed_scene`] with what the interface reads of every segment and fill (`build_shapes`): drawn or not.
+    pub(crate) fn posed_shapes(&self, record: &Value) -> Result<(Arc<Prepared>, Frame, Scene), EditError> {
+        let (prepared, frame) = self.posed_frame(record)?;
+        let scene = styk_eval::geometry::build_shapes(&prepared.doc, &frame, None);
+        Ok((prepared, frame, scene))
+    }
+
     fn posed_frame(&self, record: &Value) -> Result<(Arc<Prepared>, Frame), EditError> {
         let prepared = self.prepared()?;
         if let Some(feature) = prepared.doc.unsupported.first() {

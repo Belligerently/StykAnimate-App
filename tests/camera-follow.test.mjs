@@ -8,6 +8,9 @@ import {worldToScreen} from '../src/renderer-geometry.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {parallaxResolver} from '../src/layer-parallax.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
+import {ownerReferences} from './support/owner-references.mjs';
+
+const refs = ownerReferences(import.meta.url);
 
 const near = (a, b, tolerance, label = '') => assert.ok(Math.abs(a - b) <= tolerance, `${label} ${a} != ${b}`);
 /** Figure 1 walks right by 20px per frame for 30 frames, then stands still; figure 2 stays at x=700. */
@@ -106,9 +109,11 @@ test('follow drives parallax without baking, unlike shake', () => {
   assert.equal(parallaxResolver(shaken.report, frameAt(shaken, 20))(2).x, 0);
 });
 
-test('baking follow reproduces the live camera and keeps it as travel', () => {
+refs.test('baking follow reproduces the live camera and keeps it as travel', take => {
   // Baking is a command of the engine session: the camera it keys on every frame shows what the follow and the shake showed.
-  const editor = ownedEditorSync({demo: false, layerTimeline: true, propertyChannels: true}, fixture().report, {recorded: false}).editor;
+  // The document is the plain editor's (its reference): the fixture's figures walking, with a linear easing set on the layer sheet.
+  const document = JSON.parse(take('fixture', () => JSON.stringify(fixture().report)));
+  const editor = ownedEditorSync({demo: false, layerTimeline: true, propertyChannels: true}, document, {recorded: false}).editor;
   editor.sheetSetEasing([editor.layerForUid(1)], 0, 60, {interpolation: 'linear'});
   follow(editor, undefined, {lag: 4});
   editor.addCameraMotion('shake', {start: 0, duration: 60});

@@ -1778,7 +1778,7 @@ fn order_value(value: Option<&Value>, fallback: f64) -> Result<f64, EditError> {
 }
 
 /// `remapRigReferences(segment, remap)` for the relationships a duplicated segment can carry.
-fn remap_rig_references(segment: &mut Value, remap: &[(f64, f64)]) -> Result<(), EditError> {
+pub(crate) fn remap_rig_references(segment: &mut Value, remap: &[(f64, f64)]) -> Result<(), EditError> {
     let Some(rig) = segment.get("_stykRig").filter(|r| r.truthy()).and_then(Value::as_obj).cloned() else { return Ok(()) };
     let map = |value: Option<&Value>| -> Value {
         let value = value.cloned().unwrap_or(Value::Null);

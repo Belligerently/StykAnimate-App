@@ -1,7 +1,8 @@
 // The clipboards of an engine-owned editor (D19, docs/engine/editing.md "Clipboards"): the session runs the copies and pastes, the
 // editor shows what was copied where the interface reads it (the Paste buttons, the shared clipboard), and a clipboard the
 // interface holds (restored from another window or the system's, copied in another project) reaches the session before the
-// paste. Every paste is compared with the same steps on an editor alone.
+// paste. Every paste is compared with what the same steps gave on an editor alone (the frozen references of
+// tests/support/owner-references.mjs).
 import '../engine/tools/v8-pin.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,8 +13,10 @@ import {createClipboards} from '../src/engine/engine-clipboards.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
 import {recordedDocument, documentText, normalized} from './support/owned-vs-plain.mjs';
+import {canonical, ownerReferences} from './support/owner-references.mjs';
 
 const opts = {skip: !engineBuilt};
+const refs = ownerReferences(import.meta.url);
 const options = {demo: false, layerTimeline: true, propertyChannels: true};
 /** An editor the engine owns (the identities a call draws are the editor's own random ones). */
 const owned = document => ownedEditorSync(options, document, {recorded: false});
@@ -22,8 +25,8 @@ const plain = document => ({editor: new Editor(options).load(structuredClone(doc
 const wire = packet => JSON.parse(JSON.stringify(packet));
 const withBackgrounds = () => JSON.parse(readFileSync(new URL('../engine/crates/styk-eval/tests/fixtures/channels/channels-pose.sheet.json', import.meta.url), 'utf8'));
 
-/** The same steps on an editor alone and on an owned one: what they show after it, that the session took every call. */
-async function bothWays(documents, steps) {
+/** The same steps on an owned editor and on one alone (its references): what they show after it, that the session took every call. */
+async function bothWays(take, documents, steps) {
   const run = async ownedRun => {
     const made = documents.map(document => (ownedRun ? owned : plain)(document));
     try {
@@ -31,10 +34,12 @@ async function bothWays(documents, steps) {
       return {...shown, fallback: made.reduce((total, {owner}) => total + (owner?.fallback ?? 0), 0), refused: made.flatMap(({owner}) => Object.keys(owner?.refused ?? {}))};
     } finally { for (const {owner} of made) owner?.release(); }
   };
-  const alone = await run(false), engine = await run(true);
+  const alone = await take('alone', async () => { const {fallback, refused, ...shown} = await run(false); return shown; });
+  const engine = await run(true);
   assert.deepEqual(engine.refused, [], 'the session refused nothing');
   assert.equal(engine.fallback, 0, 'no call ran in the editor');
-  assert.deepEqual({...engine, fallback: 0, refused: []}, {...alone, fallback: 0, refused: []});
+  const {fallback, refused, ...shown} = engine;
+  assert.deepEqual(canonical(shown), alone);
   return {alone, engine};
 }
 const shownBy = (editor, before) => ({text: documentText(editor), selected: [...editor.selectedUids], undo: editor.undoLabel, entries: editor._undo.length - before});
@@ -58,8 +63,8 @@ test('copying frames fills the clipboard the filmstrip, the timeline and the sha
   } finally { owner.release(); }
 });
 
-test('copying figures fills the clipboard the paste actions read, and each paste moves the next one along', opts, async () => {
-  const {alone, engine} = await bothWays([recordedDocument('sheet-layers')], editor => {
+refs.test('copying figures fills the clipboard the paste actions read, and each paste moves the next one along', opts, async take => {
+  const {alone, engine} = await bothWays(take, [recordedDocument('sheet-layers')], editor => {
     assert.equal(editor.hasFigureClipboard, false);
     editor.select(1, -1);
     assert.equal(editor.copySelection(), 1);
@@ -78,8 +83,8 @@ test('copying figures fills the clipboard the paste actions read, and each paste
   assert.equal(alone.undo, 'Paste figures');
 });
 
-test('a cut pastes back where it was, in a range of frames or on the playhead', opts, async () => {
-  await bothWays([recordedDocument('sheet-layers')], editor => {
+refs.test('a cut pastes back where it was, in a range of frames or on the playhead', opts, async take => {
+  await bothWays(take, [recordedDocument('sheet-layers')], editor => {
     editor.select(1, -1);
     const before = editor.selectedObjects[0].root_x;
     assert.equal(editor.cutSelection(), 1);
@@ -93,9 +98,9 @@ test('a cut pastes back where it was, in a range of frames or on the playhead', 
   });
 });
 
-test('figures cross the shared clipboard into another editor and paste what an editor alone pastes', opts, async () => {
+refs.test('figures cross the shared clipboard into another editor and paste what an editor alone pastes', opts, async take => {
   for (const destination of [recordedDocument('sheet-layers'), emptyDocument(), recordedDocument('sheet-movieclip')]) {
-    await bothWays([recordedDocument('sheet-layers'), destination], async (source, target) => {
+    await bothWays(take, [recordedDocument('sheet-layers'), destination], async (source, target) => {
       source.select(1, -1); source.selectMany([1, 2]);
       assert.equal(source.copySelection(), 2);
       await restoreClipboard(target, wire(clipboardSnapshot(source, 'figures')));
@@ -110,9 +115,9 @@ test('figures cross the shared clipboard into another editor and paste what an e
   }
 });
 
-test('timeline frames cross the shared clipboard into another editor and paste what an editor alone pastes', opts, async () => {
+refs.test('timeline frames cross the shared clipboard into another editor and paste what an editor alone pastes', opts, async take => {
   for (const insert of [false, true]) {
-    await bothWays([recordedDocument('sheet-layers'), recordedDocument('sheet-layers')], async (source, target) => {
+    await bothWays(take, [recordedDocument('sheet-layers'), recordedDocument('sheet-layers')], async (source, target) => {
       const ids = ['layer-1', 'layer-2'];
       source.sheetCopyFrames(ids, 0, 5);
       await restoreClipboard(target, wire(clipboardSnapshot(source, 'sheet')));
@@ -127,8 +132,8 @@ test('timeline frames cross the shared clipboard into another editor and paste w
   }
 });
 
-test('a whole scene crosses the shared clipboard with its backgrounds and keeps the destination layers outside the inserted frames', opts, async () => {
-  await bothWays([withBackgrounds(), recordedDocument('sheet-layers')], async (source, target) => {
+refs.test('a whole scene crosses the shared clipboard with its backgrounds and keeps the destination layers outside the inserted frames', opts, async take => {
+  await bothWays(take, [withBackgrounds(), recordedDocument('sheet-layers')], async (source, target) => {
     const ids = ['scene', 'camera', ...source.report._styk.layers.order];
     source.sheetCopyFrames(ids, 0, 4);
     assert.ok(source._sheetClipboard.backgrounds.length > 0, 'the scene has backgrounds to bring');
@@ -144,9 +149,9 @@ test('a whole scene crosses the shared clipboard with its backgrounds and keeps 
   });
 });
 
-test('camera motion crosses the shared clipboard into another editor with an identity of its own', opts, async () => {
+refs.test('camera motion crosses the shared clipboard into another editor with an identity of its own', opts, async take => {
   const document = recordedDocument('camera-motion');
-  await bothWays([document, document], async (source, target) => {
+  await bothWays(take, [document, document], async (source, target) => {
     const [clip] = source.getCameraMotions();
     assert.equal(source.copyCameraMotion(clip.id), true);
     assert.equal(source._cameraMotionClipboard.id, clip.id);
@@ -159,8 +164,8 @@ test('camera motion crosses the shared clipboard into another editor with an ide
   });
 });
 
-test('segment values, the camera and effect clips the interface copies paste in another editor', opts, async () => {
-  await bothWays([recordedDocument('joined-chain'), recordedDocument('joined-chain')], (source, target) => {
+refs.test('segment values, the camera and effect clips the interface copies paste in another editor', opts, async take => {
+  await bothWays(take, [recordedDocument('joined-chain'), recordedDocument('joined-chain')], (source, target) => {
     source.select(3, 2);
     const text = source.copySegmentValues();
     assert.equal(source._segmentValuesClipboard, text);
@@ -171,7 +176,7 @@ test('segment values, the camera and effect clips the interface copies paste in 
     return shownBy(target, 0);
   });
   const document = recordedDocument('camera-motion');
-  await bothWays([document, document], (source, target) => {
+  await bothWays(take, [document, document], (source, target) => {
     assert.ok(!source._cameraClipboard, 'Paste camera pose is off before a copy');
     const copied = source.copyCamera();
     assert.deepEqual(source._cameraClipboard, copied, 'and on after it');
@@ -180,7 +185,7 @@ test('segment values, the camera and effect clips the interface copies paste in 
     return shownBy(target, 0);
   });
   const clips = recordedDocument('vfx-clips');
-  await bothWays([clips, clips], (source, target) => {
+  await bothWays(take, [clips, clips], (source, target) => {
     const [clip] = source.getVfxClips();
     source.copyVfxClip(clip.id);
     assert.equal(source._vfxClipClipboard.id, clip.id);
@@ -191,12 +196,12 @@ test('segment values, the camera and effect clips the interface copies paste in 
   });
 });
 
-test('a clipboard follows the editor from one project to the next', opts, async () => {
+refs.test('a clipboard follows the editor from one project to the next', opts, async take => {
   for (const [copy, paste] of [
     [editor => { editor.select(1, -1); editor.copySelection(); }, editor => { editor.pasteSelection(); }],
     [editor => { editor.sheetCopyFrames(['layer-1'], 0, 3); }, editor => { editor.sheetPasteFrames(['layer-1'], 5); }],
   ]) {
-    await bothWays([recordedDocument('sheet-layers')], editor => {
+    await bothWays(take, [recordedDocument('sheet-layers')], editor => {
       copy(editor);
       editor.load(recordedDocument('sheet-movieclip'));
       const before = editor._undo.length;
@@ -247,8 +252,8 @@ test('the drawing pixels the Draw tool copies stay the editor\'s and cross the s
   } finally { owner.release(); }
 });
 
-test('an audio clip copied in one project pastes in the next, its recording read from the project that has it', opts, async () => {
-  await bothWays([recordedDocument('audio')], editor => {
+refs.test('an audio clip copied in one project pastes in the next, its recording read from the project that has it', opts, async take => {
+  await bothWays(take, [recordedDocument('audio')], editor => {
     assert.ok(!editor._audioClipboard, 'nothing copied');
     assert.equal(editor.copyAudioClip('clip-3'), true);
     assert.ok(editor._audioClipboard, 'the interface can tell something was copied');
@@ -261,8 +266,8 @@ test('an audio clip copied in one project pastes in the next, its recording read
   });
 });
 
-test('an audio clip copied in a project that is then closed still pastes, its recording kept by the clipboard', opts, async () => {
-  await bothWays([recordedDocument('audio')], editor => {
+refs.test('an audio clip copied in a project that is then closed still pastes, its recording kept by the clipboard', opts, async take => {
+  await bothWays(take, [recordedDocument('audio')], editor => {
     assert.equal(editor.copyAudioClip('clip-3'), true);
     // The project closes (its tab does, which ends its session) while another opens beside it.
     const closed = editor.detachDocument();
