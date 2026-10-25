@@ -283,8 +283,8 @@ insertion order until commit; finalized channels still require normal ordering.
 Repeated pointer writes reuse allocated source IDs, and only commit publishes their
 registration and the ordinary Animation history entry. Separate `@frame` and
 `@motionFrame` observations preserve authoritative and transient displays. Scalar-only
-native motion, property projection, ordinary native targets and unrecorded complex
-combinations remain atomic refusals. These worker prerequisites do not open an app
+native motion, property projection, ordinary native targets and origin figures with a mesh, a
+movieclip or a drawing remain atomic refusals; rigged figures are posed as the editor poses them. These worker prerequisites do not open an app
 ownership gate.
 
 Portable mobile pin additions include `HistoryLimits`, worker history configuration,
