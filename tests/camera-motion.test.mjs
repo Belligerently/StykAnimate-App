@@ -4,6 +4,7 @@ import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
 import {Editor} from '../src/editor.mjs';
 import {createCameraMotion,sampleCameraMotion,validateCameraMotion,cameraAtTime} from '../src/camera-motion.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
+import {ownerReferences} from './support/owner-references.mjs';
 import {packMotionLanes} from '../src/camera-motion-timeline.mjs';
 import {motionRowSize,motionLaneBox,sheetRowLayout} from '../src/timeline-rows.mjs';
 import {parallaxResolver} from '../src/layer-parallax.mjs';
@@ -12,10 +13,11 @@ import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
+const refs=ownerReferences(import.meta.url);
 const near=(a,b)=>assert.ok(Math.abs(a-b)<.002,`${a} != ${b}`);
 function fixture(){const e=new Editor({demo:false});e.addFigure();initializeLayerSheet(e.report);e._invalidate({timing:true});return e;}
-/** The same editor with the engine owning it: baking the camera's motion is a command of the engine session. */
-function ownedFixture(){return ownedEditorSync({demo:false},fixture().report,{recorded:false}).editor;}
+/** The same document (built by a plain editor, once: its reference) with the engine owning the editor: baking the camera's motion is a command of the engine session. */
+function ownedFixture(take){return ownedEditorSync({demo:false},JSON.parse(take('fixture',()=>JSON.stringify(fixture().report))),{recorded:false}).editor;}
 function at(e,tick){const rows=e.timeline,index=rows.findLastIndex(r=>r.start<=tick),row=rows[Math.max(0,index)];return evaluatedFrame(e.report,Math.max(0,index),row.count?(tick-row.start)/row.count:0,tick);}
 test('motions that never play together share a timeline lane; overlapping ones stack',()=>{
   const clip=(id,start,duration)=>({id,start,duration}),lanes=clips=>packMotionLanes(clips).map(lane=>lane.map(c=>c.id));
@@ -64,8 +66,8 @@ test('Pivot materialization bakes motion and parallax once without changing edit
   const before=e.serialize(),frame=at(e,0),out=materializePivotDocument(e.report);near(out.keyframes[0].objects[0].root_x,frame.objects[0].root_x+30);
   near(out.keyframes[0].camera.x,cameraAtTime(e.report,frame).x);assert.equal(out._styk.cameraMotion,undefined);assert.deepEqual(e.serialize(),before);
 });
-test('baking retains camera output and parallax at every output tick and undoes as one action',()=>{
-  const e=ownedFixture(),layer=e.activeLayerId,uid=e.selectedUid;e.setLayerParallax(layer,{enabled:true,x:.3});e.setCameraValues({x:70});e.addCameraMotion('impact',{duration:12});e.addCameraMotion('wobble',{duration:24});
+refs.test('baking retains camera output and parallax at every output tick and undoes as one action',take=>{
+  const e=ownedFixture(take),layer=e.activeLayerId,uid=e.selectedUid;e.setLayerParallax(layer,{enabled:true,x:.3});e.setCameraValues({x:70});e.addCameraMotion('impact',{duration:12});e.addCameraMotion('wobble',{duration:24});
   const before=e.serialize(),history=e._undo.length,samples=Array.from({length:e.totalTicks},(_,t)=>{const f=at(e,t);return {camera:cameraAtTime(e.report,f),depth:parallaxResolver(e.report,f)(uid)};});
   e.bakeCameraMotion();assert.equal(e._undo.length,history+1);assert.ok(e.getCameraMotions().every(c=>!c.enabled));
   samples.forEach((sample,t)=>{const f=at(e,t),camera=cameraAtTime(e.report,f),depth=parallaxResolver(e.report,f)(uid);for(const k of ['x','y','scale','angle_rad'])near(camera[k],sample.camera[k]);near(depth.x,sample.depth.x);near(depth.y,sample.depth.y);});
@@ -74,8 +76,8 @@ test('baking retains camera output and parallax at every output tick and undoes 
 test('pose snapshots omit the derived motion clock and retain the authored camera',()=>{
   const e=fixture();e.addCameraMotion('impact');const frame=at(e,3),saved=snapshotPoseFrame(frame);assert.equal(saved._cameraMotionTick,undefined);assert.deepEqual(saved.camera,frame.camera);
 });
-for(const interpolation of ['constant','linear','bezier','auto'])test(`partial bake preserves all output ticks across ${interpolation} camera spans`,()=>{
-  const e=ownedFixture(),uid=e.selectedUid;e.addCameraMotion('handheld',{duration:60});e.addCameraMotion('impact',{start:5,duration:30});
+for(const interpolation of ['constant','linear','bezier','auto'])refs.test(`partial bake preserves all output ticks across ${interpolation} camera spans`,take=>{
+  const e=ownedFixture(take),uid=e.selectedUid;e.addCameraMotion('handheld',{duration:60});e.addCameraMotion('impact',{start:5,duration:30});
   e.setLayerParallax(e.activeLayerId,{enabled:true,x:.2});
   for(const [tick,x] of [[0,0],[20,100],[40,240]]){e.sheetInsertKey(['camera'],tick);e.seek(tick);e.setCameraValues({x});}
   e.sheetSetEasing(['camera'],0,40,{interpolation,...(interpolation==='bezier'?{bezier:[.3,0,.8,1]}:{})});
@@ -85,8 +87,8 @@ for(const interpolation of ['constant','linear','bezier','auto'])test(`partial b
   e.bakeCameraMotion({start:45,end:49});sample().forEach((s,t)=>{for(const k of ['x','y','scale','angle_rad'])near(s.c[k],expected[t].c[k]);near(s.p.x,expected[t].p.x);});
   e.undo();e.undo();assert.deepEqual(e.serialize(),before);
 });
-test('camera and layer locks reject motion, baking and parallax changes atomically',()=>{
-  const e=ownedFixture(),id=e.addCameraMotion('shake');e.setLayerLocked('camera',true);e.setLayerLocked(e.activeLayerId,true);const before=e.serialize();
+refs.test('camera and layer locks reject motion, baking and parallax changes atomically',take=>{
+  const e=ownedFixture(take),id=e.addCameraMotion('shake');e.setLayerLocked('camera',true);e.setLayerLocked(e.activeLayerId,true);const before=e.serialize();
   assert.throws(()=>e.setCameraMotion(id,{enabled:false}),/Unlock/);assert.throws(()=>e.addCameraMotion('impact'),/Unlock/);
   assert.throws(()=>e.setLayerParallax(e.activeLayerId,{enabled:true}),/Unlock/);assert.throws(()=>e.bakeCameraMotion(),/Unlock/);assert.deepEqual(e.serialize(),before);
 });

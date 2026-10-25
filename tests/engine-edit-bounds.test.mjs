@@ -6,6 +6,7 @@ import {Editor} from '../src/editor.mjs';
 import {appBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
+import {ownedEditorSync} from './support/owned-editor.mjs';
 const editor = {tick: 3, frameIndex: 0, selectedUids: new Set([7, 2])};
 const entry = {obj: {unique_id: 7}};
 test('bounds bridge records existing requests once, preserves callback receiver and frame range properties', () => {
@@ -30,16 +31,19 @@ test('an app-registered callback reaches the engine as a marker and is never run
   assert.notEqual(recorded.args[2].boundsOf, other); assert.ok(JSON.parse(recorded.payload())[2].boundsOf['@measuredBounds']);
 });
 
-test('recorded app bounds depend on hidden construction strokes, anchored media and effect reach', () => {
+test('recorded app bounds depend on hidden construction strokes, anchored media and effect reach', {skip: !engineBuilt}, () => {
   const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/measured-bounds-media.document.json', import.meta.url), 'utf8'));
-  const scene = new Editor({demo: false}).load(document).geometry;
-  const hidden = scene.objects.get(0), media = scene.objects.get(2);
-  const hiddenBox = appBounds()(hidden), visibleBox = appBounds()({...hidden, segments: hidden.segments.filter(item => item.seg.visible !== false)});
-  assert.ok(hiddenBox.maxX > visibleBox.maxX + 100, 'fixture does not depend on the hidden endpoint');
-  const full = appBounds()(media), noFx = appBounds({vfxBounds: false})(media);
-  assert.ok(full.minX < noFx.minX && full.maxX > noFx.maxX, 'fixture does not depend on effect padding');
-  const bare = {...media, segments: media.segments.map(item => item.type === 'image' ? {...item, asset: {...item.asset, display_width: 1, display_height: 1}} : item)};
-  assert.notDeepEqual(appBounds()(bare), full, 'fixture does not depend on the anchored media extent');
+  const {editor, owner} = ownedEditorSync({demo: false}, document, {recorded: false});
+  try {
+    const scene = editor.geometry;
+    const hidden = scene.objects.get(0), media = scene.objects.get(2);
+    const hiddenBox = appBounds()(hidden), visibleBox = appBounds()({...hidden, segments: hidden.segments.filter(item => item.seg.visible !== false)});
+    assert.ok(hiddenBox.maxX > visibleBox.maxX + 100, 'fixture does not depend on the hidden endpoint');
+    const full = appBounds()(media), noFx = appBounds({vfxBounds: false})(media);
+    assert.ok(full.minX < noFx.minX && full.maxX > noFx.maxX, 'fixture does not depend on effect padding');
+    const bare = {...media, segments: media.segments.map(item => item.type === 'image' ? {...item, asset: {...item.asset, display_width: 1, display_height: 1}} : item)};
+    assert.notDeepEqual(appBounds()(bare), full, 'fixture does not depend on the anchored media extent');
+  } finally { owner.release(); }
 });
 test('nonplain results, getters, callback throws and oversized tapes keep callback behavior and refuse transport', () => {
   let reads = 0;

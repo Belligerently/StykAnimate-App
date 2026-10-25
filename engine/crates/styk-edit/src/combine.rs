@@ -2,13 +2,15 @@
 //! keyframe at the playhead, drawn as they were drawn (curves, circles, fills, colours, paint order) with the root's identity.
 //! One `figure-splice` history entry holds the new definition and the keyframe before and after.
 //!
-//! Ported for figures made of lines, circles and fills, as the editor combines them. Groups with media (images, text), rig
-//! relationships, Stick Nodes shapes, surfaces, colour transitions, pinned limbs, 3D meshes, movieclips or origins, and a
-//! document with saved animation channels (`authored`), answer `Unported`: the editor combines those.
+//! Every segment and fill is combined as the frame draws it (`build_shapes`: pinned limbs as solved, colour transitions mixed,
+//! the paint order of surfaces), with media (images, text) moved into the new figure's tables, rig relationships kept on their
+//! authored angles and lengths, and surfaces renamed to the new handles. Groups with Stick Nodes shapes, 3D meshes, movieclips,
+//! drawings or origins, and a document with saved animation channels (`authored`), answer `Unported`: the editor combines those.
 
 use std::collections::{HashMap, HashSet};
 
 use styk_doc::{Obj, Value};
+use styk_eval::geometry::{Item, ItemKind, Scene};
 
 use crate::figures::{frame_order, normalize_frame, set_order};
 use crate::history::{Command, CommandKind};
@@ -70,45 +72,64 @@ fn joined_group(objects: &[Value], id: u32) -> Result<Vec<usize>, EditError> {
     Ok(queue)
 }
 
-/// What a segment of a figure is drawn with in a pose (`segmentAt` of src/pivot/geometry.mjs, without a rig or a pinned limb):
-/// its angle, bend and length (scaled).
-fn drawn_pose(object: &Value, segment: &Value, index: usize, scale: f64) -> (f64, f64, f64) {
-    let held = |name: &str| present(object.get(name).and_then(|v| v.item(index)).as_ref()).and_then(Value::as_f64);
-    let runtime = |name: &str| present(object.get("runtime_segments").and_then(|r| r.item(index)).and_then(|r| r.get(name).cloned()).as_ref()).and_then(Value::as_f64);
-    let own = |name: &str| present(segment.get(name)).and_then(Value::as_f64);
-    let angle = held("angles").or_else(|| runtime("angle_rad")).or_else(|| own("angle_rad")).unwrap_or(0.0);
-    let bend = if truthy(object, "bend_flag") { held("bends").unwrap_or(0.0) } else { runtime("bend_rad").or_else(|| own("bend_rad")).unwrap_or(0.0) };
-    let length = if truthy(object, "len_flag") { held("lengths").or_else(|| own("length")).unwrap_or(f64::NAN) } else { runtime("length").or_else(|| own("length")).unwrap_or(0.0) };
-    (angle, bend, length * scale)
+fn rgb_value(rgb: [u8; 3]) -> Value {
+    styk_eval::records::paint::rgb_value(rgb.map(f64::from))
 }
 
-/// `1 - transparency / 255`, else the stored opacity: `seg.transparency === undefined ? (seg.color_alpha ?? 1) : 1 - seg.transparency / 255`.
-fn alpha_of(record: &Value, transparency: &str, opacity: &str) -> f64 {
-    match record.get(transparency) {
-        None => present(record.get(opacity)).and_then(Value::as_f64).unwrap_or(1.0),
-        Some(Value::Null) => 1.0,
-        Some(value) => 1.0 - value.as_f64().unwrap_or(f64::NAN) / 255.0,
+/// The segment and fill primitives of each member as the frame draws them, by index (`geometry.segments`, `geometry.polys`).
+struct Drawn<'a> {
+    segments: Vec<Option<&'a Item>>,
+    fills: Vec<Option<&'a Item>>,
+}
+
+fn drawn_of(scene: &Scene, slot: usize, segments: usize, fills: usize) -> Drawn<'_> {
+    let mut drawn = Drawn { segments: vec![None; segments], fills: vec![None; fills] };
+    for item in scene.measured.iter().filter(|item| item.slot as usize == slot) {
+        let place = match item.kind {
+            ItemKind::Mesh => continue,
+            ItemKind::Poly => drawn.fills.get_mut(item.index as usize),
+            _ => drawn.segments.get_mut(item.index as usize),
+        };
+        if let Some(place) = place {
+            *place = Some(item);
+        }
     }
+    drawn
 }
 
-/// The colour a segment or fill shows (`objectColor`; a format 4 figure shows the object's native colour for its segments).
-fn shown_rgb(version: f64, figure: &Value, object: &Value, base: Option<&Value>, segment: bool) -> [f64; 3] {
-    let raw = crate::recolor::override_raw(object);
-    if segment && version < 5.0 && figure.path(&["_styk", "colorMode"]).and_then(Value::as_str) != Some("segments") {
-        return if crate::recolor::to_int32(raw) < 0 { [0.0; 3] } else { crate::recolor::native_rgb(raw) };
+/// `sourceAssetIndex(segment)`: the entry of the figure's media table a segment draws.
+fn asset_index(segment: &Value) -> f64 {
+    let first = |value: Option<&Value>| present(value).and_then(Value::as_f64);
+    first(segment.get("extra_u16"))
+        .or_else(|| first(segment.get("extra").and_then(|extra| extra.item(0)).as_ref()))
+        .or_else(|| first(segment.get("image_asset_index")))
+        .or_else(|| first(segment.get("sprite_index")))
+        .unwrap_or(0.0)
+}
+
+/// The decoded media a segment draws (`render.asset`): its entry in the figure's table, with the anchor a pivot and an
+/// endpoint make when it has none.
+fn media_of(figure: &Value, segment: &Value) -> Option<Obj> {
+    let table = match segment.get("segment_type").and_then(Value::as_str)? {
+        "text" => figure.get("text_assets"),
+        "image" => figure.get("image_assets"),
+        _ => return None,
+    };
+    let wanted = asset_index(segment);
+    let number = |asset: &Value| ["asset_index", "table_index", "image_index", "sprite_index"].iter().find_map(|name| present(asset.get(name))).and_then(Value::as_f64);
+    let asset = items(table).into_iter().find(|asset| number(asset) == Some(wanted))?;
+    let mut asset = asset.as_obj().cloned().unwrap_or_default();
+    let point = |name: &str| asset.get(name).filter(|p| p.truthy()).map(|p| [num(p, "x").unwrap_or(f64::NAN), num(p, "y").unwrap_or(f64::NAN)]);
+    if !asset.get("anchor_length").is_some_and(Value::truthy)
+        && let (Some(pivot), Some(end)) = (point("pivot"), point("endpoint"))
+    {
+        let (pivot_value, end_value) = (asset.get("pivot").cloned().unwrap_or(Value::Null), asset.get("endpoint").cloned().unwrap_or(Value::Null));
+        asset.set("anchor_start", pivot_value);
+        asset.set("anchor_end", end_value);
+        asset.set("anchor_length", Value::Num(styk_math::hypot(end[0] - pivot[0], end[1] - pivot[1])));
+        asset.set("anchor_angle_rad", Value::Num(styk_math::atan2(end[1] - pivot[1], end[0] - pivot[0])));
     }
-    crate::recolor::mix_color(styk_eval::records::paint::rgb_of_value(present(base)).unwrap_or([0.0; 3]), raw)
-}
-
-fn rgb_value(rgb: [f64; 3]) -> Value {
-    styk_eval::records::paint::rgb_value(rgb)
-}
-
-/// One drawable of a figure in the draw list: where its record is and where it paints.
-struct Drawable {
-    z: f64,
-    polygon: bool,
-    index: usize,
+    Some(asset)
 }
 
 impl Editor {
@@ -157,16 +178,16 @@ impl Editor {
             return Err(invalid("errors.editorCombine.moveTheJoinedFiguresToAdjacentLayersBefore"));
         }
         let (mut segment_total, mut polygon_total) = (0usize, 0usize);
+        // Text is drawn at the scale of its figure: the combined figure keeps one for all of it.
+        let mut scale: Option<f64> = None;
         for &slot in &slots {
             let (object, figure) = (&objects[slot], figure_of(&objects[slot]));
-            // What the editor combines with a rig, media, Stick Nodes shapes, surfaces, colour transitions or pinned limbs is its own.
-            if segments_of(&figure).iter().any(|s| truthy(s, "_stykRig") || truthy(s, "_sticknodes") || matches!(s.get("segment_type").and_then(Value::as_str), Some("image" | "text")))
-                || items(figure.get("polyfills")).iter().any(|p| truthy(p, "_stykSurface"))
+            // The editor combines a Stick Nodes shape, a 3D mesh, a movieclip, a drawing or an origin as it happens to leave them.
+            if segments_of(&figure).iter().any(|s| truthy(s, "_sticknodes"))
                 || ["spatialMesh", "movieclip", "drawing", "animationOrigin"].iter().any(|k| figure.path(&["_styk", k]).is_some_and(Value::truthy))
-                || ["_sticknodesShapes", "_sticknodesSprite", "color_transition", "_stykAnimationOrigin"].iter().any(|k| truthy(object, k))
-                || crate::ik::has_pinned(object)
+                || ["_sticknodesShapes", "_sticknodesSprite", "_stykAnimationOrigin"].iter().any(|k| truthy(object, k))
             {
-                return Err(unported("with media, a rig, Stick Nodes shapes, surfaces, colour transitions, pinned limbs or an origin"));
+                return Err(unported("with Stick Nodes shapes, a 3D mesh, a movieclip, a drawing or an origin"));
             }
             if truthy(object, "_stykVfx") {
                 return Err(invalid("errors.editorCombine.combineCannotPreserveSeparateEffectStacksConvertThe"));
@@ -184,18 +205,26 @@ impl Editor {
             }
             segment_total += segments_of(&figure).len();
             polygon_total += items(figure.get("polyfills")).len();
+            let object_scale = object.get("scale").and_then(Value::as_f64).unwrap_or(f64::NAN);
+            if object_scale > 0.0 && segments_of(&figure).iter().any(|s| s.get("segment_type").and_then(Value::as_str) == Some("text")) {
+                if scale.is_some_and(|known| (known - object_scale).abs() > 1e-10) {
+                    return Err(invalid("errors.editorCombine.textFiguresMustHaveTheSameScaleBefore"));
+                }
+                scale = Some(object_scale);
+            }
         }
+        let scale = scale.unwrap_or(1.0);
         if segment_total > 30000 || polygon_total > 20000 {
             return Err(invalid("errors.editorCombine.theCombinedFigureExceedsTheSupported30000"));
         }
         // The figures' world positions are the root's: only the root figure's origin is kept.
-        let root_point = {
-            let record = frame.clone();
-            let (_, _, scene) = self.posed_scene(&record)?;
-            scene.objects.iter().find(|g| Some(g.uid) == uid(&objects[slots[0]]) && g.resolved).map(|g| g.root).ok_or_else(|| unported("of a figure the engine does not draw"))?
-        };
-
-        let version = num(&self.report, "version").unwrap_or(f64::NAN);
+        let (_, _, scene) = self.posed_shapes(&frame)?;
+        let geometry_of = |slot: usize| scene.objects.get(slot).filter(|g| g.resolved && Some(g.uid) == uid(&objects[slot]));
+        if slots.iter().any(|&slot| geometry_of(slot).is_none()) {
+            return Err(unported("of a figure the engine does not draw"));
+        }
+        let root_point = geometry_of(slots[0]).map(|g| g.root).unwrap_or([f64::NAN; 2]);
+        let constrained = slots.iter().any(|&slot| segments_of(&figure_of(&objects[slot])).iter().any(|s| truthy(s, "_stykRig")));
         let type_id = definitions.iter().filter_map(|f| num(f, "figure_type_id")).fold(0.0f64, f64::max) + 1.0;
         let title = name.unwrap_or_else(|| format!("{} combined", figure_of(&objects[slots[0]]).get("name").filter(|n| n.truthy()).and_then(Value::as_str).unwrap_or("Figure")));
 
@@ -226,85 +255,159 @@ impl Editor {
 
         let mut segments: Vec<Value> = Vec::with_capacity(segment_total);
         let mut polygons: Vec<Value> = Vec::with_capacity(polygon_total);
-        // Where each segment and fill of each member went, and how it paints.
-        let mut drawn: HashMap<usize, Vec<Drawable>> = HashMap::new();
+        // The media tables of the new figure, and which entry holds the media a figure's segment draws.
+        let (mut image_assets, mut text_assets): (Vec<Value>, Vec<Value>) = (Vec::new(), Vec::new());
+        let mut installed: HashMap<(u32, bool, u64), f64> = HashMap::new();
+        // Where the segments and fills of each member begin in the new figure.
+        let mut starts: HashMap<usize, (usize, usize)> = HashMap::new();
         for &slot in &slots {
             let object = &objects[slot];
             let member = uid(object).unwrap_or(0);
             let figure = figure_of(object);
-            let scale = present(object.get("scale")).and_then(Value::as_f64).unwrap_or(1.0);
+            let originals = segments_of(&figure);
+            let fills = items(figure.get("polyfills"));
+            let drawn = drawn_of(&scene, slot, originals.len(), fills.len());
             let raw = crate::recolor::to_uint32(crate::recolor::override_raw(object));
-            let mut list = Vec::new();
-            for (i, original) in segments_of(&figure).iter().enumerate() {
-                let (angle, bend, length) = drawn_pose(object, original, i, scale);
-                let thickness = present(original.get("thickness")).and_then(Value::as_f64).unwrap_or(0.0) * scale.abs();
-                let rgb = shown_rgb(version, &figure, object, original.get("color_rgb"), true);
-                let alpha = alpha_of(original, "transparency", "color_alpha");
+            let rigged = originals.iter().any(|s| truthy(s, "_stykRig"));
+            let object_scale = object.get("scale").and_then(Value::as_f64).unwrap_or(f64::NAN);
+            starts.insert(slot, (segments.len(), polygons.len()));
+            for (i, original) in originals.iter().enumerate() {
+                let Some(item) = drawn.segments[i] else { return Err(unported("of a segment the engine does not draw")) };
+                let alpha = item.alpha;
                 let mut segment = original.as_obj().cloned().unwrap_or_default();
                 segment.remove("_logical_segment_id");
                 segment.remove("z_order_runtime_raw");
                 segment.set("segment_id", mapped(member, original.get("segment_id")));
                 segment.set("parent_id", mapped(member, original.get("parent_id")));
-                segment.set("length", Value::Num(length));
-                segment.set("thickness", Value::Num(thickness));
-                segment.set("angle_rad", Value::Num(angle));
-                segment.set("bend_rad", Value::Num(bend));
-                segment.set("color_rgb", rgb_value(rgb));
+                segment.set("length", Value::Num(item.length / scale));
+                segment.set("thickness", Value::Num(item.thickness / scale));
+                segment.set("angle_rad", Value::Num(item.angle));
+                segment.set("bend_rad", Value::Num(item.bend));
+                segment.set("color_rgb", rgb_value(item.rgb));
                 segment.set("transparency", Value::Num(alpha_byte(alpha)?));
                 segment.set("color_alpha", Value::Num(alpha));
                 segment.set("z_order", Value::Num(0.0));
+                if rigged {
+                    // A rig draws from the angles and lengths the figure was authored with: the new figure evaluates it again.
+                    let factor = object_scale.abs() / scale;
+                    let authored = |name: &str| object.get(name).and_then(|values| values.item(i)).and_then(|value| value.as_f64()).unwrap_or(f64::NAN);
+                    let angle = match scene.objects[slot].solution.as_ref() {
+                        Some(solution) => solution.angles.get(i).copied().unwrap_or(f64::NAN),
+                        None => authored("angles"),
+                    };
+                    let connector = original.path(&["_stykRig", "connector"]).is_some_and(Value::truthy);
+                    segment.set("angle_rad", Value::Num(angle + if object_scale < 0.0 { std::f64::consts::PI } else { 0.0 }));
+                    let length = if truthy(object, "len_flag") { authored("lengths") } else { num(original, "length").unwrap_or(f64::NAN) };
+                    segment.set("length", Value::Num(length * if connector { 1.0 } else { factor }));
+                    segment.set("thickness", Value::Num(num(original, "thickness").unwrap_or(f64::NAN) * factor));
+                    if let Some(mut rig) = segment.get("_stykRig").filter(|rig| rig.truthy()).and_then(Value::as_obj).cloned() {
+                        for kind in ["connector", "stretch"] {
+                            if let Some(mut relation) = rig.get(kind).filter(|relation| relation.truthy()).and_then(Value::as_obj).cloned() {
+                                let rest = relation.get("restLength").and_then(Value::as_f64).unwrap_or(f64::NAN);
+                                relation.set("restLength", Value::Num(rest * factor));
+                                rig.set(kind, Value::object(relation));
+                            }
+                        }
+                        segment.set("_stykRig", Value::object(rig));
+                    }
+                    let mut renamed = Value::object(segment);
+                    let pairs: Vec<(f64, f64)> = handles.get(&member).map(|m| m.iter().map(|(from, to)| (f64::from_bits(*from), *to)).collect()).unwrap_or_default();
+                    crate::topology::remap_rig_references(&mut renamed, &pairs)?;
+                    segment = renamed.as_obj().cloned().unwrap_or_default();
+                }
+                // Parts of a rig that hung from the root's origin keep their orientation in the world.
+                if constrained && num(original, "parent_id") == Some(0.0) && member != id {
+                    let mut rig = segment.get("_stykRig").filter(|rig| rig.truthy()).and_then(Value::as_obj).cloned().unwrap_or_default();
+                    rig.set("orientation", Value::str("world"));
+                    segment.set("_stykRig", Value::object(rig));
+                }
                 if segment.get("secondary").is_some_and(Value::truthy) {
                     if raw >> 24 == 255 {
                         segment.set("secondary", Value::Null);
                     } else if raw >> 24 != 0
+                        && segment.get("segment_type").and_then(Value::as_str) != Some("text")
                         && let Some(mut secondary) = segment.get("secondary").and_then(Value::as_obj).cloned()
                     {
                         if let Some(base) = styk_eval::records::paint::rgb_of_value(secondary.get("rgb")) {
-                            secondary.set("rgb", rgb_value(crate::recolor::mix_color(base, f64::from(raw))));
+                            secondary.set("rgb", styk_eval::records::paint::rgb_value(crate::recolor::mix_color(base, f64::from(raw))));
                         }
                         segment.set("secondary", Value::object(secondary));
                     }
                 }
-                if !matches!(original.get("visible"), Some(Value::Bool(false))) {
-                    list.push(Drawable { z: num(original, "z_order").unwrap_or((i + 1) as f64), polygon: false, index: segments.len() });
+                if let Some(kind) = original.get("segment_type").and_then(Value::as_str).filter(|kind| matches!(*kind, "image" | "text")) {
+                    let is_image = kind == "image";
+                    let wanted = asset_index(original);
+                    let at = match installed.get(&(member, is_image, wanted.to_bits())) {
+                        Some(at) => *at,
+                        None => {
+                            let Some(mut asset) = media_of(&figure, original) else { return Err(invalid("errors.editorCombine.anAttachedMediaSegmentIsMissingItsDecoded")) };
+                            let table = if is_image { &mut image_assets } else { &mut text_assets };
+                            let next = table.len() as f64;
+                            asset.set("kind", Value::str(kind));
+                            asset.set("asset_index", Value::Num(next));
+                            asset.set("table_index", Value::Num(next));
+                            for alias in ["image_index", "sprite_index"] {
+                                if asset.contains(alias) {
+                                    asset.set(alias, Value::Num(next));
+                                }
+                            }
+                            table.push(Value::object(asset));
+                            installed.insert((member, is_image, wanted.to_bits()), next);
+                            next
+                        }
+                    };
+                    segment.set("extra_u16", Value::Num(at));
+                    let flag = |name: &str, place: usize| match present(segment.get(name)) {
+                        Some(value) => value.truthy(),
+                        None => present(segment.get("extra").and_then(|extra| extra.item(place)).as_ref()).is_some_and(Value::truthy),
+                    };
+                    let first = flag("extra_u8_a", 1);
+                    let second = flag("extra_u8_b", 2) != truthy(object, "image_text_flags");
+                    segment.set("extra_u8_a", Value::Num(f64::from(u8::from(first))));
+                    segment.set("extra_u8_b", Value::Num(f64::from(u8::from(second))));
+                    segment.set("extra", Value::nums(&[at, f64::from(u8::from(first)), f64::from(u8::from(second))]));
                 }
                 segments.push(Value::object(segment));
             }
-            let mut fills = Vec::new();
-            for original in items(figure.get("polyfills")) {
-                let rgb = shown_rgb(version, &figure, object, original.get("color_rgb"), false);
-                let alpha = alpha_of(&original, "alpha_raw", "color_alpha");
+            for (i, original) in fills.iter().enumerate() {
+                let Some(item) = drawn.fills[i] else { return Err(unported("of a fill the engine does not draw")) };
+                let alpha = item.alpha;
                 let mut polygon = original.as_obj().cloned().unwrap_or_default();
                 polygon.set("polyfill_id", Value::Num((polygons.len() + 1) as f64));
                 let ids: Vec<Value> = items(original.get("segment_ids")).iter().map(|handle| mapped(member, Some(handle))).collect();
                 polygon.set("segment_ids", Value::array(ids.clone()));
                 polygon.set("segment_ids_raw", Value::array(ids));
-                polygon.set("color_rgb", rgb_value(rgb));
+                if let Some(surface) = polygon.get("_stykSurface").filter(|surface| surface.truthy()).and_then(Value::as_obj).cloned() {
+                    let renamed = |list: Option<&Value>| Value::array(items(list).iter().map(|handle| mapped(member, Some(handle))).collect());
+                    let mut next = surface.clone();
+                    next.set("basis", renamed(surface.get("basis")));
+                    if surface.get("depth").is_some_and(Value::truthy) {
+                        next.set("depth", renamed(surface.get("depth")));
+                    }
+                    polygon.set("_stykSurface", Value::object(next));
+                }
+                polygon.set("color_rgb", rgb_value(item.rgb));
                 polygon.set("alpha_raw", Value::Num(alpha_byte(alpha)?));
                 polygon.set("color_alpha", Value::Num(alpha));
                 polygon.set("z_order", Value::Num(0.0));
                 polygon.remove("z_order_runtime_raw");
-                fills.push(Drawable { z: num(&original, "z_order").unwrap_or(0.0), polygon: true, index: polygons.len() });
                 polygons.push(Value::object(polygon));
             }
-            // Fills draw first, then the visible segments; each by its place (a stable sort).
-            fills.extend(list);
-            fills.sort_by(|a, b| a.z.partial_cmp(&b.z).unwrap_or(std::cmp::Ordering::Equal));
-            drawn.insert(slot, fills);
         }
-        // Paint order: the drawables of the members, figure by figure in the drawing order of the keyframe.
-        let slot_of_uid = |member: f64| objects.iter().position(|o| num(o, "unique_id") == Some(member));
+        // Paint order: what the frame draws of the members, figure by figure in its drawing order.
         let mut rank = 1.0;
-        for &member in &order {
-            let Some(slot) = slot_of_uid(member).filter(|slot| slots.contains(slot)) else { continue };
-            for drawable in drawn.get(&slot).map(Vec::as_slice).unwrap_or(&[]) {
-                let list = if drawable.polygon { &mut polygons } else { &mut segments };
-                if let Some(record) = list.get_mut(drawable.index).and_then(Value::make_obj) {
-                    record.set("z_order", Value::Num(rank));
-                    record.set("z_order_runtime_raw", Value::Num(rank - 1.0));
-                }
-                rank += 1.0;
+        for item in scene.items.iter().filter(|item| starts.contains_key(&(item.slot as usize))) {
+            let (first_segment, first_fill) = starts[&(item.slot as usize)];
+            let (list, at) = match item.kind {
+                ItemKind::Mesh => continue,
+                ItemKind::Poly => (&mut polygons, first_fill + item.index as usize),
+                _ => (&mut segments, first_segment + item.index as usize),
+            };
+            if let Some(record) = list.get_mut(at).and_then(Value::make_obj) {
+                record.set("z_order", Value::Num(rank));
+                record.set("z_order_runtime_raw", Value::Num(rank - 1.0));
             }
+            rank += 1.0;
         }
 
         let angles: Vec<f64> = segments.iter().map(|s| num(s, "angle_rad").unwrap_or(f64::NAN)).collect();
@@ -313,8 +416,8 @@ impl Editor {
         figure.set("name", Value::str(&title.chars().scan(0usize, |units, c| { *units += c.len_utf16(); (*units <= 255).then_some(c) }).collect::<String>()));
         figure.set("segments", Value::array(segments));
         figure.set("polyfills", Value::array(polygons));
-        figure.set("image_assets", Value::array(Vec::new()));
-        figure.set("text_assets", Value::array(Vec::new()));
+        figure.set("image_assets", Value::array(image_assets));
+        figure.set("text_assets", Value::array(text_assets));
         figure.set("segment_count", Value::Num(segment_total as f64));
         let mut styk = Obj::new();
         styk.set("colorMode", Value::str("segments"));
@@ -324,7 +427,7 @@ impl Editor {
 
         // The keyframe with the group replaced by the one figure, at the group's place in the drawing order; every join follows by identity.
         let mut combined = objects[slots[0]].as_obj().cloned().unwrap_or_default();
-        combined.set("scale", Value::Num(1.0));
+        combined.set("scale", Value::Num(scale));
         combined.set("figure_type_id", Value::Num(type_id));
         combined.set("root_x", Value::Num(root_point[0]));
         combined.set("root_y", Value::Num(root_point[1]));
@@ -447,21 +550,18 @@ mod tests {
     }
 
     #[test]
-    fn a_segment_is_drawn_with_its_pose_then_its_runtime_values_then_its_definition() {
-        let segment = parse(r#"{"angle_rad":0.25,"bend_rad":0.5,"length":40}"#);
-        let plain = parse(r#"{"angles":[1.5],"len_flag":0,"bend_flag":0}"#);
-        assert_eq!(drawn_pose(&plain, &segment, 0, 2.0), (1.5, 0.5, 80.0));
-        let stretched = parse(r#"{"angles":[null],"len_flag":1,"lengths":[10],"bend_flag":1,"bends":[0.75]}"#);
-        assert_eq!(drawn_pose(&stretched, &segment, 0, 0.5), (0.25, 0.75, 5.0));
-        let runtime = parse(r#"{"runtime_segments":[{"angle_rad":2,"bend_rad":3,"length":4}]}"#);
-        assert_eq!(drawn_pose(&runtime, &segment, 0, 1.0), (2.0, 3.0, 4.0));
-    }
-
-    #[test]
-    fn opacity_is_read_from_the_transparency_byte_before_the_stored_opacity() {
-        assert_eq!(alpha_of(&parse(r#"{"transparency":51}"#), "transparency", "color_alpha"), 0.8);
-        assert_eq!(alpha_of(&parse(r#"{"color_alpha":0.25}"#), "transparency", "color_alpha"), 0.25);
-        assert_eq!(alpha_of(&parse("{}"), "transparency", "color_alpha"), 1.0);
-        assert_eq!(alpha_of(&parse(r#"{"transparency":null}"#), "transparency", "color_alpha"), 1.0);
+    fn a_segment_draws_the_media_its_index_names_with_the_anchor_its_pivot_and_endpoint_make() {
+        let figure = parse(r#"{"image_assets":[{"asset_index":0},{"table_index":3,"pivot":{"x":1,"y":1},"endpoint":{"x":4,"y":5}}],"text_assets":[{"image_index":2}]}"#);
+        let image = parse(r#"{"segment_type":"image","extra":[3,1,0]}"#);
+        assert_eq!(asset_index(&image), 3.0);
+        let asset = media_of(&figure, &image).unwrap();
+        // A 3-4-5 triangle: the anchor runs from the pivot to the endpoint.
+        assert_eq!(asset.get("anchor_length").and_then(Value::as_f64), Some(5.0));
+        assert_eq!(asset.get("anchor_angle_rad").and_then(Value::as_f64), Some(styk_math::atan2(4.0, 3.0)));
+        // The text table is another table, and an index nothing names has no media.
+        let text = parse(r#"{"segment_type":"text","extra_u16":2}"#);
+        assert!(media_of(&figure, &text).is_some());
+        assert!(media_of(&figure, &parse(r#"{"segment_type":"text","extra_u16":0}"#)).is_none());
+        assert!(media_of(&figure, &parse(r#"{"segment_type":"line"}"#)).is_none());
     }
 }

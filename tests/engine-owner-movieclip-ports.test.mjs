@@ -5,15 +5,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {engineBuilt} from './support/engine-node.mjs';
 import {bothWays, recordedDocument} from './support/owned-vs-plain.mjs';
+import {ownerReferences} from './support/owner-references.mjs';
 
 const opts = {skip: !engineBuilt};
+const refs = ownerReferences(import.meta.url);
 const instances = (editor, tick) => { editor.seek(tick); return editor.evaluatedFrame.objects; };
 const presence = {clock: 'presence', offset: 0, speed: 1, mode: 'loop'};
 
-test('duplicating a movieclip instance puts a copy on the presence clock', opts, async () => {
+refs.test('duplicating a movieclip instance puts a copy on the presence clock', opts, async take => {
   // The second clip runs on the document's own clock, from the frame 2 to 6.
   for (const [name, tick] of [['sheet-movieclip', 0], ['sheet-movieclip-timed', 3]]) {
-    const {owned} = await bothWays(recordedDocument(name), editor => {
+    const {owned} = await bothWays(take, recordedDocument(name), editor => {
       editor.seek(tick);
       editor.select(4, -1);
       const copy = editor.duplicateFigure();
@@ -25,9 +27,9 @@ test('duplicating a movieclip instance puts a copy on the presence clock', opts,
   }
 });
 
-test('adding a movieclip from the project puts an instance at the playhead', opts, async () => {
+refs.test('adding a movieclip from the project puts an instance at the playhead', opts, async take => {
   for (const tick of [0, 3]) {
-    await bothWays(recordedDocument('sheet-movieclip'), editor => {
+    await bothWays(take, recordedDocument('sheet-movieclip'), editor => {
       editor.seek(tick);
       const added = editor.addFigure(4);
       assert.equal(added.figure_type_id, 4);
@@ -38,8 +40,8 @@ test('adding a movieclip from the project puts an instance at the playhead', opt
   }
 });
 
-test('adding a movieclip across a range of frames is one step', opts, async () => {
-  await bothWays(recordedDocument('sheet-movieclip'), editor => {
+refs.test('adding a movieclip across a range of frames is one step', opts, async take => {
+  await bothWays(take, recordedDocument('sheet-movieclip'), editor => {
     const result = editor.addFigureInFrames(4, undefined, {ticks: [1, 4]});
     assert.equal(result.insertedUids.length, 1);
     assert.equal(editor.undoLabel, 'Add figures across frames');
@@ -47,8 +49,8 @@ test('adding a movieclip across a range of frames is one step', opts, async () =
   }, {expectEntries: 1});
 });
 
-test('duplicating figures that have effect clips across frames copies the clips in the same step', opts, async () => {
-  const {plain} = await bothWays(recordedDocument('vfx-clips'), editor => {
+refs.test('duplicating figures that have effect clips across frames copies the clips in the same step', opts, async take => {
+  const {plain} = await bothWays(take, recordedDocument('vfx-clips'), editor => {
     const clips = () => editor.report._styk.vfxClips.clips.length;
     const before = clips();
     editor.select(1, -1);
@@ -59,8 +61,8 @@ test('duplicating figures that have effect clips across frames copies the clips 
   assert.ok(plain.states.length);
 });
 
-test('breaking apart a movieclip with the document\'s own clock gives it the presence clock first', opts, async () => {
-  await bothWays(recordedDocument('sheet-movieclip-timed'), async editor => {
+refs.test('breaking apart a movieclip with the document\'s own clock gives it the presence clock first', opts, async take => {
+  await bothWays(take, recordedDocument('sheet-movieclip-timed'), async editor => {
     editor.seek(2);
     editor.select(4, -1);
     const parts = await editor.breakApartMovieclip();
