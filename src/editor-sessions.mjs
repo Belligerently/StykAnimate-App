@@ -24,6 +24,8 @@ const SHARED_KEYS = new Set([
   '_revisionSerial', '_loadRequestId', '_layerRevision', '_definitionRevision', '_frameDraftRevision',
   // services and listeners installed once
   '_inbetweenPlanner', '_frameDraftListener', '_frameDraftEnabled',
+  // the engine owner's view of the frame on show, which follows whichever document is open
+  '_shown',
   // clipboards
   '_audioClipboard', '_cameraClipboard', '_cameraMotionClipboard', '_figureClipboard', '_selectionClipboard', '_sheetClipboard',
   '_segmentValuesClipboard',

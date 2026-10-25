@@ -331,12 +331,14 @@ selection is the editor's to tell with a call, and the frame does not depend on 
 - `timeline` is the rows (`[[start, count], …]`, `timeline::rows`).
 - `geometry` is `styk_eval::geometry::build_shapes` of the typed frame: per object (slot) its root, one joint per
   segment, every segment as built (drawn or not: start, end, angle, bend, length, thickness, z, colour, opacity, curve
-  points, a connector's handle, a 3D bone's `spatialFrame`) and every polygon (culled ones flagged, depth values of
+  points, a connector's handle, a 3D bone's `spatialFrame`; under a camera the joints and bone starts also carry
+  `rawPoint`, where they are before perspective, which the commands that pose in perspective unproject from) and every polygon (culled ones flagged, depth values of
   depth-tested faces), what inverse kinematics solved, and the figure's bounds as `boundsOf` measures them
   (`drawlist::app_bounds`). `write_groups` writes them as JSON (a segment is a row of numbers that leaves out what the reader works out: where it starts is where its parent ends, where it ends is its joint); `engine-shown.mjs` makes them the groups the canvas, the
   handles and the pickers read (`{objects: Map<slot, group|null>, orderedObjects, drawables, token, changedSlots,
   warnings}`; a group `{slot, obj, fig, root, joints, segments, polys, bounds, solvedAngles, solvedLengths}`, `drawables`
-  built when read, with Stick Nodes shapes expanded).
+  built when read, with Stick Nodes shapes expanded). The groups carry no drawables for a 3D mesh or a movieclip's contents: the
+  stage draws them in the engine, and a click on artwork paints the pose built for it (`artworkScene` in `src/app.mjs`).
 - A geometry read names the read the interface holds (`since`). The session sends the groups of the figures whose
   pose record is not the one the held read was built from, and of every figure joined to them (one component: an
   assembly's inverse kinematics reaches across joins), or all of them when a figure definition changed. The groups held

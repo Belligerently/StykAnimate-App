@@ -14,6 +14,10 @@
 //!   record's tiles before the call (undo) or after it (redo) of the entry, which `drawingReplay` names;
 //! - `@drawingBytes(record, delta)`: the interface moved the record's tiles to or from the disk: the entry weighs as much less
 //!   or more, and the history is held to its byte limit again;
+//! - `@retractDrawing(record)`: the interface could not apply the tiles of the commit it had the session record: the entry is taken back
+//!   (the last entry of the open grouped edit, else of the history), so no entry names a record the interface never made;
+//! - `drawingBatch` names the pixel commits of the grouped edit in progress, last first: the interface takes their tiles back when the
+//!   group fails and the session aborts it;
 //! - `drawingRefs` names the records and cels the history still refers to. The call that retired an entry that referred to
 //!   any says so (`drawingRetired`), and the interface lets go of the rest.
 
@@ -44,6 +48,30 @@ pub(crate) fn references_drawings(command: &Command) -> bool {
         CommandKind::LayerSheet { definitions: Some((_, figures)), .. } => figures.iter().any(is_drawing),
         CommandKind::Batch { commands } => commands.iter().any(references_drawings),
         _ => false,
+    }
+}
+
+/// Whether `command` is the pixel commit of `record`, or a batch holding it.
+pub(crate) fn holds_record(command: &Command, record: u64) -> bool {
+    match &command.kind {
+        CommandKind::DrawingPixels { record: held, .. } => *held == record,
+        CommandKind::Batch { commands } => commands.iter().any(|child| holds_record(child, record)),
+        _ => false,
+    }
+}
+
+/// The pixel commits applying `command` (an undo, or a redo) applies, in the order it applies them.
+fn replay_steps(command: &Command, redo: bool, out: &mut Vec<Value>) {
+    match &command.kind {
+        CommandKind::DrawingPixels { cel_id, record } => {
+            let mut step = Obj::new();
+            step.set("celId", Value::str(cel_id));
+            step.set("record", Value::Num(*record as f64));
+            out.push(Value::object(step));
+        }
+        CommandKind::Batch { commands } if redo => commands.iter().for_each(|child| replay_steps(child, redo, out)),
+        CommandKind::Batch { commands } => commands.iter().rev().for_each(|child| replay_steps(child, redo, out)),
+        _ => {}
     }
 }
 
@@ -123,6 +151,10 @@ impl Editor {
             }
             let index = editor.cel_index(&cel).ok_or_else(|| invalid("errors.editorDrawing.theDrawingHistoryReferencesAMissingCel"))?;
             let selection = editor.selection_state();
+            if select && editor.active_layer() == id && editor.tick >= current.start && editor.tick < current.end {
+                editor.select_sheet_layer(&Value::str(&id), &Value::Null)?;
+            }
+            // The entry is the last thing that can fail: a commit that errs leaves no entry whose record the interface never tracks.
             editor.record_pixels_entry(Command {
                 kind: CommandKind::DrawingPixels { cel_id: cel.clone(), record },
                 label: label.clone(),
@@ -134,9 +166,6 @@ impl Editor {
                 captured_source_bytes: 0,
                 layers: false,
             }, bytes)?;
-            if select && editor.active_layer() == id && editor.tick >= current.start && editor.tick < current.end {
-                editor.select_sheet_layer(&Value::str(&id), &Value::Null)?;
-            }
             editor.emit("edit", vec![("label", Value::str(&label)), ("definition", Value::Bool(true)), ("drawing", Value::Bool(true)), ("figureIndices", Value::array(vec![Value::Num(index as f64)]))]);
             Ok(())
         };
@@ -274,22 +303,18 @@ impl Editor {
 
     /// The pixel commits the next undo (or redo) applies, in the order it applies them: `[{celId, record}]`.
     pub(crate) fn drawing_replay(&self, redo: bool) -> Value {
-        fn visit(command: &Command, redo: bool, out: &mut Vec<Value>) {
-            match &command.kind {
-                CommandKind::DrawingPixels { cel_id, record } => {
-                    let mut step = Obj::new();
-                    step.set("celId", Value::str(cel_id));
-                    step.set("record", Value::Num(*record as f64));
-                    out.push(Value::object(step));
-                }
-                CommandKind::Batch { commands } if redo => commands.iter().for_each(|child| visit(child, redo, out)),
-                CommandKind::Batch { commands } => commands.iter().rev().for_each(|child| visit(child, redo, out)),
-                _ => {}
-            }
-        }
         let mut steps = Vec::new();
         if let Some(entry) = if redo { self.redo.last() } else { self.undo.last() } {
-            visit(entry, redo, &mut steps);
+            replay_steps(entry, redo, &mut steps);
+        }
+        Value::array(steps)
+    }
+
+    /// The pixel commits the grouped edit in progress holds, in the order its abort takes them back: `[{celId, record}]`.
+    pub(crate) fn drawing_batch(&self) -> Value {
+        let mut steps = Vec::new();
+        for command in self.batch_commands().collect::<Vec<_>>().into_iter().rev() {
+            replay_steps(command, false, &mut steps);
         }
         Value::array(steps)
     }
@@ -327,6 +352,13 @@ impl Editor {
         let record = args.first().and_then(Value::as_f64).filter(|record| record.fract() == 0.0 && *record >= 0.0).ok_or_else(|| invalid("errors.engineOwner.drawingBytesNeedARecord"))? as u64;
         let delta = args.get(1).and_then(Value::as_f64).filter(|delta| delta.is_finite()).ok_or_else(|| invalid("errors.engineOwner.drawingBytesNeedADelta"))?;
         Ok(Value::Bool(self.adjust_pixels_bytes(record, delta)))
+    }
+
+    /// `@retractDrawing(record)`: the interface could not apply the tiles of the commit it had recorded; the entry leaves the history as if
+    /// it had not been recorded. Answers whether the commit was the last entry (it is not, once anything was recorded after it).
+    pub(crate) fn retract_pixels(&mut self, args: &[Value]) -> Result<Value, EditError> {
+        let record = args.first().and_then(Value::as_f64).filter(|record| record.fract() == 0.0 && *record >= 0.0).ok_or_else(|| invalid("errors.engineOwner.drawingRetractNeedsARecord"))? as u64;
+        Ok(Value::Bool(self.retract_pixels_entry(record)?))
     }
 }
 

@@ -911,9 +911,10 @@ struct JoinedParent<'a> {
 }
 
 /// `buildMovieclipMeshSteps`: an attached mesh. Joined to a spatial bone, the
-/// bone alone owns its orientation and the instance's root is the bone's start.
+/// bone alone owns its orientation and the instance's root is the bone's start. The app's `boundsOf` measures the mesh's faces
+/// ([`Scene::measured`]); the handle paints nothing.
 #[allow(clippy::too_many_arguments)]
-fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, clip: &Movieclip, meshes: &[Arc<crate::spatial::ClipMesh>], mut root: [f64; 2], parent: Option<JoinedParent<'_>>) -> Built {
+fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, clip: &Movieclip, meshes: &[Arc<crate::spatial::ClipMesh>], mut root: [f64; 2], parent: Option<JoinedParent<'_>>, measure: Measure) -> Built {
     let obj = &frame.objects[slot];
     let local_angle = obj.angles.first().copied().unwrap_or(0.0);
     let scale = obj.scale;
@@ -986,6 +987,9 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
         });
     }
     built.meshes.push(Arc::new(geometry));
+    if matches!(measure, Measure::Bounds | Measure::Shapes) {
+        built.measured = built.items.clone();
+    }
     built
 }
 
@@ -1403,7 +1407,7 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
                     Some(JoinedParent { object: &frame.objects[j.slot as usize], figure, geometry })
                 });
                 if let Some(meshes) = &clip.meshes {
-                    return Some((i, build_clip_mesh(frame, i, fig_of[i], fig, clip, meshes, root, parent)));
+                    return Some((i, build_clip_mesh(frame, i, fig_of[i], fig, clip, meshes, root, parent, measure)));
                 }
                 return Some((i, build_clip(frame, i, fig, clip, root, parent)));
             }

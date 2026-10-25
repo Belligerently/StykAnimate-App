@@ -50,8 +50,12 @@ test('perspective FK dragging uses pre-projection geometry and whole-figure move
  const g=e.geometry.objects.get(0),s=g.segments[f.a.id-1],raw=s.end.rawPoint,start=s.start.rawPoint,angle=.2,c=projection(e.object,g.root);
  const dx=raw[0]-start[0],dy=raw[1]-start[1],p=projectSpatial([start[0]+dx*Math.cos(angle)-dy*Math.sin(angle),start[1]+dx*Math.sin(angle)+dy*Math.cos(angle),raw[2]],c);
  e.poseSpatialJoint(p.x,p.y);const next=e.geometry.objects.get(0).segments[f.a.id-1].end;near(next.x,p.x);near(next.y,p.y);
- e.select(1,-1);e.moveSelection(30,0);
- assert.deepEqual(e.geometry.objects.get(0),buildGeometry(e.report,e.evaluatedFrame).objects.get(0));
+ const held=e.geometry.objects.get(0);e.select(1,-1);e.moveSelection(30,0);
+ // The figure moved as a whole: the geometry held is rebuilt, and is what a new editor shows of the same document.
+ const moved=e.geometry.objects.get(0);near(moved.root.x,held.root.x+30);assert.notDeepEqual(moved.segments.map(s=>s.end),held.segments.map(s=>s.end));
+ const fresh=ownedEditorSync({demo:false},e.serialize(),{recorded:false}).editor.geometry.objects.get(0);
+ assert.deepEqual({root:moved.root,joints:[...moved.joints],segments:moved.segments.map(s=>[s.start,s.end,s.points,s.angle,s.length]),polys:moved.polys.map(p=>[p.points,p.depthValues,p.culled])},
+  {root:fresh.root,joints:[...fresh.joints],segments:fresh.segments.map(s=>[s.start,s.end,s.points,s.angle,s.length]),polys:fresh.polys.map(p=>[p.points,p.depthValues,p.culled])});
 });
 
 test('local width and taper change the intended radius and child sizes remain connected',()=>{

@@ -12,6 +12,8 @@
  * - replays: before the session undoes or redoes an entry that names records, loads the records (they may be on the disk), prepares
  *   the tiles and checks nothing changed meanwhile; then the session's undo or redo and the store's tiles apply in one synchronous
  *   step, so a failed or cancelled replay changes neither;
+ * - takes a commit back whose tiles could not be applied (the session drops the entry it recorded), and takes the tiles of the commits of
+ *   a grouped edit back when the group fails (the session aborts it);
  * - follows the weights: a record whose tiles leave memory or come back weighs less or more in the session's history limit;
  * - lets go of what no entry refers to any more: records and cels, when the session says an entry that referred to them is gone.
  */
@@ -33,10 +35,11 @@ const missing = () => messageError(new Error(''), 'errors.editorDrawing.theDrawi
  *   live(): object|null,
  *   call(name: string, original: Function, args: Array, step: {adopted(answer: object): void}): any,
  *   adjust(record: number, delta: number): void,
+ *   retract(record: number): void,
  *   synced(figures: object[]): void,
  * }} host `live`: the session of the editor's document (starting it if it can); `call`: a call of the session that runs `step.adopted`
  *   after its answer is adopted and before its events reach the interface; `adjust`: tells the session a record weighs `delta` bytes
- *   more; `synced`: the cels' definitions were changed in place (revision, bounds): the session's copies follow.
+ *   more; `retract`: the session takes back the entry it recorded for the record; `synced`: the cels' definitions were changed in place (revision, bounds): the session's copies follow.
  */
 export function createOwnedDrawings(editor, host) {
   const resources = () => drawingResourcesFor(editor.report);
@@ -52,6 +55,24 @@ export function createOwnedDrawings(editor, host) {
     const commands = list.map(step => history?.commandOf(step.record));
     if (!history || commands.some(command => !command)) throw missing();
     return {root: {kind: 'drawing-replay', commands: redo ? commands : [...commands].reverse()}, commands, history};
+  };
+
+  /** Applies the tiles of the commits `list` names (`commands`: their history commands, in the same order) to the store in `direction`. */
+  const applySteps = (list, commands, direction, prepared) => {
+    const store = resources(), changed = [];
+    list.forEach((step, index) => {
+      const command = commands[index], figure = figureOf(step.celId), entry = figure ? store.entry(figure) : store.entries.get(step.celId);
+      // The document may have lost the cel with this very entry (a creation undone): its store keeps the pixels for the redo.
+      if (!entry) throw missing();
+      store.applyEntry(entry, figure, command.tiles, direction, prepared);
+      const d = figure && drawingMetadata(figure);
+      if (d) {
+        if (d.version === 2) d.bounds = command[`${direction}Bounds`] ?? null;
+        changed.push(figure);
+      }
+    });
+    editor._invalidate({timing: false});
+    host.synced(changed);
   };
 
   /** `commitDrawingPixels(target, tiles, label, prepared, {resident})`. */
@@ -73,10 +94,18 @@ export function createOwnedDrawings(editor, host) {
         if (migrated) store.retarget(target.migratedFrom, target.figure);
         // Committing ends the gesture's exclusive hold on the store: publication barriers triggered by this commit's own broadcast must see the tiles.
         store.entry(target.figure).pinned = false;
-        const figure = figureOf(celId);
-        if (!figure) throw missing();
-        store.apply(figure, tiles, 'after', prepared, {resident});
-        command.afterBounds = drawingMetadata(figure).bounds ?? null;
+        let figure;
+        try {
+          figure = figureOf(celId);
+          if (!figure) throw missing();
+          store.apply(figure, tiles, 'after', prepared, {resident});
+          command.afterBounds = drawingMetadata(figure).bounds ?? null;
+        } catch (error) {
+          // The session recorded the entry: it takes it back, so no entry names a record the history never made, and the record's identity is not handed out again.
+          history.skip(record);
+          try { host.retract(record); } catch { /* the failure of the pixels is the error raised */ }
+          throw error;
+        }
         history.track(command, delta => host.adjust(record, delta));
         editor._invalidate({timing: false});
         host.synced([figure]);
@@ -114,22 +143,7 @@ export function createOwnedDrawings(editor, host) {
     const {root, commands, history} = rootOf(list, redo);
     const report = editor.report, revision = editor.revision;
     const check = () => { if (signal?.aborted || report !== editor.report || revision !== editor.revision) throw aborted(); };
-    const apply = prepared => {
-      const changed = [];
-      list.forEach((step, index) => {
-        const command = commands[index], figure = figureOf(step.celId), entry = figure ? store.entry(figure) : store.entries.get(step.celId);
-        // The document may have lost the cel with this very entry (a creation undone): its store keeps the pixels for the redo.
-        if (!entry) throw missing();
-        store.applyEntry(entry, figure, command.tiles, direction, prepared);
-        const d = figure && drawingMetadata(figure);
-        if (d) {
-          if (d.version === 2) d.bounds = command[`${direction}Bounds`] ?? null;
-          changed.push(figure);
-        }
-      });
-      editor._invalidate({timing: false});
-      host.synced(changed);
-    };
+    const apply = prepared => applySteps(list, commands, direction, prepared);
     const replayNow = prepared => {
       try {
         check();
@@ -157,6 +171,14 @@ export function createOwnedDrawings(editor, host) {
     commitDrawingPixels,
     resampleDrawing,
     replay,
+    /** The grouped edit failed: the tiles of the commits it recorded go back, last first, before the session takes their entries back. */
+    abortBatch() {
+      const live = host.live(), list = live ? JSON.parse(live.query('drawingBatch', '[]', 'null')).v : [];
+      if (!list.length) return;
+      const history = resources()?.history, commands = list.map(step => history?.commandOf(step.record));
+      if (!history || commands.some(command => !command?.tiles)) throw missing();
+      applySteps(list, commands, 'before');
+    },
     /** The commands of the entry the next undo (`redo` false) or redo applies, as one root (oldest first), or null when it names none. */
     root(redo) {
       const list = steps(redo);

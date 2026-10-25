@@ -254,3 +254,57 @@ fn resampling_makes_a_cel_of_the_new_resolution_that_undoes_as_one_entry() {
     let stale = args.replace("cel-test", "cel-gone");
     assert_eq!(call(&mut session, "resampleDrawing", &stale).get("error").and_then(Value::as_str), Some("errors.editorDrawing.theDrawingChangedBeforeResampling"));
 }
+
+#[test]
+fn a_commit_the_interface_could_not_apply_is_retracted_as_if_it_had_not_been_recorded() {
+    let mut session = session(48 * 1024 * 1024);
+    let (layer, key) = drawing_layer(&mut session);
+    let (revision, size) = (session.editor.revision, session.editor.history_size().unwrap());
+    // The commit that creates a cel is one entry with the stroke: both go.
+    ok(&call(&mut session, "commitDrawingPixels", &first_stroke(&layer, &key)));
+    assert_eq!(cels(&session), ["cel-test"]);
+    let retracted = call(&mut session, "@retractDrawing", "[7]");
+    assert_eq!(ok(&retracted).get("result"), Some(&Value::Bool(true)));
+    assert_eq!(ok(&retracted).get("drawingRetired"), Some(&Value::Bool(true)), "the interface lets go of the cel it was about to give pixels");
+    assert!(cels(&session).is_empty());
+    assert_eq!(json(retracted.get("depths").unwrap()), "[1,0]", "the layer alone is left: nothing to redo");
+    assert_eq!(session.editor.revision, revision);
+    assert_eq!(session.editor.history_size().unwrap(), size);
+    assert_eq!(json(&query(&mut session, "drawingRefs", "[]")), r#"{"records":[],"cels":[]}"#);
+    // The same record names the next commit: nothing of the retracted one is left to clash with.
+    ok(&call(&mut session, "commitDrawingPixels", &first_stroke(&layer, &key)));
+    // A later stroke is retracted alone, the earlier history untouched.
+    ok(&call(&mut session, "commitDrawingPixels", &next_stroke(&layer, &key, 8, 3000, "Erase stroke")));
+    let size = session.editor.history_size().unwrap();
+    // Only the entry recorded last can be retracted.
+    assert_eq!(ok(&call(&mut session, "@retractDrawing", "[7]")).get("result"), Some(&Value::Bool(false)));
+    assert_eq!(ok(&call(&mut session, "@retractDrawing", "[99]")).get("result"), Some(&Value::Bool(false)));
+    assert_eq!(session.editor.history_size().unwrap(), size);
+    let retracted = call(&mut session, "@retractDrawing", "[8]");
+    assert_eq!(ok(&retracted).get("result"), Some(&Value::Bool(true)));
+    assert_eq!(labels(&retracted).0, "Brush stroke");
+    assert_eq!(session.editor.history_size().unwrap(), size - 3000.0);
+    assert_eq!(json(&query(&mut session, "drawingRefs", "[]")), r#"{"records":[7],"cels":["cel-test"]}"#);
+    assert_eq!(cels(&session), ["cel-test"], "the cel the first stroke made stays");
+}
+
+#[test]
+fn the_pixel_commits_of_a_grouped_edit_in_progress_are_named_for_its_abort() {
+    let mut session = session(48 * 1024 * 1024);
+    let (layer, key) = drawing_layer(&mut session);
+    ok(&call(&mut session, "commitDrawingPixels", &first_stroke(&layer, &key)));
+    assert_eq!(json(&query(&mut session, "drawingBatch", "[]")), "[]", "no grouped edit is open");
+    ok(&call(&mut session, "beginBatch", r#"["Two strokes"]"#));
+    ok(&call(&mut session, "commitDrawingPixels", &next_stroke(&layer, &key, 8, 100, "Fill")));
+    ok(&call(&mut session, "commitDrawingPixels", &next_stroke(&layer, &key, 9, 100, "Erase stroke")));
+    assert_eq!(json(&query(&mut session, "drawingBatch", "[]")), r#"[{"celId":"cel-test","record":9},{"celId":"cel-test","record":8}]"#, "the last commit is taken back first");
+    // The last commit of the group is retracted from the group, not from the history.
+    let size = session.editor.history_size().unwrap();
+    assert_eq!(ok(&call(&mut session, "@retractDrawing", "[9]")).get("result"), Some(&Value::Bool(true)));
+    assert_eq!(session.editor.history_size().unwrap(), size, "the group's entries weigh nothing before the group ends");
+    assert_eq!(json(&query(&mut session, "drawingBatch", "[]")), r#"[{"celId":"cel-test","record":8}]"#);
+    let aborted = call(&mut session, "abortBatch", "[]");
+    assert_eq!(ok(&aborted).get("drawingRetired"), Some(&Value::Bool(true)));
+    assert_eq!(json(&query(&mut session, "drawingBatch", "[]")), "[]");
+    assert_eq!(json(&query(&mut session, "drawingRefs", "[]")), r#"{"records":[7],"cels":["cel-test"]}"#);
+}

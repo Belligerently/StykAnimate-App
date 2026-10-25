@@ -26,7 +26,7 @@ fn snapshot(editor: &mut styk_edit::Editor) -> (String, styk_doc::Value, styk_do
 }
 
 #[test]
-fn native_property_projection_camera_and_optional_metadata_remain_atomic_refusals() {
+fn native_property_projection_and_camera_remain_atomic_refusals() {
     use styk_edit::{EditError, Editor, Options};
     use styk_doc::Value;
     for name in ["origin-motion-saved-layout-native", "origin-motion-saved-support-native"] {
@@ -44,14 +44,24 @@ fn native_property_projection_camera_and_optional_metadata_remain_atomic_refusal
     let before = snapshot(&mut editor);
     assert!(matches!(editor.call("beginMotionPathEdit", &[styk_doc::json::parse(br#"{"kind":"camera"}"#).unwrap(), Value::Num(3.0)]), Err(EditError::Unported(_))));
     assert_eq!(snapshot(&mut editor), before);
-    editor.set_selection_metadata(&styk_doc::json::parse(br#"{"polygonSelection":{"uid":1,"index":0}}"#).unwrap()).unwrap();
-    editor.take_events(); let before = snapshot(&mut editor);
-    assert!(matches!(editor.call("beginMotionPathEdit", &[target(), Value::Num(3.0)]), Err(EditError::Unported(_))));
-    assert_eq!(snapshot(&mut editor), before);
 }
 
 #[test]
-fn native_remote_complex_definitions_refuse_before_idle_or_live_commit() {
+fn a_selected_fill_does_not_stop_a_native_motion_path_edit() {
+    use styk_edit::{Editor, Options}; use styk_doc::Value;
+    let mut editor = Editor::new(report("origin-motion-layout-native"), Options::default());
+    editor.call("select", &[Value::Num(1.0)]).unwrap();
+    editor.set_selection_metadata(&styk_doc::json::parse(br#"{"polygonSelection":{"uid":1,"index":0}}"#).unwrap()).unwrap();
+    editor.take_events();
+    let original = editor.report_json();
+    assert_eq!(editor.call("beginMotionPathEdit", &[target(), Value::Num(3.0)]).unwrap(), Value::Bool(true));
+    assert_eq!(editor.call("cancelMotionPathEdit", &[]).unwrap(), Value::Bool(true));
+    assert_eq!(editor.report_json(), original);
+    assert!(!editor.state().can_undo);
+}
+
+#[test]
+fn native_remote_complex_definitions_refuse_before_idle_or_live_commit_but_a_rig_edits() {
     use styk_edit::{EditError, Editor, Options}; use styk_doc::{Obj, Value};
     for kind in ["rig", "drawing", "spatialMesh", "movieclip"] {
         let mut document = report("origin-motion-layout-native");
@@ -65,8 +75,17 @@ fn native_remote_complex_definitions_refuse_before_idle_or_live_commit() {
         let mut editor = Editor::new(document, Options::default());
         editor.call("select", &[Value::Num(1.0)]).unwrap(); editor.take_events();
         let before = snapshot(&mut editor);
-        assert!(matches!(editor.call("beginMotionPathEdit", &[target(), Value::Num(8.0)]), Err(EditError::Unported(_))), "{kind}: idle");
-        assert_eq!(snapshot(&mut editor), before);
+        if kind == "rig" {
+            // A rigged figure is posed as the editor poses it; the rest of the kinds are still the editor's.
+            let original = editor.report_json();
+            assert_eq!(editor.call("beginMotionPathEdit", &[target(), Value::Num(8.0)]).unwrap(), Value::Bool(true), "{kind}: idle");
+            assert_eq!(editor.call("cancelMotionPathEdit", &[]).unwrap(), Value::Bool(true), "{kind}");
+            assert_eq!(editor.report_json(), original, "{kind}: a cancelled edit leaves the document as it was");
+            assert!(!editor.state().can_undo, "{kind}");
+        } else {
+            assert!(matches!(editor.call("beginMotionPathEdit", &[target(), Value::Num(8.0)]), Err(EditError::Unported(_))), "{kind}: idle");
+            assert_eq!(snapshot(&mut editor), before);
+        }
         let mut live = Editor::new(future_document, Options::default());
         live.call("select", &[Value::Num(1.0)]).unwrap();
         live.call("beginDrag", &[]).unwrap();
