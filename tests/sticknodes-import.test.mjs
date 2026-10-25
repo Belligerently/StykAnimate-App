@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {importStickNodes} from '../src/sticknodes/adapter.mjs';
 import {prepareEditorLoad} from '../src/editor-load.mjs';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
 import {movieclipTime,movieclipAsset} from '../src/movieclips.mjs';
 import {sticknodesDrawables,sticknodesSpriteAsset} from '../src/sticknodes/geometry.mjs';
@@ -25,7 +25,7 @@ test('raw Stick Nodes import produces editable native handles with absolute Y-do
  const object=doc.keyframes[0].objects[0],joint=geometry(doc).objects.get(0).joints.get(1);
  assert.ok(Math.abs(joint.x-(960+80*Math.cos(Math.PI/6)))<.001);assert.equal(joint.y,500);
  assert.equal(object.angles[0],-Math.PI/6);assert.deepEqual(doc.figure_types[0]._styk.sticknodes.nodeIds,[7]);
- const editor=new Editor();editor.importFigure(doc);const before=editor.object.root_x;editor.moveSelection(12,0);assert.equal(editor.object.root_x,before+12);editor.undo();assert.equal(editor.object.root_x,before);editor.redo();assert.equal(editor.object.root_x,before+12);
+ const editor=newOwnedEditor();editor.importFigure(doc);const before=editor.object.root_x;editor.moveSelection(12,0);assert.equal(editor.object.root_x,before+12);editor.undo();assert.equal(editor.object.root_x,before);editor.redo();assert.equal(editor.object.root_x,before+12);
 });
 test('invalid and cancelled imports reject before changing an editor',async()=>{
  await assert.rejects(importStickNodes(syntheticNodes().subarray(0,30),{filename:'broken.nodes'}));
@@ -36,12 +36,12 @@ test('synthetic full project retains real clip assets, sprites, text, transport 
  prepareEditorLoad(doc);const clips=doc.figure_types.filter(f=>movieclipAsset(f));assert.equal(clips.length,2);assert.ok(doc.figure_types.some(f=>f.image_assets.length));assert.ok(doc.figure_types.some(f=>f.text_assets.length));
  let transferred;for(const chunk of documentChunks(doc,{maxBytes:2048}))transferred=applyDocumentChunk(transferred,chunk);prepareEditorLoad(transferred);
  const before=geometry(doc).drawables.map(d=>[d.type,d.points]);synchronizeExistingDerived(transferred);assert.deepEqual(geometry(transferred).drawables.map(d=>[d.type,d.points]),before);
- const editor=new Editor();editor.load(transferred);editor.enterMovieclip(clips[0].figure_type_id);const duration=editor.totalTicks;editor.select(editor.evaluatedFrame.objects[0].unique_id);editor.moveSelection(4,5);editor.leaveMovieclip();editor.undo();editor.redo();assert.equal(movieclipAsset(editor.report.figure_types.find(f=>f.figure_type_id===clips[0].figure_type_id)).duration,duration);
+ const editor=newOwnedEditor();editor.load(transferred);editor.enterMovieclip(clips[0].figure_type_id);const duration=editor.totalTicks;editor.select(editor.evaluatedFrame.objects[0].unique_id);editor.moveSelection(4,5);editor.leaveMovieclip();editor.undo();editor.redo();assert.equal(movieclipAsset(editor.report.figure_types.find(f=>f.figure_type_id===clips[0].figure_type_id)).duration,duration);
 });
 test('editing an imported figure that a movieclip also uses saves a reopenable project',async()=>{
  const fixture=JSON.parse(await readFile(new URL('./sticknodes-synthetic.json',import.meta.url))),{document:doc}=await importStickNodes(Buffer.from(fixture.base64,'base64'),{filename:'synthetic.stknds'});
  let transferred;for(const chunk of documentChunks(doc,{maxBytes:2048,sharedFigures:true}))transferred=applyDocumentChunk(transferred,chunk);
- const editor=new Editor();editor.load(transferred);
+ const editor=newOwnedEditor();editor.load(transferred);
  const object=editor.frame.objects.find(o=>!movieclipAsset(editor.report.figure_types.find(f=>f.figure_type_id===o.figure_type_id))&&editor.report.figure_types.some(f=>movieclipAsset(f)?.document.keyframes.some(k=>k.objects.some(c=>c.figure_type_id===o.figure_type_id))));
  assert.ok(object,'fixture scene and movieclip share a figure type');
  const reopen=()=>prepareEditorLoad(JSON.parse(JSON.stringify(editor.serialize())));
@@ -98,7 +98,7 @@ test('known containers also attempt untested independently versioned embedded fi
  assert.ok(result.warnings.some(w=>w.code==='UNVERIFIED_LAYOUT'));
 });
 test('best-effort attempts still reject incompatible bodies, corrupt counts, references and trailing bytes',async()=>{
- const project=relabel(await fixtureBytes('latestBase64'),500,200),source=await openDocument(project,{filename:'future.stknds'}),editor=new Editor(),before=editor.serialize();
+ const project=relabel(await fixtureBytes('latestBase64'),500,200),source=await openDocument(project,{filename:'future.stknds'}),editor=newOwnedEditor(),before=editor.serialize();
  const badCount=Buffer.from(project);badCount.writeInt32BE(2147483647,source.sections[1].start);
  const badReference=Buffer.from(project);badReference.writeInt32BE(999999,source.frames[0].instances[0].range.start+4);
  for(const bytes of [project.subarray(0,project.length-1),Buffer.concat([project,Buffer.from([7])]),badCount,badReference])await assert.rejects(importStickNodes(bytes,{filename:'future.stknds'}),e=>!e.code?.startsWith('UNSUPPORTED_'));
@@ -108,7 +108,7 @@ test('best-effort attempts still reject incompatible bodies, corrupt counts, ref
 });
 test('rig duplication, deletion and undo keep per-pose imported shape metadata attached to handles',async()=>{
  const {document:doc}=await importStickNodes(syntheticNodes(),{filename:'rig.nodes'});doc.keyframes[0].objects[0]._sticknodesShapes={1:{kind:'rounded-segment',sagitta:15}};
- const editor=new Editor();editor.load(doc);editor.select(1,0);editor.duplicateSegment();assert.equal(Object.keys(editor.object._sticknodesShapes).length,2);
+ const editor=newOwnedEditor();editor.load(doc);editor.select(1,0);editor.duplicateSegment();assert.equal(Object.keys(editor.object._sticknodesShapes).length,2);
  editor.select(1,0);editor.deleteSegment();assert.equal(Object.keys(editor.object._sticknodesShapes).length,1);editor.undo();assert.equal(Object.keys(editor.object._sticknodesShapes).length,2);editor.redo();prepareEditorLoad(editor.report);
 });
 
@@ -119,7 +119,7 @@ test('Set Origin preserves imported asymmetric artwork, curves and per-pose shap
   const {document:doc}=await importStickNodes(syntheticNodes(),{filename:'rig.nodes'}),seg=doc.figure_types[0].segments[0];
   seg.primitive_code=shape.kind==='rounded-segment'?0:shape.kind==='segment'?6:3;seg._sticknodes=shape;
   if(override)doc.keyframes[0].objects[0]._sticknodesShapes={1:{...shape,sagitta:shape.sagitta?shape.sagitta*2:undefined}};
-  const editor=new Editor();editor.load(doc);editor.select(1,0);const before=points(editor.report);editor.setOrigin(1);
+  const editor=newOwnedEditor();editor.load(doc);editor.select(1,0);const before=points(editor.report);editor.setOrigin(1);
   assert.deepEqual(points(editor.report),before,`${shape.kind}, override=${override}`);prepareEditorLoad(editor.report);
   editor.undo();assert.deepEqual(points(editor.report),before);editor.redo();assert.deepEqual(points(editor.report),before);
  }

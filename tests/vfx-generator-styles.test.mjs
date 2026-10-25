@@ -2,9 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Worker} from 'node:worker_threads';
 import {createHash} from 'node:crypto';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
-import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {vfxProperty,validateVfxValue} from '../src/vfx.mjs';
 import {VFX_REGISTRY,isGeneratorType} from '../src/vfx-registry.mjs';
@@ -17,7 +16,7 @@ import {GeneratorAnchors} from '../src/vfx-generator-anchors.mjs';
 function fixture(){
  const report=emptyDocument(),fig=report.figure_types[0];
  report.keyframes=[0,1,2,3,4,5].map(()=>{const f=createFrame([createObject(fig,1,160,300),createObject(fig,2,520,300)],20);f._stykBackgroundColor=0xff101018;return f;});
- const e=new Editor({demo:false}).load(report);initializeLayerSheet(e.report);e._invalidate({timing:true});return e;
+ const e=newOwnedEditor({demo:false,layerTimeline:true}).load(report);return e;
 }
 function batchAt(e,tick){e.seek(tick);const frame=e.evaluatedFrame;return buildGeneratorBatch(e.report,frame,buildGeometry(e.report,frame),{sampler:new GeneratorAnchors()});}
 function particles(batch,filter=()=>true){const out=[],p={};for(const draw of batch?.draws??[])if(filter(draw))for(let i=0;i<draw.count;i++)if(evaluateParticle(batch,draw,i,p))out.push({draw,i,...p});return out;}

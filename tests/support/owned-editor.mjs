@@ -1,7 +1,21 @@
 // An editor the engine owns, for tests (D19): its document opened on the engine, which also holds the session that edits it.
 import assert from 'node:assert/strict';
+import {afterEach} from 'node:test';
 import {Editor} from '../../src/editor.mjs';
 import {installEngineOwner} from '../../src/engine/engine-owner.mjs';
+
+/** The owners a test opened, released once it ends (the sessions are the engine's memory). */
+const opened = [];
+afterEach(() => { for (const owner of opened.splice(0)) owner.release(); });
+
+/** A new editor the engine owns, before any document is loaded: the test opens one (`load`, `newDocument`, `importFigure`) as the
+ * app does. `verify` is that of [`ownedEditorSync`]; the identities a call draws are the editor's own random ones. The owner is
+ * released when the test ends. */
+export function newOwnedEditor(options, {verify = true} = {}) {
+  const editor = new Editor(options);
+  opened.push(installEngineOwner(editor, {verify}));
+  return editor;
+}
 
 /** The editor on `document` with the engine owning it (the engine must be registered: `tests/support/register-engine.mjs`).
  * `verify`: the session's document is compared with the editor's after every call.

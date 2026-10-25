@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {SOLID_RIG_EXAMPLES} from '../src/rig-solids.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
@@ -16,7 +16,7 @@ function closed(g){
   assert.ok(Math.abs(drawn-expected)<Math.max(1e-5,expected*1e-6),`Surface gap/overlap: ${drawn} vs hull ${expected}`);
   assert.ok(g.polys.every(p=>p.alpha===1&&p.points.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y))));
 }
-const editorFor=(id='solid-box-3d',propertyChannels=false)=>{const e=new Editor({demo:false,propertyChannels});e.load(rigExampleDocument(id));e.select(1,0);return e;};
+const editorFor=(id='solid-box-3d',propertyChannels=false)=>{const e=newOwnedEditor({demo:false,propertyChannels});e.load(rigExampleDocument(id));e.select(1,0);return e;};
 const change=(e,key,value)=>{e.select(e.selectedUid,e.figure.segments.findIndex(s=>s.name===({turn:'Turn',tilt:'Depth',height:'Height'}[key])));return e.updateSegment(key==='turn'?{angle_rad:value*Math.PI/180}:{length:value});};
 for(const r of SOLID_RIG_EXAMPLES){
   test(`${r.name}: opaque closed coverage over full turns, depth collapse and height extremes`,()=>{

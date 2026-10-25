@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {createFrame,createObject} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {rigConstraintPlan} from '../src/rig-constraints.mjs';
@@ -14,7 +14,7 @@ const length=(e,n)=>at(e,1).updateSegment({length:n});
 function fixture(){
   const segments=[[1,0,100,0],[2,1,50,Math.PI/4],[3,2,30,Math.PI/2],[4,0,240,0]].map(([id,parent,len,angle])=>({segment_id:id,parent_id:parent,length:len,angle_rad:angle,bend_rad:0,thickness:6,primitive_code:0,aux_code:0,flags:0,segment_type:'line',segment_kind:'line',color_rgb:[13,153,255],transparency:0,visible:true,z_order:id}));
   const f={figure_type_id:1,name:'Impulse fixture',segments,segment_count:4,polyfills:[],image_assets:[],text_assets:[]};
-  const e=new Editor({demo:false});e.load({version:5,canvas_width:640,canvas_height:460,fps:24,auto_easing:false,auto_easing_disabled_raw:1,figure_types:[f],backgrounds:[],keyframes:[createFrame([createObject(f,1,100,100)],1)]});
+  const e=newOwnedEditor({demo:false});e.load({version:5,canvas_width:640,canvas_height:460,fps:24,auto_easing:false,auto_easing_disabled_raw:1,figure_types:[f],backgrounds:[],keyframes:[createFrame([createObject(f,1,100,100)],1)]});
   at(e,1).enableSmartStretch(true);return e;
 }
 
@@ -73,7 +73,7 @@ test('bending a connector does not invent an anchor-distance stretch impulse',()
   near(shape(e,detail.segment_id).length,20);
 });
 test('relative lock skips static parents and follows whole-figure rotation',()=>{
-  const e=fixture();e.figure.segments[1].aux_code=1;at(e,3).setAngleLock('parent');
+  const e=fixture();at(e,2).updateSegment({is_static:true});at(e,3).setAngleLock('parent');
   assert.equal(e.figure.segments[2]._stykRig.angleLock.reference,1);
   at(e,3).setRigBehavior({angleLock:{multiplier:-1}});at(e,1).rotateJoint(.3);near(shape(e,3).angle,Math.PI/2+.3);
 });
@@ -89,8 +89,10 @@ test('figure angle lock follows the existing figure rotation channel',()=>{
   at(e,3).setAngleLock('world');const angle=shape(e,3).angle;e.rotateFigure(.2);near(shape(e,3).angle,angle);
 });
 test('resetting an older explicit rig also redirects its descendants without losing legacy influence',()=>{
-  const e=fixture();delete e.figure.segments[0]._stykRig.stretch.branch;
-  for(const s of e.figure.segments)if(s._stykRig?.follow)delete s._stykRig.follow.automatic;
+  // The document of an older version: a rig saved before these fields existed.
+  const older=fixture().serialize(),figure=older.figure_types[0];delete figure.segments[0]._stykRig.stretch.branch;
+  for(const s of figure.segments)if(s._stykRig?.follow)delete s._stykRig.follow.automatic;
+  const e=newOwnedEditor({demo:false}).load(older);
   at(e,2).setRigBehavior({response:{reset:true}});length(e,50);
   near(shape(e,2).length,25);near(shape(e,3).end.x-shape(e,3).start.x,-7.5);
 });

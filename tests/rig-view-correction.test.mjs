@@ -6,7 +6,7 @@ import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
 import {evaluateSpatial,spatialQuaternion,spatialPoint,remapSpatial,sameSpatial} from '../src/rig-spatial.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 const near=(a,b,t=1e-8)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 const views=[[10,25,4],[22,30,6],[-8,28,5],[-20,32,3]];
 function sample(yaw,pitch=0,options={}){
@@ -68,13 +68,13 @@ test('parent and local turns share correction targets; incremental poses equal f
  const p=buildGeometry(doc,frame).objects.get(0).joints.get(skin);near(p.x,222);near(p.y,330);near(p.depthOffset.x,6);
 });
 for(const count of [4,8])test(`${count}-view corrected rigs survive pose undo/redo, reflection, and native round trips`,async()=>{
- const {doc,b,skin}=fixture(count===4?views:[...views,...views]),e=new Editor({demo:false});e.load(doc);e.select(1,b.id-1);
+ const {doc,b,skin}=fixture(count===4?views:[...views,...views]),e=newOwnedEditor({demo:false});e.load(doc);e.select(1,b.id-1);
  const before=e.serialize();e.setSpatialPose({turn:1.2,pitch:.3,bend:.2});const after=e.serialize(),p=e.geometry.objects.get(0).joints.get(skin);
  e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);
  e.select(1,-1);e.mirrorFigure();const mirrored=e.geometry.objects.get(0).joints.get(skin);near(mirrored.x,400-p.x);near(mirrored.y,p.y);
  for(const kind of ['styk','stkz']){
   const d=(await decodeDocument(await buildContainerV2(e.serialize(),kind),kind)).document;
-  assert.deepEqual(d.figure_types,e.serialize().figure_types);const reopened=new Editor({demo:false});reopened.load(d);
+  assert.deepEqual(d.figure_types,e.serialize().figure_types);const reopened=newOwnedEditor({demo:false});reopened.load(d);
   const point=reopened.geometry.objects.get(0).joints.get(skin);near(point.x,mirrored.x);near(point.y,mirrored.y);
  }
 });

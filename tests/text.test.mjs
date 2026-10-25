@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parse} from '../vendor/text/opentype.mjs';
 import {compileTextFigure} from '../src/text-authoring.mjs';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 
 const fonts = await Promise.all(['Regular', 'Bold', 'Italic', 'BoldItalic'].map(async style => {
@@ -14,7 +14,7 @@ const compile = options => compileTextFigure(options, fonts[Number(!!options.bol
 
 test('text enters editor as embedded geometry, preserves editing options, and undo/JSON restore work', () => {
   const figure = compile({text: 'Hello, café!\nΚαλημέρα • Привет', fontSize: 42, color: [70, 40, 170], outlineWidth: 1.5});
-  const editor = new Editor({demo: false}); editor.importFigure(figure);
+  const editor = newOwnedEditor({demo: false}); editor.importFigure(figure);
   const uid = editor.selectedUid;
   const shape = buildGeometry(editor.report, editor.frame).drawables.find(s => s.obj.unique_id === uid);
   assert.equal(shape.type, 'text'); assert.ok(shape.asset.normalized_svg_path.includes('C'));
@@ -23,7 +23,7 @@ test('text enters editor as embedded geometry, preserves editing options, and un
   assert.equal(figure.segment_decode.global_style.outline_thickness, 1.5);
   editor.undo(); assert.equal(editor.frame.objects.length, 0);
   editor.redo(); assert.equal(editor.object.unique_id, uid);
-  const reopened = new Editor({demo: false}).load(JSON.parse(JSON.stringify(editor.serialize())));
+  const reopened = newOwnedEditor({demo: false}).load(JSON.parse(JSON.stringify(editor.serialize())));
   assert.deepEqual(reopened.figure.text_assets[0].glyphs, figure.text_assets[0].glyphs);
   assert.deepEqual(reopened.figure._styk.textAuthoring, figure._styk.textAuthoring);
 });

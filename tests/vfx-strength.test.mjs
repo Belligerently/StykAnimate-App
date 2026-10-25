@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {createVfx,activeVfx,resolvedVfx,interpolateVfx,vfxPadding,validateVfxStack} from '../src/vfx.mjs';
-import {Editor} from '../src/editor.mjs';
-import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 
 test('strength defaults preserve old stacks, interpolate and become a true no-op at zero',()=>{
  const old={version:1,type:'blur',id:'old',enabled:true,params:{radius:9}};
@@ -22,9 +21,9 @@ test('layer poses preserve turbulence through strength edits, undo and reopening
   object._stykVfx={figure:[structuredClone(effect)]};
   return {...createFrame([object],10),_styk:{easing:{interpolation:'linear'}}};
  });
- const editor=new Editor({demo:false}).load(report);initializeLayerSheet(editor.report);editor._invalidate({timing:true});editor.seek(8);
+ const editor=newOwnedEditor({demo:false,layerTimeline:true}).load(report);editor.seek(8);
  const target={kind:'figure',uid:1},before=structuredClone(editor.vfxEffects(target));
  editor.setVfxParameter(target,'t','effectStrength',0);assert.equal(activeVfx(editor.vfxEffects(target)).length,0);
  editor.undo();assert.deepEqual(editor.vfxEffects(target),before);
- const reopened=new Editor({demo:false}).load(structuredClone(editor.report));reopened.seek(8);assert.deepEqual(reopened.vfxEffects(target),before);
+ const reopened=newOwnedEditor({demo:false}).load(structuredClone(editor.report));reopened.seek(8);assert.deepEqual(reopened.vfxEffects(target),before);
 });

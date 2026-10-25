@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Editor } from "../src/editor.mjs";
+import { newOwnedEditor } from "./support/owned-editor.mjs";
 import { inspectorView } from "../src/inspector-view.mjs";
 import { roundTrip } from "./support/codec.mjs";
 import {
@@ -13,7 +13,7 @@ import {
 } from "../src/native-property-edit.mjs";
 
 function fixture() {
-  const editor = new Editor({ demo: false });
+  const editor = newOwnedEditor({ demo: false });
   editor.addFigure();
   editor.select(editor.selectedUid, 0);
   editor.updateFigureStyle({
@@ -27,9 +27,6 @@ function fixture() {
     opacity: 0.7,
     gradient: { color: "#2cd876", opacity: 0.6 },
   });
-  editor._undo = [];
-  editor._redo = [];
-  editor._historySize = 0;
   editor.markSaved();
   return editor;
 }
@@ -50,19 +47,23 @@ test("outline and gradient endpoint opacity are independent inverse-alpha bytes 
     ["segment_opacity", "primary"],
     ["segment_gradient_opacity", "secondary"],
   ]) {
-    const editor = fixture(),
-      figure = editor.figure,
+    // The figure carries two megabytes of media the history must not copy.
+    const source = fixture(), document = source.serialize();
+    document.figure_types[0].opaqueMedia = "M".repeat(2_000_000);
+    const editor = newOwnedEditor({ demo: false }).load(document);
+    editor.select(source.selectedUid, 0);
+    const figure = editor.figure,
       original = structuredClone(figure),
-      before = raw(editor);
-    figure.opaqueMedia = "M".repeat(2_000_000);
+      before = raw(editor),
+      base = editor._undo.length;
     const token = beginNativePropertyEdit(editor, key);
     for (let n = 0; n < 80; n++) previewNativePropertyEdit(token, n);
     previewNativePropertyEdit(token, 25);
-    assert.equal(editor._undo.length, 0);
+    assert.equal(editor._undo.length, base);
     assert.equal(editor.figure, figure);
     commitNativePropertyEdit(token);
-    assert.equal(editor._undo.length, 1);
-    assert.ok(editor._undo[0].bytes < 3500);
+    assert.equal(editor._undo.length, base + 1);
+    assert.ok(editor._undo.at(-1).bytes < 3500);
     assert.deepEqual(raw(editor), { ...before, [component]: 191 });
     assert.deepEqual(
       figure.segment_decode.global_style.rgb,

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {RIG_EXAMPLES,rigExampleDocument} from '../src/rig-examples.mjs';
 import {rigConstraintPlan} from '../src/rig-constraints.mjs';
 import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
@@ -15,9 +16,11 @@ const rigView=e=>renderInspector({kind:'joint',sections:rigSections(e)});
 
 const near=(a,b,t=1e-4)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 const point=(a,b)=>{near(a.x,b.x);near(a.y,b.y);};
-const editorFor=id=>{const e=new Editor({demo:false});e.load(rigExampleDocument(id));e.select(1);return e;};
+const editorFor=id=>{const e=newOwnedEditor({demo:false});e.load(typeof id==='string'?rigExampleDocument(id):id);e.select(1);return e;};
 const select=(e,id)=>e.select(e.selectedUid,e.figure.segments.findIndex(s=>s.segment_id===id));
 const g=e=>e.geometry.objects.get(0);
+/** Where a connector's slider sits along it, 0 to 1: its slide position in the pose (the engine's geometry has no field for it). */
+const slide=(e,s)=>{const o=e.frame.objects[0];return Math.min(1,Math.max(0,o.len_flag?o.lengths[s.index]:s.seg.length));};
 const poseSignature=scene=>[...scene.objects.values()].flatMap(o=>o.segments.map(s=>[s.start,s.end,s.handle,s.thickness]));
 
 test('sliding connector is a real handle, supports attachments and one-gesture undo',()=>{
@@ -56,7 +59,7 @@ test('smart stretch preserves panel widths, applies one axial deformation and cl
 });
 test('enabling Smart Stretch captures posed length without figure scale and supports undo',()=>{
   const e=editorFor('telescoping-panels');select(e,1);e.enableSmartStretch(false);
-  e.updateSegment({length:270});e.object.scale=2;e._invalidate();
+  e.updateSegment({length:270});e.updateObject({scale:2});
   assert.notEqual(e.figure.segments[0].length,270);
   const before=e.serialize();
   rigControlChange(e,{id:'rig-stretch-enabled',checked:true});
@@ -70,7 +73,7 @@ test('enabling Smart Stretch captures posed length without figure scale and supp
 });
 test('enabling connector Smart Stretch captures current anchor distance even when curved',()=>{
   const e=editorFor('sliding-carriage');select(e,2);e.updateSegment({length:400});
-  select(e,3);e.updateSegment({bend_rad:Math.PI/2});e.object.scale=2;e._invalidate();
+  select(e,3);e.updateSegment({bend_rad:Math.PI/2});e.updateObject({scale:2});
   const shape=g(e).segments[2],span=Math.hypot(shape.end.x-shape.start.x,shape.end.y-shape.start.y)/2;
   assert.notEqual(span,e.figure.segments[2]._stykRig.connector.restLength);
   e.enableSmartStretch(true);near(e.figure.segments[2]._stykRig.stretch.restLength,span);
@@ -83,7 +86,7 @@ test('invalid rig changes and deleting referenced anchors fail atomically; disab
   const stretch=editorFor('telescoping-panels');select(stretch,1);stretch.setRigBehavior({stretch:null});assert.ok(stretch.figure.segments.every(s=>!s._stykRig?.follow));stretch.undo();assert.ok(stretch.figure.segments[1]._stykRig.follow);
 });
 test('relationship commands retain small history independent of media and pose count',()=>{
-  const e=editorFor('telescoping-panels');e.figure.image_assets.push({data_url:'x'.repeat(2000000)});select(e,1);
+  const doc=rigExampleDocument('telescoping-panels');doc.figure_types[0].image_assets.push({data_url:'x'.repeat(2000000)});const e=editorFor(doc);select(e,1);
   e.setRigBehavior({stretch:{width:'inverse'}});assert.ok(JSON.stringify(e._undo.at(-1)).length<3000);
 });
 test('curved connectors retain endpoints and their sliding handle lies on the arc',()=>{
@@ -110,8 +113,9 @@ test('direct posing in stretched and connector-relative space reaches the cursor
   const start=g(e).segments[1].start,target={x:start.x-110,y:start.y+30};e.poseJoint(target.x,target.y,{stretch:true,snap:false,isolate:true});point(g(e).segments[1].end,target);
   const p=editorFor('articulated-piston');select(p,2);p.rotateJoint(.9);select(p,4);const a=g(p).segments[3].start,b={x:a.x+25,y:a.y+45};p.poseJoint(b.x,b.y,{stretch:true,snap:false,isolate:true});point(g(p).segments[3].end,b);
 });
+// session gap: a negative figure scale is not a state the engine opens (the test sets it in place)
 test('negative scale preserves connector attachment orientation and thickness',()=>{
-  const e=editorFor('articulated-piston');e.frame.objects[0].scale=-2;e._invalidate();const scene=g(e),c=scene.segments[2],s=scene.segments[3];
+  const e=new Editor({demo:false});e.load(rigExampleDocument('articulated-piston'));e.select(1);e.frame.objects[0].scale=-2;e._invalidate();const scene=g(e),c=scene.segments[2],s=scene.segments[3];
   point(s.start,c.handle);near(Math.atan2(s.end.y-s.start.y,s.end.x-s.start.x),c.angle);near(Math.hypot(s.end.x-s.start.x,s.end.y-s.start.y),96);
 });
 test('joined figures follow sliding joints, and combining preserves live relationships and pose',()=>{
@@ -146,9 +150,9 @@ test('repositioning a connector anchor in Build Figure keeps its slide channel i
   near(e.figure.segments[2].length,.5);point(s.start,g(e).joints.get(1));point(s.handle,{x:(s.start.x+s.end.x)/2,y:(s.start.y+s.end.y)/2});
 });
 test('Smart Stretch activates attached parts in one undo and normal drag only rotates',()=>{
-  const e=editorFor('telescoping-panels');select(e,1);e.setRigBehavior({stretch:null});e._undo.length=0;
+  const e=editorFor('telescoping-panels');select(e,1);e.setRigBehavior({stretch:null});const base=e._undo.length;
   const original=e.serialize();rigControlChange(e,{id:'rig-stretch-enabled',checked:true});
-  assert.equal(e._undo.length,1);assert.equal(e.figure.segments.filter(s=>s._stykRig?.follow?.driver===1).length,6);
+  assert.equal(e._undo.length,base+1);assert.equal(e.figure.segments.filter(s=>s._stykRig?.follow?.driver===1).length,6);
   e.undo();assert.deepEqual(e.serialize(),original);e.redo();
   // Mark a panel rigid through the simple inspector control.
   select(e,3);rigControlChange(e,{id:'rig-follow-rigid',checked:true});select(e,1);
@@ -207,7 +211,7 @@ for(const rig of RIG_EXAMPLES)test(`${rig.name}: connectors remain attached thro
     const scene=g(e);
     for(const s of scene.segments){for(const n of [s.angle,s.length,s.thickness,s.start.x,s.start.y,s.end.x,s.end.y])assert.ok(Number.isFinite(n));
       if(s.connector){point(s.start,scene.joints.get(s.seg._stykRig.connector.start));point(s.end,scene.joints.get(s.seg._stykRig.connector.end));
-        point(s.handle,{x:s.start.x+(s.end.x-s.start.x)*s.attachmentPosition,y:s.start.y+(s.end.y-s.start.y)*s.attachmentPosition});}}
+        point(s.handle,{x:s.start.x+(s.end.x-s.start.x)*slide(e,s),y:s.start.y+(s.end.y-s.start.y)*slide(e,s)});}}
     const expected=poseSignature(e.geometry);e._invalidate();assert.deepEqual(poseSignature(e.geometry),expected);
   }
 });

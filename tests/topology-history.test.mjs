@@ -37,6 +37,7 @@ test('native history retains independent imported runtime lengths and bends', ()
   assert.equal(copy.frames[0].objects[0].angles[0],0);
 });
 
+// session gap: reads the editor's own topology history command, which the engine's history does not hold
 test('dense shared definition history remains exact through independent edits and repeated replay', () => {
   const report=emptyDocument(),figure=report.figure_types[0],base=figure.segments[0];
   figure.segments=Array.from({length:300},(_,i)=>({...base,segment_id:i+1,parent_id:i,length:2,angle_rad:i/200,aux_code:1}));

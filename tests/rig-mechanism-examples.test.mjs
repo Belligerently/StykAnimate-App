@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {MECHANISM_RIG_EXAMPLES} from '../src/rig-mechanism-examples.mjs';
 import {rigAssetControls,rigAssetControlChange,rigAssetControlValues} from './helpers/example-controls.mjs';
@@ -8,7 +8,7 @@ import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-4,`${a} != ${b}`),wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
 const scene=e=>e.geometry.objects.get(0),shape=(e,id)=>scene(e).segments.find(s=>s.seg.segment_id===id);
-const editorFor=id=>{const e=new Editor({demo:false});e.load(rigExampleDocument(id));e.select(1,0);return e;};
+const editorFor=id=>{const e=newOwnedEditor({demo:false});e.load(rigExampleDocument(id));e.select(1,0);return e;};
 const change=(e,key,value)=>rigAssetControlChange(e,{dataset:{rigAsset:key},valueAsNumber:value});
 const poses=g=>g.objects.get(0).segments.map(s=>[s.start.x,s.start.y,s.end.x,s.end.y]);
 

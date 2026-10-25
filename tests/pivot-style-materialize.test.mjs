@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument, needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
@@ -12,7 +12,7 @@ function fixture() {
   figure.segment_decode = {global_style: {u28: 1073741824, outline_thickness: 2, rgb: [30, 40, 50], u30: 0}};
   figure.segments[0].secondary = {rgb: [255, 0, 120], a: 0};
   report.keyframes = [0, 1].map(index => createFrame([createObject(figure, 1, 150 + index * 30, 200), createObject(figure, 2, 350, 200)], index ? 1 : 4));
-  return new Editor({demo: false}).load(report);
+  return newOwnedEditor({demo: false}).load(report);
 }
 function sample(report, tick) {
   const rows = timeline(report); let index = 0;

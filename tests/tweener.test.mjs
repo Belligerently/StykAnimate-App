@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {tweenNeighbors} from '../src/editor-tweener.mjs';
 
-function fixture({hold=false, sheet=true, count=2, duration=10}={}) {
+/** `prepare(report)` changes the document before it opens; `owned`: whether the engine owns the editor. */
+function fixture({hold=false, sheet=true, count=2, duration=10, prepare=null, owned=true}={}) {
   const report=emptyDocument(),figure=report.figure_types[0];
   report.keyframes=[100,360,500].map(x=>createFrame(Array.from({length:count},(_,i)=>createObject(figure,i+1,x+i*20,200)),duration));
-  const e=new Editor({demo:false,layerTimeline:sheet}).load(report);
+  prepare?.(report);
+  const e=(owned?newOwnedEditor:options=>new Editor(options))({demo:false,layerTimeline:sheet}).load(report);
   if(hold)e.sheetSetEasing(['layer-1'],0,duration*2,{interpolation:'constant'});
   e.seek(duration);e.select(1);return e;
 }
@@ -28,7 +31,7 @@ test('preview is reversible, drift-free, scoped, and commits one undo step',()=>
   e.beginTween();e.updateTween(.25);e.commitDrag();assert.equal(e._undo.length,undo+1);
   near(e.object.root_x,200);e.undo();assert.deepEqual(e.serialize(),before);
   e.redo();near(e.object.root_x,200);
-  const reopened=new Editor({demo:false,layerTimeline:true}).load(e.serialize());reopened.seek(10);reopened.select(1);near(reopened.object.root_x,200);
+  const reopened=newOwnedEditor({demo:false,layerTimeline:true}).load(e.serialize());reopened.seek(10);reopened.select(1);near(reopened.object.root_x,200);
 });
 test('a held exposure gets a new key exactly at the playhead',()=>{
   const e=fixture({hold:true});e.seek(5);e.select(1);
@@ -54,11 +57,13 @@ test('neighbor, relax and push always use the original pose and timed breakdown'
   assert.equal(e._undo.length,0);
 });
 test('rotation takes the short arc and retains figure appearance',()=>{
-  const e=fixture({sheet:false}),frames=e.report.keyframes;
-  for(const frame of frames)frame.objects[0].angles=frame.objects[0].angles.map(()=>0);
-  frames[0].objects[0].angles[0]=170*Math.PI/180;frames[2].objects[0].angles[0]=-170*Math.PI/180;
-  frames[1].objects[0].color_override_raw=0xff112233;
-  e._invalidate();e.beginTween();e.updateTween(.5);
+  const e=fixture({sheet:false,prepare:report=>{
+    const frames=report.keyframes;
+    for(const frame of frames)frame.objects[0].angles=frame.objects[0].angles.map(()=>0);
+    frames[0].objects[0].angles[0]=170*Math.PI/180;frames[2].objects[0].angles[0]=-170*Math.PI/180;
+    frames[1].objects[0].color_override_raw=0xff112233;
+  }});
+  e.beginTween();e.updateTween(.5);
   near(Math.abs(e.object.angles[0]),Math.PI);assert.equal(e.object.color_override_raw,0xff112233);
   e.commitDrag();e.undo();near(e.object.angles[0],0);
 });
@@ -84,8 +89,9 @@ test('multi-layer selection uses each layer’s own strict neighbors',()=>{
   near(e.frame.objects.find(o=>o.unique_id===2).root_x,250);
   e.cancelDrag();
 });
+// session gap: reads the editor's own tweener plans (the engine holds the tween drag)
 test('preview retains a bounded endpoint projection on a long dense scene',()=>{
-  const e=fixture({count:500,duration:65535});
+  const e=fixture({count:500,duration:65535,owned:false});
   e.beginTween();const plans=e._drag.tweener.plans;
   assert.equal(plans.length,1);
   for(const name of ['between','left','right','relax'])for(const frame of plans[0][name].keyframes)assert.equal(frame.objects.length,1);
