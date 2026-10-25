@@ -897,9 +897,6 @@ impl Editor {
     /// the frame they hang from).
     pub(crate) fn joints_of(&self, record: &Value, slots: &[usize]) -> Result<HashMap<usize, Joints>, EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         let scene = styk_eval::geometry::build_only(&prepared.doc, &frame, slots);
         let unresolved = || invalid("errors.rangeFigureOperations.cannotTransformAFrameWithUnresolvedFigureGeometry");

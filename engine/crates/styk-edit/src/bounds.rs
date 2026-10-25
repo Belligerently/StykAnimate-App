@@ -150,14 +150,10 @@ impl Editor {
     /// the editor has geometry for. Figures with geometry the engine cannot build refuse.
     pub(crate) fn app_bounds(&self, record: &Value, slots: &[usize]) -> Result<HashMap<usize, [f64; 4]>, EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let mut frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         // The reach of the effects on each figure at the frame's tick (`drawableVfxPadding`).
         if prepared.has_vfx {
-            if frame.retained_vfx_tick.is_some() { return Err(EditError::Unported("bounds of figures with inherited effect clips".into())); }
-            frame.vfx = styk_eval::vfx::frame::evaluate(&prepared.doc, &frame);
+            frame.vfx = prepared.frame_vfx(&frame, &mut Vec::new());
         }
         let scene = styk_eval::geometry::build_only_measured(&prepared.doc, &frame, slots);
         if !scene.warnings.is_empty() { return Err(EditError::Unported("bounds of figures with unresolved joins".into())); }

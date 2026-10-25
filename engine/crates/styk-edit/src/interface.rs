@@ -124,10 +124,7 @@ impl Editor {
         }
         let record = self.interface_record(false)?;
         let mut frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
-        if frame.retained_vfx_tick.is_some() {
-            return Err(EditError::Unported("connected effects with inherited effect clips".into()));
-        }
-        frame.vfx = styk_eval::vfx::frame::evaluate(&prepared.doc, &frame);
+        frame.vfx = prepared.frame_vfx(&frame, &mut Vec::new());
         let attached = frame
             .objects
             .iter()
@@ -159,7 +156,10 @@ impl Editor {
         if self.authored.is_some() || self.sheet() || self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) > 0 {
             return self.shown_frame();
         }
-        self.report.get("keyframes").and_then(|frames| frames.item(self.frame_index)).ok_or_else(|| EditError::Unported("a playhead outside the keyframes".into()))
+        // The playhead is the row of a keyframe, so the frame is there; a stale index reads the last one.
+        let frames = self.report.get("keyframes");
+        let last = frames.and_then(Value::array_len).and_then(|count| count.checked_sub(1));
+        last.and_then(|last| frames?.item(self.frame_index.min(last))).ok_or_else(|| EditError::Invalid("the document has no keyframe on show".into()))
     }
 
     /// `getSpatialPose(index)` (or `getSpatialMotion(index)` with `motion`) of the selected figure's bone at `index` (by default the
@@ -225,9 +225,6 @@ impl Editor {
             self.shown_frame()?
         };
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let mut frame = self.eval.borrow_mut().edit_frame(&record, &prepared).map_err(|error| EditError::Invalid(error.to_string()))?;
         let fields = frame.pose_vfx.is_some() || frame.objects.iter().any(|object| object.vfx.is_some() || object.vfx_connected.is_some());
         if fields || prepared.has_vfx {
@@ -308,9 +305,6 @@ impl Editor {
         let mut loader = self.eval.borrow().loader.clone();
         let document = loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
         let prepared = Prepared::new(Arc::new(document));
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let frame = loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         let count = frame.objects.len();
         let scene = styk_eval::geometry::build_shapes(&prepared.doc, &frame, None);

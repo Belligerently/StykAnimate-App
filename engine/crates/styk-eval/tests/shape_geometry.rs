@@ -60,7 +60,6 @@ fn ordinary_shape_query_preserves_pinned_joined_curved_and_polygon_joints() {
     let (mut samples, mut polygons, mut curves, mut joined, mut pinned) = (0, 0, 0, 0, 0);
     for name in fixtures {
         let prepared = styk_eval::prepare(styk_eval::open(&folder().join(format!("{name}.json"))).unwrap());
-        assert!(prepared.doc.unsupported.is_empty(), "{name}");
         let reference = json(&folder().join(format!("{name}.reference.json")));
         for sample in reference.get("frames").unwrap().elements().unwrap() {
             let tick = sample.get("tick").unwrap().as_f64().unwrap();

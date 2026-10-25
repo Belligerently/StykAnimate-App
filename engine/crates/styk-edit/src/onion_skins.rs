@@ -315,9 +315,6 @@ impl Editor {
             return Ok(set.clone());
         }
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("onion skins with {feature}")));
-        }
         let timeline = rows(&self.report);
         let total = total_ticks(&timeline);
         let sheet = self.report.path(&["_styk", "layerSheet"]).is_some();

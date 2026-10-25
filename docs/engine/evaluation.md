@@ -264,8 +264,10 @@ the record-level shape of the editor's evaluation (which record a pose comes fro
 keys a tween writes and in which order: `sampleLayerSheet`, the native tween,
 `buildVirtualPoseTrack`, `applyLayerOrder`,
 `snapshotPoseFrame`) and takes every interpolated number from the typed evaluator, so the
-arithmetic has one implementation. Frames it does not produce yet answer `Unported` with
-the reason.
+arithmetic has one implementation. A read of the frame on show never refuses for a document that opened: opening validates the
+channels, joins and sources records read (a hand-built document with an unreadable channel answers `Unported`), what the
+typed evaluator does not read of a pose (an effect stack, a 3D pose or an animation origin it ignored) is left as the record
+holds it, as the typed evaluator draws it, and layer poses that join each other in a ring leave one figure loose.
 
 - Covered: imported layers (the native timeline, exact and tweened), layers with authored
   pose keys (virtual pose tracks), the whole-pose shortcut and the per-layer composition,
@@ -406,8 +408,8 @@ playhead's. `src/engine/engine-shown.mjs` asks `EditSession.query` (`Session::qu
   stay visible after its end (`generated::clip_tail`), whether the clip is on at the tick (`Clip::active_at`) and whether the
   inspector lists it there (on, or its generated effects still showing). The effects timeline draws the tail and lists the
   clips from it (`src/vfx-clip-views.mjs`). `vfxGroup` names, for a figure, the figures its connected effects filter together
-  at the playhead (`FrameVfx`'s attached group, owner first), or nothing when it owns no group; the effects gizmo measures them
-  from the geometry it holds.
+  at the playhead (`FrameVfx`'s attached group, owner first, from `Prepared::frame_vfx`: the effects the stage draws, a crop's
+  inherited effect clips included), or nothing when it owns no group; the effects gizmo measures them from the geometry it holds.
 
 The same fixtures judge them: the evaluation fixtures (`tests/fixtures/eval/follow-*`, the camera records) for the
 camera, and `styk-edit/src/views_tests.rs` and `tests/onion-skins.test.mjs`, `tests/motion-trails.test.mjs`,

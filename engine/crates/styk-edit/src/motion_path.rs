@@ -1041,9 +1041,6 @@ impl Editor {
 
     fn posed_frame(&self, record: &Value) -> Result<(Arc<Prepared>, Frame), EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         Ok((prepared, frame))
     }

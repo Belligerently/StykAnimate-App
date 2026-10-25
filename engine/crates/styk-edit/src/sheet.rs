@@ -911,9 +911,6 @@ impl Editor {
     /// `buildGeometry(report, frame)` for a frame record that need not be the one on show.
     pub(crate) fn record_geometry(&self, record: &Value) -> Result<styk_eval::geometry::Scene, EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         Ok(styk_eval::geometry::build(&prepared.doc, &frame))
     }

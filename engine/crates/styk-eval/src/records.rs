@@ -12,9 +12,9 @@
 //! and in which order. Every interpolated number comes from the typed evaluator
 //! ([`crate::eval`]), so there is one implementation of the arithmetic.
 //!
-//! What it does not cover yet answers [`Error::Unported`] with the reason.
-//! The recordings of the editor's output (`tests/fixtures/records`) are frozen and
-//! `styk records` compares.
+//! A read of the frame on show never refuses for a document that opened: opening validates what records read,
+//! and what the typed evaluator does not read of a record is left as the record holds it, as it draws it.
+//! The recordings of the editor's output (`tests/fixtures/records`) are frozen and `styk records` compares.
 
 mod channels;
 pub mod paint;
@@ -30,7 +30,8 @@ pub use channels::{Bound, RecordChannels, resolved_stack};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// The engine does not produce this frame as records yet.
+    /// A document the engine cannot read as records: only a hand-built one reaches it, since opening validates the
+    /// channels, joins and sources that records read.
     #[error("not ported: {0}")]
     Unported(String),
     #[error("{0}")]
@@ -144,6 +145,7 @@ impl<'a> Records<'a> {
     /// until commit, using the same typed channel sampler. This does not admit
     /// unordered persisted documents or provide an interface-thread query.
     pub fn new_native_draft(tree: &'a Value, prepared: &'a Prepared, draft: &[Value]) -> Result<Records<'a>, Error> {
+        // A draft is a native document's (a layer sheet edits its own tracks).
         if tree.path(&["_styk", "layerSheet"]).is_some() {
             return unported("a native channel draft on a layer sheet");
         }
@@ -444,7 +446,7 @@ impl<'a> Records<'a> {
 
     /// `evaluatedFrame(report, index, t, tick)` of a native timeline: the interval `index` at
     /// fraction `t`, its channels sampled at `tick` (an in-between samples between the rows'
-    /// own times), and movieclips at `tick`.
+    /// own times), and movieclips at `tick`. A layer sheet has no intervals: its callers read `evaluated_with`.
     pub fn evaluated_interval(&self, index: usize, t: f64, tick: f64) -> Result<Value, Error> {
         if self.tree.path(&["_styk", "layerSheet"]).is_some() {
             return unported("an interval of a layer sheet");
@@ -518,7 +520,7 @@ impl<'a> Records<'a> {
                 objects.push(corrected(o));
                 continue;
             };
-            objects.push(tween_record(&o, other, source, out, origin)?);
+            objects.push(tween_record(&o, other, source, out, origin));
         }
         let mut frame = a.as_obj().cloned().unwrap_or_default();
         frame.set("objects", Value::array(objects));
@@ -543,7 +545,7 @@ impl<'a> Records<'a> {
         frame.set("background_id_b", Value::Num(typed.background_b as f64));
         frame.set("background_mix", Value::Num(typed.background_mix));
         if let Some(stacks) = a.get("_stykVfx").filter(|v| v.truthy()) {
-            frame.set("_stykVfx", vfx_record(stacks, b.get("_stykVfx"), key.frame.vfx.as_deref(), typed.pose_vfx.as_deref())?);
+            frame.set("_stykVfx", vfx_record(stacks, b.get("_stykVfx"), key.frame.vfx.as_deref(), typed.pose_vfx.as_deref()));
         }
         Ok(Value::object(frame))
     }
@@ -1129,16 +1131,18 @@ fn empty_objects(frame: &mut Obj) {
 
 /// The record of a tweened figure: `out` in `evaluatedNativeFrame`, with the keys
 /// in the order the editor writes them and the typed evaluator's values.
-fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crate::doc::Object, origin: bool) -> Result<Value, Error> {
+fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crate::doc::Object, origin: bool) -> Value {
     let mut record = o.as_obj().cloned().unwrap_or_default();
     record.remove("runtime_segments");
     // `interpolateSpatialPose`: the camera always, proportions when either key has any.
     if truthy(o.get("_stykSpatial")) || truthy(next.get("_stykSpatial")) {
-        let Some(pose) = &out.spatial else { return unported("3D poses the engine did not read") };
-        record.set("_stykSpatial", spatial_record(pose));
+        // A pose the typed loader did not read as 3D is not drawn as 3D either: the record keeps its own.
+        if let Some(pose) = &out.spatial {
+            record.set("_stykSpatial", spatial_record(pose));
+        }
     }
     if let Some(stacks) = o.get("_stykVfx").filter(|v| v.truthy()) {
-        record.set("_stykVfx", vfx_record(stacks, next.get("_stykVfx"), source.vfx.as_deref(), out.vfx.as_deref())?);
+        record.set("_stykVfx", vfx_record(stacks, next.get("_stykVfx"), source.vfx.as_deref(), out.vfx.as_deref()));
     }
     if let (Some(table), Some(typed)) = (o.get("_stykIK").filter(|t| t.truthy()), &out.ik) {
         record.set("_stykIK", ik_record(table, next.get("_stykIK"), typed));
@@ -1146,8 +1150,9 @@ fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crat
     record.set("root_x", Value::Num(out.root[0]));
     record.set("root_y", Value::Num(out.root[1]));
     record.set("scale", Value::Num(out.scale));
-    if origin && truthy(o.get("_stykAnimationOrigin")) && truthy(next.get("_stykAnimationOrigin")) {
-        let Some(pose) = out.origin.as_deref() else { return unported("an animation origin the engine did not read") };
+    // An origin the typed loader did not read is not tweened: the record keeps its own.
+    let tweened_origin = origin && truthy(o.get("_stykAnimationOrigin")) && truthy(next.get("_stykAnimationOrigin"));
+    if let Some(pose) = out.origin.as_deref().filter(|_| tweened_origin) {
         let mut origin = Obj::new();
         origin.set("x", Value::Num(pose.x));
         origin.set("y", Value::Num(pose.y));
@@ -1182,7 +1187,7 @@ fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crat
     }
     record.set("angles", numbers(out.angles.iter().copied()));
     record.set("color_override_raw", Value::Num(out.color as f64));
-    Ok(Value::object(record))
+    Value::object(record)
 }
 
 /// `interpolateSpatialPose(a, b, t)`'s record: `{camera: {strength, distance, centerX,
@@ -1218,20 +1223,22 @@ fn spatial_record(pose: &crate::doc::SpatialPose) -> Value {
 /// type the next pose also has gets all its parameters, resolved and tweened, in the
 /// registry's order; every other effect stays the record it is. `before` and `after`
 /// are the typed stacks of the pose and of the tween.
-fn vfx_record(stacks: &Value, next: Option<&Value>, before: Option<&crate::vfx::Stacks>, after: Option<&crate::vfx::Stacks>) -> Result<Value, Error> {
+///
+/// Stacks and effects the typed loader did not read (it noted and ignored them) are not tweened: the pose keeps its own.
+fn vfx_record(stacks: &Value, next: Option<&Value>, before: Option<&crate::vfx::Stacks>, after: Option<&crate::vfx::Stacks>) -> Value {
     if !truthy(next) {
-        return Ok(stacks.clone());
+        return stacks.clone();
     }
-    let (Some(entries), Some(before), Some(after)) = (stacks.as_obj(), before, after) else { return unported("effect stacks the engine did not read") };
+    let (Some(entries), Some(before), Some(after)) = (stacks.as_obj(), before, after) else { return stacks.clone() };
     if entries.len() != before.entries.len() || entries.len() != after.entries.len() {
-        return unported("effect stacks the engine did not read");
+        return stacks.clone();
     }
     let mut out = Obj::new();
     for (at, (key, stack)) in entries.iter().enumerate() {
         let (from, to) = (&before.entries[at].1, &after.entries[at].1);
         let effects = items(Some(stack));
         if effects.len() != from.len() || effects.len() != to.len() {
-            return unported("effect records the engine did not read");
+            return stacks.clone();
         }
         let tweened = effects.iter().enumerate().map(|(i, effect)| {
             if Arc::ptr_eq(&from[i], &to[i]) {
@@ -1250,7 +1257,7 @@ fn vfx_record(stacks: &Value, next: Option<&Value>, before: Option<&crate::vfx::
         });
         out.set(key, Value::array(tweened.collect()));
     }
-    Ok(Value::object(out))
+    Value::object(out)
 }
 
 /// `normalizePaint`'s record: `{type, angle, stops: [{offset, color, opacity}]}`.
@@ -1522,5 +1529,24 @@ mod source_time_tests {
         let adjacent = source_at(&samples, f64::from_bits(1.25f64.to_bits() + 1), read).unwrap();
         assert!(!recovered.same_node(&adjacent));
         assert_eq!(samples.borrow().len(), 4);
+    }
+}
+
+#[cfg(test)]
+mod degrade_tests {
+    use super::*;
+
+    #[test]
+    fn effect_stacks_the_typed_evaluator_did_not_read_stay_as_the_pose_holds_them() {
+        let stacks = styk_doc::json::parse(br#"{"figure":[{"id":"effect-1","type":"blur","enabled":true,"params":{"radius":4}}]}"#).unwrap();
+        let next = stacks.clone();
+        // No typed stacks at all, or stacks of another shape than the records: the pose's own stacks, untweened.
+        let none = vfx_record(&stacks, Some(&next), None, None);
+        assert!(none.same_node(&stacks));
+        let empty = crate::vfx::Stacks::default();
+        let mismatched = vfx_record(&stacks, Some(&next), Some(&empty), Some(&empty));
+        assert!(mismatched.same_node(&stacks));
+        // A pose with no next pose keeps its stacks as well.
+        assert!(vfx_record(&stacks, None, Some(&empty), Some(&empty)).same_node(&stacks));
     }
 }

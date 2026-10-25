@@ -134,8 +134,6 @@ pub struct Opened {
     pub keyframes: usize,
     pub images: usize,
     pub open_ms: f64,
-    /// Features the file uses that the engine does not draw yet.
-    pub unsupported: Vec<String>,
 }
 
 struct State {
@@ -225,7 +223,6 @@ impl Engine {
             keyframes: doc.keyframes.len(),
             images: doc.images.len(),
             open_ms,
-            unsupported: doc.unsupported.clone(),
         })
     }
 

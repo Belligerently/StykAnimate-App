@@ -53,7 +53,6 @@ fn every_fixture_evaluates_like_the_editor() {
     let (mut faces, mut surfaces) = (0, 0);
     for name in &names {
         let document = open(name);
-        assert!(document.unsupported.is_empty(), "{name}: not evaluated: {:?}", document.unsupported);
         assert!(document.notes.is_empty(), "{name}: read leniently: {:?}", document.notes);
         let prepared = styk_eval::prepare(document);
         let reference = json(&folder().join(format!("{name}.reference.json")));

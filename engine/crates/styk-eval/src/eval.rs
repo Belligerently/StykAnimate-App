@@ -974,18 +974,25 @@ impl Prepared {
         }
         if self.has_vfx {
             let mut export_vfx = Vec::new();
-            if self.doc.vfx_clips.is_none()
-                && let (Some(source), Some(source_tick)) = (self.retained_effect_source(), frame.retained_vfx_tick)
-            {
-                let mut timed = frame.clone();
-                timed.tick = source_tick;
-                frame.vfx = crate::vfx::frame::inherited_filters(source, &timed, &mut export_vfx);
-            } else {
-                frame.vfx = crate::vfx::frame::evaluate_for_export(&self.doc, &frame, &mut export_vfx);
-            }
+            frame.vfx = self.frame_vfx(&frame, &mut export_vfx);
             frame.export_vfx = export_vfx;
         }
         frame
+    }
+
+    /// The effects to draw for an evaluated `frame`: the document's own clips sampled at its tick, or, in the crop of a
+    /// movieclip whose effect clips are its retained source's, the source's at the source tick the frame was taken at
+    /// (`vfxRenderFrame`). `export` receives the metadata of export's `hasDrawableVfx`.
+    pub fn frame_vfx(&self, frame: &Frame, export: &mut Vec<bool>) -> Option<Arc<crate::vfx::FrameVfx>> {
+        if self.doc.vfx_clips.is_none()
+            && let (Some(source), Some(source_tick)) = (self.retained_effect_source(), frame.retained_vfx_tick)
+        {
+            let mut timed = frame.clone();
+            timed.tick = source_tick;
+            crate::vfx::frame::inherited_filters(source, &timed, export)
+        } else {
+            crate::vfx::frame::evaluate_for_export(&self.doc, frame, export)
+        }
     }
 
     fn retained_effect_source(&self) -> Option<&Document> {
