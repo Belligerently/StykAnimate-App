@@ -1,11 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {connectedVfxGeometry,connectedVfxConflict} from '../src/vfx-connected.mjs';
 import {createVfx,vfxStack,validateVfxOwner,vfxProperty} from '../src/vfx.mjs';
-import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 function fixture(){
  const report=emptyDocument(),fig=report.figure_types[0];
@@ -36,7 +35,7 @@ test('nested groups retain inner stacks and hidden descendants are excluded befo
 });
 test('interleaved scope preserves native order, shared coordinates, history and editable identities',()=>{
  const report=fixture();report.keyframes[0].object_draw_order=[0,3,1,2];
- const editor=new Editor({demo:false}).load(report),before=editor.serialize();
+ const editor=newOwnedEditor({demo:false,layerTimeline:true}).load(report),before=editor.serialize();
  assert.equal(connectedVfxConflict(editor.evaluatedFrame,1),null);
  editor.setVfxScope({kind:'figure',uid:1},true);assert.equal(editor.animationValue({kind:'figure',uid:1},'vfxScope'),1);
  editor.undo();assert.deepEqual(editor.serialize(),before);editor.redo();
@@ -79,15 +78,15 @@ test('interleaved effect coordinates follow translated, scaled, rotated and mirr
  assert.deepEqual(original.drawables[0]._movieclipOwner.domainBounds,domain);
 });
 test('scope uses native exposure history and survives reopening without changing joins',()=>{
- const editor=new Editor({demo:false}).load(fixture());initializeLayerSheet(editor.report);editor._invalidate({timing:true});
+ const editor=newOwnedEditor({demo:false,layerTimeline:true}).load(fixture());
  const target={kind:'figure',uid:1},before=editor.serialize();editor.setVfxScope(target,true);
  assert.equal(editor.animationValue(target,'vfxScope'),1);editor.undo();assert.deepEqual(editor.serialize(),before);editor.redo();
- const reopened=new Editor({demo:false}).load(editor.serialize());assert.equal(reopened.animationValue(target,'vfxScope'),1);assert.ok(reopened.evaluatedFrame.objects[1].join);
+ const reopened=newOwnedEditor({demo:false}).load(editor.serialize());assert.equal(reopened.animationValue(target,'vfxScope'),1);assert.ok(reopened.evaluatedFrame.objects[1].join);
  assert.throws(()=>validateVfxOwner({_stykVfxScope:2}),/scope/);
 });
 test('VFX-only paste preserves identity, interpolates values and retains authored easing',()=>{
  const report=fixture();report.keyframes.push(structuredClone(report.keyframes[0]));
- const editor=new Editor({demo:false}).load(report);initializeLayerSheet(editor.report);editor._invalidate({timing:true});
+ const editor=newOwnedEditor({demo:false,layerTimeline:true}).load(report);
  const target={kind:'figure',uid:1},layer=editor.layerForUid(1);editor.sheetSetEasing([layer],0,0,{interpolation:'linear'});
  const [id]=editor.addVfx(target,'glow');editor.setVfxParameter(target,id,'radius',4);
  const copied=structuredClone(editor.vfxEffects(target));editor.seek(10);editor.pasteVfx(target,copied);editor.setVfxParameter(target,id,'radius',24);
@@ -95,11 +94,11 @@ test('VFX-only paste preserves identity, interpolates values and retains authore
  editor.seek(10);const before=editor.serialize();copied[0].params.radius=40;editor.pasteVfx(target,copied);
  assert.equal(editor.vfxEffects(target).length,1);assert.equal(editor.vfxEffects(target)[0].id,id);editor.undo();assert.deepEqual(editor.serialize(),before);editor.redo();
  editor.seek(5);assert.equal(editor.vfxEffects(target)[0].params.radius,22);
- const reopened=new Editor({demo:false}).load(editor.serialize());reopened.seek(5);assert.equal(reopened.vfxEffects(target)[0].params.radius,22);
+ const reopened=newOwnedEditor({demo:false}).load(editor.serialize());reopened.seek(5);assert.equal(reopened.vfxEffects(target)[0].params.radius,22);
  const duplicate=editor.duplicateVfx(target,id);assert.notEqual(duplicate,id);
 });
 test('legacy scalar channels do not override pasted values and retain their interpolation',()=>{
- const report=fixture();report.keyframes.push(structuredClone(report.keyframes[0]));const e=new Editor({demo:false}).load(report),target={kind:'figure',uid:1};
+ const report=fixture();report.keyframes.push(structuredClone(report.keyframes[0]));const e=newOwnedEditor({demo:false}).load(report),target={kind:'figure',uid:1};
  const [id]=e.addVfx(target,'glow'),property=vfxProperty('glow',id,'radius');
  e.addAnimationKeys([{target,property,tick:0,value:4,interpolation:'linear',exactTarget:true}]);
  const stack=structuredClone(e.vfxEffects(target));stack[0].params.radius=24;e.seek(10);e.pasteVfx(target,stack);

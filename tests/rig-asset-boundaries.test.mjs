@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {RIG_EXAMPLES,rigExampleDocument} from '../src/rig-examples.mjs';
 import {SOLID_RIG_EXAMPLES} from '../src/rig-solids.mjs';
 import {inspectorView} from '../src/inspector-view.mjs';
@@ -18,7 +18,7 @@ const visiblePose=document=>{
 test('every saved library asset imports with ordinary figure and joint properties',async()=>{
   for(const example of RIG_EXAMPLES){
     const source=(await decodeDocument(await buildContainerV2(rigExampleDocument(example.id),'stkz'),'stkz')).document;
-    const editor=new Editor({demo:false});editor.load(rigExampleDocument('sliding-carriage'));
+    const editor=newOwnedEditor({demo:false});editor.load(rigExampleDocument('sliding-carriage'));
     const object=editor.importFigure(source),figure=editor.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);
     for(const joint of [-1,figure.segments.findIndex(s=>s.segment_id===example.control)]){
       editor.select(object.unique_id,joint);const html=inspectorView({editor});

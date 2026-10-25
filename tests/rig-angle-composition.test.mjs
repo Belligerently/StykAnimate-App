@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {createObject,createFrame,emptyDocument,defaultFigure} from '../src/demo.mjs';
 import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
@@ -9,11 +10,12 @@ import {rigSections,rigControlChange} from '../src/rig-controls.mjs';
 import {renderInspector} from '../src/inspector-kit.mjs';
 const rigView=e=>renderInspector({kind:'joint',sections:rigSections(e)});
 const nearAngle=(a,b)=>assert.ok(Math.abs(Math.atan2(Math.sin(a-b),Math.cos(a-b)))<1e-5,`${a} != ${b}`);
-function fixture(){
+/** `owned`: whether the engine owns the editor; the test of the JavaScript constraint plan keeps the plain one. */
+function fixture(owned=true){
  const q=construction();q.add(0,0,0,'Figure orientation');
  const a=q.add(0,40,0,'First rotation',{control:true}),b=q.add(0,60,0,'Second rotation',{control:true});
  const c=q.add(a,30,.2,'Combined rotation',{rig:{angleLock:{mode:'parent',reference:a,restAngle:0,figureRestAngle:0,angle:.2,multiplier:1,space:'authored',secondary:{reference:b,restAngle:0,multiplier:-1}}}});
- const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},torso=defaultFigure(2),e=new Editor({demo:false});
+ const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},torso=defaultFigure(2),e=owned?newOwnedEditor({demo:false}):new Editor({demo:false});
  e.load({...emptyDocument(),figure_types:[figure,torso],keyframes:[createFrame([createObject(figure,1,200,200),createObject(torso,2,350,350)])]});
  return{e,a,b,c,select:id=>e.select(1,id-1)};
 }
@@ -27,8 +29,9 @@ test('two native rotations compose through whole turns and attached torso transf
  e.select(2,0);e.rotateJoint(.8);e.select(2,-1);e.scaleSelection(2);e.moveSelection(30,-15);
  nearAngle(e.geometry.objects.get(0).segments[c-1].angle,before+.8);
 });
+// session gap: edits the record in place and reads the JavaScript constraint plan cache
 test('second references are validated, cached by value, remapped and saved natively',async()=>{
- const {e,a,b,c,select}=fixture();select(c);const original=e.serialize(),plan=rigConstraintPlan(e.figure);
+ const {e,a,b,c,select}=fixture(false);select(c);const original=e.serialize(),plan=rigConstraintPlan(e.figure);
  for(const secondary of [{reference:999,restAngle:0,multiplier:1},{reference:c,restAngle:0,multiplier:1},{reference:b,restAngle:NaN,multiplier:1},{reference:b,restAngle:0,multiplier:Infinity}]){
   assert.throws(()=>e.setRigBehavior({angleLock:{secondary}}));assert.deepEqual(e.serialize(),original);
  }

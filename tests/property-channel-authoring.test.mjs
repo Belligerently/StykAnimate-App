@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
@@ -13,11 +13,13 @@ import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
 import {segmentPaint,paintGeometry} from '../src/paint.mjs';
 
-function fixture() {
+/** `prepare(report)` changes the document before it opens. */
+function fixture(prepare = null) {
   const report = emptyDocument(), figure = report.figure_types[0];
   figure.segment_decode = {global_style:{outline_thickness:2,u30:0,rgb:[0,0,0]}};
   report.keyframes = [0,100,200].map(x => createFrame([createObject(figure,1,x,100),createObject(figure,2,x+300,100)],5));
-  const editor = new Editor({demo:false,propertyChannels:true}).load(report); editor.select(1); return editor;
+  prepare?.(report);
+  const editor = newOwnedEditor({demo:false,propertyChannels:true}).load(report); editor.select(1); return editor;
 }
 const properties = editor => editor.animationChannels.map(channel => channel.property);
 const numeric = (editor,key,value) => {const token=beginNativePropertyEdit(editor,key);previewNativePropertyEdit(token,value);commitNativePropertyEdit(token);};
@@ -160,7 +162,7 @@ test('Simple Discard and Update carry the same independent property edits across
   e.discardFrameDraft();assert.equal(e.evaluatedFrame.objects[0].field28,0);
   numeric(e,'figure_opacity',25);e.updateDraftFrame();e.disableFrameDrafts();e.selectFrame(1);
   assert.equal(e.evaluatedFrame.objects[0].field28,191);
-  const reopened=new Editor({demo:false,propertyChannels:true}).load(structuredClone(e.report));reopened.selectFrame(1);
+  const reopened=newOwnedEditor({demo:false,propertyChannels:true}).load(structuredClone(e.report));reopened.selectFrame(1);
   assert.equal(reopened.evaluatedFrame.objects[0].field28,191);
 });
 
@@ -177,7 +179,7 @@ test('gradient paint, endpoint keys and polygon style survive reopen and native 
   e.seek(5);e.updateSegmentStyle({gradient:{color:'#ffff00',opacity:.7}});
   const output={...e.report,figure_types:[...e.report.figure_types]},table=createNativeStyleTable(output);
   e.seek(0);const a=table(e.evaluatedFrame.objects[0]);e.seek(5);const b=table(e.evaluatedFrame.objects[0]);assert.notEqual(a,b);
-  const reopened=new Editor({demo:false,propertyChannels:true}).load(e.serialize());reopened.seek(5);reopened.select(1);
+  const reopened=newOwnedEditor({demo:false,propertyChannels:true}).load(e.serialize());reopened.seek(5);reopened.select(1);
   resolved=resolveInstanceFigure(reopened.figure,reopened.object);assert.deepEqual(resolved.segments[0].secondary.rgb,[255,255,0]);
   validateAnimationDocument(reopened.report);
 });
@@ -197,8 +199,8 @@ test('range color edits are property-only and preserve native frames', () => {
 });
 
 test('detached imported curves retain native automatic easing, opacity bytes and shortest rotation', () => {
-  const e=fixture();e.report.auto_easing=true;
-  e.report.keyframes.forEach((frame,i)=>{frame.objects[0].field28=i*71;frame.objects[0].angles=frame.objects[0].angles.map(v=>v+i*2.8);});e._invalidate();
+  const e=fixture(report=>{report.auto_easing=true;
+    report.keyframes.forEach((frame,i)=>{frame.objects[0].field28=i*71;frame.objects[0].angles=frame.objects[0].angles.map(v=>v+i*2.8);});});
   for(const property of ['x','rotation','opacity','color']) {
     const channel=e.nativePropertyChannel({kind:'figure',uid:1},property);
     for(let tick=0;tick<10;tick++) {

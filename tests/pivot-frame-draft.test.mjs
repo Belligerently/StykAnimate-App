@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {materializeSimpleFrameDraftForPivot} from '../src/pivot-frame-draft.mjs';
@@ -8,7 +8,7 @@ import {roundTrip} from './support/codec.mjs';
 
 function fixture(mode = 'add') {
   const report = emptyDocument(); report.keyframes = [100, 200, 300].map(x => createFrame([createObject(report.figure_types[0], 1, x, 250)], 5));
-  const editor = new Editor({demo: false}).load(report), baseline = structuredClone(editor.report.keyframes[1]);
+  const editor = newOwnedEditor({demo: false}).load(report), baseline = structuredClone(editor.report.keyframes[1]);
   editor.report.keyframes[1].objects[0].root_x = 777;
   editor.report._styk.simpleFrameDraft = {version: 1, mode, index: 1, frameId: baseline._styk.frameId, baseline};
   return editor.report;
@@ -18,7 +18,7 @@ test('native Add working pose stays editable in STYK but PIV exports only the sa
   assert.equal(out.keyframes.length, 3); assert.deepEqual(out.keyframes.map(f => f.objects[0].root_x), [100, 200, 300]);
   assert.equal(out._styk.simpleFrameDraft, undefined); assert.deepEqual(report, before);
   assert.equal(out.keyframes[0], report.keyframes[0]); assert.equal(out.figure_types, report.figure_types);
-  const reopened = new Editor({demo: false}).load(JSON.parse(JSON.stringify(report)));
+  const reopened = newOwnedEditor({demo: false}).load(JSON.parse(JSON.stringify(report)));
   assert.equal(reopened.report.keyframes[1].objects[0].root_x, 777);
   assert.equal(reopened.report._styk.simpleFrameDraft.baseline.objects[0].root_x, 200);
 });

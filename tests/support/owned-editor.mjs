@@ -8,6 +8,15 @@ import {installEngineOwner} from '../../src/engine/engine-owner.mjs';
 const open = new Set();
 afterEach(() => { for (const owner of open) owner.release(); open.clear(); });
 
+/** A new editor the engine owns, before any document is loaded: the test opens one (`load`, `newDocument`, `importFigure`) as the
+ * app does. `verify` is that of [`ownedEditorSync`]; the identities a call draws are the editor's own random ones. The owner is
+ * released when the test ends. */
+export function newOwnedEditor(options, {verify = true} = {}) {
+  const editor = new Editor(options);
+  open.add(installEngineOwner(editor, {verify}));
+  return editor;
+}
+
 /** The editor on `document` (the blank one the Editor opens with when there is none) with the engine owning it (the engine must be
  * registered: `tests/support/register-engine.mjs`). The owner is released when the test ends.
  * `verify`: the session's document is compared with the editor's after every call.

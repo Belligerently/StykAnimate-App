@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {builderFixture} from '../scripts/builder-benchmark-fixture.mjs';
 
-function fixture(propertyChannels = false) {
+/** `prepare(report)` changes the document before it opens. */
+function fixture(propertyChannels = false, prepare = null) {
   const report = builderFixture(5, 2), figure = report.figure_types[0];
   figure.segments.forEach((segment, index) => {
     segment.parent_id = [0, 1, 2, 1, 4][index];
@@ -13,17 +14,20 @@ function fixture(propertyChannels = false) {
   report.keyframes[0].objects[0].angles = figure.segments.map(segment => segment.angle_rad);
   report.keyframes.push(structuredClone(report.keyframes[0]));
   report.keyframes[1].objects[0].angles = figure.segments.map(segment => segment.angle_rad + .2);
-  const editor = new Editor({propertyChannels}); editor.load(report); editor.select(1, 1);
+  prepare?.(report);
+  const editor = newOwnedEditor({propertyChannels}); editor.load(report); editor.select(1, 1);
   return editor;
 }
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
 test('branch flip reflects attached figures only on selected handles', () => {
-  const e = fixture();
-  const attached = structuredClone(e.frame.objects[1]);
-  attached.unique_id = 3; attached.object_slot = 2;
-  attached.join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 3};
-  e.frame.objects[1].join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 5};
-  e.frame.objects.push(attached); e._invalidate(); e.selectBranch(1, 1);
+  const e = fixture(false, report => {
+    const frame = report.keyframes[0], attached = structuredClone(frame.objects[1]);
+    attached.unique_id = 3; attached.object_slot = 2;
+    attached.join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 3};
+    frame.objects[1].join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 5};
+    frame.objects.push(attached); frame.object_draw_order.push(2); frame.object_draw_order_unique_ids.push(3);
+  });
+  e.selectBranch(1, 1);
   const before = e.geometry, selected = before.objects.get(0), pivot = selected.segments[1].start;
   const sibling = structuredClone(e.frame.objects[1].angles);
   e.mirrorFigure('horizontal');

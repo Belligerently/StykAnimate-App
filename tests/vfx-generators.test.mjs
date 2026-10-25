@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
-import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateVfxOwner,createVfx,activeVfx} from '../src/vfx.mjs';
 import {validateVfxClips,vfxRenderFrame,vfxClipActiveAt} from '../src/vfx-clips.mjs';
@@ -17,7 +16,7 @@ import {filterVfxClips} from '../src/vfx-clip-inspector.mjs';
 function fixture({dark=false}={}){
  const report=emptyDocument(),fig=report.figure_types[0];
  report.keyframes=[0,1,2,3,4,5,6,7].map(i=>{const f=createFrame([createObject(fig,1,120+i*40,300),createObject(fig,2,520,300)],20);if(dark)f._stykBackgroundColor=0xff101018;return f;});
- const e=new Editor({demo:false}).load(report);initializeLayerSheet(e.report);e._invalidate({timing:true});return e;
+ const e=newOwnedEditor({demo:false,layerTimeline:true}).load(report);return e;
 }
 function frameAt(e,tick){e.seek(tick);const frame=e.evaluatedFrame;return {frame,geometry:buildGeometry(e.report,frame)};}
 function batchAt(e,tick,options={}){const {frame,geometry}=frameAt(e,tick);return buildGeneratorBatch(e.report,frame,geometry,{sampler:options.sampler??new GeneratorAnchors(),...options});}

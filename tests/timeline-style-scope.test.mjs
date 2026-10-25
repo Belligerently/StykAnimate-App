@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
 import {animationChannelId, animationPropertyValue} from '../src/animation-channels.mjs';
 import {emptyDocument, defaultFigure, createFrame, createObject} from '../src/demo.mjs';
-import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 
 const targetA={kind:'segment',uid:7,handleId:1,figureTypeId:1};
 const targetB={...targetA,figureTypeId:2};
@@ -67,7 +67,7 @@ test('scoped gradient placeholders resolve their definition even when the first 
 });
 
 test('dormant scoped rows preserve existing curve edits while new keys require a matching displayed pose', () => {
-  const editor=new Editor({demo:false}).load(fixture());
+  const editor=newOwnedEditor({demo:false}).load(fixture());
   editor.addAnimationKeys(curves().flatMap(source=>source.keys.map(key=>({target:source.target,property:source.property,...key}))));
   const projection=buildChannelTimelineTracks(editor.layers,editor.animationChannels,editor.report);
   const row=projection.byId.get(`channel:${animationChannelId(targetB,'opacity')}`);

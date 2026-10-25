@@ -7,6 +7,7 @@ import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
 import {sameSpatial,spatialPoint,remapSpatial} from '../src/rig-spatial.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {Editor} from '../src/editor.mjs';
+import {newOwnedEditor} from './support/owned-editor.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {createSpatialGizmo,ringPoint,startRotationGizmo,rotateGizmo} from '../src/spatial-gizmo.mjs';
 
@@ -105,7 +106,7 @@ test('axis and motion-driver definitions validate, remap, invalidate and reject 
 });
 
 test('fine motion fields edit residuals, allow uncurling, mirror and restore history',()=>{
-  const f=fixture(),e=new Editor({demo:false});e.load(f.doc);const before=e.serialize();
+  const f=fixture(),e=newOwnedEditor({demo:false});e.load(f.doc);const before=e.serialize();
   e.select(1,f.master.id-1);assert.equal(e.setSpatialMotion(.9),true);
   e.select(1,f.a.id-1);let m=e.getSpatialMotion();near(m.value,0);near(m.applied,.72);near(m.min,-.72);near(m.max,.48);
   assert.equal(e.setSpatialMotion(-.2),true);near(e.getSpatialPose().bend,-.2);near(e.getSpatialMotion().applied,.52);
@@ -119,7 +120,7 @@ test('fine motion fields edit residuals, allow uncurling, mirror and restore his
 
 test('arbitrary-axis fine drags follow their real track, respect limits and cancel exactly',()=>{
   for(const mirror of [false,true]){
-    const f=fixture(),e=new Editor({demo:false});e.load(f.doc);
+    const f=fixture(),e=newOwnedEditor({demo:false});e.load(f.doc);
     e.select(1,f.root.id-1);e.setSpatialPose({turn:.55,pitch:.25,bend:.1});e.select(1,f.master.id-1);e.setSpatialMotion(.4);
     if(mirror){e.select(1,-1);e.mirrorFigure();}
     e.select(1,f.a.id-1);const before=e.serialize(),p=e.geometry.objects.get(0).joints.get(f.a.id);
@@ -131,7 +132,7 @@ test('arbitrary-axis fine drags follow their real track, respect limits and canc
 });
 
 test('driver edits invalidate their spatial subtree and match fresh geometry after undo',()=>{
-  const f=fixture(),e=new Editor({demo:false});e.load(f.doc);
+  const f=fixture(),e=newOwnedEditor({demo:false});e.load(f.doc);
   const initial=e.geometry.objects.get(0).segments[f.tip.id-1].spatialFrame;
   e.select(1,f.master.id-1);e.setSpatialMotion(.6);assert.notEqual(e.geometry.objects.get(0).segments[f.tip.id-1].spatialFrame,initial);
   for(const value of [1.4,.2,.9,0]){
@@ -141,6 +142,7 @@ test('driver edits invalidate their spatial subtree and match fresh geometry aft
   e.undo();near(e.geometry.objects.get(0).segments[f.tip.id-1].spatialFrame.motionValue,.63);
 });
 
+// session gap: the engine's geometry carries no spatial mesh (the engine draws it itself)
 test('driven mesh updates are fresh-equivalent and a referenced master cannot be deleted',()=>{
   const f=fixture(),x=f.q.add(0,30,0,'Surface X'),y=f.q.add(0,30,Math.PI/2,'Surface Y');f.object.angles.push(0,Math.PI/2);
   f.figure._styk={spatialMesh:{positions:[-15,64,0,-5,64,0,-10,70,6],bones:Array.from({length:3},()=>[f.tip.id,0,0,0]).flat(),weights:Array.from({length:3},()=>[1,0,0,0]).flat(),indices:[0,1,2],colors:[[230,180,130]],materials:[0],basis:[0,x,y]}};
@@ -156,7 +158,7 @@ test('driven mesh updates are fresh-equivalent and a referenced master cannot be
 test('a mechanical rotation gizmo exposes its actual axis and edits only the fine residual',()=>{
   for(const axis of [[-1,0,0],[0,1,0],[Math.SQRT1_2,0,Math.SQRT1_2]])for(const mirror of [false,true]){
     const f=fixture();f.figure.segments[f.a.id-1]._stykRig.spatial.motion.axis=axis;
-    const e=new Editor({demo:false});e.load(f.doc);e.select(1,f.root.id-1);e.setSpatialPose({turn:.6,pitch:.3});e.select(1,f.master.id-1);e.setSpatialMotion(.5);
+    const e=newOwnedEditor({demo:false});e.load(f.doc);e.select(1,f.root.id-1);e.setSpatialPose({turn:.6,pitch:.3});e.select(1,f.master.id-1);e.setSpatialMotion(.5);
     if(mirror){e.select(1,-1);e.mirrorFigure();}e.select(1,f.a.id-1);
     const g=createSpatialGizmo(e,p=>p);assert.equal(g.rings.length,1);near(g.motion.applied,.4);
     assert.equal(startRotationGizmo(g,g.center),null);assert.equal(startRotationGizmo(g,{x:g.center.x+59,y:g.center.y}),null);
@@ -167,7 +169,7 @@ test('a mechanical rotation gizmo exposes its actual axis and edits only the fin
     const normal=[ring.u[1]*ring.v[2]-ring.u[2]*ring.v[1],ring.u[2]*ring.v[0]-ring.u[0]*ring.v[2],ring.u[0]*ring.v[1]-ring.u[1]*ring.v[0]];
     near(Math.hypot(...normal),1);
   }
-  const f=fixture(),e=new Editor({demo:false});e.load(f.doc);e.select(1,f.lip.id-1);assert.equal(createSpatialGizmo(e,p=>p),null);
+  const f=fixture(),e=newOwnedEditor({demo:false});e.load(f.doc);e.select(1,f.lip.id-1);assert.equal(createSpatialGizmo(e,p=>p),null);
 });
 
 test('driven hinges tween through ordinary angle channels without jumps or backward bends',()=>{

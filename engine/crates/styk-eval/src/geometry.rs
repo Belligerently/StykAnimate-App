@@ -673,10 +673,24 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         }
         for edge in &pp.edges {
             let item = if edge.index == u32::MAX { None } else { segment_items.get(seg_item[edge.index as usize] as usize) };
+            // A connector's edge follows its curve only where the polygon leaves its start, and ends at its slider.
+            let connector = item.and_then(|_| fig.segments[edge.index as usize].rig.as_ref()).and_then(|rig| rig.connector.as_ref());
             match item {
-                Some(e) if e.bend.abs() > 1e-7 => {
+                Some(e) if e.bend.abs() > 1e-7 && connector.is_none_or(|c| fig.segments[edge.index as usize].parent == c.start) => {
+                    let slid = connector.and_then(|_| rig_states.get(edge.index as usize).copied().flatten()).and_then(|state| state.position);
                     let (a, b) = (e.points.0 as usize, e.points.1 as usize);
-                    if b > a {
+                    if let Some(position) = slid {
+                        let mut arc = Vec::new();
+                        arc_points(e.start, e.angle, e.length * position, e.bend * position, &mut arc);
+                        if edge.reverse {
+                            points.extend(arc.iter().rev().skip(1));
+                        } else {
+                            points.extend(arc.iter().skip(1));
+                        }
+                        if projecting {
+                            raws.resize(points.len() - p0 as usize, None);
+                        }
+                    } else if b > a {
                         if edge.reverse {
                             for k in (a..b - 1).rev() {
                                 points.push(points[k]);
