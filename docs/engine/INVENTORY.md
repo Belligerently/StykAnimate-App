@@ -12,14 +12,14 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | Rust owner | Modules | Source at start | js | partial | ported | verified | removed | Covered by Rust | Partly covered | Deleted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
-| `styk-drawing` | 36 | 171 KiB | 11 | 7 | 8 | 0 | 10 | 22 % | 23 % | 0 % |
-| `styk-edit` | 90 | 1228 KiB | 30 | 44 | 6 | 1 | 9 | 13 % | 69 % | 9 % |
-| `styk-engine` | 24 | 40 KiB | 11 | 0 | 0 | 0 | 13 | 3 % | 0 % | 3 % |
-| `styk-eval` | 80 | 688 KiB | 20 | 46 | 9 | 0 | 5 | 17 % | 72 % | 0 % |
-| `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
+| `styk-drawing` | 36 | 164 KiB | 9 | 7 | 8 | 0 | 12 | 23 % | 24 % | 0 % |
+| `styk-edit` | 90 | 1229 KiB | 30 | 44 | 6 | 1 | 9 | 13 % | 69 % | 9 % |
+| `styk-engine` | 24 | 28 KiB | 8 | 0 | 0 | 0 | 16 | 4 % | 0 % | 4 % |
+| `styk-eval` | 80 | 657 KiB | 19 | 46 | 8 | 0 | 7 | 17 % | 72 % | 0 % |
+| `styk-export` | 14 | 63 KiB | 8 | 2 | 0 | 0 | 4 | 0 % | 10 % | 0 % |
 | `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
-| `styk-render` | 51 | 225 KiB | 13 | 8 | 3 | 0 | 27 | 12 % | 50 % | 0 % |
-| **Total** | 356 | 3223 KiB | 121 | 115 | 27 | 23 | 70 | 25 % | 50 % | 5 % |
+| `styk-render` | 51 | 72 KiB | 4 | 2 | 2 | 0 | 43 | 27 % | 35 % | 0 % |
+| **Total** | 356 | 3011 KiB | 106 | 108 | 25 | 23 | 94 | 27 % | 49 % | 5 % |
 
 ## Engine modules
 
@@ -47,9 +47,9 @@ Engine logic: ported to Rust.
 | `src/drawing-png.mjs` | `styk-drawing` | ported | PNG data URL helpers and the encoder document fixtures use; styk-drawing encodes and decodes tiles |
 | `src/drawing-preparation.mjs` | `styk-drawing` | partial | Rust: tile preparation (styk-drawing); its orchestration still JS |
 | `src/drawing-preview-cache.mjs` | `styk-drawing` | js |  |
-| `src/drawing-provider.mjs` | `styk-drawing` | js |  |
+| `src/drawing-provider.mjs` | `styk-drawing` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/drawing-raster.mjs` | `styk-drawing` | partial | Rust: reduced levels for previews (styk-drawing); presenters still JS |
-| `src/drawing-render-dependencies.mjs` | `styk-drawing` | js |  |
+| `src/drawing-render-dependencies.mjs` | `styk-drawing` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/drawing-resources.mjs` | `styk-drawing` | js |  |
 | `src/drawing-selection.mjs` | `styk-drawing` | partial | Rust: the selection matrix and moving selected pixels (styk-drawing); selection state still JS |
 | `src/drawing-smoother.mjs` | `styk-drawing` | removed | deleted: stroke smoothing runs in styk-drawing |
@@ -162,14 +162,14 @@ Engine logic: ported to Rust.
 | `src/playback-metrics.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-patch.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-planning.mjs` | `styk-engine::playback` | removed | deleted: the layer-move and in-between planning jobs run on the engine's workers (styk-engine planning), the interface fallback in src/engine/engine-planning.mjs |
-| `src/playback-raster-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
-| `src/playback-resources.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
+| `src/playback-raster-cache.mjs` | `styk-engine::playback` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
+| `src/playback-resources.mjs` | `styk-engine::playback` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/playback-retention.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-software-painter.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-software-size.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-tween-cache.mjs` | `styk-engine::playback` | removed | deleted: only the JavaScript motion-path sampling used it (1243 bytes) |
 | `src/playback-upload.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
-| `src/playback-vector-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
+| `src/playback-vector-cache.mjs` | `styk-engine::playback` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/playback-window.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-worker.mjs` | `styk-engine::playback` | removed | deleted: the engine prepares frames on its worker threads (styk-engine frames) |
 | `src/playback.mjs` | `styk-engine::playback` | removed | deleted: the engine prepares playback on its worker threads and the app reads its tickets (src/engine/engine-playback.mjs) |
@@ -198,7 +198,7 @@ Engine logic: ported to Rust.
 | `src/pivot/geometry-order.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry-pose.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry.mjs` | `styk-eval` | partial | Rust: the interface's frame, geometry and timeline from the session (styk-edit/src/interface.rs, styk_eval::geometry::build_shapes; the editor reads them, src/engine/engine-shown.mjs); evaluated records/world geometry, distinct native held shown/raw fractional views, prepared native handle/body/snap queries and per-clip/aggregate-lineage scene cache limits; app actual-shown query preparation and Canvas paths still JS; B8 ordinary shape queries omit unused render output through the same geometry owner; rich/ancestor numeric and full-output controls pass, additive platform-neutral build_only_for_shape API; full figures cost and default gate remain pending; B9 selected-joint query retains ancestors and full complex/joined/pinned/ambiguous/nonfinite fallbacks; coherent raw/typed pair reuses unchanged IK table; verified392Rust/36CLI1668/70JS/check, shippingb9cf70669501/10,240,701B; additive portable build_joint_for_shape and edit_frame_reusing_ik APIs; full figures cost/checkpoint/default gate still pending; B11 eligible ordinary selected-joint query skips unused join-order construction, original warnings/publication/fallbacks exact; verified394Rust/15CLI576/82JS/check, shipping15cbbdc513ea/10,241,300B; no API/math/schema change or measured B11 gain; B10 full cost all FAIL, figures gate stays closed; B12 no-frame-pins selected-joint query narrows joined selected segments while retaining full parents/topology/warnings/publication; verified396Rust/16CLI591/82JS/check, shippingb65ff69acb49/10,241,354B; existing portable query semantic scope extended, signatures/math/schema unchanged; accepted full joined36 instrumented B11 diagnostic305.950/280.750ms (not gate/gain); fresh full figures cost/checkpoint/default adoption next; B14 bounded ordinary same-Shape/nonpose-node conversion reuses existing typed fields, preserving changed pose conversion, metadata and rich/diagnostic fallbacks; verified405Rust/28CLI942/40guards/fivecontrols/82JS/check, shipping10b6b47a17ed/10,243,996B; existing portable Loader signatures/types/math/schema unchanged; completed B13 full cost FAIL/FAIL/PASS, fresh figures cost/checkpoint/default adoption next |
-| `src/pivot/raster-clip.mjs` | `styk-eval` | js | evaluation and world geometry |
+| `src/pivot/raster-clip.mjs` | `styk-eval` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/pose-snapshot.mjs` | `styk-eval` | partial | Rust: snapshotPoseFrame, poseObjectSignature (styk-eval records, styk-edit); snapshotPoseObject still JS |
 | `src/structural-equality.mjs` | `styk-eval` | js |  |
 | `src/camera-bake-authored.mjs` | `styk-eval::camera` | js |  |
@@ -254,14 +254,14 @@ Engine logic: ported to Rust.
 | `src/vfx-user-presets.mjs` | `styk-eval::vfx` | partial | Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS |
 | `src/vfx.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS; B13 coherent edit-frame conversion reuses unchanged warning-free effect tables, retaining original diagnostics and identity/lineage fallbacks; verified400Rust/27CLI925/82JS/check; existing portable Loader API, stored fields/math/schema unchanged; fresh figures cost/checkpoint/default gate pending |
 | `src/vfx-generator-anchors.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/vfx-generator-frame.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-frame.mjs` | `styk-eval::vfx::generated` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generators.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/renderer-geometry.mjs` | `styk-eval::view` | partial | the interface's view math only: cameraMatrix, worldToScreen, screenToWorld and objectBounds. Rust: styk_eval::view (camera_matrix, orientation) and drawlist::artwork_bounds; the editing cut replaces picking and bounds with engine queries |
 | `src/export-canvas.mjs` | `styk-export` | js | frame hand-over of the engine's export worker |
 | `src/export-crisp.mjs` | `styk-export` | removed | removed with the JavaScript export worker; No smoothing is drawn by the engine (Edges::Crisp, styk-export) |
-| `src/export-frame-core.mjs` | `styk-export` | partial | Rust: frames of every export (styk-export, src/engine/engine-export.mjs); this module still draws for the JavaScript renderer's callers (vfx-camera) and goes with them |
+| `src/export-frame-core.mjs` | `styk-export` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/export-frame-renderer.mjs` | `styk-export` | removed | removed; src/engine/engine-export.mjs owns the request, progress, revision, timeout and retry logic of an export and the output canvas |
 | `src/export-frame-worker.mjs` | `styk-export` | removed | removed; the engine's export worker (src/engine/engine-export-worker.mjs) draws every export, and writes SVG with styk-export svg |
 | `src/export-memory.mjs` | `styk-export` | partial | Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); the interface keeps the allowance and tile plan it validates a request with |
@@ -332,7 +332,7 @@ Engine logic: ported to Rust.
 | `src/sticknodes/decoder/renderer.mjs` | `styk-formats::sticknodes` | js |  |
 | `src/sticknodes/geometry.mjs` | `styk-formats::sticknodes` | partial | Rust: curved segments, shaped drawables, sprites (sticknodesSpriteAsset, sticknodes.rs); import still JS |
 | `src/sticknodes/validation.mjs` | `styk-formats::sticknodes` | js |  |
-| `src/canvas-artwork-pick.mjs` | `styk-render` | js |  |
+| `src/canvas-artwork-pick.mjs` | `styk-render` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/canvas-color-sample.mjs` | `styk-render` | js |  |
 | `src/canvas-raster-refinement.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/editable-scene-preparation.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
@@ -340,12 +340,12 @@ Engine logic: ported to Rust.
 | `src/gpu-startup.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/gpu-timing.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/onion-surface-cache.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
-| `src/parallax-draw.mjs` | `styk-render` | js |  |
+| `src/parallax-draw.mjs` | `styk-render` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/prepared-frames.mjs` | `styk-render` | removed | deleted: the engine uploads and draws its own prepared frames (styk-render) |
-| `src/raster-surfaces.mjs` | `styk-render` | js |  |
+| `src/raster-surfaces.mjs` | `styk-render` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/raster-view.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/render-artwork.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
-| `src/renderer-camera-scene.mjs` | `styk-render` | js |  |
+| `src/renderer-camera-scene.mjs` | `styk-render` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/renderer-canvas-plan.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/renderer-glyphs.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/renderer-handles.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
@@ -353,7 +353,7 @@ Engine logic: ported to Rust.
 | `src/renderer-onion-composite.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/renderer-opacity.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/renderer-preview-drawing-resources.mjs` | `styk-render` | removed | deleted with the drawing composite worker, its only caller: the engine draws every frame |
-| `src/renderer-preview-drawings.mjs` | `styk-render` | js |  |
+| `src/renderer-preview-drawings.mjs` | `styk-render` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/renderer-raster-cache.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/renderer-raster-capture.mjs` | `styk-render` | removed | deleted with the drawing composite worker, its only caller: the engine draws every frame |
 | `src/renderer-upload.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
@@ -361,12 +361,12 @@ Engine logic: ported to Rust.
 | `src/renderer-vfx-vector.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/renderer.mjs` | `styk-render` | removed | deleted: the engine stage draws every frame of the editing canvas (src/engine/engine-stage.mjs, styk-wasm Stage) |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
-| `src/scene-preparation.mjs` | `styk-render` | js | the images a frame and its backgrounds name (frameImageDrawables, backgroundImageAssets); the camera monitor still reads them |
-| `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
+| `src/scene-preparation.mjs` | `styk-render` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
+| `src/surface-raster.mjs` | `styk-render` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/drawing-gpu.mjs` | `styk-render::drawing` | removed | deleted: strokes rasterize in styk-drawing and the stage draws them as live cels (src/engine/engine-live-cels.mjs) |
 | `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-atlas.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/vfx-generator-canvas.mjs` | `styk-render::generators` | partial | Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it |
+| `src/vfx-generator-canvas.mjs` | `styk-render::generators` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/vfx-generator-gpu.mjs` | `styk-render::generators` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/content-hash.mjs` | `styk-render::images` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/image-resources.mjs` | `styk-render::images` | partial | image decoding and variants. Rust: decoding and atlas upload for supported documents |
@@ -374,15 +374,15 @@ Engine logic: ported to Rust.
 | `src/preview-image.mjs` | `styk-render::images` | js | image decoding and variants |
 | `src/preview-images.mjs` | `styk-render::images` | js | image decoding and variants |
 | `src/vfx-camera-gpu.mjs` | `styk-render::vfx` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
-| `src/vfx-camera.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
-| `src/vfx-canvas.mjs` | `styk-render::vfx` | partial | Rust: ordinary solid-background camera-monitor filtered-source execution/consumption and CPU/GPU result presentation through the existing worker, CanvasForeground and completed root-source receipt; SceneFX, tiled fallbacks, unadmitted sources and broader Canvas surface/cache lifetimes remain JS |
-| `src/vfx-cpu.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
-| `src/vfx-gpu.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: effect layers planned per view and filtered on the GPU (effects/plan.rs); still used by the JavaScript renderer |
-| `src/vfx-scene.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: scene stack over the camera image (effects); Canvas 2D path still JS |
-| `src/vfx-shaders.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: the filter shaders (effects/passes.wgsl); generated effects still JS |
-| `src/vfx-surface.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
+| `src/vfx-camera.mjs` | `styk-render::vfx` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
+| `src/vfx-canvas.mjs` | `styk-render::vfx` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
+| `src/vfx-cpu.mjs` | `styk-render::vfx` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
+| `src/vfx-gpu.mjs` | `styk-render::vfx` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
+| `src/vfx-scene.mjs` | `styk-render::vfx` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
+| `src/vfx-shaders.mjs` | `styk-render::vfx` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
+| `src/vfx-surface.mjs` | `styk-render::vfx` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/vfx-viewport.mjs` | `styk-render::vfx` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
-| `src/vfx-webgpu.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: every filter pass (styk-render effects/executor.rs, passes.wgsl) on WebGPU, native and WebGL2; still the oracle and the renderer of gated documents |
+| `src/vfx-webgpu.mjs` | `styk-render::vfx` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 
 ## Platform services
 
@@ -525,6 +525,7 @@ Interface: stays in JS.
 | `src/onion-range.mjs` |  | stays | the range the controls show and the counts the onion request carries (the plan is styk-edit onion_skins.rs) |
 | `src/onion-timeline-range.mjs` |  | stays |  |
 | `src/pen-input.mjs` |  | stays |  |
+| `src/pivot/read-view.mjs` |  | stays | What the interface reads of stored data without evaluating it: colours, the static flag, the shortest turn, the timeline index. |
 | `src/project-tabs-host.mjs` |  | stays |  |
 | `src/property-controls.mjs` |  | stays |  |
 | `src/property-toggle.mjs` |  | stays |  |

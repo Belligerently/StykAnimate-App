@@ -88,7 +88,7 @@ const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEve
 /** The editor's reads the session answers where it holds the document (`Editor::interface_query`): the values the interface
  * shows of the frame on show, from the engine's own evaluation. The editor answers them itself (from the frame and geometry
  * the engine gave it) while it runs a call of its own, and for a document the session does not answer for. */
-const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings'];
+const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings', 'getSpatialPose', 'getSpatialMotion', 'sampleVfxClip'];
 /** What the session's error says when it does not answer for a document (`styk_edit::session::UNPORTED`). */
 const UNPORTED = 'unported: ';
 

@@ -434,6 +434,15 @@ by the engine (an edit frame whose trails are still being sampled asks the app f
 another frame, `Stage::refining`); so are 3D meshes, surfaces, poses and drawings a
 spatial bone turns.
 
+### Picking artwork
+
+A click on artwork (`pick` in `src/app.mjs`) asks the stage which figure the frame it drew last paints at the point
+(`Stage::pick_artwork`, `styk_export::pick`): the figures are taken from the top of the draw order down, those hidden or
+locked left out, and each whose measured bounds reach the point (a movieclip's contents always) is drawn alone, without the
+background or effects, into a three-pixel surface centred on the point at the view's scale by the CPU rasterizer. The first
+whose centre pixel has any coverage is the answer, `{slot, uid}`. A click hits what is painted: fills, curves, pictures,
+meshes, movieclip contents and transparency. The pictures it samples stay decoded between clicks within the rasterizer's budget.
+
 ### Every document
 
 The engine draws every document the editor holds: no document keeps the JavaScript

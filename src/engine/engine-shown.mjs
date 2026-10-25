@@ -196,6 +196,24 @@ export function createShown(owner) {
       held[+motion] = {read: answer.token, geometry};
       return geometry;
     },
+    /**
+     * The geometry of `frame` as a drawing's first stroke previews it: the frame on show with the new cel's figure (`figure`, on layer
+     * `layerId`) and its object added, which the document does not hold yet. Read once, whole; `null` where the engine does not answer.
+     */
+    previewGeometry(frame, figure, layerId, uid) {
+      const answer = read('previewGeometry', {frame, figure, uid, layerId});
+      if (!answer) return null;
+      const report = owner.report(), defs = new Map(definitions(report));
+      defs.set(Number(figure.figure_type_id), figure);
+      const objects = new Map();
+      for (const [slot, raw] of answer.slots) objects.set(slot, raw && hydrate(raw, slot, frame, report, defs));
+      const order = frame.object_draw_order ?? Array.from({length: answer.count}, (_, slot) => slot);
+      const orderedObjects = [];
+      for (const slot of order) { const group = objects.get(Number(slot)); if (group?.drawn) orderedObjects.push(group); }
+      let flat;
+      return {objects, orderedObjects, token: {}, previousToken: undefined, changedSlots: null,
+        get drawables() { return flat ??= orderedObjects.flatMap(group => group.drawables); }, warnings: answer.warnings};
+    },
     /** What the stage draws from: the session and the view it is at, or `null`. */
     source: motion => owner.source(motion),
     /**

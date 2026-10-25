@@ -6,7 +6,6 @@ import {buildGeometry,evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
 import {projection,projectSpatial,unprojectSpatial,projectSpatialFace,validateSpatialPose,interpolateSpatialPose} from '../src/spatial-projection.mjs';
 import {spatialPoint} from '../src/rig-spatial.mjs';
-import {depthSurface} from '../src/surface-raster.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {spatialControlsView} from '../src/spatial-controls.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
@@ -83,7 +82,6 @@ test('near-plane clipping retains finite convex depth polygons and removes hidde
  const o={scale:1,_stykSpatial:{camera:{strength:1,distance:100}}},c=projection(o,{x:0,y:0});
  const face=raw=>projectSpatialFace(raw.map(p=>projectSpatial(p,c)),c);
  const quad=face([[-10,0,0],[10,0,0],[0,10,110]]);assert.equal(quad.points.length,4);assert.ok(quad.points.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.rawPoint[2]<=95));assert.equal(quad.depthValues.length,4);
- assert.ok(depthSurface({type:'poly',poly:{_stykSurface:{depthTest:true}},alpha:1,...quad}));
  assert.equal(face([[0,0,110],[10,0,120],[0,10,130]]).points.length,0);
  const p=face([[0,0,0],[20,0,50],[0,20,0]]);near(p.depthValues[1],100);
 });

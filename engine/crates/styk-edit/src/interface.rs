@@ -11,6 +11,7 @@
 use std::sync::Arc;
 
 use styk_doc::Value;
+use styk_eval::eval::Prepared;
 
 use crate::frame::objects_of;
 use crate::{EditError, Editor};
@@ -73,6 +74,14 @@ impl Editor {
             "drawingRefs" => Ok(Some(self.drawing_refs())),
             // A clipboard the session holds, as the interface hands it to another session (`@setClipboard`).
             "clipboard" => Ok(arg(0).and_then(|kind| kind.as_str().and_then(|kind| self.clipboard_wire(kind)))),
+            // The reads of the 3D rig inspector and the effect clips' sampling (the interface never evaluates them itself).
+            "getSpatialPose" => self.interface_spatial(arg(0), false),
+            "getSpatialMotion" => self.interface_spatial(arg(0), true),
+            "sampleVfxClip" => (|| {
+                let id = arg(0).ok_or_else(|| EditError::Invalid("errors.editorVfxClips.selectAnEffectClip".into()))?;
+                let tick = arg(1).and_then(|tick| tick.as_f64()).unwrap_or(self.tick);
+                self.sample_vfx_clip(&id, tick).map(Some)
+            })(),
             "animationValue" | "vfxEffects" | "segmentAnimationTarget" if !self.sheet() => {
                 Err(EditError::Unported("property values of a document without a layer sheet".into()))
             }
@@ -90,6 +99,35 @@ impl Editor {
             }
             _ => return None,
         })
+    }
+
+    /// `getSpatialPose(index)` (or `getSpatialMotion(index)` with `motion`) of the selected figure's bone at `index` (by default the
+    /// selected joint): `{bend, turn, pitch}`, or the travel of a mechanical joint, `null` where there is no such bone.
+    fn interface_spatial(&self, index: Option<Value>, motion: bool) -> Result<Option<Value>, EditError> {
+        let Some(context) = self.spatial_context()? else { return Ok(Some(Value::Null)) };
+        let index = match index.and_then(|index| index.as_f64()) {
+            Some(index) if index >= 0.0 && index.fract() == 0.0 => index as usize,
+            Some(_) => return Ok(Some(Value::Null)),
+            None if self.selection.joint >= 0 => self.selection.joint as usize,
+            None => return Ok(Some(Value::Null)),
+        };
+        let mut out = styk_doc::Obj::new();
+        if motion {
+            let Some(state) = Self::spatial_motion(&context, index) else { return Ok(Some(Value::Null)) };
+            out.set("type", Value::str(if state.hinge { "hinge" } else { "slide" }));
+            out.set("min", Value::Num(state.min));
+            out.set("max", Value::Num(state.max));
+            out.set("value", Value::Num(state.value));
+            out.set("applied", Value::Num(state.applied));
+            out.set("driver", Value::Num(state.driver));
+            out.set("fraction", Value::Num(if state.max > state.min { (state.value - state.min) / (state.max - state.min) } else { 0.0 }));
+        } else {
+            let Some(pose) = Self::spatial_pose(&context, index) else { return Ok(Some(Value::Null)) };
+            out.set("bend", Value::Num(pose.bend));
+            out.set("turn", Value::Num(pose.turn));
+            out.set("pitch", Value::Num(pose.pitch));
+        }
+        Ok(Some(Value::object(out)))
     }
 
     /// `editor.timeline` as `[[start, count], …]`, one pair per row.
@@ -180,19 +218,62 @@ impl Editor {
         cache.token += 1;
         cache.definitions = definitions;
         cache.objects = objects;
-        let mut out = Vec::with_capacity(64 + groups.0.iter().map(|group| group.len() + 8).sum::<usize>());
-        out.extend_from_slice(format!("{{\"token\":{},\"full\":{},\"count\":{},\"slots\":[", cache.token, full, count).as_bytes());
-        for (n, (slot, group)) in slots.iter().zip(&groups.0).enumerate() {
-            if n > 0 {
-                out.push(b',');
-            }
-            out.extend_from_slice(format!("[{slot},").as_bytes());
-            out.extend_from_slice(group.as_bytes());
-            out.push(b']');
-        }
-        out.extend_from_slice(b"],\"warnings\":");
-        styk_doc::json::write(&Value::array(groups.1.iter().map(|warning| Value::str(warning)).collect()), &mut out);
-        out.push(b'}');
-        String::from_utf8(out).map_err(|error| EditError::Invalid(error.to_string()))
+        geometry_text(cache.token, full, count, &slots, &groups)
     }
+
+    /// The geometry of a frame that is not the document's: `frame` (the frame on show with a drawing cel the document does not hold yet
+    /// added to it) seen against the document with `figure` among its figure types and its object on the layer `layerId`
+    /// (`{frame, figure, uid, layerId}`), as a full geometry read of it.
+    pub(crate) fn interface_preview_geometry(&self, args: &Value) -> Result<String, EditError> {
+        let invalid = |what: &str| EditError::Invalid(format!("the geometry preview needs {what}"));
+        let record = args.get("frame").filter(|frame| frame.is_object()).ok_or_else(|| invalid("a frame"))?;
+        let figure = args.get("figure").filter(|figure| figure.is_object()).ok_or_else(|| invalid("a figure"))?;
+        let uid = args.get("uid").and_then(Value::as_f64).ok_or_else(|| invalid("the figure's identity"))?;
+        let layer = args.get("layerId").and_then(Value::as_str).ok_or_else(|| invalid("a layer"))?;
+        let mut report = self.report.clone();
+        {
+            let root = report.make_obj().ok_or_else(|| invalid("a document"))?;
+            let mut figures = root.get("figure_types").and_then(Value::elements).map(|figures| figures.iter().collect::<Vec<_>>()).unwrap_or_default();
+            figures.push(figure.clone());
+            root.set("figure_types", Value::array(figures));
+            let mut styk = root.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+            let mut layers = styk.get("layers").and_then(Value::as_obj).cloned().unwrap_or_default();
+            let mut assignments = layers.get("assignments").and_then(Value::as_obj).cloned().unwrap_or_default();
+            assignments.set(&(uid as u64).to_string(), Value::str(layer));
+            layers.set("assignments", Value::object(assignments));
+            styk.set("layers", Value::object(layers));
+            root.set("_styk", Value::object(styk));
+        }
+        let mut loader = self.eval.borrow().loader.clone();
+        let document = loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
+        let prepared = Prepared::new(Arc::new(document));
+        if let Some(feature) = prepared.doc.unsupported.first() {
+            return Err(EditError::Unported(format!("geometry with {feature}")));
+        }
+        let frame = loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
+        let count = frame.objects.len();
+        let scene = styk_eval::geometry::build_shapes(&prepared.doc, &frame, None);
+        let bounds = styk_eval::drawlist::app_bounds(&scene, prepared.doc.as_ref());
+        let slots: Vec<usize> = (0..count).collect();
+        let groups = (styk_eval::geometry::write_groups(&scene, &slots, &bounds), scene.warnings);
+        geometry_text(0, true, count, &slots, &groups)
+    }
+}
+
+/// A geometry read as the interface takes it (`{token, full, count, slots: [[slot, group|null], …], warnings}`).
+fn geometry_text(token: u64, full: bool, count: usize, slots: &[usize], groups: &(Vec<String>, Vec<String>)) -> Result<String, EditError> {
+    let mut out = Vec::with_capacity(64 + groups.0.iter().map(|group| group.len() + 8).sum::<usize>());
+    out.extend_from_slice(format!("{{\"token\":{token},\"full\":{full},\"count\":{count},\"slots\":[").as_bytes());
+    for (n, (slot, group)) in slots.iter().zip(&groups.0).enumerate() {
+        if n > 0 {
+            out.push(b',');
+        }
+        out.extend_from_slice(format!("[{slot},").as_bytes());
+        out.extend_from_slice(group.as_bytes());
+        out.push(b']');
+    }
+    out.extend_from_slice(b"],\"warnings\":");
+    styk_doc::json::write(&Value::array(groups.1.iter().map(|warning| Value::str(warning)).collect()), &mut out);
+    out.push(b'}');
+    String::from_utf8(out).map_err(|error| EditError::Invalid(error.to_string()))
 }

@@ -119,12 +119,9 @@ the stage's device or the preview worker draws them from the document the engine
 small document the interface builds for one picture, and no document copy goes to a thumbnail worker.
 
 Image-only preview workers use `image-resources.mjs` for encoded sources, crop
-selection, decoded variants, byte accounting and disposal. Playback extends
-that same image owner with drawing tiles and vector/raster caches in
-`playback-resources.mjs`; image decoding does not import the geometry evaluator
-or create rendering caches. Diagnostics retain one completed image job, not a
-history of requests. `tests/image-resources.browser.mjs` verifies decoding with
-the geometry module unavailable, exact pixels, reuse, cancellation and residency.
+selection, decoded variants, byte accounting and disposal; image decoding does not
+import the geometry evaluator or create rendering caches. Diagnostics retain one
+completed image job, not a history of requests.
 
 The existing eight-request bound and filmstrip bitmap cache remain the owners of
 queued thumbnails and displayed previews.
