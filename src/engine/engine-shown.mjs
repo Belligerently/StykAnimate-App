@@ -31,12 +31,12 @@ const rawAt = (triples, index) => triples && triples[3 * index] !== null ? [trip
 const real = value => value ?? NaN;
 
 const definitionsOf = new WeakMap();
-/** The figure definitions of a report by type id. */
+/** The figure definitions of a report by type id (a call the editor runs adds a definition to the table in place). */
 function definitions(report) {
   const figures = report.figure_types ?? [];
   let known = definitionsOf.get(figures);
-  if (!known) { known = new Map(figures.map(figure => [Number(figure.figure_type_id), figure])); definitionsOf.set(figures, known); }
-  return known;
+  if (!known || known.count !== figures.length) { known = {count: figures.length, map: new Map(figures.map(figure => [Number(figure.figure_type_id), figure]))}; definitionsOf.set(figures, known); }
+  return known.map;
 }
 
 /** The image or text asset a segment draws (`segmentAt` in the editor's geometry). */
@@ -116,7 +116,9 @@ function hydrate(raw, slot, frame, report, defs) {
   const polys = raw.polys.map(shape => {
     const poly = {type: 'poly', poly: fig.polyfills[shape.index], obj, fig, slot, index: shape.index, points: pointList(shape.points),
       z: shape.z, rgb: shape.rgb, alpha: shape.alpha, opacity: shape.opacity};
+    // A one-sided face says whether it looks away (`culled: false` when it does not), as the editor's own geometry does.
     if (shape.culled) poly.culled = true;
+    else if (poly.poly?._stykSurface) poly.culled = false;
     if (shape.depthValues) poly.depthValues = shape.depthValues;
     return poly;
   });
