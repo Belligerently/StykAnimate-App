@@ -6,14 +6,14 @@ import {isDeepStrictEqual} from 'node:util';
 import {Editor} from '../../src/editor.mjs';
 import {registeredEngine} from '../../src/engine/engine-open.mjs';
 import {makeExportDocument} from '../../src/engine/engine-document-export.mjs';
-import {installEngineOwner} from '../../src/engine/engine-owner.mjs';
+import {installEngineOwner, ownerOf} from '../../src/engine/engine-owner.mjs';
 
 const owners = new Set();
 afterEach(() => { for (const owner of owners) owner.release(); owners.clear(); });
 
 /** The editor the engine holds `source` in: `source` itself when it is an editor the engine owns (its session started, its changes published). */
 function held(source) {
-  if (source instanceof Editor && source._shown) { source._shown.active; return source; }
+  if (source instanceof Editor && source._shown) { ownerOf(source).activate(); return source; }
   if (source instanceof Editor) source = source.serialize();
   const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: Boolean(source._styk?.layerSheet)});
   editor.load(structuredClone(source));
@@ -57,14 +57,4 @@ function stored(frame) {
 export function keepsStoredFrames(source, request) {
   const document = source instanceof Editor ? source.report : source;
   return isDeepStrictEqual(pivotDocument(source, request).keyframes, document.keyframes.map(stored));
-}
-
-/**
- * For the tests of the editor's own bodies (tests/support/plain-editor.mjs): an editor the engine does not own reads the figure
- * document the builder and the library save as the app does, from the engine, which opens a copy of the editor's document.
- * Everything else the editor asks of the engine it answers for itself.
- */
-export function readsFiguresFromEngine(editor) {
-  editor._shown = new Proxy({}, {get: (_, name) => name === 'figureDocument' ? request => figureDocument(editor.serialize(), request) : () => null});
-  return editor;
 }

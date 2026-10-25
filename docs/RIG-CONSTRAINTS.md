@@ -602,8 +602,8 @@ for 5,000 and 44.57 ms for 20,000. The six example rigs measured 0.11–0.84 ms
 median (0.22–1.68 ms p95). These are geometry timings, not end-to-end frame rates.
 20,000 constrained segments exceed a 60 FPS synchronous editing budget; prepared
 playback retains the existing worker and bounded-cache path. GC heap differences
-are reported as diagnostics, not a proof of leak absence. Reproduce with
-`node --expose-gc scripts/benchmark-rig-constraints.mjs`.
+are reported as diagnostics, not a proof of leak absence. (The script that measured them,
+`scripts/benchmark-rig-constraints.mjs`, went with the JavaScript geometry evaluation it timed.)
 
 ## Reference behavior
 

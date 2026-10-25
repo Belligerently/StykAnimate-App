@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
-import {Editor} from '../src/editor.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 
 import {spatialPoint,quatRotate,quatMultiply} from '../src/rig-spatial.mjs';
@@ -47,7 +46,7 @@ test('a pinned foot can still be rotated directly; unpinning and repinning do no
  const{e,lower,foot}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});e.select(1,-1);e.moveSelection(0,20);
  e.select(1,foot-1);const p=e.getSpatialPose();e.setSpatialPose({pitch:p.pitch+.6,turn:p.turn+.7});near(e.getSpatialPose().pitch,p.pitch+.6,1e-6);near(e.getSpatialPose().turn,p.turn+.7,1e-6);
  const before=state(e,foot);e.select(1,lower-1);e.setNodeIK({pinned:false});sameOrientation(state(e,foot).q,before.q);e.setNodeIK({pinned:true});sameOrientation(state(e,foot).q,before.q);
- const copy=new Editor({demo:false});copy.load(e.serialize());copy.select(1,lower-1);sameOrientation(state(copy,foot).q,before.q);
+ const copy=ownedEditorFor({demo:false},e.serialize());copy.select(1,lower-1);sameOrientation(state(copy,foot).q,before.q);
 });
 test('knee swivel changes the bend plane while keeping foot position and orientation',()=>{
  const{e,lower,upper,foot}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});e.poseJoint(215,245);
@@ -131,7 +130,7 @@ test('whole-figure orientation rigidly carries planted ankles, poles and boots w
    assert.equal(e.object._stykIK[lower].pinned,true);validateIK(e.object);
   }
   e.cancelDrag();assert.deepEqual(e.serialize(),saved);
-  e.setSpatialPose({turn:.8},{wholeFigure:true});const reopened=new Editor({demo:false});reopened.load(e.serialize());sameOrientation(state(reopened,foot).q,state(e,foot).q);
+  e.setSpatialPose({turn:.8},{wholeFigure:true});const reopened=ownedEditorFor({demo:false},e.serialize());sameOrientation(state(reopened,foot).q,state(e,foot).q);
   e.undo();assert.deepEqual(e.serialize(),saved);
  }
 });

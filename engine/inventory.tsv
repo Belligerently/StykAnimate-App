@@ -114,7 +114,7 @@ src/camera-motion-graph.mjs	ui	-	stays
 src/camera-motion-localization.mjs	ui	-	stays	
 src/camera-motion-timeline.mjs	ui	-	stays	
 src/camera-motion-ui.mjs	ui	-	stays	
-src/camera-motion.mjs	engine	styk-eval::camera	partial	Rust: presets, cameraTravelAt, cameraAtTime incl. edit frames and follow clips; creation and validation still JS
+src/camera-motion.mjs	engine	styk-eval::camera	partial	Rust: presets, travel and the shot incl. edit frames and follow clips (styk_eval::camera, follow; the interface reads the shot); creation and validation still JS
 src/camera-overlay.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
 src/canvas-artwork-pick.mjs	engine	styk-render	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/canvas-color-sample.mjs	engine	styk-render	js	
@@ -197,7 +197,7 @@ src/drawing-worker-operations.mjs	engine	styk-drawing	removed	deleted: the pixel
 src/drawing-worker-preview.mjs	engine	styk-drawing	removed	deleted: the preview is a pixel-worker operation of styk-drawing (src/engine/engine-drawing-worker.mjs)
 src/drawing-worker.mjs	engine	styk-drawing	partial	Rust: the pixel worker hands its operations to styk-drawing; the worker shell is JS
 src/editable-scene-preparation.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
-src/editor-animation.mjs	engine	styk-edit	partial	Rust: every edit of the authored animation, the camera motion and the motion path, and the reads the session answers (animationValue, segmentAnimationTarget); the editor keeps the channel reads, the camera-motion clips, the motion-path gesture state the owner mirrors and the native channel projection (nativePropertyChannel, nativePoseChannel) that the branch and builder order previews of native-property-edit.mjs still build on
+src/editor-animation.mjs	engine	styk-edit	partial	Rust: every edit of the authored animation, the camera motion and the motion path, and the reads the session answers (animationValue, segmentAnimationTarget); the editor keeps the channel reads, the camera-motion clips and the motion-path gesture state the owner mirrors
 src/editor-audio.mjs	engine	styk-edit	removed	Deleted with the editor command bodies: the session (styk-edit/src/audio.rs) is the only implementation
 src/editor-authored-pose.mjs	engine	styk-edit	removed	deleted: the pose gestures and whole-frame transactions are commands of the engine session (styk-edit authored.rs) (10860 bytes)
 src/editor-branch-style.mjs	engine	styk-edit	partial	Rust: the animation edit of several targets (beginAnimationEdit([targets], property): styk-edit/src/property_edit.rs) and the branch style commands (styk-edit/src/builder.rs). Left in JavaScript: branchOpacityPlan, the interface's choice of the targets of a branch edit; the JavaScript edit (begin, preview, commit and cancel of the branch keys) is deleted
@@ -221,7 +221,7 @@ src/editor-frame-draft.mjs	engine	styk-edit	js	the check of the working frame a 
 src/editor-frames.mjs	engine	styk-edit	js	the check of the frame identities a document stores, getFrameId, getFrameById and the identity assignment the native channel projection uses; frame edits are the engine session's
 src/editor-handle-commands.mjs	engine	styk-edit	partial	Rust: the segment-value clipboard and the handle commands (styk-edit/src/handle_commands.rs). Left in JavaScript: the segmentValues read and the dialog's parseSegmentValues and formatSegmentValues
 src/editor-handle-edit.mjs	engine	styk-edit	removed	deleted: Handle Edit Mode is a session command (styk-edit/src/handle_edit.rs)
-src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget and the IK settings, also across joined figures (styk-edit/src/ik.rs, ik_settings.rs). Left in JavaScript: getIKSettings (the owner installs the session's read over it) and the helpers the pose bodies of editor.mjs and the motion-path editor still call
+src/editor-ik.mjs	engine	styk-edit	removed	deleted: getIKSettings is a read the session answers (styk-edit/src/ik_settings.rs); the editor holds no body of it
 src/editor-inbetween-async.mjs	engine	styk-edit	removed	deleted with the Insert Inbetween dialog, which nothing opened any more: the asynchronous insertion and its planner on the engine's workers (10327 bytes)
 src/editor-inbetween.mjs	engine	styk-edit	removed	deleted with the Insert Inbetween dialog, which nothing opened any more: the planner and insertInbetweenFrames; the in-between preview samples went with it (16274 bytes)
 src/editor-layer-async.mjs	engine	styk-edit	removed	deleted: the awaitable layer commands moved to src/editor-layers.mjs (893 bytes)
@@ -243,13 +243,13 @@ src/editor-scene.mjs	engine	styk-edit	removed	deleted: Scene edits are the engin
 src/editor-selection.mjs	engine	styk-edit	partial	Rust: selection order and metadata, branch copy, order and alignment commands (styk-edit). Left in JavaScript: the view calls (select, toggle, marquee, branch) and two stored reads (canDisconnectSegment, figurePalette)
 src/editor-sessions.mjs	engine	styk-edit	js	commands and history
 src/editor-spatial-shape.mjs	engine	styk-edit	removed	deleted: setSpatialCamera and setSpatialProportions are session commands (styk-edit/src/spatial_shape.rs); the two reads moved to editor-spatial.mjs
-src/editor-spatial.mjs	engine	styk-edit	partial	Rust: every spatial command (styk-edit/src/spatial.rs, spatial_ik.rs, spatial_shape.rs, pose_choice.rs). Left in JavaScript: the reads getSpatialCamera, getSpatialProportions, getSpatialPose and getSpatialMotion, and the posing helpers poseJoint, bendJoint and rotateJoint of editor.mjs still call (poseSpatialJoint, twistSpatialJoint, poseSpatialIKDepth, setSpatialPose and what they use)
+src/editor-spatial.mjs	engine	styk-edit	partial	Rust: every spatial command (styk-edit/src/spatial.rs, spatial_ik.rs, spatial_shape.rs, pose_choice.rs) and the reads getSpatialPose and getSpatialMotion. Left in JavaScript: the stored-data reads getSpatialCamera and getSpatialProportions, and the posing helpers poseJoint, bendJoint and rotateJoint of editor.mjs still call (poseSpatialJoint, twistSpatialJoint, poseSpatialIKDepth, setSpatialPose and what they use)
 src/editor-sprite-segment.mjs	engine	styk-edit	removed	deleted: addSpriteSegment is a session command (styk-edit/src/topology/sprite.rs)
 src/editor-style-topology.mjs	engine	styk-edit	removed	Deleted with the editor command bodies: the session repairs styles as it edits topology (styk-edit/src/topology.rs)
 src/editor-tweener.mjs	engine	styk-edit	removed	deleted: beginTween and updateTween are the engine session's (styk-edit tweener.rs) (10194 bytes)
 src/editor-vfx-clips.mjs	engine	styk-edit	removed	Deleted with the editor command bodies: the reads moved to src/editor-vfx.mjs, the commands are the session's (styk-edit/src/vfx_clips.rs)
-src/editor-vfx.mjs	engine	styk-edit	verified	The effect and effect-clip commands are the session's (styk-edit/src/vfx.rs, vfx_clips.rs); the module keeps the reads the interface shows (the stack of a target, the clips, a clip's sample)
-src/editor.mjs	engine	styk-edit	verified	The app runs on the Rust owner (D19): every command is the session's and the editor holds no body of them. The module keeps the interface's read view of the document, its selection, playhead and layers, the document's load and publication, and `transaction` with its history record until the inspector bindings move to the session
+src/editor-vfx.mjs	engine	styk-edit	verified	The effect and effect-clip commands and the reads of an effect stack and a clip's sample are the session's (styk-edit/src/vfx.rs, vfx_clips.rs, interface.rs); the module keeps the clips a document stores
+src/editor.mjs	engine	styk-edit	verified	The app runs on the Rust owner (D19): every command is the session's and the editor holds no body of them or of an evaluation. The module keeps the interface's read view of the document, its selection, playhead and layers, the document's load and publication, the frame, geometry and timeline it reads from the session, and `transaction` with its history record until the inspector bindings move to the session
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine triangulates its fills
 src/export-canvas.mjs	engine	styk-export	js	frame hand-over of the engine's export worker
@@ -313,7 +313,7 @@ src/keyframe-easing-popover.mjs	ui	-	stays
 src/keyframe-easing-view.mjs	ui	-	stays	
 src/keyframe-easing.mjs	engine	styk-eval	partial	Rust: easing curves (linear, eased, bezier, constant, Auto); validation still JS
 src/layer-folders.mjs	engine	styk-eval	js	
-src/layer-parallax.mjs	engine	styk-eval::parallax	partial	Rust: parallaxResolver, per-slot offsets against camera travel (styk_eval::parallax); validation and translatedPlan still JS
+src/layer-parallax.mjs	engine	styk-eval::parallax	partial	Rust: per-slot offsets against camera travel (styk_eval::parallax); validation still JS
 src/layer-sheet.mjs	engine	styk-eval	partial	Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS
 src/layer-timeline.mjs	ui	-	stays	
 src/layers.mjs	engine	styk-eval	partial	Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS
@@ -334,14 +334,14 @@ src/motion-path-falloff.mjs	engine	styk-edit	ported	motion-path falloff planning
 src/motion-path.mjs	ui	-	stays	trails and the pose at a trail point are sampled by styk-edit trails.rs; targets, the held trails, projection, hit testing and drawing stay, and keyTicksForTarget for editor-motion-path.mjs
 src/movieclip-drawings-view.mjs	ui	-	stays	
 src/movieclip-drawings.mjs	engine	styk-eval::movieclips	partial	Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS
-src/movieclip-geometry.mjs	engine	styk-eval::movieclips	partial	Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS
-src/movieclip-materialize.mjs	engine	styk-eval::movieclips	partial	Rust: shared recorded materializer/source clocks and native/sheet Bake capture; portable effect remapping shared with topology/clipboard; figures with IK limbs (as solved), rigs, origins and 3D poses expand like the editor's; meshes (bake_mesh) and turning drawings expand in the session too
-src/movieclip-membership.mjs	engine	styk-eval::movieclips	partial	Rust: recorded native document/presence clocks, restart and source membership across frames with retained VFX clocks; remaining unrecorded combinations and app adoption pending
-src/movieclip-mesh-materialize.mjs	engine	styk-eval::movieclips	ported	Rust: bake_mesh (styk_eval::materialize): a 3D mesh clip as a figure of depth-tested fills, in the session's break apart and bake; still imported by the JavaScript materializer, which the editor runs only for a call the session refuses
-src/movieclip-mesh.mjs	engine	styk-eval::spatial	partial	Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS
-src/movieclip-presence.mjs	engine	styk-eval::movieclips	partial	Rust: presence clock and continuations; editing still JS
+src/movieclip-geometry.mjs	engine	styk-eval::movieclips	removed	deleted: a movieclip is its handle in the interface's groups; the stage draws what it holds (styk_eval::movieclips)
+src/movieclip-materialize.mjs	engine	styk-eval::movieclips	removed	deleted: only tests called it; the materialization is the engine's (styk_eval::materialize, the Pivot export)
+src/movieclip-membership.mjs	engine	styk-eval::movieclips	removed	deleted: the presence clocks are the engine's (styk_eval::records)
+src/movieclip-mesh-materialize.mjs	engine	styk-eval::movieclips	removed	deleted with movieclip-materialize.mjs: the materialization is the engine's (styk_eval::materialize bake_mesh)
+src/movieclip-mesh.mjs	engine	styk-eval::spatial	partial	Rust: meshes attached to spatial bones (styk_eval::spatial); the JavaScript validates what a clip stores of them (validateMovieclipMeshes)
+src/movieclip-presence.mjs	engine	styk-eval::movieclips	partial	Rust: presence clock and continuations (styk_eval::records); the JavaScript keeps the stored continuations and their validation
 src/movieclip-ui.mjs	ui	-	stays	
-src/movieclips.mjs	engine	styk-eval::movieclips	partial	Rust: movieclipTime and clip sampling; capture and editing still JS
+src/movieclips.mjs	engine	styk-eval::movieclips	partial	Rust: movieclipTime and clip sampling; the JavaScript keeps the stored assets, playback settings and their validation
 src/mp4-muxer.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/native-container.mjs	engine	styk-formats::container	removed	read and wrote the containers in JavaScript; the workers open and save through styk-formats::files in the codec module (src/native-file-codec.mjs), and the lifting the mirror and saves need is src/document-lift.mjs (46226 bytes)
 src/native-figure.mjs	engine	styk-edit	removed	deleted: the document of a figure, a set of figures or a movieclip file is made by the engine (styk-edit/src/export/figure.rs, pose_sequences.rs) on the export worker
@@ -371,19 +371,19 @@ src/pivot-export-materialize.mjs	engine	styk-edit	removed	deleted: Pivot animati
 src/pivot-frame-draft.mjs	engine	styk-formats::save	partial	Rust: the stored frames of a working-frame draft for exports (styk-edit/src/export/pivot.rs stored_frame_report); the JS keeps the stored-frame projection that Add, the movieclip scope and the render report read
 src/pivot-style-materialize.mjs	engine	styk-edit	removed	deleted: the figure types of animated instance styles are made by the engine (styk-edit/src/export/style.rs)
 src/pivot/background.mjs	engine	styk-eval	partial	Rust: background tween and colour key; painting still JS
-src/pivot/geometry-definition.mjs	engine	styk-eval	js	evaluation and world geometry
-src/pivot/geometry-order.mjs	engine	styk-eval	js	evaluation and world geometry
-src/pivot/geometry-pose.mjs	engine	styk-eval	js	evaluation and world geometry
-src/pivot/geometry.mjs	engine	styk-eval	partial	Rust: the interface's frame, geometry and timeline from the session (styk-edit/src/interface.rs, styk_eval::geometry::build_shapes; the editor reads them, src/engine/engine-shown.mjs); evaluated records/world geometry, distinct native held shown/raw fractional views, prepared native handle/body/snap queries and per-clip/aggregate-lineage scene cache limits; app actual-shown query preparation and Canvas paths still JS; B8 ordinary shape queries omit unused render output through the same geometry owner; rich/ancestor numeric and full-output controls pass, additive platform-neutral build_only_for_shape API; full figures cost and default gate remain pending; B9 selected-joint query retains ancestors and full complex/joined/pinned/ambiguous/nonfinite fallbacks; coherent raw/typed pair reuses unchanged IK table; verified392Rust/36CLI1668/70JS/check, shippingb9cf70669501/10,240,701B; additive portable build_joint_for_shape and edit_frame_reusing_ik APIs; full figures cost/checkpoint/default gate still pending; B11 eligible ordinary selected-joint query skips unused join-order construction, original warnings/publication/fallbacks exact; verified394Rust/15CLI576/82JS/check, shipping15cbbdc513ea/10,241,300B; no API/math/schema change or measured B11 gain; B10 full cost all FAIL, figures gate stays closed; B12 no-frame-pins selected-joint query narrows joined selected segments while retaining full parents/topology/warnings/publication; verified396Rust/16CLI591/82JS/check, shippingb65ff69acb49/10,241,354B; existing portable query semantic scope extended, signatures/math/schema unchanged; accepted full joined36 instrumented B11 diagnostic305.950/280.750ms (not gate/gain); fresh full figures cost/checkpoint/default adoption next; B14 bounded ordinary same-Shape/nonpose-node conversion reuses existing typed fields, preserving changed pose conversion, metadata and rich/diagnostic fallbacks; verified405Rust/28CLI942/40guards/fivecontrols/82JS/check, shipping10b6b47a17ed/10,243,996B; existing portable Loader signatures/types/math/schema unchanged; completed B13 full cost FAIL/FAIL/PASS, fresh figures cost/checkpoint/default adoption next
+src/pivot/geometry-definition.mjs	engine	styk-eval	removed	deleted: the interface evaluates nothing; the frame, geometry and timeline are the session's (engine-shown.mjs)
+src/pivot/geometry-order.mjs	engine	styk-eval	removed	deleted: the interface evaluates nothing; the frame, geometry and timeline are the session's (engine-shown.mjs)
+src/pivot/geometry-pose.mjs	engine	styk-eval	removed	deleted: the interface evaluates nothing; the frame, geometry and timeline are the session's (engine-shown.mjs)
+src/pivot/geometry.mjs	engine	styk-eval	removed	deleted: the editor evaluates nothing; the frame on show, its geometry and the timeline are the session's (styk-edit/src/interface.rs, src/engine/engine-shown.mjs); the timeline rows a document starts on are src/pivot/read-view.mjs
 src/pivot/model.mjs	engine	styk-doc	js	validation and structure
 src/pivot/raster-clip.mjs	engine	styk-eval	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/pivot/read-view.mjs	ui	-	stays	What the interface reads of stored data without evaluating it: colours, the static flag, the shortest turn, the timeline index.
 src/pivot/structure.mjs	engine	styk-doc	partial	Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS
-src/pivot/surfaces.mjs	engine	styk-eval::spatial	ported	Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer
+src/pivot/surfaces.mjs	engine	styk-eval::spatial	partial	Rust: one-sided surfaces, culling and depth (styk_eval::spatial); the JavaScript validates what a polygon stores of its surface (validateSurface)
 src/playback-bitmap-pool.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/playback-budget.mjs	engine	styk-engine::playback	js	scheduling, budgets
 src/playback-cadence.mjs	engine	styk-engine::playback	js	scheduling, budgets
-src/playback-geometry-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-geometry-cache.mjs	engine	styk-engine::playback	removed	deleted: the editor retained geometry by itself; the session sends the groups that changed (engine-shown.mjs)
 src/playback-metrics.mjs	engine	styk-engine::playback	js	scheduling, budgets
 src/playback-native.mjs	engine	styk-formats::piv	removed	deleted: the engine opens files into its own store; no playback worker takes a frame table
 src/playback-patch.mjs	engine	styk-engine::playback	removed	deleted: the playback worker it patched is gone (4600 bytes)
@@ -473,7 +473,7 @@ src/source-record.mjs	engine	styk-formats::container	js
 src/spatial-controls.mjs	ui	-	stays	
 src/spatial-gizmo.mjs	ui	-	stays	
 src/spatial-mesh-legacy.mjs	engine	styk-eval::rig	js	Kept: the converter behind scripts/convert-spatial-meshes.mjs (docs/SPATIAL-MESHES.md); the app does not run it on open
-src/spatial-mesh.mjs	engine	styk-eval::spatial	partial	Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS
+src/spatial-mesh.mjs	engine	styk-eval::spatial	partial	Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); the JavaScript validates what a figure stores of a mesh (validateSpatialMesh)
 src/spatial-projection.mjs	engine	styk-eval::spatial	partial	Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS
 src/sprite-placement-dialog.mjs	ui	-	stays	
 src/startup-blue-data.mjs	engine	styk-edit	js	
@@ -489,7 +489,7 @@ src/sticknodes/decoder/project.mjs	engine	styk-formats::sticknodes	js
 src/sticknodes/decoder/renderer.mjs	engine	styk-formats::sticknodes	js	
 src/sticknodes/geometry.mjs	engine	styk-formats::sticknodes	partial	Rust: curved segments, shaped drawables, sprites (sticknodesSpriteAsset, sticknodes.rs); import still JS
 src/sticknodes/validation.mjs	engine	styk-formats::sticknodes	js	
-src/structural-equality.mjs	engine	styk-eval	js	
+src/structural-equality.mjs	engine	styk-eval	removed	deleted: the retained-geometry and tween caches that compared poses with it are gone (the session sends the groups that changed)
 src/studio-shell.mjs	ui	-	stays	
 src/support-center.mjs	app	-	stays	telemetry, support, updates
 src/support-contract.mjs	app	-	stays	telemetry, support, updates

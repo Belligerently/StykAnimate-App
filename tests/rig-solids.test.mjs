@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {SOLID_RIG_EXAMPLES} from '../src/rig-solids.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {geometryOfDocument} from './support/engine-geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 const area=points=>Math.abs(points.reduce((a,p,i)=>{const q=points[(i+1)%points.length];return a+p.x*q.y-p.y*q.x;},0)/2);
@@ -24,7 +24,7 @@ for(const r of SOLID_RIG_EXAMPLES){
     validateScene(d);o.len_flag=1;o.lengths=fig.segments.map(s=>s.length);
     for(const height of [20,100,300])for(const depth of [0,40,100])for(let deg=0;deg<=360;deg+=15){
       o.angles[c.turn-1]=deg*Math.PI/180;o.lengths[c.tilt-1]=depth;o.lengths[c.height-1]=height;
-      closed(buildGeometry(d,d.keyframes[0]).objects.get(0));
+      closed(geometryOfDocument(d,d.keyframes[0]).objects.get(0));
     }
     assert.ok(fig.segments.length<180,'Small reusable construction budget');
   });

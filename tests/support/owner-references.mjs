@@ -14,11 +14,25 @@ const fixtures = fileURLToPath(new URL('../fixtures/owner-references/', import.m
 /** A value as the fixtures keep it: JSON (`undefined` is `null`), so a reference and what is compared with it are alike. */
 export const canonical = value => value === undefined ? null : JSON.parse(JSON.stringify(value));
 
+/** The clocks the JavaScript editor put on the frame it showed when these references were recorded: the time of the effect clips, the
+ * composed effect stack of the scene and the time of the camera-motion clips. The engine's frame carries the effect time only (the
+ * scene's effects are the session's `vfxEffects`, the camera its `shot`), so a recorded frame is compared without them. */
+export const CLOCKS = ['_cameraMotionTick', '_vfxTimelineTick', '_vfxTimelineScene'];
+const unclocked = text => {
+  if (typeof text !== 'string' || !text.startsWith('{') || !CLOCKS.some(key => text.includes(`"${key}"`))) return text;
+  try {
+    const frame = JSON.parse(text);
+    for (const key of CLOCKS) delete frame[key];
+    return JSON.stringify(frame);
+  } catch { return text; }
+};
+
 /** The fixtures keep long texts once per file and refer to them by their place in `texts`. */
 const decode = (value, texts) => {
+  if (typeof value === 'string') return unclocked(value);
   if (Array.isArray(value)) return value.map(item => decode(item, texts));
   if (value !== null && typeof value === 'object') {
-    if (Object.hasOwn(value, '$text')) return texts[value.$text];
+    if (Object.hasOwn(value, '$text')) return unclocked(texts[value.$text]);
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item, texts)]));
   }
   return value;

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {geometryOfFrame} from './support/engine-geometry.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
 
 const open = ownedScope();
@@ -71,7 +71,7 @@ for (const operation of ['rotate', 'center']) test(`${operation} range matches e
   const result = operation === 'rotate' ? editor.rotateFiguresInFrames(.3, [0, 1, 2]) : editor.centerFiguresInFrames([0, 1, 2]);
   assert.equal(result.changedFrames, 3); assert.equal(editor._undo.length, 1);
   for (let index = 0; index < 3; index++) {
-    const actual = buildGeometry(editor.report, editor.report.keyframes[index]);
+    const actual = geometryOfFrame(editor, editor.report.keyframes[index]);
     for (const [slot, g] of expected[index].objects) {
       const next = actual.objects.get(slot); assert.ok(Math.abs(g.root.x - next.root.x) < .0001); assert.ok(Math.abs(g.root.y - next.root.y) < .0001);
       g.segments.forEach((segment, i) => { assert.ok(Math.abs(segment.end.x - next.segments[i].end.x) < .0001); assert.ok(Math.abs(segment.end.y - next.segments[i].end.y) < .0001); });
@@ -97,7 +97,7 @@ test('range pose reset uses each current definition and leaves unselected attach
     assert.equal(parent.len_flag, 0); assert.equal(parent.bend_flag, 0); assert.deepEqual(parent.lengths, []);
     assert.deepEqual(child.angles, before.keyframes[index].objects[1].angles); assert.equal(parent.color_override_raw, 0xff2255aa);
     assert.equal(parent.root_x, before.keyframes[index].objects[0].root_x);
-    const geometry = buildGeometry(editor.report, editor.report.keyframes[index]); assert.equal(child.root_x, geometry.objects.get(1).root.x);
+    const geometry = geometryOfFrame(editor, editor.report.keyframes[index]); assert.equal(child.root_x, geometry.objects.get(1).root.x);
   }
   assert.deepEqual(editor.report.keyframes[1], before.keyframes[1]); editor.undo(); assert.deepEqual(editor.report, before); editor.redo();
   assert.equal(editor.resetPoseInFrames([0, 2]).changedFrames, 0);

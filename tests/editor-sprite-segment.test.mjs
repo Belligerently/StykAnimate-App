@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createImageFigure} from '../src/media-authoring.mjs';
 import {createObject, createFrame, emptyDocument} from '../src/demo.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {geometryOfDocument,geometryOfFrame} from './support/engine-geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {builderDrawables} from '../src/editor-builder-style.mjs';
 import {exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
@@ -38,13 +38,13 @@ function fixture({frames = 3, posed = true, prepare = null} = {}) {
   prepare?.(report);
   const editor = open({demo: false}, report); editor.select(1, 2); return editor;
 }
-const segmentsGeometry = (report, frame) => [...buildGeometry(report, frame).objects.values()].map(object => ({
+const segmentsGeometry = (editor, frame) => [...geometryOfFrame(editor, frame).objects.values()].map(object => ({
   root: clone(object.root), segments: object.segments.map(segment => ({start: clone(segment.start), end: clone(segment.end)})),
 }));
 
 test('sprite attachment uses the selected tip and integer anchors without changing the source or existing joints', () => {
   const editor = fixture(), source = sprite(), input = clone(source), before = editor.serialize();
-  const expected = editor.report.keyframes.map(frame => segmentsGeometry(editor.report, frame)), children = editor.report.keyframes.map(frame => clone(frame.objects[1])), history = editor._undo.length;
+  const expected = editor.report.keyframes.map(frame => segmentsGeometry(editor, frame)), children = editor.report.keyframes.map(frame => clone(frame.objects[1])), history = editor._undo.length;
   const result = editor.addSpriteSegment(source);
   assert.deepEqual(result, {handleId: 111, segmentIndex: 10, assetIndex: 0});
   assert.deepEqual(source, input); assert.equal(editor.selectedJoint, 10);
@@ -56,7 +56,7 @@ test('sprite attachment uses the selected tip and integer anchors without changi
     assert.equal(frame.objects[0].angles.length, 11); near(frame.objects[0].angles[10], segment.angle_rad);
     assert.equal(frame.objects[0].lengths[10], 50); assert.equal(frame.objects[0].bends[10], 0);
     assert.deepEqual(frame.objects[1], children[frameIndex]);
-    const actual = segmentsGeometry(editor.report, frame); actual[0].segments.pop(); assert.deepEqual(actual, expected[frameIndex]);
+    const actual = segmentsGeometry(editor, frame); actual[0].segments.pop(); assert.deepEqual(actual, expected[frameIndex]);
   });
   const rendered = editor.geometry.objects.get(0).segments[10];
   near(rendered.angle - rendered.asset.anchor_angle_rad, 0);
@@ -126,7 +126,7 @@ test('attached sprites round-trip through actual native PIV and STK writers with
     const images = figure.segments.filter(segment => segment.primitive_code === 2);
     assert.deepEqual(images.map(segment => segment.extra_u16), [0, 1]); assert.deepEqual(images.map(segment => segment.parent_id), [3, 2]);
     near(images[0].angle_rad, Math.atan2(-40, 30)); assert.equal(images[0].length, 50);
-    for (const frame of document.keyframes) assert.deepEqual(buildGeometry(document, frame).warnings, []);
+    for (const frame of document.keyframes) assert.deepEqual(geometryOfDocument(document, frame).warnings, []);
     if (kind === 'piv') {assert.equal(document.keyframes.length, 2); assert.equal(document.keyframes[0].objects[1].join.target_handle_id, 3);}
   }
 });

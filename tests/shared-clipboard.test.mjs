@@ -182,13 +182,12 @@ test('library drag rejects folders and paths outside the library', () => {
 
 for(const [sourceVersion,targetVersion] of [[2,5],[3,5],[4,5],[5,4],[5,5],[4,4]])test(`figure clipboard preserves rendered colors across instances (${sourceVersion} to ${targetVersion})`,async t=>{
   const {createFrame,createObject}=await import('../src/demo.mjs');
-  const {buildGeometry}=await import('../src/pivot/geometry.mjs');
   const os=systemClipboard(),a=instance(t,os),b=instance(t,os);
   const source=emptyDocument();source.version=sourceVersion;source.frame_delay_ms=40;
   source.figure_types[0].segments.forEach((s,i)=>{s.color_rgb=[20+i*10,90,180];});
   source.keyframes=[createFrame([0xffffffff,0x0033cc,0,0x80112233].map((raw,i)=>createObject(source.figure_types[0],i+1,100+i*140,240,{color_override_raw:raw})))];
   a.editor.load(source);a.editor.selectMany([1,2,3,4]);
-  const colors=e=>buildGeometry(e.report,e.selectionFrame).drawables.map(s=>[s.rgb,s.alpha]);
+  const colors=e=>e.geometry.drawables.map(s=>[s.rgb,s.alpha]);
   const expected=colors(a.editor);
   await a.clipboard.copy('figures',()=>a.editor.copySelection());
   const destination=emptyDocument();destination.version=targetVersion;destination.frame_delay_ms=40;b.editor.load(destination);

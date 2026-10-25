@@ -34,7 +34,6 @@ import {validationLabel} from '../validation-labels.mjs';
 import {motionParameterMessages} from '../camera-motion-localization.mjs';
 import english from '../locales/en.mjs';
 import {invalidateFrameIndex} from '../frame-ids.mjs';
-import {invalidateMovieclipTypes} from '../movieclips.mjs';
 import {layerIdForUid} from '../layers.mjs';
 import {drawingMetadata} from '../drawing-model.mjs';
 import {drawingResourcesFor} from '../drawing-resources.mjs';
@@ -56,11 +55,9 @@ const BAKE_SLICE_MS = 6;
  * nothing and answer false, which the owner knows without asking the session. */
 const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxClipEdit', commitAnimationEdit: '_animationEdit', cancelAnimationEdit: '_animationEdit'};
 
-/** The editor's reads the session answers where it holds the document (`Editor::interface_query`): the values the interface
- * shows of the frame on show, from the engine's own evaluation. */
+/** The editor's reads the session answers (`Editor::interface_query`): the values the interface shows of the frame on show,
+ * from the engine's own evaluation. */
 const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings', 'getSpatialPose', 'getSpatialMotion', 'sampleVfxClip'];
-/** What the session's error says when it does not answer for a document (`styk_edit::session::UNPORTED`). */
-const UNPORTED = 'unported: ';
 /** Where the values a refusal names start in its message (`styk_edit::PARAMS`). */
 const PARAMS = '\u001f';
 
@@ -83,6 +80,10 @@ function sessionPayload(args) {
   try { const text = JSON.stringify(args, replacer); return data ? {text, encoded} : null; } catch { return null; }
 }
 const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segmentIds', 'branch'].filter(key => Object.hasOwn(state, key)).map(key => [key, state[key]]));
+
+/** The owner installed on each editor (tests that hold several documents open make one the engine's again before exporting it). */
+const installed = new WeakMap();
+export const ownerOf = editor => installed.get(editor);
 
 /**
  * @param {object} editor the app's Editor
@@ -118,11 +119,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
       if (!reading()) return null;
       if (kind === 'active') return 'true';
       try { return session.query(kind, JSON.stringify(args), adopting ? 'null' : playhead()); }
-      catch (error) {
-        // What the session does not evaluate yet, the editor does.
-        if (String(error?.message ?? error).startsWith(UNPORTED)) return null;
-        throw queryFailure(error);
-      }
+      catch (error) { throw queryFailure(error); }
     },
     source(motion) {
       if (!reading()) return null;
@@ -205,8 +202,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
       if (sorted(counts) !== sorted(editor._layerUidCounts) || sorted(groups) !== sorted(fresh)) throw new Error('The layer index after a patch differs from one counted from the document.');
     }
     if (touched.has('keyframes') || touched.has('*')) invalidateFrameIndex(editor.report);
-    if (touched.has('figure_types') || touched.has('*')) invalidateMovieclipTypes(editor.report);
-    editor._layerDescriptors = null; editor._layerUidArrays = new Map(); editor._nativeAnimationChannels = null;
+    editor._layerDescriptors = null; editor._layerUidArrays = new Map();
   };
   const applyAnswer = (answer, {patch = true} = {}) => {
     const {state} = answer;
@@ -399,7 +395,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   /** The pose the session shows at the playhead while the motion-path edit changes it, with the geometry of that pose
    * (read when something needs it), or null outside the ticks it changes. */
   const motionDisplay = () => {
-    const frame = editor._timed(shown.motionFrame());
+    const frame = shown.motionFrame();
     if (!frame) return null;
     let geometry;
     return {frame, get geometry() { return geometry ??= shown.geometry(frame, {motion: true}); }};
@@ -594,7 +590,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
     if (answer.figureClipboardPastes) clipboards.pasted(answer.figureClipboardPastes);
     if (answer.drawingForks?.length) forkDrawings(answer.drawingForks);
     if (answer.status === 'ok' && (name === 'beginVfxClipEdit' || name === 'beginAnimationEdit')) mirrorEdit(name, answer);
-    if (drafted && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, drafted); editor._geometry = null; editor._incremental = null; }
+    if (drafted && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, drafted); editor._geometry = null; }
     else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
     if (!answer.retained && !answer.retainedKept) retainedShown = null;
     if (drawing && answer.status === 'ok') drawing.adopted(answer);
@@ -716,16 +712,11 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   layer.bakeMovieclip = function owned() { return bakeCall(); };
   // The reads the session answers.
   for (const name of SESSION_READS) {
-    const original = editor[name];
-    if (typeof original !== 'function') continue;
     layer[name] = function read(...args) {
-      if (!reading()) return original.apply(this, args);
+      if (!reading()) throw refuse(name, 'no engine session runs this document');
       let text;
       try { text = session.query(name, JSON.stringify(args), adopting ? 'null' : JSON.stringify(view())); }
-      catch (error) {
-        if (String(error?.message ?? error).startsWith(UNPORTED)) return original.apply(this, args);
-        throw queryFailure(error);
-      }
+      catch (error) { throw queryFailure(error); }
       return JSON.parse(text).v;
     };
   }
@@ -796,6 +787,8 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   report.depths = () => depths;
   /** Whether the session holds the open document (starting it if it can). */
   report.ready = () => Boolean(ensure());
+  /** Makes the session's document the engine's again, as it is now: the engine holds one document for the stage, playback and exports. */
+  report.activate = () => { if (ensure()) activate(); };
   report.session = () => session;
   /** How many sessions the owner holds: the open document's, and those of the documents open beside it or a movieclip is entered from. */
   report.sessions = () => (session ? 1 : 0) + parked.size;
@@ -809,6 +802,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   };
   // The editor reads the frame on show, its geometry and its timeline from the session.
   editor._shown = shown;
+  installed.set(editor, report);
   return report;
 }
 

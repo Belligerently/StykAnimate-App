@@ -1066,12 +1066,9 @@ const shotFrames = new WeakMap();
 /** A frame of the editor seen through the scene camera: shot with the camera the engine works out for the playhead (follow travel,
  * then the presets' shake) instead of the authored one. A playback frame already is. */
 function shotThrough(frame) {
-  if (frame._cameraMotionTick === undefined) return frame;
+  if (frame.engine || !editor.report._styk?.cameraMotion?.clips.length) return frame;
   let shot = shotFrames.get(frame);
-  if (!shot) {
-    const { _cameraMotionTick, ...still } = frame;
-    shotFrames.set(frame, shot = { ...still, camera: editor._shown?.shot() ?? frame.camera });
-  }
+  if (!shot) shotFrames.set(frame, shot = { ...frame, camera: editor._shown?.shot() ?? frame.camera });
   return shot;
 }
 function previewPacket() {

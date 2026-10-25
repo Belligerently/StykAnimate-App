@@ -6,8 +6,6 @@ import {builderDrawables} from '../src/editor-builder-style.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {validateAnimationDocument,validateAnimationValue} from '../src/animation-channels.mjs';
 import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit,cancelNativePropertyEdit,getNativePropertyValue} from '../src/native-property-edit.mjs';
-import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
-import {timeline} from '../src/pivot/read-view.mjs';
 import {pivotDocument} from './support/engine-export.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 
@@ -18,7 +16,6 @@ function fixture() {
   const e=ownedEditorFor({demo:false,propertyChannels:true,layerTimeline:true}, report);
   e.select(1,0);return e;
 }
-const frameAt=(report,tick)=>{const row=timeline(report).findLast(row=>row.start<=tick);return evaluatedFrame(report,row.index,(tick-row.start)/row.count,tick);};
 const order=(report,frame,uid=1)=>{
   const object=frame.objects.find(o=>o.unique_id===uid),figure=report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);
   return builderDrawables(resolveInstanceFigure(figure,object)).map(entry=>`${entry.kind}:${entry.index}`);
@@ -36,9 +33,9 @@ test(`internal order is local to timeline frames and figure instances`,()=>{
   e.seek(0);assert.deepEqual(current(e),first);
   e.seek(10);assert.deepEqual(current(e),second);
   assert.deepEqual(e.figure,definition);validateAnimationDocument(e.report);
-  const reopened=new Editor({demo:false,propertyChannels:true,layerTimeline:true}).load(structuredClone(e.serialize()));
-  assert.deepEqual(order(reopened.report,frameAt(reopened.report,0)),first);
-  assert.deepEqual(order(reopened.report,frameAt(reopened.report,10)),second);
+  const reopened=ownedEditorFor({demo:false,propertyChannels:true,layerTimeline:true},structuredClone(e.serialize()));
+  reopened.seek(0);assert.deepEqual(current(reopened),first);
+  reopened.seek(10);assert.deepEqual(current(reopened),second);
 });
 test(`polygon and branch order preview, cancel and history are atomic`,()=>{
   const e=fixture(),base=current(e),definition=structuredClone(e.figure),history=e._undo.length;
@@ -58,11 +55,12 @@ test(`polygon and branch order preview, cancel and history are atomic`,()=>{
 test(`rendering and Pivot materialization preserve internal order`,()=>{
   const e=fixture();e.moveBuilderOrder({kind:'segment',index:0},'front');
   e.seek(10);e.moveBuilderOrder({kind:'polygon',index:0},'front');
-  const exported=pivotDocument(e.serialize());
+  const native=ownedEditorFor({demo:false},pivotDocument(e.serialize()));
   for(const tick of [0,5,9.999,10,20]) {
-    const frame=frameAt(e.report,tick),expected=order(e.report,frame);
-    assert.deepEqual(order(exported,frameAt(exported,tick)),expected);
-    const geometry=buildGeometry(e.report,frame).objects.get(0);
+    e.seek(tick);native.seek(tick);
+    const expected=current(e);
+    assert.deepEqual(current(native),expected);
+    const geometry=e.geometry.objects.get(0);
     const rendered=[...geometry.polys.map(p=>({id:`polygon:${p.index}`,z:p.z})),...geometry.segments.map((s,index)=>({id:`segment:${index}`,z:s.z}))].sort((a,b)=>a.z-b.z).map(s=>s.id);
     assert.deepEqual(rendered,expected);
   }

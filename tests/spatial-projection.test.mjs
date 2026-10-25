@@ -2,10 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
-import {buildGeometry,evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
+import {geometryOfDocument,evaluatedAt} from './support/engine-geometry.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
 import {projection,projectSpatial,unprojectSpatial,projectSpatialFace,validateSpatialPose,interpolateSpatialPose} from '../src/spatial-projection.mjs';
-import {spatialPoint} from '../src/rig-spatial.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {spatialControlsView} from '../src/spatial-controls.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
@@ -30,8 +29,8 @@ test('perspective has an exact neutral default and invertible projection at any 
   for(const z of [-200,0,150]){const p=[280,190,z*scale],screen=projectSpatial(p,c),raw=unprojectSpatial(screen,p[2],o,root);near(raw.x,p[0]);near(raw.y,p[1]);}
   near(projectSpatial([300,100,200*scale],c).x,400);
  }
- const f=fixture(),before=buildGeometry(f.doc,f.doc.keyframes[0]);f.object._stykSpatial={camera:{strength:0,distance:400},shape:{[f.b.id]:{width:1,taper:0}}};
- const after=buildGeometry(f.doc,f.doc.keyframes[0]);
+ const f=fixture(),before=geometryOfDocument(f.doc);f.object._stykSpatial={camera:{strength:0,distance:400},shape:{[f.b.id]:{width:1,taper:0}}};
+ const after=geometryOfDocument(f.doc);
  assert.deepEqual([...after.objects.get(0).joints],[...before.objects.get(0).joints]);
 });
 
@@ -52,7 +51,7 @@ test('spatial settings tween, round-trip native saving, and restore one complete
  const reopened=(await decodeDocument(await buildContainerV2(after,'styk'),'styk')).document;
  assert.deepEqual(reopened.keyframes[0].objects[0]._stykSpatial,e.object._stykSpatial);
  const a=structuredClone(before.keyframes[0].objects[0]),b=structuredClone(e.object);const doc={...f.doc,keyframes:[createFrame([a],12),createFrame([b],12)]};
- const halfway=evaluatedNativeFrame(doc,0,.5).objects[0]._stykSpatial;near(halfway.camera.strength,.4);near(halfway.shape[f.b.id].width,1.5);near(halfway.shape[f.b.id].taper,.2);
+ const halfway=evaluatedAt(doc,6).objects[0]._stykSpatial;near(halfway.camera.strength,.4);near(halfway.shape[f.b.id].width,1.5);near(halfway.shape[f.b.id].taper,.2);
  validateSpatialPose({...b,_stykSpatial:interpolateSpatialPose(a,b,-10)},f.figure);
 });
 
@@ -70,12 +69,6 @@ test('invalid camera and shape settings fail before changing the document or his
  for(const patch of [{width:0},{taper:-1},{size:Infinity},{other:3}])assert.throws(()=>e.setSpatialProportions(patch));
  assert.deepEqual(e.serialize(),original);assert.equal(e.dragging,false);
  assert.throws(()=>validateSpatialPose({_stykSpatial:{shape:{999:{width:1,taper:0}}}},f.figure));
-});
-
-test('artist width retains radius at a weighted half-turn instead of collapsing',()=>{
- const f=fixture(),s=f.figure.segments[f.skin-1];s._stykRig.spatial={point:[10,100,0],bindings:[{joint:f.a.id,weight:.5},{joint:f.b.id,weight:.5}]};
- f.object.angles[f.b.turn-1]=Math.PI;f.object._stykSpatial={shape:{[f.a.id]:{width:2,taper:0},[f.b.id]:{width:2,taper:0}}};
- const p=buildGeometry(f.doc,f.doc.keyframes[0]).objects.get(0).joints.get(f.skin);near(p.x,200);near(Math.abs(p.depthOffset.x),20);
 });
 
 test('unsupported joined perspective is rejected atomically and does not alter existing joins',()=>{

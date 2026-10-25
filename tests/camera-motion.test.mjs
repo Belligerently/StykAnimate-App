@@ -26,6 +26,13 @@ function depthShift(e,camera,layer=e.activeLayerId){
 /** What the shot looks like at every tick: its camera, and the shift it gives the active layer. */
 const shots=e=>Array.from({length:e.totalTicks},(_,tick)=>{const camera=shot(e,tick);return {camera,depth:depthShift(e,e.evaluatedFrame.camera)};});
 const sameShots=(a,b)=>a.forEach((s,t)=>{for(const k of ['x','y','scale','angle_rad'])near(s.camera?.[k]??(k==='scale'?1:0),b[t].camera?.[k]??(k==='scale'?1:0));near(s.depth.x,b[t].depth.x);near(s.depth.y,b[t].depth.y);});
+const shotAt=shot;
+/** What a Pivot export stores per frame once the camera's motion and the layers' parallax are baked into it (the engine's export). */
+const stored=e=>pivotDocument(e).keyframes.map(f=>({camera:{x:f.camera?.x??0,y:f.camera?.y??0,scale:f.camera?.scale??1,angle_rad:f.camera?.angle_rad??0},roots:f.objects.map(o=>[o.root_x,o.root_y])}));
+function sameStored(actual,expected){
+  assert.equal(actual.length,expected.length);
+  actual.forEach((frame,i)=>{for(const k of ['x','y','scale','angle_rad'])near(frame.camera[k],expected[i].camera[k]);frame.roots.forEach((root,j)=>{near(root[0],expected[i].roots[j][0]);near(root[1],expected[i].roots[j][1]);});});
+}
 test('motions that never play together share a timeline lane; overlapping ones stack',()=>{
   const clip=(id,start,duration)=>({id,start,duration}),lanes=clips=>packMotionLanes(clips).map(lane=>lane.map(c=>c.id));
   assert.deepEqual(lanes([]),[]);
@@ -71,9 +78,9 @@ test('Pivot materialization bakes motion and parallax once without changing edit
 });
 refs.test('baking retains camera output and parallax at every output tick and undoes as one action',take=>{
   const e=ownedFixture(take),layer=e.activeLayerId;e.setLayerParallax(layer,{enabled:true,x:.3});e.setCameraValues({x:70});e.addCameraMotion('impact',{duration:12});e.addCameraMotion('wobble',{duration:24});
-  const before=e.serialize(),history=e._undo.length,samples=shots(e);
+  const before=e.serialize(),history=e._undo.length,samples=shots(e),exported=stored(e);
   e.bakeCameraMotion();assert.equal(e._undo.length,history+1);assert.ok(e.getCameraMotions().every(c=>!c.enabled));
-  sameShots(samples,shots(e));
+  sameShots(samples,shots(e));sameStored(stored(e),exported);
   e.undo();assert.deepEqual(e.serialize(),before);e.redo();validateAnimationDocument(e.report);
 });
 test('pose snapshots omit the derived motion clock and retain the authored camera',()=>{
@@ -84,9 +91,9 @@ for(const interpolation of ['constant','linear','bezier','auto'])refs.test(`part
   e.setLayerParallax(e.activeLayerId,{enabled:true,x:.2});
   for(const [tick,x] of [[0,0],[20,100],[40,240]]){e.sheetInsertKey(['camera'],tick);e.seek(tick);e.setCameraValues({x});}
   e.sheetSetEasing(['camera'],0,40,{interpolation,...(interpolation==='bezier'?{bezier:[.3,0,.8,1]}:{})});
-  const before=e.serialize(),expected=shots(e);e.bakeCameraMotion({start:8,end:14});validateAnimationDocument(e.report);
-  sameShots(expected,shots(e));
-  e.bakeCameraMotion({start:45,end:49});sameShots(expected,shots(e));
+  const before=e.serialize(),expected=shots(e),exported=stored(e);e.bakeCameraMotion({start:8,end:14});validateAnimationDocument(e.report);
+  sameShots(expected,shots(e));sameStored(stored(e),exported);
+  e.bakeCameraMotion({start:45,end:49});sameShots(expected,shots(e));sameStored(stored(e),exported);
   e.undo();e.undo();assert.deepEqual(e.serialize(),before);
 });
 refs.test('camera and layer locks reject motion, baking and parallax changes atomically',take=>{

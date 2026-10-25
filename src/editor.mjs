@@ -1,15 +1,12 @@
 import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 import {editorSpatialMethods} from './editor-spatial.mjs';
-import {invalidateVfxRenderFrame, frameWithVfxTime} from './vfx-clips.mjs';
-import {frameWithCameraTime} from './camera-motion.mjs';
-import {buildGeometry, evaluatedFrame, invalidateEvaluationCaches} from './pivot/geometry.mjs';
+import {invalidateVfxRenderFrame} from './vfx-clips.mjs';
 import {timeline} from './pivot/read-view.mjs';
 import {validateScene, syncDerived} from './pivot/model.mjs';
 import {resolveJoinSelection} from './pivot/structure.mjs';
 import {createDemo, emptyDocument, defaultFigure} from './demo.mjs';
 import {createStartupDocument} from './startup-document.mjs';
-import {RetainedGeometryCache} from './playback-geometry-cache.mjs';
 import {editorSelectionMethods} from './editor-selection.mjs';
 import {editorLayerMethods} from './editor-layers.mjs';
 import {editorLayerFocusMethods} from './editor-layer-focus.mjs';
@@ -22,7 +19,6 @@ import {editorVfxMethods} from './editor-vfx.mjs';
 import {editorHandleCommandMethods} from './editor-handle-commands.mjs';
 import {editorFrameDraftMethods} from './editor-frame-draft.mjs';
 import {prepareLoad, prepareLoadNow} from './engine/engine-open.mjs';
-import {editorIKMethods} from './editor-ik.mjs';
 import {editorMovieclipMethods} from './editor-movieclips.mjs';
 import {editorLayerSheetMethods} from './editor-layer-sheet.mjs';
 import {validateLayerSheet} from './layer-sheet.mjs';
@@ -90,40 +86,17 @@ export class Editor extends EventTarget {
     const animationEnd = animation === this._timelineAnimation && this._timelineEndTick !== undefined ? this._timelineEndTick : animationEndTick({_styk:{animation}});
     if (this._timeline && this._timelineEndTick === animationEnd) { this._timelineAnimation = animation; return this._timeline; }
     this._timelineAnimation = animation; this._timelineEndTick = animationEnd;
-    // The engine's rows where it holds this document.
-    return this._timeline = this._shown?.timeline() ?? timeline(this.report);
+    return this._timeline = this._shown.timeline();
   }
   get totalTicks() { const last = this.timeline.at(-1); return last ? last.start + last.count : 0; }
   get evaluatedFrame() {
     if(this._sheetPropertyPreview)return this._sheetPropertyPreview;
     if (this._authoredPoseEdit) return this._authoredPoseEdit.frame;
-    return this._evaluated ??= this._timed(this._shown?.frame()) ?? this._evaluateHere();
+    return this._evaluated ??= this._shown.frame();
   }
   /** The document's frame at the playhead, under any gesture the engine holds: the frame a draft is composed on. */
-  _documentFrame() { return this._evaluated ??= this._timed(this._shown?.documentFrame()) ?? this._evaluateHere(); }
-  /** A frame the engine evaluated at the playhead with the times the effect and camera-motion clips are read at. */
-  _timed(frame) { return frame && frameWithCameraTime(this.report, frameWithVfxTime(this.report, frame, this.tick), this.tick); }
-  /** The frame on show evaluated here: where the engine does not hold the document (a movieclip being edited in place, a
-   * call the editor is running). */
-  _evaluateHere() {
-    const entry = this.timeline[this.frameIndex];
-    const t = entry?.count > 1 ? (this.tick - entry.start) / entry.count : 0;
-    return evaluatedFrame(this.report, this.frameIndex, clamp(t, 0, 1), this.tick);
-  }
-  get geometry() {
-    if (!this._geometry) {
-      const engine = this._shown?.geometry(this.evaluatedFrame);
-      if (engine) { this._incremental = null; return this._geometry = engine; }
-    }
-    const retained=this._seekGeometry??=new RetainedGeometryCache();
-    if (!this._geometry) {
-      this._geometry = this._incremental?buildGeometry(this.report, this.evaluatedFrame, this._incremental)
-        :retained.get(this.report,this.evaluatedFrame,this.revision);
-      this._incremental = null;
-    }
-    if(retained.geometry!==this._geometry)retained.adopt(this.report,this.evaluatedFrame,this.revision,this._geometry);
-    return this._geometry;
-  }
+  _documentFrame() { return this._evaluated ??= this._shown.documentFrame(); }
+  get geometry() { return this._geometry ??= this._shown.geometry(this.evaluatedFrame); }
   get canUndo() { return this._undo.length > 0; }
   get canRedo() { return this._redo.length > 0; }
   get undoLabel() { return this._undo.at(-1)?.label ?? ''; }
@@ -160,9 +133,7 @@ export class Editor extends EventTarget {
     // Authored gesture drafts mutate in place; their composed VFX view must
     // follow each pose change even while the clip records stay unchanged.
     if(!viewOnly)invalidateVfxRenderFrame(this._authoredPoseEdit?.frame);
-    if (!viewOnly) {this._propertyChannelCache = null;invalidateEvaluationCaches(this.report);this._seekGeometry?.clear();}
-    const preview = this._authoredCommitPreview;
-    this._geometry = preview?.geometry ?? null; this._evaluated = preview?.frame ?? null; this._incremental = preview?.incremental ?? null;
+    this._geometry = null; this._evaluated = null;
     if (timing) this._timeline = null;
   }
   _selectionState() { return {frameIndex: this.frameIndex, tick: this.tick, uid: this.selectedUid, uids: [...this.selectedUids], joint: this.selectedJoint, activeLayerId: this.activeLayerId, sheetSelection:this._sheetSelection?{...this._sheetSelection}:null, ...(this.selectedPolygonIndex >= 0 ? {polygonSelection:{...this._polygonSelection}} : {}), ...(this._segmentSelection && this.selectedSegmentIds.size > 1 ? {segmentIds:[...this.selectedSegmentIds]} : {}), ...(this.branchSelected ? {branch: {...this._branchSelection}} : {})}; }
@@ -229,7 +200,7 @@ export class Editor extends EventTarget {
     this._documentToken = {};
     this.frameIndex = index; this.tick = 0; this.selectedUid = report.keyframes[index].objects[0]?.unique_id ?? null; this.selectedJoint = -1;
     this._undo = []; this._redo = []; this._historySize = 0; this._drag = null;
-    this._animationEdit = null; this._nativeAnimationChannels = null; this._authoredPoseEdit = null; this._authoredCommitPreview = null;
+    this._animationEdit = null; this._authoredPoseEdit = null;
     this._pendingSourceLayerChanges = null; this._authoredCommandLabel = null; this._pendingSourceBytes = 0;
     this._revision = this._savedRevision = ++this._revisionSerial;
     this._nextUid = prepared.nextUid; this._nextFrameIdentity = prepared.nextFrameIdentity;
@@ -308,7 +279,6 @@ Object.assign(Editor.prototype, editorLayerMethods);
 Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorLayerFocusMethods));
 Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorAnimationMethods));
 Object.assign(Editor.prototype, editorFrameMethods);
-Object.assign(Editor.prototype, editorIKMethods);
 Object.assign(Editor.prototype, editorMovieclipMethods);
 Object.assign(Editor.prototype, editorLayerSheetMethods);
 Object.assign(Editor.prototype, editorDrawingMethods);

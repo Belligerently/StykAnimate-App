@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {createFrame,createObject} from '../src/demo.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {geometryOfFrame} from './support/engine-geometry.mjs';
 import {rigConstraintPlan} from '../src/rig-constraints.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 
@@ -121,9 +121,9 @@ test('new rig metadata survives native round trips, async geometry and arbitrary
   const doc=e.serialize(),container=await buildContainerV2(doc,'styk'),decoded=await decodeDocument(container,'styk');
   assert.deepEqual(decoded.document??decoded,doc);
   for(const ratio of [0,1.4,.2,1,0]){
-    length(e,ratio*100);const expected=geometry(e),rebuilt=buildGeometry(e.report,e.frame).objects.get(0);
+    length(e,ratio*100);const expected=geometry(e),rebuilt=geometryOfFrame(e,e.frame).objects.get(0);
     for(let i=0;i<expected.segments.length;i++){near(expected.segments[i].end.x,rebuilt.segments[i].end.x);near(expected.segments[i].end.y,rebuilt.segments[i].end.y);}
-    const repeat=buildGeometry(e.report,e.frame).objects.get(0);assert.deepEqual(repeat.segments.map(s=>s.end),expected.segments.map(s=>s.end));
+    const repeat=geometryOfFrame(e,e.frame).objects.get(0);assert.deepEqual(repeat.segments.map(s=>s.end),expected.segments.map(s=>s.end));
   }
 });
 test('duplicated relative locks remap references to the copied driver',()=>{

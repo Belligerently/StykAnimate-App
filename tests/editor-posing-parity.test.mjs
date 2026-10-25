@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createFrame, createObject, emptyDocument} from '../src/demo.mjs';
-import {arc} from '../src/pivot/geometry.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
 
 const open = ownedScope();
 
 const near = (a, b, tolerance = 2e-4) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
+/** Where a segment of `length` that starts at `start` heading `angle` and bends by `bend` radians ends: on the circle of radius length / bend. */
+const arcEnd = (start, angle, length, bend) => ({x: start.x + length / bend * (Math.sin(angle + bend) - Math.sin(angle)), y: start.y + length / bend * (Math.cos(angle) - Math.cos(angle + bend))});
 function isolationFixture() {
   const report = emptyDocument(), template = report.figure_types[0].segments[0];
   const s = (id, parent, staticFlag = 0) => ({...template, segment_id: id, parent_id: parent, length: 40,
@@ -55,7 +56,7 @@ test('animation isolation follows static chains and native joined-origin admissi
 
 test('isolated bending keeps the start tangent and turns only the admitted static and joined branches', () => {
   const editor = isolationFixture(), shape = editor.geometry.objects.get(4).segments[3], bend = 0.7;
-  const end = arc(shape.start, shape.angle, 40, bend).at(-1);
+  const end = arcEnd(shape.start, shape.angle, 40, bend);
   editor.bendJoint(end.x, end.y, {isolate: true});
   near(editor.object.angles[3], 0); near(editor.object.bends[3], bend); near(editor.object.angles[2], bend);
   for (const slot of [0, 1]) for (const angle of editor.frame.objects[slot].angles) near(angle, bend);
@@ -73,7 +74,7 @@ test('length snapping depends on the starting pose and can be disabled', () => {
 });
 
 test('bend snapping needs a nondefault starting bend and leaves subsequent default-start drags free', () => {
-  const editor = simple(); editor.updateSegment({bend_rad: 0.8}); const target = arc({x: 0, y: 0}, 0, 100, 0.04).at(-1);
+  const editor = simple(); editor.updateSegment({bend_rad: 0.8}); const target = arcEnd({x: 0, y: 0}, 0, 100, 0.04);
   editor.beginDrag(); editor.bendJoint(target.x, target.y); near(editor.object.bends[0], 0); editor.commitDrag();
   editor.beginDrag(); editor.bendJoint(target.x, target.y); near(editor.object.bends[0], 0.04); editor.commitDrag();
   editor.updateSegment({bend_rad: 0.8}); editor.bendJoint(target.x, target.y, {snap: false}); near(editor.object.bends[0], 0.04);

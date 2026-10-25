@@ -504,8 +504,7 @@ Existing cache budgets and preparation leases retain their lifetime guarantees.
 A parent caches a nested cel publication without writing back into the child definition;
 changed revisions, undo and superseded decodes replace only that cached cel.
 
-The scratch-canvas presenter below serves the JavaScript painters of drawing geometry
-(`pivot/geometry.mjs`) that remain; the editing canvas is the engine's stage, which draws
+The scratch-canvas presenter below serves the JavaScript painters that remain; the editing canvas is the engine's stage, which draws
 cels, onion skins and floating selections from the tiles it holds. Drawing textures participate in the normal scene compositor, including
 ordering, opacity, erasing, camera and clipping. Tiles are painted into
 tile-anchored scratch canvases; each presenter keeps a bounded LRU of them,

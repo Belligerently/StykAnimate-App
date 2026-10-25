@@ -778,7 +778,7 @@ interface reads of the duplicate drag, the tweener, grouped edits, working frame
 The other owner tests that compare an owned editor with an editor alone
 (`engine-owner-{clipboard-ports,clipboards,drawing,misc,movieclip-ports,movieclip-scope,origins,topology}`,
 the gesture and edit pairs of `engine-owner.test.mjs`, `engine-edit-selection-metadata`, and the documents
-`camera-follow`, `camera-motion` and `movieclip-extend` build with a plain editor) compare it with frozen
+`camera-motion` and `movieclip-extend` build with a plain editor) compare it with frozen
 references: `tests/fixtures/owner-references/<test file>.json`, the documents, history labels, answers, depths and
 dirty state each test compares, recorded from the plain editor while it still edited under the owner
 (`tests/support/owner-references.mjs`: a test takes each reference in order with `take(label)`). They are an oracle as the

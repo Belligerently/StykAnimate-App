@@ -4,7 +4,7 @@ import {newOwnedEditor} from './support/owned-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createFrame,createObject} from '../src/demo.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {geometryOfFrame} from './support/engine-geometry.mjs';
 import {rigSections,rigControlChange} from '../src/rig-controls.mjs';
 import {renderInspector} from '../src/inspector-kit.mjs';
 const rigView=e=>renderInspector({kind:'joint',sections:rigSections(e)});
@@ -32,7 +32,7 @@ test('angle followers project authored rotation once through positive, collapsed
     near(c.end.x-c.start.x,50*Math.cos(.9)*scale);near(c.end.y-c.start.y,50*Math.sin(.9));
     near(v.end.x-v.start.x,30*Math.cos(1.3)*scale);near(v.end.y-v.start.y,30*Math.sin(1.3));
     near(z.end.x-z.start.x,12*scale);near(z.end.y-z.start.y,0);
-    const rebuilt=buildGeometry(e.report,e.frame).objects.get(0);
+    const rebuilt=geometryOfFrame(e,e.frame).objects.get(0);
     assert.deepEqual(rebuilt.segments.map(s=>s.end),e.geometry.objects.get(0).segments.map(s=>s.end));
   }
   const decoded=(await decodeDocument(await buildContainerV2(e.serialize(),'styk'),'styk')).document;

@@ -6,11 +6,11 @@ How the Rust engine evaluates and draws StykAnimate's 3D: spatial poses
 meshes (`spatialMeshes`). The user-facing behaviour is in
 [`SPATIAL-MESHES.md`](../SPATIAL-MESHES.md) and [`RIG-CONSTRAINTS.md`](../RIG-CONSTRAINTS.md);
 the recorded fixtures were made from the JavaScript editor and are frozen
-([README](README.md#fixtures), [`RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md)). The port follows
-`src/spatial-projection.mjs`,
-`src/rig-spatial.mjs`, `src/pivot/surfaces.mjs`, `src/spatial-mesh.mjs`,
-`src/movieclip-mesh.mjs`, the polygon and mesh steps of `buildGeometrySteps`
-(`src/pivot/geometry.mjs`).
+([README](README.md#fixtures), [`RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md)). The port followed
+`src/spatial-projection.mjs`, `src/rig-spatial.mjs`, `src/pivot/surfaces.mjs`, `src/spatial-mesh.mjs`,
+`src/movieclip-mesh.mjs` and the polygon and mesh steps of the editor's geometry builder (`buildGeometrySteps`,
+`src/pivot/geometry.mjs`, deleted). The JavaScript that remains of surfaces and meshes checks what a document stores
+(`validateSurface`, `validateSpatialMesh`, `validateMovieclipMeshes`); the interface's groups carry no drawables for a mesh.
 
 ## Contract
 
@@ -19,7 +19,7 @@ the recorded fixtures were made from the JavaScript editor and are frozen
   `Polyfill::surface` (`Surface`: reference triangle, side, flip, depth guides,
   depth test), `Segment::choice_scale` (a pose choice whose hidden length is 0),
   `Figure::mesh` (`spatial::MeshPlan`, compiled once against the figure's joints,
-  `spatialMeshPlan`) with `Figure::mesh_colors` (the palette after the instance's
+  the editor's `spatialMeshPlan`) with `Figure::mesh_colors` (the palette after the instance's
   `_stykStyle.meshColors`), `Movieclip::meshes` (`spatial::ClipMesh`, one per local
   frame). A mesh or clip mesh that is not a valid indexed mesh is left out and noted
   (`Document::notes`); the editor rejects such a file when it loads.

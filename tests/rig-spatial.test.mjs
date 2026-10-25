@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {evaluateSpatial,quatMultiply,quatRotate,spatialQuaternion,spatialPoint} from '../src/rig-spatial.mjs';
@@ -15,11 +14,6 @@ export function spatialFixture(){
  const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},object=createObject(figure,1,200,200),doc={...emptyDocument(),figure_types:[figure],keyframes:[createFrame([object])]};
  return{doc,figure,object,a,b,skin};
 }
-test('dual quaternion skin retains radius at a half-weight 180 degree twist',()=>{
- const{doc,object,b,skin}=spatialFixture();object.angles[b.turn-1]=Math.PI;
- const p=buildGeometry(doc,doc.keyframes[0]).objects.get(0).joints.get(skin);
- near(p.x,200);near(p.y,300);near(Math.abs(p.depthOffset.x),10);
-});
 
 test('skin projection agrees with dual-quaternion reference blending across rotations, reflection and stretch',()=>{
  let seed=417;const random=()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/2**32),dot=(a,b)=>a.reduce((n,v,i)=>n+v*b[i],0);
@@ -85,14 +79,13 @@ test('spatial IK respects an explicit elbow side and uses physical reach before 
  }
 });
 
-test('spatial pins survive reachable root movement and saving; negative scale stays finite',async()=>{
+test('spatial pins survive reachable root movement and saving',async()=>{
  const{doc,a,b,skin}=spatialFixture(),e=newOwnedEditor({demo:false,layerTimeline:true});e.load(doc);e.select(1,a.id-1);e.setSpatialPose({turn:.7,pitch:.2,bend:.3});
  e.select(1,b.id-1);e.setNodeIK({enabled:true,chainLength:2,pinned:true});const before=e.geometry.objects.get(0).joints.get(b.id);
  e.select(1,-1);e.moveSelection(0,15);const p=e.geometry.objects.get(0).joints.get(b.id);near(p.x,before.x,.02);near(p.y,before.y,.02);
  const{buildContainerV2,decodeDocument}=await import('./support/native-files.mjs');const reopened=await decodeDocument(await buildContainerV2(e.serialize(),'styk'),'styk');
  const second=newOwnedEditor({demo:false,layerTimeline:true});second.load(reopened.document);second.select(1,-1);
  near(second.geometry.objects.get(0).joints.get(skin).x,e.geometry.objects.get(0).joints.get(skin).x);
- const plain=spatialFixture();plain.object.scale=-2;assert.ok([...buildGeometry(plain.doc,plain.doc.keyframes[0]).objects.get(0).joints.values()].every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
 });
 
 test('bound spatial setup rejects unsupported rest-space edits without changing the document',()=>{

@@ -2,19 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
-import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
-import {timeline} from '../src/pivot/read-view.mjs';
 const document = () => JSON.parse(readFileSync(new URL('../engine/crates/styk-eval/tests/fixtures/ik/joined.json', import.meta.url), 'utf8'));
 const target = {kind: 'node', uid: 3, handleId: 33, joint: 0};
 const bytes = editor => JSON.stringify(editor.report);
 test('joined pinned follower trail rotates without changing selection or publishing before commit', () => {
   const editor = ownedEditorFor({demo: false, layerTimeline: true}, document());
+  // The limb the trail grabs, in the pose the document gives at the grabbed tick.
+  editor.seek(2); const shape = editor.geometry.objects.get(2).segments[0];
   editor.seek(5); editor.select(3, 0);
   const saved = bytes(editor), history = editor._undo.length;
   assert.ok(editor.beginMotionPathEdit(target, 2));
-  // The limb the trail grabs, in the pose the document gives at the grabbed tick.
-  const rows = timeline(editor.report), row = rows.findLastIndex(entry => entry.start <= 2);
-  const shape = buildGeometry(editor.report, evaluatedFrame(editor.report, row, 0, 2)).objects.get(2).segments[0];
   const point = {x: shape.start.x + (shape.end.x - shape.start.x) * Math.cos(.25) - (shape.end.y - shape.start.y) * Math.sin(.25),
     y: shape.start.y + (shape.end.x - shape.start.x) * Math.sin(.25) + (shape.end.y - shape.start.y) * Math.cos(.25)};
   assert.equal(editor.updateMotionPathEdit(point), true);
