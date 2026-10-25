@@ -1057,6 +1057,7 @@ impl Editor {
             "splitMovieclip" => self.split_native_movieclip(args.first().map(|v| v.as_f64().unwrap_or(f64::NAN)).unwrap_or(self.tick)),
             "breakApartMovieclip" => self.break_apart_movieclip(),
             "renameMovieclip" => self.rename_movieclip(&arg(0)),
+            "publishMovieclipEdit" => self.publish_movieclip_edit(&arg(0), &arg(1), &arg(2)),
             "restartMovieclip" => self.restart_movieclip(),
             "removeMovieclipRestart" => self.remove_movieclip_restart(),
             "setMovieclipPlayback" => self.set_movieclip_playback(&arg(0), &arg(1)),
@@ -1140,8 +1141,10 @@ impl Editor {
         if styk.and_then(|s| s.path(&["animation", "channels"])).and_then(Value::array_len).unwrap_or(0) > 0 {
             return Some("with property channels");
         }
-        if styk.and_then(|s| s.get("movieclipSource")).is_some() {
-            return Some("inside a movieclip");
+        // The editor authors a movieclip's own document through its layer sheet; on a native timeline it edits the
+        // keyframes of a document that retains a source differently from the session.
+        if sheet.is_none() && styk.and_then(|s| s.get("movieclipSource")).is_some() {
+            return Some("inside a movieclip on a native timeline");
         }
         let figures = list(self.report.get("figure_types"));
         if figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {

@@ -1292,12 +1292,12 @@ impl Editor {
             }
             if let CommandKind::MovieclipPoses { before, after } = &command.kind {
                 for entry in before.iter().chain(after) {
-                    if let crate::topology::Place::Source(id) = &entry.place { retained.push(id.clone()); }
+                    if let Some(id) = entry.place.source_id() { retained.push(id.to_string()); }
                 }
             }
             if let CommandKind::Topology { before, after, .. } = &command.kind {
                 for entry in before.frames.iter().chain(&after.frames) {
-                    if let crate::topology::Place::Source(id) = &entry.place { retained.push(id.clone()); }
+                    if let Some(id) = entry.place.source_id() { retained.push(id.to_string()); }
                 }
             }
         }

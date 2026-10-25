@@ -1,5 +1,6 @@
-//! Movieclips (src/editor-movieclips.mjs): `renameMovieclip`, published as one
-//! `movieclip-definition` history entry (`publishDefinition`); an instance's playback on the
+//! Movieclips (src/editor-movieclips.mjs): `renameMovieclip` and `publishMovieclipEdit` (what leaving an edited
+//! movieclip gives the document it was entered from), each published as one `movieclip-definition` history entry
+//! (`publishDefinition`); an instance's playback on the
 //! frame on show (`setMovieclipPlayback`, `setMovieclipDrawing`), checked as
 //! `validatePlayback` checks it. Playback across every frame uses the shared movieclip
 //! pose/history owner; a legacy-timed clip in a layer sheet is first prepared the way
@@ -380,6 +381,30 @@ impl Editor {
         Ok(())
     }
 
+    /// `publishMovieclipEdit(typeId, document, duration)`: leaving a movieclip entered for editing. The definition of
+    /// `typeId` takes the document edited in its own session and its duration (the asset's other fields stay),
+    /// as one `movieclip-definition` entry labelled `Edit movieclip` in this document's history.
+    pub(crate) fn publish_movieclip_edit(&mut self, type_id: &Value, document: &Value, duration: &Value) -> Result<Value, EditError> {
+        let not_a_movieclip = || EditError::Invalid("errors.editorMovieclips.chooseAMovieclip".into());
+        if !document.is_object() || !duration.as_f64().is_some_and(|duration| duration.is_finite() && duration >= 1.0) {
+            return Err(EditError::Unported("a movieclip edit that is not a document and a duration".into()));
+        }
+        let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        let index = figures.iter().position(|figure| figure.get("figure_type_id") == Some(type_id)).ok_or_else(not_a_movieclip)?;
+        let figure = &figures[index];
+        let (Some(styk), Some(asset)) = (figure.get("_styk").and_then(Value::as_obj), figure.path(&["_styk", "movieclip"]).and_then(Value::as_obj)) else { return Err(not_a_movieclip()) };
+        // `{...figure, _styk: {...figure._styk, movieclip: {...asset, document, duration}}}`
+        let mut asset = asset.clone();
+        asset.set("document", document.clone());
+        asset.set("duration", duration.clone());
+        let mut styk = styk.clone();
+        styk.set("movieclip", Value::object(asset));
+        let mut edited = figure.as_obj().cloned().unwrap_or_default();
+        edited.set("_styk", Value::object(styk));
+        self.publish_definition(index, Value::object(edited), "Edit movieclip")?;
+        Ok(Value::Null)
+    }
+
     /// `renameMovieclip(name)`: the selected movieclip's definition renamed.
     pub(crate) fn rename_movieclip(&mut self, name: &Value) -> Result<Value, EditError> {
         let definition = match self.object()? {
@@ -410,5 +435,60 @@ impl Editor {
         let renamed = Value::object(renamed);
         self.publish_definition(index, renamed.clone(), "Rename movieclip")?;
         Ok(renamed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use styk_doc::Value;
+
+    use crate::{Editor, Options};
+
+    fn parse(text: &str) -> Value {
+        styk_doc::json::parse(text.as_bytes()).unwrap()
+    }
+
+    /// A document with one movieclip (type 2, its asset has other fields) and one figure.
+    fn editor() -> Editor {
+        let report = parse(
+            r#"{"keyframes":[{"duration_raw":10,"objects":[]}],"figure_types":[{"figure_type_id":1,"name":"Stick","segments":[]},
+                {"figure_type_id":2,"name":"Clip","_styk":{"movieclip":{"version":1,"document":{"keyframes":[]},"duration":4,"pivot":{"x":1,"y":2}},"kept":true}}],"_styk":{}}"#,
+        );
+        Editor::new(report, Options::default())
+    }
+
+    #[test]
+    fn leaving_an_edited_movieclip_gives_its_definition_the_document_and_the_duration_in_one_entry() {
+        let mut editor = editor();
+        let edited = parse(r#"{"keyframes":[{"duration_raw":3}],"edited":true}"#);
+        editor.publish_movieclip_edit(&Value::Num(2.0), &edited, &Value::Num(7.0)).unwrap();
+        let clip = editor.report.get("figure_types").unwrap().item(1).unwrap();
+        assert_eq!(clip.path(&["_styk", "movieclip", "document", "edited"]).and_then(Value::as_bool), Some(true));
+        assert_eq!(clip.path(&["_styk", "movieclip", "duration"]).and_then(Value::as_f64), Some(7.0));
+        assert_eq!(clip.path(&["_styk", "movieclip", "pivot", "y"]).and_then(Value::as_f64), Some(2.0), "the asset's other fields stay");
+        assert_eq!(clip.path(&["_styk", "kept"]).and_then(Value::as_bool), Some(true));
+        let keys: Vec<String> = clip.path(&["_styk", "movieclip"]).and_then(Value::as_obj).unwrap().keys().map(|key| key.to_string()).collect();
+        assert_eq!(keys, ["version", "document", "duration", "pivot"], "and keep their places");
+        assert_eq!(editor.undo.len(), 1);
+        assert_eq!(editor.undo[0].label, "Edit movieclip");
+
+        let published = editor.report.clone();
+        assert!(editor.undo().unwrap());
+        let before = editor.report.get("figure_types").unwrap().item(1).unwrap();
+        assert_eq!(before.path(&["_styk", "movieclip", "duration"]).and_then(Value::as_f64), Some(4.0), "undone: the clip as it was");
+        assert!(before.path(&["_styk", "movieclip", "document", "edited"]).is_none());
+        assert!(editor.redo().unwrap());
+        assert_eq!(styk_doc::json::to_string(&editor.report), styk_doc::json::to_string(&published), "redone: the clip as it was left");
+    }
+
+    #[test]
+    fn only_a_movieclip_is_given_an_edit() {
+        let mut editor = editor();
+        let edited = parse(r#"{"keyframes":[]}"#);
+        assert!(editor.publish_movieclip_edit(&Value::Num(1.0), &edited, &Value::Num(2.0)).is_err(), "a figure that is not a movieclip");
+        assert!(editor.publish_movieclip_edit(&Value::Num(9.0), &edited, &Value::Num(2.0)).is_err(), "a figure that is not there");
+        assert!(editor.publish_movieclip_edit(&Value::Num(2.0), &Value::Null, &Value::Num(2.0)).is_err(), "no document");
+        assert!(editor.publish_movieclip_edit(&Value::Num(2.0), &edited, &Value::Num(0.0)).is_err(), "no duration");
+        assert!(editor.undo.is_empty(), "and nothing was recorded");
     }
 }

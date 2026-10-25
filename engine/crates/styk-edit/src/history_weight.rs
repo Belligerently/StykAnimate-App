@@ -1,7 +1,7 @@
 //! Exact editor history weights, prepared on a worker. No cache or second
 //! document owner: sizes use the retained command's COW records and owner views.
 use crate::history::{Command, CommandKind};
-use crate::topology::{FramePoses, Place, Snapshot};
+use crate::topology::{FramePoses, Snapshot};
 use std::collections::{HashMap, HashSet};
 use styk_doc::{Obj, Value};
 
@@ -49,13 +49,7 @@ fn poses(
     for entry in frames {
         check()?;
         let mut frame = Obj::new();
-        match &entry.place {
-            Place::Keyframe(index) => frame.set("index", Value::Num(*index as f64)),
-            Place::Source(id) => {
-                frame.set("index", Value::Num(-1.0));
-                frame.set("sourceId", Value::str(id));
-            }
-        }
+        entry.place.locate(&mut frame);
         let mut objects = Vec::with_capacity(entry.objects.len());
         for value in &entry.objects {
             check()?;

@@ -58,11 +58,41 @@ fn handle(value: Option<&Value>) -> Option<f64> {
     value.and_then(Value::as_f64)
 }
 
-/// Where poses live: a keyframe or a pose source.
+/// Where poses live: a keyframe or a pose source, in the document or in the source a movieclip retains
+/// (`movieclipSourceFrames`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Place {
     Keyframe(usize),
     Source(String),
+    /// A keyframe or a pose source of the retained source document `depth` levels down (1 and more).
+    Retained(usize, Box<Place>),
+}
+
+impl Place {
+    /// The pose source this place is (in a retained document too: the editor keeps those ids alive the same way).
+    pub(crate) fn source_id(&self) -> Option<&str> {
+        match self {
+            Place::Source(id) => Some(id),
+            Place::Retained(_, place) => place.source_id(),
+            Place::Keyframe(_) => None,
+        }
+    }
+
+    /// How a history entry says where its poses are: `index` (`-1` for a pose source), `sourceId`, and
+    /// `sourceDepth` in a retained document.
+    pub(crate) fn locate(&self, into: &mut Obj) {
+        match self {
+            Place::Keyframe(index) => into.set("index", Value::Num(*index as f64)),
+            Place::Source(id) => {
+                into.set("index", Value::Num(-1.0));
+                into.set("sourceId", Value::str(id));
+            }
+            Place::Retained(depth, place) => {
+                place.locate(into);
+                into.set("sourceDepth", Value::Num(*depth as f64));
+            }
+        }
+    }
 }
 
 /// The poses of one frame a topology entry keeps.
@@ -84,11 +114,36 @@ pub struct Snapshot {
     pub movieclip_source_animations: Vec<Option<Value>>,
 }
 
-/// `_allSourceFrames()` as places: the keyframes, then the pose sources.
+/// The document the retained movieclip sources hold `depth` levels down (0: `report` itself).
+pub(crate) fn retained_document(report: &Value, depth: usize) -> Option<&Value> {
+    let mut document = report;
+    for _ in 0..depth {
+        document = document.path(&["_styk", "movieclipSource", "document"])?;
+    }
+    Some(document)
+}
+
+fn retained_document_mut(report: &mut Value, depth: usize) -> Option<&mut Value> {
+    let mut document = report;
+    for _ in 0..depth {
+        document = document.make_obj()?.get_mut("_styk")?.make_obj()?.get_mut("movieclipSource")?.make_obj()?.get_mut("document")?;
+    }
+    Some(document)
+}
+
+/// `_allSourceFrames()` and `movieclipSourceFrames(report)` as places: the keyframes, then the pose sources, then those
+/// of each retained source document in turn.
 pub(crate) fn places(report: &Value) -> Vec<Place> {
-    let mut out: Vec<Place> = (0..report.get("keyframes").and_then(Value::array_len).unwrap_or(0)).map(Place::Keyframe).collect();
-    if let Some(sources) = report.path(&["_styk", "frameSources"]).and_then(Value::as_obj) {
-        out.extend(sources.keys().map(|id| Place::Source(id.to_string())));
+    let mut out = Vec::new();
+    let (mut document, mut depth) = (Some(report), 0);
+    while let Some(report) = document {
+        let own = |place: Place| if depth == 0 { place } else { Place::Retained(depth, Box::new(place)) };
+        out.extend((0..report.get("keyframes").and_then(Value::array_len).unwrap_or(0)).map(|index| own(Place::Keyframe(index))));
+        if let Some(sources) = report.path(&["_styk", "frameSources"]).and_then(Value::as_obj) {
+            out.extend(sources.keys().map(|id| own(Place::Source(id.to_string()))));
+        }
+        document = report.path(&["_styk", "movieclipSource", "document"]);
+        depth += 1;
     }
     out
 }
@@ -97,14 +152,19 @@ pub(crate) fn frame_at<'a>(report: &'a Value, place: &Place) -> Option<&'a Value
     match place {
         Place::Keyframe(index) => report.get("keyframes").and_then(Value::as_arr).and_then(|frames| frames.get(*index)),
         Place::Source(id) => report.path(&["_styk", "frameSources"]).and_then(|s| s.get(id)),
+        Place::Retained(depth, place) => frame_at(retained_document(report, *depth)?, place),
     }
 }
 
 pub(crate) fn frame_mut<'a>(report: &'a mut Value, place: &Place) -> Option<&'a mut Obj> {
+    if let Place::Retained(depth, place) = place {
+        return frame_mut(retained_document_mut(report, *depth)?, place);
+    }
     let root = report.make_obj()?;
     match place {
         Place::Keyframe(index) => root.get_mut("keyframes")?.make_arr()?.get_mut(*index)?.make_obj(),
         Place::Source(id) => root.get_mut("_styk")?.make_obj()?.get_mut("frameSources")?.make_obj()?.get_mut(id)?.make_obj(),
+        Place::Retained(..) => None,
     }
 }
 
@@ -746,12 +806,47 @@ impl Editor {
         }
         // The channels of the imported animation that animate a changed handle follow it (`repairSheetStyles`;
         // a document's own `_styk.animation` channels are not edited here).
-        if let Some(animation) = self.report.path(&["_styk", "layerSheet", "legacyAnimation"]).filter(|animation| animation.truthy()).cloned() {
-            let edit = channels::Edit { type_id: &type_id, changes: &changes, reversed: &options.reversed_gradients, before_figure: &before.figure, before_frames: &before.frames };
-            if let Some(repaired) = channels::repair(&self.report, &animation, &edit)?
-                && let Some(sheet) = self.report.make_obj().and_then(|r| r.get_mut("_styk")).and_then(Value::make_obj).and_then(|s| s.get_mut("layerSheet")).and_then(Value::make_obj)
+        let edit = channels::Edit { type_id: &type_id, changes: &changes, reversed: &options.reversed_gradients, before_figure: &before.figure, before_frames: &before.frames };
+        if let Some(animation) = self.report.path(&["_styk", "layerSheet", "legacyAnimation"]).filter(|animation| animation.truthy()).cloned()
+            && let Some(repaired) = channels::repair(&self.report, &animation, &edit)?
+            && let Some(sheet) = self.report.make_obj().and_then(|r| r.get_mut("_styk")).and_then(Value::make_obj).and_then(|s| s.get_mut("layerSheet")).and_then(Value::make_obj)
+        {
+            sheet.set("legacyAnimation", repaired);
+        }
+        self.repair_retained_animations(&edit)
+    }
+
+    /// The animation the sources a movieclip retains hold follows the changed handles too (`repairTopologyStyles` on an
+    /// editor scoped to each source document): its channels, and those of its layer sheet's imported animation.
+    fn repair_retained_animations(&mut self, edit: &channels::Edit) -> Result<(), EditError> {
+        let mut figures = self.report.get("figure_types").cloned().unwrap_or(Value::Null);
+        for depth in 1.. {
+            let (Some(parent), Some(document)) = (retained_document(&self.report, depth - 1), retained_document(&self.report, depth)) else { break };
+            // `movieclipSourceDocument`: a source that inherits its figures shares those of the document it is retained by.
+            if !parent.path(&["_styk", "movieclipSource", "inheritFigures"]).is_some_and(Value::truthy) {
+                figures = document.get("figure_types").cloned().unwrap_or(Value::Null);
+            }
+            let mut view = document.as_obj().cloned().unwrap_or_default();
+            view.set("figure_types", figures.clone());
+            let view = Value::object(view);
+            let mut repaired = Vec::new();
+            if let Some(animation) = view.path(&["_styk", "animation"]).filter(|animation| animation.truthy())
+                && let Some(next) = channels::repair(&view, animation, edit)?
             {
-                sheet.set("legacyAnimation", repaired);
+                repaired.push(("animation", next, false));
+            }
+            if let Some(animation) = view.path(&["_styk", "layerSheet", "legacyAnimation"]).filter(|animation| animation.truthy())
+                && let Some(next) = channels::repair(&view, animation, edit)?
+            {
+                repaired.push(("legacyAnimation", next, true));
+            }
+            let Some(styk) = retained_document_mut(&mut self.report, depth).and_then(|document| document.make_obj()?.get_mut("_styk")?.make_obj()) else { break };
+            for (name, animation, in_sheet) in repaired {
+                if in_sheet {
+                    if let Some(sheet) = styk.get_mut("layerSheet").and_then(Value::make_obj) { sheet.set(name, animation); }
+                } else {
+                    styk.set(name, animation);
+                }
             }
         }
         Ok(())

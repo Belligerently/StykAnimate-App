@@ -258,6 +258,8 @@ fn split_topology_publication(before: &Value, report: &Value) -> Option<Value> {
         let mut fields = match place {
             crate::topology::Place::Keyframe(index) => vec![("index", Value::Num(index as f64))],
             crate::topology::Place::Source(id) => vec![("index", Value::Num(-1.0)), ("sourceId", Value::str(&id))],
+            // A retained source document is not part of this packet.
+            crate::topology::Place::Retained(..) => return None,
         };
         fields.push(("objects", Value::array(objects)));
         frames.push(response_value(fields));
