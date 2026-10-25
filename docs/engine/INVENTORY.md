@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 29 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 29 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
-| `styk-edit` | 93 | 793 KiB | 27 | 24 | 2 | 5 | 35 | 24 % | 52 % | 17 % |
+| `styk-edit` | 93 | 787 KiB | 27 | 23 | 2 | 5 | 36 | 24 % | 52 % | 18 % |
 | `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
 | `styk-eval` | 80 | 651 KiB | 17 | 45 | 9 | 0 | 9 | 18 % | 72 % | 1 % |
 | `styk-export` | 14 | 63 KiB | 8 | 2 | 0 | 0 | 4 | 0 % | 10 % | 0 % |
 | `styk-formats` | 56 | 741 KiB | 22 | 7 | 1 | 22 | 4 | 65 % | 11 % | 7 % |
 | `styk-render` | 51 | 95 KiB | 4 | 1 | 2 | 0 | 44 | 48 % | 23 % | 27 % |
-| **Total** | 356 | 2582 KiB | 95 | 87 | 22 | 27 | 125 | 35 % | 40 % | 9 % |
+| **Total** | 356 | 2577 KiB | 95 | 86 | 22 | 27 | 126 | 35 % | 40 % | 9 % |
 
 ## Engine modules
 
@@ -112,7 +112,7 @@ Engine logic: ported to Rust.
 | `src/editor-load.mjs` | `styk-edit` | removed | Deleted: every document is opened and normalized by styk_edit::load (src/engine/engine-open.mjs) |
 | `src/editor-motion-path.mjs` | `styk-edit` | partial | Rust: layer-sheet motion paths, joined pinned followers and recorded origin support/joins plus five native remote-time and two saved native families; canonical row/source/history owners and separate authoritative/transient reads; scalar-only/projection motion, complex rigs/3D and live trail adoption pending |
 | `src/editor-movieclips.mjs` | `styk-edit` | verified | The movieclip commands are the session's (styk-edit/src/movieclips.rs); the module keeps entering and leaving a clip (a document of its own with a session of its own) and the project report with the clips folded in |
-| `src/editor-origin-mutations.mjs` | `styk-edit` | partial | Rust: recorded whole/topology/joint/handle/saved-channel/range/join/2D-rig edits plus angle-lock definitions and single-selected spatial choices preserve retained support; 37 additional replays/4882 steps and 37 derived groups/357 ticks; recorded native TRUE projector and authored live lifecycle now match Worker/Core/strict replay; documents with animation origins run every command in the session (tests/engine-owner-origins.test.mjs); an origin figure with a 3D pose, mesh, movieclip or drawing stays in the editor |
+| `src/editor-origin-mutations.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the session synchronizes the animation origins (styk-edit origin.rs) |
 | `src/editor-origin-support.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the session repairs support handles as it edits (styk-edit) |
 | `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: native/sheet figure ranges, centering/alignment measuring the app's bounds callback, insertion/replacement including recorded native movieclips and atomic key-capacity refusal; unrecorded effect/IK/draft combinations and facade adoption pending |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |

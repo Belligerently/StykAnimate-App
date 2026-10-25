@@ -13795,7 +13795,7 @@
   },
   "errors.editor.asynchronousImportRequiresASeparateIncomingDocument": {
     "locations": [
-      "src/editor.mjs:248"
+      "src/editor.mjs:211"
     ],
     "context": "if (report === this.report) throw messageError(new Error(''), \"errors.editor.asynchronousImportRequiresASeparateIncomingDocument\", {});"
   },
@@ -13819,20 +13819,20 @@
   },
   "errors.editor.selectExistingKeyframes": {
     "locations": [
-      "src/editor.mjs:357"
+      "src/editor.mjs:305"
     ],
     "context": "if (result.some(i => !Number.isInteger(i) || i < 0 || i >= this.report.keyframes.length)) throw messageError(new Error(''), \"errors.editor.selectExistingKeyfram"
   },
   "errors.editor.theDocumentChangedWhileImporting": {
     "locations": [
-      "src/editor.mjs:256"
+      "src/editor.mjs:219"
     ],
     "context": "throw messageError(new DOMException('', 'AbortError'), \"errors.editor.theDocumentChangedWhileImporting\", {});"
   },
   "errors.editor.theDocumentNameMustBeText": {
     "locations": [
-      "src/editor.mjs:250",
-      "src/editor.mjs:264"
+      "src/editor.mjs:213",
+      "src/editor.mjs:227"
     ],
     "context": "if(name!==undefined&&name!==null&&typeof name!=='string')throw messageError(new Error(''), \"errors.editor.theDocumentNameMustBeText\", {});"
   },
@@ -14053,7 +14053,7 @@
     "locations": [
       "src/editor-camera.mjs:19",
       "src/editor-motion-path.mjs:28",
-      "src/editor.mjs:47"
+      "src/editor.mjs:45"
     ],
     "context": "if (typeof value !== 'number' || !Number.isFinite(value)) throw messageError(new Error(''), \"errors.editorCamera.mustBeFinite\", {label: label});"
   },
@@ -14643,7 +14643,7 @@
   },
   "errors.editorLoad.importCancelled": {
     "locations": [
-      "src/editor.mjs:253",
+      "src/editor.mjs:216",
       "src/engine/engine-open.mjs:34",
       "src/engine/engine-open.mjs:131",
       "src/import-wire.mjs:110",

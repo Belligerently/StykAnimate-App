@@ -28,14 +28,6 @@ function close(actual,expected){assert.equal(actual.length,expected.length);for(
   // precision. Compare within one source-coordinate rounding unit.
   for(const j of [2,3])assert.ok(Math.abs(actual[i][j]-expected[i][j])<1e-4,`${actual[i]} != ${expected[i]}`);
 }}
-test('unchanged and style-only pivot synchronization preserves shared metadata references',()=>{
-  const editor=fixture(),frame=editor.frame,object=frame.objects[0],origin=object._stykAnimationOrigin;
-  editor._synchronizeAnimationOrigins(frame,frame.objects);
-  assert.equal(object._stykAnimationOrigin,origin);
-  const before=structuredClone(object),styled={...object,field28:93};
-  editor._synchronizeAnimationOrigins({...frame,objects:[styled]},[before]);
-  assert.equal(styled._stykAnimationOrigin,origin);
-});
 for(const [name,apply]of [
   ['rotation',editor=>editor.rotateFiguresInFrames(.3,[0,2])],
   ['scale',editor=>editor.scaleFiguresInFrames(1.6,[0,2])],

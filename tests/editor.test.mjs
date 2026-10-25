@@ -19,13 +19,10 @@ test('native starter project evaluates and serializes every keyframe', () => {
   assert.doesNotThrow(() => validateScene(editor.serialize()));
 });
 
-test('history is bounded and failed edits restore the current frame', () => {
+test('history is bounded and refused edits change nothing', () => {
   const editor = open({historyLimit: 3});
   for (let i = 0; i < 10; i++) editor.updateObject({root_x: 600 + i});
   assert.equal(editor._undo.length, 3);
-  const before = structuredClone(editor.frame);
-  assert.throws(() => editor.transaction('Fail', frame => { frame.objects = []; throw new Error('abort'); }), /abort/);
-  assert.deepEqual(editor.frame, before);
   assert.throws(() => editor.updateObject({root_x: Infinity}), /finite/);
   assert.throws(() => editor.setFramesDuration([editor.frameIndex], -1), /duration/);
   assert.throws(() => editor.setFPS(0), /FPS/);

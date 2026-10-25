@@ -31,7 +31,6 @@ import {editorVfxMethods} from './editor-vfx.mjs';
 import {editorHandleCommandMethods} from './editor-handle-commands.mjs';
 import {editorFrameDraftMethods, installFrameDraftPreflights} from './editor-frame-draft.mjs';
 import {prepareLoad, prepareLoadNow} from './engine/engine-open.mjs';
-import {editorOriginMutationMethods} from './editor-origin-mutations.mjs';
 import {editorIKMethods} from './editor-ik.mjs';
 import {editorMovieclipMethods} from './editor-movieclips.mjs';
 import {editorLayerSheetMethods} from './editor-layer-sheet.mjs';
@@ -42,7 +41,6 @@ import {DrawingResources,drawingResourcesFor} from './drawing-resources.mjs';
 import {editorSessionMethods} from './editor-sessions.mjs';
 
 const clone = value => structuredClone(value);
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const finite = (value, label) => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorCamera.mustBeFinite", {label: validationLabel(label)}); return value; };
 function initialLoadState(report,{initialFrameIndex=0,initialTick}={}){
@@ -197,41 +195,6 @@ export class Editor extends EventTarget {
     if (layers) layers.activeId = this.getLayer(state.activeLayerId) ? state.activeLayerId : layers.defaultLayerId;
     this._sheetSelection=state.sheetSelection&&!this.isLayerFocusLocked(state.sheetSelection.id)?{...state.sheetSelection}:null;
   }
-  _record(command) {
-    if (this._authoredPoseEdit?.transaction && (command.kind === 'import'||this.report._styk?.layerSheet&&command.kind==='project')) return;
-    if (this._authoredCommandLabel) command.label = this._authoredCommandLabel;
-    if (this._pendingSourceLayerChanges?.length) {
-      command.layerChanges = [...(command.layerChanges ?? []), ...this._pendingSourceLayerChanges]; this._pendingSourceLayerChanges = null; command.layers = true;
-    }
-    this._captureRemovedFrameSources(command);
-    for (const change of command.frameSourceChanges ?? []) if (change.after?.exists && !change.before?.exists) this._generatedFrameSources.add(change.id);
-    this._trackLayerCommand(command, 'after', {record: true});
-    let collectSources = this._redo.length > 0;
-    command.beforeRevision = this._revision; command.afterRevision = ++this._revisionSerial;
-    this._revision = command.afterRevision;
-    const sized = command.sourceBytes !== undefined && command.frameSourceChanges ? {...command, frameSourceChanges: command.frameSourceChanges.map(change => ({
-      id: change.id, before: {exists: change.before.exists}, after: {exists: change.after.exists},
-    }))} : command;
-    command.bytes = (Number.isFinite(command.precomputedBytes) && command.precomputedBytes >= 0
-      ? command.precomputedBytes : JSON.stringify(sized).length * 2 + (command.sourceBytes ?? 0)) + (this._pendingSourceBytes ?? 0);
-    this._pendingSourceBytes = 0;
-    drawingResourcesFor(this.report)?.history?.track(command,delta=>{
-      if(this._undo.includes(command)||this._redo.includes(command)){this._historySize+=delta;this._trimHistory();}
-    });
-    this._historySize -= this._redo.reduce((bytes,entry)=>bytes+entry.bytes,0);
-    this._historySize += command.bytes; this._undo.push(command); this._redo = [];
-    this._trimHistory(collectSources);
-  }
-  _trimHistory(collectSources=false) {
-    while (this._undo.length > this.historyLimit || (this._historySize > this.historyBytes && this._undo.length + this._redo.length > 1)) {
-      // A failed background archive can restore RAM weight after commands
-      // moved to redo. Retire the farthest future first once one undo remains.
-      const retired=this._undo.length>1?this._undo:this._redo.length?this._redo:this._undo;
-      this._historySize -= retired.shift().bytes;
-      collectSources = true;
-    }
-    if (collectSources){this._pruneFrameSources();this._collectDrawingHistory();}
-  }
   /** The history entry the next undo (or redo) applies, as far as its pixels go: what `DrawingHistory` loads and the drawing store prepares first. */
   historyPixels(direction) {return (direction==='undo'?this._undo:this._redo).at(-1);}
   markSaved() { this._savedRevision = this._revision; this._emit('saved'); }
@@ -331,21 +294,6 @@ export class Editor extends EventTarget {
     this.tick = nextTick; this.frameIndex = low; this._invalidate({viewOnly: true}); this._emit('seek'); return evaluate ? this.evaluatedFrame : this.frame;
   }
 
-  /** Callback receives the editable frame, followed by the report. One frame is snapshotted. */
-  transaction(label, mutateFn, {structural = false, timing = false} = {}) {
-    if (this._drag) this.commitDrag();
-    if (this.report._styk?.layerSheet || this.animationChannels.length || this.report._styk?.movieclipSource) return this._authoredTransaction(label, mutateFn, {structural, timing});
-    const index = this.frameIndex, before = clone(this.frame), beforeSelection = this._selectionState();
-    try { mutateFn(this.frame, this.report); this._synchronizeAnimationOrigins(this.frame,before.objects,{includeNew:true}); validateScene({...this.report, keyframes: [this.report.keyframes[index]]}); }
-    catch (error) { this.report.keyframes[index] = before; this._restoreSelection(beforeSelection); this._invalidate(); throw error; }
-    const after = clone(this.report.keyframes[index]); if (same(before, after)) return false;
-    timing ||= before.duration_raw !== after.duration_raw;
-    structural ||= before.objects.length !== after.objects.length || before.objects.some((o, i) => o.unique_id !== after.objects[i]?.unique_id);
-    this._invalidate({timing}); this.tick = this.timeline[index]?.start ?? 0;
-    this._record({kind: 'frame', label, index, before, after, beforeSelection,
-      afterSelection: this._selectionState(), structural, timing});
-    this._emit('edit', {label, structural, timing, ...(!structural ? {frameIndices: [this.frameIndex]} : {})}); return true;
-  }
 
   /** Translation uses complete connected components; posing uses selected subtrees. */
   resolveTranslationSelection(uids = this.selectedUids, {frame = this.selectionFrame} = {}) {
@@ -381,7 +329,6 @@ Object.assign(Editor.prototype, editorRangeCommandMethods);
 Object.assign(Editor.prototype, editorSceneMethods);
 Object.assign(Editor.prototype, editorVfxMethods);
 Object.assign(Editor.prototype, editorHandleCommandMethods);
-Object.assign(Editor.prototype, editorOriginMutationMethods);
 Object.assign(Editor.prototype, editorMotionPathMethods);
 Object.assign(Editor.prototype, editorTweenerMethods);
 Object.assign(Editor.prototype, editorSessionMethods);

@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {packPoseSequences,expandPoseSequencesSteps} from '../src/pose-sequence-storage.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
-import {buildGeometry,buildGeometrySteps,evaluatedFrame,evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
-import {projectNativePropertyChannel} from '../src/native-property-projection.mjs';
+import {buildGeometry, buildGeometrySteps, evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
 
 function fixture(frames=12,parts=8) {
@@ -51,19 +50,6 @@ test('scoped native interpolation evaluates requested objects and both endpoint 
     assert.equal(scoped.objects[7],r.keyframes[0].objects[7]);
     assert.deepEqual(buildGeometry(r,scoped).objects.get(1).joints,buildGeometry(r,full).objects.get(1).joints);
   }
-});
-
-test('attached coordinate projection shares X/Y history evaluations and invalidates after an edit',()=>{
-  const e=fixture(200,100),target={kind:'figure',uid:2};let calls=0;
-  const evaluate=tick=>{calls++;return evaluatedFrame(e.report,Math.floor(tick/3),0,tick);};
-  const x=projectNativePropertyChannel(e,target,'x',{},evaluate),first=calls;
-  const y=projectNativePropertyChannel(e,target,'y',{},evaluate);
-  assert.equal(first,200);assert.equal(calls,200,'Y must reuse the coordinates computed for X even beyond the 64-frame LRU.');
-  for(const i of [0,65,199]){const root=buildGeometry(e.report,e.report.keyframes[i]).objects.get(1).root;
-    assert.equal(x.keys[i].value,root.x);assert.equal(y.keys[i].value,root.y);}
-  e.addAnimationKey({kind:'figure',uid:1},'x',0,400);
-  const changed=projectNativePropertyChannel(e,target,'x',{},evaluate);
-  assert.notEqual(changed.keys[0].value,x.keys[0].value);assert.ok(calls>200);
 });
 
 test('dense single figures yield inside geometry without changing output',()=>{

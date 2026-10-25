@@ -28,7 +28,6 @@ import {INSPECTOR_BUDGET, MAX_TITLE_ACTIONS, ROW_KINDS, inspectorBudgetProblems,
 import {QUICK_ACTIONS, QUICK_CONTEXTS, quickDefaults} from '../src/ui/quick-actions.mjs';
 import {legacyIkControlsView, legacyInspectorView} from './fixtures/inspector-legacy.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
 import {
   assertNoKeyState, assertNoTitles, assertNumberParity, assertOptions, assertParity, assertSwitchParity, find, nameOf, options, tag, tags,
 } from './helpers/inspector-markup.mjs';
@@ -370,7 +369,7 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
 });
 
 test('several figures: Selection (Rotate 15°, Center), Align, Appearance and Arrange; values that differ read Mixed', () => {
-  const editor = plainEditorFor();
+  const editor = engineEditor({layerTimeline: true, propertyChannels: true});
   editor.selectMany([1, 2]);
   const bounds = {minX: 10, minY: 20, maxX: 110.5, maxY: 220}, view = {editor, selectionCount: 2, bounds};
   const today = legacyInspectorView(view), now = inspectorView(view), descriptor = inspectorDescriptor(view);
