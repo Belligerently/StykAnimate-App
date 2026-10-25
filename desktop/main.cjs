@@ -488,22 +488,6 @@ function registerIpc() {
   handle('styk:vfx-presets-get', (event) => { trusted(event); return vfxPresets.get(); });
   handle('styk:vfx-presets-set', (event, value) => { trusted(event); return vfxPresets.set(value); });
   fileStreams = new FileStreams({onCommitError:error=>telemetry?.error(error?.name||'Error','app',null,{code:error?.code||'write_failed',stage:'write'})});
-  const clipboardFile = path.join(app.getPath('userData'), 'frame-clipboard.styk');
-  let clipboardWriteToken = null, clipboardControl = Promise.resolve();
-  handle('styk:clipboard-write-begin', (event, options) => {
-    trusted(event); fileStreams.validateSize(options?.size);
-    if (!options.size) throw messageError(new Error(''), 'desktop.main.errors.theFrameClipboardIsEmpty', {});
-    const pending = clipboardControl.then(async () => {
-      if (clipboardWriteToken) await fileStreams.cancel(clipboardWriteToken);
-      const transfer = await fileStreams.beginWrite({destination: clipboardFile, size: options.size});
-      clipboardWriteToken = transfer.token; return transfer;
-    });
-    clipboardControl = pending.catch(() => {}); return pending;
-  });
-  handle('styk:clipboard-read-begin', async event => {
-    trusted(event); const transfer = await fileStreams.beginRead(clipboardFile);
-    return transfer ? {...transfer, name: 'Copied keyframes'} : null;
-  });
   const projectTransfers = new Map();
   let projectRequestPending = false;
   // A save belongs to the project in front: bringing another one there ends what the previous one had in flight.

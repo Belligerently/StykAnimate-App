@@ -6,7 +6,6 @@ import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {frameOrder} from '../src/pivot/structure.mjs';
 
 const near = (a, b, tolerance = 1e-5) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
-const withoutFrameId = frame => { const value = structuredClone(frame); if (value._styk) delete value._styk.frameId; return value; };
 const blank = () => { const editor = new Editor({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
 
 test('native starter project evaluates and serializes every keyframe', () => {
@@ -191,20 +190,10 @@ test('bend edits turn descendants without changing the bent segment baseline', (
   editor.undo(); assert.deepEqual(editor.object.angles, angles);
 });
 
-test('non-contiguous frame copy, cut, paste and reversal are atomic and undoable', () => {
+test('non-contiguous frame reversal is atomic and undoable', () => {
   const editor = new Editor(), initial = editor.serialize();
-  assert.equal(editor.copyFrames([1, 3, 5]), 3); assert.equal(editor.clipboardFrameCount, 3);
-  editor.pasteFrames(2); assert.equal(editor.report.keyframes.length, 27);
-  assert.deepEqual(withoutFrameId(editor.serialize().keyframes[3]), withoutFrameId(initial.keyframes[3]));
-  assert.notEqual(editor.getFrameId(3), initial.keyframes[3]._styk.frameId);
-  assert.equal(new Set(editor.report.keyframes.map(frame => frame._styk.frameId)).size, 27);
-  editor.undo(); assert.deepEqual(editor.serialize(), initial);
-  editor.cutFrames([1, 3, 5]); assert.equal(editor.report.keyframes.length, 21);
-  editor.undo(); assert.deepEqual(editor.serialize(), initial); editor.redo(); assert.equal(editor.report.keyframes.length, 21); editor.undo();
   editor.reverseFrames([0, 2, 4]); assert.deepEqual(editor.serialize().keyframes[0], initial.keyframes[4]);
   assert.deepEqual(editor.serialize().keyframes[2], initial.keyframes[2]); editor.undo(); assert.deepEqual(editor.serialize(), initial);
-  editor.cutFrames(editor.report.keyframes.map((_, i) => i)); assert.equal(editor.report.keyframes.length, 1); assert.equal(editor.frame.objects.length, 0);
-  editor.undo(); assert.deepEqual(editor.serialize(), initial);
 });
 
 test('figure clipboard detaches world roots, creates independent definitions, and pastes across documents', () => {

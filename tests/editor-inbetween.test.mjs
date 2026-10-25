@@ -39,12 +39,12 @@ function clearHistory(editor) { editor._undo = []; editor._redo = []; editor._hi
 for (const easing of [false, true]) test(`chosen ratio inserts actual native pose once without changing source durations (easing ${easing})`, () => {
   const editor = fixture({easing}), report = editor.report, before = clone(report), frames = report.keyframes.slice();
   const expected = pose(report, evaluatedNativeFrame({...report, auto_easing: false}, 1, .37)), total = editor.totalTicks;
-  editor.selectFrame(2); editor.select(12); editor.copyFrames([0]); const clipboard = editor._frameClipboard;
+  editor.selectFrame(2); editor.select(12);
   const figures = report.figure_types, backgrounds = report.backgrounds, result = editor.insertInbetweenFrames(.37);
   assert.deepEqual(result.indices, [2]); assert.deepEqual(result.ticks, [10]); assert.equal(result.insertedFrames, 1);
   assert.equal(editor.totalTicks, total + 3); assert.deepEqual(report.keyframes.map(frame => frame.duration_raw), [6, 4, 3, 3, 9]);
   assert.deepEqual(pose(report, report.keyframes[2]), expected);
-  assert.equal(report.figure_types, figures); assert.equal(report.backgrounds, backgrounds); assert.equal(editor._frameClipboard, clipboard);
+  assert.equal(report.figure_types, figures); assert.equal(report.backgrounds, backgrounds);
   for (let index = 0; index < frames.length; index++) assert.equal(report.keyframes[index + (index >= 2 ? 1 : 0)], frames[index]);
   assert.equal(new Set(report.keyframes.map(frame => frame._styk.frameId)).size, 5);
   assert.equal(editor._undo.length, 1); editor.undo(); assert.deepEqual(report, before); assert.equal(editor.frameIndex, 2); assert.equal(editor.selectedUid, 12);

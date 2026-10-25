@@ -145,6 +145,8 @@ pub(crate) struct Plan {
     pub(crate) next_frame: u64,
     /// Figure definitions the command adds (`assets.figure_types.added`).
     pub(crate) definitions: Vec<Value>,
+    /// Scene backgrounds the command adds (`assets.backgrounds.added`).
+    pub(crate) backgrounds: Vec<Value>,
     /// The document's figure definitions, which a drawing layer's one-cel check reads.
     pub(crate) figures: Value,
 }
@@ -938,6 +940,7 @@ impl Editor {
             layers,
             next_frame: self.next_frame_identity,
             definitions: Vec::new(),
+            backgrounds: Vec::new(),
             figures: self.report.get("figure_types").cloned().unwrap_or(Value::Null),
         })
     }
@@ -1019,6 +1022,25 @@ impl Editor {
             figures.extend(plan.definitions.iter().cloned());
             Some((index, std::mem::take(&mut plan.definitions)))
         };
+        let backgrounds = if plan.backgrounds.is_empty() {
+            None
+        } else {
+            let table = self.report.make_obj().and_then(|r| r.get_mut("backgrounds")).and_then(Value::make_arr);
+            match table {
+                Some(table) => {
+                    let index = table.len();
+                    table.extend(plan.backgrounds.iter().cloned());
+                    Some((index, std::mem::take(&mut plan.backgrounds)))
+                }
+                None => {
+                    let added = std::mem::take(&mut plan.backgrounds);
+                    if let Some(report) = self.report.make_obj() {
+                        report.set("backgrounds", Value::array(added.clone()));
+                    }
+                    Some((0, added))
+                }
+            }
+        };
         let definition = definitions.is_some();
         self.set_sheet(&after, &after_layers);
         if !plan.sources.is_empty() {
@@ -1034,7 +1056,7 @@ impl Editor {
         let after_selection = self.selection_state();
         let source_ids: Vec<Value> = plan.sources.iter().map(|(id, _)| Value::str(id)).collect();
         self.record_checked(Command {
-            kind: CommandKind::LayerSheet { before, after, before_layers, after_layers, sources: plan.sources, definitions, retain_geometry },
+            kind: CommandKind::LayerSheet { before, after, before_layers, after_layers, sources: plan.sources, definitions, backgrounds, retain_geometry },
             label: label.to_string(),
             before_selection: selection,
             after_selection,
@@ -1172,7 +1194,7 @@ impl Editor {
     /// `applyLayerSheetCommand(editor, command, direction)`.
     pub(crate) fn apply_sheet_command(&mut self, command: &Command, direction: Direction) -> Result<(), EditError> {
         let _scope = crate::prof::scope("sheet::apply_command");
-        let CommandKind::LayerSheet { before, after, before_layers, after_layers, sources, definitions, .. } = &command.kind else { return Ok(()) };
+        let CommandKind::LayerSheet { before, after, before_layers, after_layers, sources, definitions, backgrounds, .. } = &command.kind else { return Ok(()) };
         let (sheet, layers, selection, revision) = match direction {
             Direction::Before => (before, before_layers, &command.before_selection, command.before_revision),
             Direction::After => (after, after_layers, &command.after_selection, command.after_revision),
@@ -1189,6 +1211,20 @@ impl Editor {
                 Direction::After => {
                     let at = (*index).min(figures.len());
                     figures.splice(at..at, added.iter().cloned());
+                }
+            }
+        }
+        // The backgrounds a paste brought with the scene likewise.
+        if let Some((index, added)) = backgrounds
+            && let Some(table) = self.report.make_obj().and_then(|r| r.get_mut("backgrounds")).and_then(Value::make_arr)
+        {
+            match direction {
+                Direction::Before => {
+                    table.drain(*index..(*index + added.len()).min(table.len()));
+                }
+                Direction::After => {
+                    let at = (*index).min(table.len());
+                    table.splice(at..at, added.iter().cloned());
                 }
             }
         }

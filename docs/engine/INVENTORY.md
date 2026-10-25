@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 169 KiB | 11 | 7 | 8 | 0 | 10 | 23 % | 23 % | 0 % |
-| `styk-edit` | 90 | 1230 KiB | 38 | 44 | 6 | 1 | 1 | 5 % | 69 % | 2 % |
+| `styk-edit` | 90 | 1228 KiB | 30 | 44 | 6 | 1 | 9 | 13 % | 69 % | 9 % |
 | `styk-engine` | 24 | 40 KiB | 11 | 0 | 0 | 0 | 13 | 3 % | 0 % | 3 % |
 | `styk-eval` | 80 | 688 KiB | 20 | 46 | 9 | 0 | 5 | 17 % | 72 % | 0 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 13 | 8 | 3 | 0 | 27 | 12 % | 50 % | 0 % |
-| **Total** | 356 | 3223 KiB | 129 | 115 | 27 | 23 | 62 | 23 % | 50 % | 2 % |
+| **Total** | 356 | 3221 KiB | 121 | 115 | 27 | 23 | 70 | 25 % | 50 % | 5 % |
 
 ## Engine modules
 
@@ -68,13 +68,13 @@ Engine logic: ported to Rust.
 | `src/animation-history.mjs` | `styk-edit` | partial | Rust: recorded UTF-16 history weights and warm checkpoints; same exclusive Session coupled to portable quiet/live Core with terminal-ACK retirement; actual browser shown/release and persistent current charge pending; private undo/redo heads share until recorded writes, five alias plus191 owning controls pass; exact limits/prune/rollback/ACK owner retained, no public API change |
 | `src/builder-appearance.mjs` | `styk-edit` | partial | Rust: pasting runs updateBuilderSegmentStyle (styk-edit/src/builder.rs); copying reads the figure on show (a view) |
 | `src/builder-session.mjs` | `styk-edit` | js |  |
-| `src/clipboard-asset-plan.mjs` | `styk-edit` | js |  |
+| `src/clipboard-asset-plan.mjs` | `styk-edit` | removed | deleted with the native frame clipboard: nothing in the interface copied or pasted keyframes on a native timeline (4009 bytes) |
 | `src/clipboard-assets.mjs` | `styk-edit` | js |  |
-| `src/clipboard-legacy-upgrade.mjs` | `styk-edit` | js |  |
+| `src/clipboard-legacy-upgrade.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its legacy destination upgrade) (9681 bytes) |
 | `src/clipboard-wire.mjs` | `styk-edit` | js |  |
-| `src/clipboard-worker-client.mjs` | `styk-edit` | js |  |
-| `src/clipboard-worker-plan.mjs` | `styk-edit` | js |  |
-| `src/clipboard-worker.mjs` | `styk-edit` | js |  |
+| `src/clipboard-worker-client.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its worker pipeline) (11606 bytes) |
+| `src/clipboard-worker-plan.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its worker pipeline) (7402 bytes) |
+| `src/clipboard-worker.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its worker pipeline) (8566 bytes) |
 | `src/demo.mjs` | `styk-edit` | js |  |
 | `src/editor-animation.mjs` | `styk-edit` | partial | Rust: sheet scalar editing and fractional read-only animation frame/property values; whole stored key times/begins retained, recorded worker-only native x/y property-channel begin/preview/commit/cancel/replace and shown-frame reads match the original TRUE tapes; wider native combinations, key editing and app adoption remain JS |
 | `src/editor-audio.mjs` | `styk-edit` | ported | Rust: every command (styk-edit/src/audio.rs): tracks, clips, import, split, duplicate, copy, cut, paste with identities from the draws, rippleAudio and the audioRipple option on frame inserts and removals (2026-10-24); the JavaScript module remains only as the fallback for a call the session refuses |
@@ -86,8 +86,8 @@ Engine logic: ported to Rust.
 | `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, face visibility surfaces checked against the joints on show; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs) and on the definition, updateSegmentStyle, convertSegment (styk-edit/src/builder.rs), duplicateSegment, duplicateSegmentBranch (styk-edit/src/topology.rs, a 3D joint's bindings renamed to the copies) |
 | `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion, addCameraMotion, copyCameraMotion, pasteCameraMotion, duplicateCameraMotion and randomizeCameraMotion (identities and seeds the editor draws, D18) with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); baking camera motion still JS |
 | `src/editor-camera.mjs` | `styk-edit` | partial | Rust: camera values/gestures, native follow read and authored multi-frame bake; centering measures the app's bounds callback itself (styk-edit/src/bounds.rs). follow paths of the session's own revisions are shaped on demand; canonical worker bake adoption pending |
-| `src/editor-clipboard-async.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-clipboard-sparse.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-clipboard-async.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its asynchronous copy and paste) (19431 bytes) |
+| `src/editor-clipboard-sparse.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its sparse paste) (15760 bytes) |
 | `src/editor-colors.mjs` | `styk-edit` | partial | Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs) and recolouring figures (editFigureColors, setFigureColor, replaceFigureColor, resetFigureColors: styk-edit/src/recolor.rs); figurePalette for the inspector still JS |
 | `src/editor-combine.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-disconnect.mjs` | `styk-edit` | js | commands and history |
@@ -95,7 +95,7 @@ Engine logic: ported to Rust.
 | `src/editor-draws.mjs` | `styk-edit` | partial | Rust: Editor::set_draws, draw_uuid, draw_seed and draw_random take what the editor drew for a call (D18); drawing the values stays in JavaScript until the engine owns the document |
 | `src/editor-duplicate-drag.mjs` | `styk-edit` | ported | Rust: beginDuplicateDrag, finishDuplicateDrag and their commit and cancel through commitDrag/cancelDrag (styk-edit/src/duplicate_drag.rs; engine-run in the app since 2026-10-24); the JavaScript module remains only as the fallback for a call the session refuses |
 | `src/editor-figure-transform.mjs` | `styk-edit` | ported | beginFigureHandleDrag, transformFigureHandle, commitFigureHandleDrag, cancelFigureHandleDrag, createFigureHandleTransform, figureHandleTransform (styk-edit/src/figure_transform.rs); recorded native/sheet animation-origin handle transforms preserve retained support; an origin figure with a 3D pose, mesh, movieclip or drawing runs in the editor |
-| `src/editor-frame-clipboard.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-frame-clipboard.mjs` | `styk-edit` | removed | deleted: nothing in the interface copied or pasted keyframes on a native timeline; the clipboards are the session's (styk-edit/src/clipboards.rs, src/engine/engine-clipboards.mjs) (18950 bytes) |
 | `src/editor-frame-draft.mjs` | `styk-edit` | partial | Rust: disableFrameDrafts, the preview calls and the conversion of a saved Update draft (styk-edit/src/frame_draft.rs); the interface never starts a working frame on a layer sheet, and starting, adding, updating and discarding one (the low-level API for native timelines) is refused by the engine |
 | `src/editor-frames.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-handle-commands.mjs` | `styk-edit` | partial | Rust: recorded segment-value clipboard including explicit-null refusal and guarded implicit paste; handle commands include native follow projections, shaped by the session for its own revision |
@@ -420,7 +420,7 @@ Browser, Electron or operating-system service: stays in JS (or native), driven b
 | `src/browser-recovery.mjs` |  | stays | file, storage and network services |
 | `src/community-library.mjs` |  | stays | file, storage and network services |
 | `src/document-save.mjs` |  | stays | file, storage and network services |
-| `src/frame-clipboard-storage.mjs` |  | stays | file, storage and network services |
+| `src/frame-clipboard-storage.mjs` |  | removed | deleted with the native frame clipboard (its persistence between runs) (3299 bytes) |
 | `src/library-files.mjs` |  | stays | file, storage and network services |
 | `src/native-files.mjs` |  | stays | file, storage and network services |
 | `src/svg-export.mjs` |  | removed | removed; styk_export::svg writes the frame's draw list as vector SVG (a picture of the frame where it has no vector form) |

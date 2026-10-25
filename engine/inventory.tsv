@@ -52,13 +52,13 @@ src/canvas-pinch.mjs	ui	-	stays
 src/canvas-pose-input.mjs	ui	-	stays	
 src/canvas-raster-refinement.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/canvas-wheel-zoom.mjs	ui	-	stays	
-src/clipboard-asset-plan.mjs	engine	styk-edit	js	
+src/clipboard-asset-plan.mjs	engine	styk-edit	removed	deleted with the native frame clipboard: nothing in the interface copied or pasted keyframes on a native timeline (4009 bytes)
 src/clipboard-assets.mjs	engine	styk-edit	js	
-src/clipboard-legacy-upgrade.mjs	engine	styk-edit	js	
+src/clipboard-legacy-upgrade.mjs	engine	styk-edit	removed	deleted with the native frame clipboard (its legacy destination upgrade) (9681 bytes)
 src/clipboard-wire.mjs	engine	styk-edit	js	
-src/clipboard-worker-client.mjs	engine	styk-edit	js	
-src/clipboard-worker-plan.mjs	engine	styk-edit	js	
-src/clipboard-worker.mjs	engine	styk-edit	js	
+src/clipboard-worker-client.mjs	engine	styk-edit	removed	deleted with the native frame clipboard (its worker pipeline) (11606 bytes)
+src/clipboard-worker-plan.mjs	engine	styk-edit	removed	deleted with the native frame clipboard (its worker pipeline) (7402 bytes)
+src/clipboard-worker.mjs	engine	styk-edit	removed	deleted with the native frame clipboard (its worker pipeline) (8566 bytes)
 src/codec-job.mjs	engine	styk-formats::service	js	import/export transport
 src/codec-engine.mjs	engine	styk-formats::service	js	import/export transport: loads the Rust codec module (styk-codec-wasm) and answers one request
 src/codec-request.mjs	engine	styk-formats::service	js	import/export transport
@@ -132,8 +132,8 @@ src/editor-builder-topology.mjs	engine	styk-edit	partial	Rust: recorded topology
 src/editor-builder.mjs	engine	styk-edit	partial	Rust: addPolygon, updatePolygon (handles, order, face visibility surfaces checked against the joints on show; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs) and on the definition, updateSegmentStyle, convertSegment (styk-edit/src/builder.rs), duplicateSegment, duplicateSegmentBranch (styk-edit/src/topology.rs, a 3D joint's bindings renamed to the copies)
 src/editor-camera-motion.mjs	engine	styk-edit	partial	Rust: setCameraMotion, deleteCameraMotion, addCameraMotion, copyCameraMotion, pasteCameraMotion, duplicateCameraMotion and randomizeCameraMotion (identities and seeds the editor draws, D18) with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); baking camera motion still JS
 src/editor-camera.mjs	engine	styk-edit	partial	Rust: camera values/gestures, native follow read and authored multi-frame bake; centering measures the app's bounds callback itself (styk-edit/src/bounds.rs). follow paths of the session's own revisions are shaped on demand; canonical worker bake adoption pending
-src/editor-clipboard-async.mjs	engine	styk-edit	js	commands and history
-src/editor-clipboard-sparse.mjs	engine	styk-edit	js	commands and history
+src/editor-clipboard-async.mjs	engine	styk-edit	removed	deleted with the native frame clipboard (its asynchronous copy and paste) (19431 bytes)
+src/editor-clipboard-sparse.mjs	engine	styk-edit	removed	deleted with the native frame clipboard (its sparse paste) (15760 bytes)
 src/editor-colors.mjs	engine	styk-edit	partial	Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs) and recolouring figures (editFigureColors, setFigureColor, replaceFigureColor, resetFigureColors: styk-edit/src/recolor.rs); figurePalette for the inspector still JS
 src/editor-combine.mjs	engine	styk-edit	js	commands and history
 src/editor-disconnect.mjs	engine	styk-edit	js	commands and history
@@ -141,7 +141,7 @@ src/editor-drawing.mjs	engine	styk-edit	partial	Rust: the structure of a drawing
 src/editor-draws.mjs	engine	styk-edit	partial	Rust: Editor::set_draws, draw_uuid, draw_seed and draw_random take what the editor drew for a call (D18); drawing the values stays in JavaScript until the engine owns the document
 src/editor-duplicate-drag.mjs	engine	styk-edit	ported	Rust: beginDuplicateDrag, finishDuplicateDrag and their commit and cancel through commitDrag/cancelDrag (styk-edit/src/duplicate_drag.rs; engine-run in the app since 2026-10-24); the JavaScript module remains only as the fallback for a call the session refuses
 src/editor-figure-transform.mjs	engine	styk-edit	ported	beginFigureHandleDrag, transformFigureHandle, commitFigureHandleDrag, cancelFigureHandleDrag, createFigureHandleTransform, figureHandleTransform (styk-edit/src/figure_transform.rs); recorded native/sheet animation-origin handle transforms preserve retained support; an origin figure with a 3D pose, mesh, movieclip or drawing runs in the editor
-src/editor-frame-clipboard.mjs	engine	styk-edit	js	commands and history
+src/editor-frame-clipboard.mjs	engine	styk-edit	removed	deleted: nothing in the interface copied or pasted keyframes on a native timeline; the clipboards are the session's (styk-edit/src/clipboards.rs, src/engine/engine-clipboards.mjs) (18950 bytes)
 src/editor-frame-draft.mjs	engine	styk-edit	partial	Rust: disableFrameDrafts, the preview calls and the conversion of a saved Update draft (styk-edit/src/frame_draft.rs); the interface never starts a working frame on a layer sheet, and starting, adding, updating and discarding one (the low-level API for native timelines) is refused by the engine
 src/editor-frames.mjs	engine	styk-edit	js	commands and history
 src/editor-handle-commands.mjs	engine	styk-edit	partial	Rust: recorded segment-value clipboard including explicit-null refusal and guarded implicit paste; handle commands include native follow projections, shaped by the session for its own revision
@@ -196,7 +196,7 @@ src/feedback-ui.mjs	app	-	stays	telemetry, support, updates
 src/figure-colors.mjs	engine	styk-edit	partial	Rust: validateRecolor, recolorObject, figurePalette, attachedFigurePalette, displayedColor, displayedSegmentPaint (styk-edit/src/recolor.rs, for recolouring); the inspector reads them in JS
 src/figure-join-action.mjs	ui	-	stays	
 src/frame-clipboard-authored.mjs	engine	styk-edit	js	
-src/frame-clipboard-storage.mjs	platform	-	stays	file, storage and network services
+src/frame-clipboard-storage.mjs	platform	-	removed	deleted with the native frame clipboard (its persistence between runs) (3299 bytes)
 src/frame-draft-animation.mjs	engine	styk-edit	js	
 src/frame-ids.mjs	engine	styk-eval	js	
 src/frame-timing-history.mjs	engine	styk-edit	js	

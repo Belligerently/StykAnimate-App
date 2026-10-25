@@ -191,17 +191,6 @@ test('Undo and Redo local edits preserve Add mode, its stored baseline and later
   first.redo(); assert.equal(first.frameDraft.mode,'add'); assert.equal(first.frameDraft.dirty,true);
 });
 
-test('context Paste Insert preserves Add pose, edits stored frames and has one atomic Undo', () => {
-  const editor=fixture(); editor.copyFrames([0]); editor.beginFrameDraft({mode:'add',index:3}); value(editor,1,'root_x',85);
-  const before=clone(editor.report),history=editor._undo.length;
-  editor.editStoredFrames(()=>editor.pasteFrames(1));
-  assert.equal(editor._undo.length,history+1); assert.equal(editor.report.keyframes.length,5); assert.equal(editor.frameIndex,4);
-  assert.equal(editor.frame.objects[0].root_x,85); assert.equal(editor.report._styk.simpleFrameDraft.baseline.objects[0].root_x,30);
-  assert.deepEqual(editor.report.keyframes.slice(0,-1).map(frame=>frame.objects[0].root_x),[0,0,10,20]);
-  editor.undo(); assert.deepEqual(editor.report,before); assert.equal(editor.frameDraft.dirty,true);
-  editor.redo(); assert.equal(editor.report.keyframes.length,5); assert.equal(editor.frame.objects[0].root_x,85);
-});
-
 test('single context Delete retains Add working pose even when deleting its source key', () => {
   const editor=fixture(); editor.beginFrameDraft({mode:'add',index:3}); value(editor,1,'root_x',85);
   const before=clone(editor.report); editor.editStoredFrames(()=>editor.deleteFrames([3]));
@@ -211,9 +200,9 @@ test('single context Delete retains Add working pose even when deleting its sour
   assert.equal(reopened.frame.objects[0].root_x,20); editor.undo(); assert.deepEqual(editor.report,before);
 });
 
-test('toolbar Delete and Paste-end discard Add working copy inside their single history command', () => {
-  for (const operation of [editor=>editor.deleteFrames([0,1]),editor=>editor.pasteFrames(editor.report.keyframes.length)]) {
-    const editor=fixture(); editor.copyFrames([0]); editor.beginFrameDraft({mode:'add',index:3}); value(editor,1,'root_x',85);
+test('toolbar Delete discards Add working copy inside its single history command', () => {
+  for (const operation of [editor=>editor.deleteFrames([0,1])]) {
+    const editor=fixture(); editor.beginFrameDraft({mode:'add',index:3}); value(editor,1,'root_x',85);
     const before=clone(editor.report),history=editor._undo.length;
     editor.editStoredFrames(()=>operation(editor),{preserveWorking:false});
     assert.equal(editor._undo.length,history+1); assert.equal(editor.frameDraft.mode,'add'); assert.equal(editor.frameDraft.dirty,false);
@@ -250,13 +239,6 @@ test('Delete all restores zero stored keys while retaining the working pose and 
   assert.equal(reopened.totalTicks,0);assert.equal(reopened.frame.objects[0].root_x,85);
 });
 
-test('Paste into zero stored keys excludes the placeholder and Undo restores its working pose',()=>{
-  const editor=fixture(1);editor.copyFrames([0]);editor.beginFrameDraft({mode:'add',empty:true});value(editor,1,'root_x',85);
-  const before=clone(editor.report);editor.editStoredFrames(()=>editor.pasteFrames(0),{preserveWorking:false});
-  assert.equal(editor.report.keyframes.length,1);assert.equal(editor.frameDraft.empty,false);assert.equal(editor.frame.objects[0].root_x,0);
-  const ticks=editor.totalTicks;editor.undo();assert.deepEqual(editor.report,before);assert.equal(editor.totalTicks,0);editor.redo();assert.equal(editor.totalTicks,ticks);
-});
-
 test('Advanced conversion promotes an empty working placeholder and malformed empty metadata is rejected',()=>{
   const editor=fixture(1);editor.beginFrameDraft({mode:'add',empty:true});assert.equal(editor.disableFrameDrafts(),true);
   assert.equal(editor.report.keyframes.length,1);assert.equal(editor.totalTicks,1);assert.equal(editor.report._styk.simpleFrameDraft,undefined);
@@ -264,7 +246,7 @@ test('Advanced conversion promotes an empty working placeholder and malformed em
   assert.throws(()=>validateSimpleFrameDraft(bad),/placeholder/);
 });
 test('invalid and no-op global commands restore the exact draft, identities, history and Redo stack', () => {
-  for (const operation of [editor => editor.moveFrame(2, 2), editor => editor.deleteFrames([-1]), editor => editor.pasteFrames(0)]) {
+  for (const operation of [editor => editor.moveFrame(2, 2), editor => editor.deleteFrames([-1])]) {
     const editor = fixture(); editor.beginFrameDraft({mode: 'add'}); value(editor, 1, 'root_x', 85);
     editor.addDraftFrame(); editor.undo();
     // A real undoable Add retains its working-pose checkpoint in the Redo entry.
@@ -276,9 +258,3 @@ test('invalid and no-op global commands restore the exact draft, identities, his
     assert.equal(editor.frameDraft.mode, 'add'); assert.equal(editor.frameDraft.dirty, true);
   }
 });
-test('copying stored frames excludes a dirty Add working pose', () => {
-  const editor = fixture(); editor.beginFrameDraft({mode: 'add', index: 3}); value(editor, 1, 'root_x', 85);
-  editor.copyFrames([3]); assert.equal(editor._frameClipboard[0].objects[0].root_x, 30);
-  assert.equal(editor.frame.objects[0].root_x, 85); assert.equal(editor.frameDraft.dirty, true);
-});
-

@@ -202,8 +202,8 @@ continues to use `editor.seek(tick)`.
 
 Ctrl/Shift frame selection and comma/period navigation follow the supplied
 [Pivot frame-control conventions](https://pivotanimator.net/help5-2/animation_frame_controls.htm).
-Frame operations are undoable in this application. Zero-selection copy/delete
-are no-ops and preserve the clipboard. Sparse clipboard, reverse, timing and bake
+Frame operations are undoable in this application. Zero-selection delete
+is a no-op. Sparse reverse, timing and bake
 commands receive the exact sorted index set. Painting uses cached selection runs
 and set membership, so gaps remain visibly unselected. A playback range requires
 one continuous selection.
@@ -213,8 +213,7 @@ one continuous selection.
 The Timing dialog synchronizes exposure frames with inbetweens, handles mixed
 values, and applies the chosen duration to the selected keys in one history
 command. Duration zero hides a key. The model retains Pivot's terminal-frame rule.
-Blank insertion preserves the current camera/background. Duplication preserves
-the frame clipboard.
+Blank insertion preserves the current camera/background.
 
 Baking materializes output poses through the model's bounded range command.
 Hidden keys remain stored. Sparse baking selects only the resulting selected
@@ -249,7 +248,7 @@ RAF. Pointer release cancels any older pending move and flushes its exact tick.
 ## Recorded evidence and remaining acceptance
 
 The browser regression verifies toolbar actions, timing fields and presets,
-sparse selection/clipboard/reverse/baking, zero-selection behavior, hidden-key
+sparse selection/reverse/baking, zero-selection behavior, hidden-key
 navigation/restoration, loop callbacks, cancellation, resize, and undo. It also
 verifies zero eager evaluations across a 144-move burst, one seek per RAF, one
 deferred range notification, and exact final-tick handling.

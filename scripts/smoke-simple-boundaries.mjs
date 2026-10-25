@@ -39,18 +39,14 @@ try {
   await page.evaluate(async()=>{
     const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');const report=emptyDocument();
     report.keyframes=[0,10,20,30].map(x=>createFrame([createObject(report.figure_types[0],1,x,180)],5));
-    styk.editor.load(report);styk.editor.copyFrames([0]);styk.editor.beginFrameDraft({mode:'add',index:3});await setWorkingX(85);
+    styk.editor.load(report);styk.editor.beginFrameDraft({mode:'add',index:3});await setWorkingX(85);
   });
-  await page.locator('#timeline [data-frame="1"] button').click({button:'right'});
-  await page.locator('.styk-simple-menu button').filter({hasText:'Paste insert'}).click();
-  assert.equal(await page.evaluate(()=>styk.editor.report.keyframes.length),5);assert.equal(await page.evaluate(()=>styk.editor.frame.objects[0].root_x),85);
-  assert.equal(await page.evaluate(()=>styk.editor.report._styk.simpleFrameDraft.baseline.objects[0].root_x),30);
-  await page.locator('#timeline [data-frame="4"] button').click({button:'right'});
+  await page.locator('#timeline [data-frame="3"] button').click({button:'right'});
   await page.locator('.styk-simple-menu button').filter({hasText:'Delete frames'}).click();
-  assert.equal(await page.evaluate(()=>styk.editor.report.keyframes.length),4);assert.equal(await page.evaluate(()=>styk.editor.frame.objects[0].root_x),85);
+  assert.equal(await page.evaluate(()=>styk.editor.report.keyframes.length),3);assert.equal(await page.evaluate(()=>styk.editor.frame.objects[0].root_x),85);
   assert.equal(await page.evaluate(()=>styk.editor.report._styk.simpleFrameDraft.baseline.objects[0].root_x),20);
-  await page.evaluate(()=>styk.editor.undo());await page.evaluate(()=>styk.editor.undo());assert.equal(await page.evaluate(()=>styk.editor.frameIndex),3);
-  pass('Actual context Paste Insert and Delete preserve the Add pose and Undo restores both stored scenes.');
+  await page.evaluate(()=>styk.editor.undo());assert.equal(await page.evaluate(()=>styk.editor.frameIndex),3);
+  pass('Actual context Delete preserves the Add pose and Undo restores the stored scenes.');
   await page.evaluate(()=>{styk.timeline.action('select-all');styk.state.applyRange=true;styk.editor.select(1);});
   await page.waitForSelector('#figure-color');
   await page.locator('#figure-color').evaluate(input=>{input.value='#123456';input.dispatchEvent(new Event('change',{bubbles:true}));input.blur();});

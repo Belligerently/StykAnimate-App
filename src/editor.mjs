@@ -33,7 +33,6 @@ import {ensureLayerState, validateLayerState, layerLocked} from './layers.mjs';
 import {editorAnimationMethods} from './editor-animation.mjs';
 import {validateAnimationDocument, animationEndTick} from './animation-channels.mjs';
 import {editorFrameMethods, validateFrameIdentities} from './editor-frames.mjs';
-import {editorFrameClipboardMethods} from './editor-frame-clipboard.mjs';
 import {invalidateFrameIndex} from './frame-ids.mjs';
 import {editorAuthoredPoseMethods} from './editor-authored-pose.mjs';
 import {applyNativePropertyCommand} from './native-property-edit.mjs';
@@ -56,7 +55,6 @@ import {editorOriginMutationMethods,originGeometryChanged} from './editor-origin
 import {invalidateAnimationOriginLayout,animationOriginOffset,animationRotation,reflectAnimationOriginOffset} from './animation-origin.mjs';
 import {repairOriginSupport} from './editor-origin-support.mjs';
 import {rotateOriginSupport,mirrorOriginSupport,resetOriginSupport} from './animation-origin-support.mjs';
-import {applySparseClipboardFrames} from './editor-clipboard-sparse.mjs';
 import {animationHistoryBytes} from './animation-history.mjs';
 import {editorIKMethods} from './editor-ik.mjs';
 import {editorMovieclipMethods, applyMovieclipCommand} from './editor-movieclips.mjs';
@@ -205,8 +203,6 @@ export class Editor extends EventTarget {
   get layerRevision() { return this._layerRevision ?? 0; }
   get activeLayerId() { return this.report?._styk?.layers?.activeId ?? this.report?._styk?.layers?.defaultLayerId ?? 'layer-1'; }
   set activeLayerId(id) { this.setActiveLayer(id); }
-  get hasFrameClipboard() { return Boolean(this._frameClipboard?.length); }
-  get clipboardFrameCount() { return this._frameClipboard?.length ?? 0; }
   get hasFigureClipboard() { return Boolean(this._figureClipboard || this._selectionClipboard); }
 
   _emit(kind, detail = {}) {
@@ -356,10 +352,9 @@ export class Editor extends EventTarget {
     const retained = localObjects && command.index === this.frameIndex && selection?.frameIndex === this.frameIndex && selection.tick === this.tick
       ? {previous: this._geometry ?? this._incremental?.previous, dirtySlots: this._geometry ? [] : this._incremental?.dirtySlots ?? []} : null;
     this._prepareFrameDraftHistory?.(command, direction);
-    const sparseClipboard = applySparseClipboardFrames(this, command, direction);
     // Animation commands publish immutable tables/channels; later edits copy the
     // touched channel. Replay must not copy every unrelated key in the project.
-    const value = sparseClipboard ? undefined : ['animation','camera-motion','vfx-clips'].includes(command.kind) ? command[direction]
+    const value = ['animation','camera-motion','vfx-clips'].includes(command.kind) ? command[direction]
       : command.kind === 'topology' ? cloneTopologySnapshot(command[direction]) : clone(command[direction]);
     if (command.kind === 'frame') this.report.keyframes[command.index] = value;
     else if(command.kind==='frame-timing')applyFrameTiming(this,command,direction);
@@ -372,10 +367,8 @@ export class Editor extends EventTarget {
     else if (command.kind === 'figure-range') this._applyFigureRangeCommand(command, direction);
     else if (command.kind === 'disconnect') applyDisconnectFrames(this, command, direction);
     else if (command.kind === 'splice') {
-      if (!sparseClipboard) {
-        const previous = command[direction === 'before' ? 'after' : 'before'];
-        this.report.keyframes.splice(command.index, previous.length, ...value);
-      }
+      const previous = command[direction === 'before' ? 'after' : 'before'];
+      this.report.keyframes.splice(command.index, previous.length, ...value);
     } else if (command.kind === 'animation') {
       this.report._styk ??= {};
       if (value == null) delete this.report._styk.animation; else this.report._styk.animation = value;
@@ -412,7 +405,6 @@ export class Editor extends EventTarget {
         copies?.set(`${change.index}:${opposite}`,removed);
       }
     }
-    this._applyFrameClipboardAssets?.(command, direction);
     if (command.figureDefinitionSplice) {
       const {index, figures} = command.figureDefinitionSplice;
       if (direction === 'before') this.report.figure_types.splice(index, figures.length);
@@ -898,7 +890,7 @@ export class Editor extends EventTarget {
       setOrder(frame, before.map(uid => { const group = groups.get(this.layerForUid(uid)); return group.order[group.cursor++]; }));
     }, {structural: true});
   }
-  copySelection({wholeFigures = false} = {}) {
+  copySelection({wholeFigures = false, inPlace = false} = {}) {
     if (!wholeFigures && this._branchSelection?.uid === this.selectedUid && this._branchSelection?.joint === this.selectedJoint)
       return this.copyBranchSelection();
     const selected = this.selectedObjects; if (!selected.length) return 0;
@@ -913,7 +905,7 @@ export class Editor extends EventTarget {
       }
       delete out.runtime_segments; return out;
     });
-    this._selectionClipboard = {objects, figures, movieclipSamples: Object.fromEntries(selected.filter(object=>figures.some(figure=>figure.figure_type_id===object.figure_type_id&&isMovieclip(figure))&&Number.isFinite(object._movieclipSample)).map(object=>[object.unique_id,object._movieclipSample])), layers: new Map(selected.map(object => [object.unique_id, this.layerForUid(object.unique_id)])), order: frameOrder(this.selectionFrame).filter(id => ids.has(id)), vfxClips: figureVfxClips(this.report, ids), copyTick: Math.round(this.tick), documentToken: this._documentToken, sourceVersion: this.report.version, offset: 24, pastes: 0};
+    this._selectionClipboard = {objects, figures, movieclipSamples: Object.fromEntries(selected.filter(object=>figures.some(figure=>figure.figure_type_id===object.figure_type_id&&isMovieclip(figure))&&Number.isFinite(object._movieclipSample)).map(object=>[object.unique_id,object._movieclipSample])), layers: new Map(selected.map(object => [object.unique_id, this.layerForUid(object.unique_id)])), order: frameOrder(this.selectionFrame).filter(id => ids.has(id)), vfxClips: figureVfxClips(this.report, ids), copyTick: Math.round(this.tick), documentToken: this._documentToken, sourceVersion: this.report.version, offset: inPlace ? 0 : 24, pastes: 0};
     this._figureClipboard = null; return objects.length;
   }
   cutSelection() {
@@ -991,9 +983,6 @@ export class Editor extends EventTarget {
       this.tick = this.timeline[this.frameIndex]?.start ?? 0; this._selectIds(this.selectedObjects.map(o => o.unique_id)); }
     command.afterSelection = this._selectionState(); this._record(command);
     this._emit('edit', {label, structural, timing, timingOnly, ...(!structural ? {frameIndices: changes.flatMap(change => change.after.map((_, offset) => change.index + offset))} : {})}); return true;
-  }
-  cutFrames(indices = [this.frameIndex]) {
-    const selected = this._frameIndices(indices); this.copyFrames(selected); return this.deleteFrames(selected, 'Cut keyframes');
   }
   deleteFrames(indices = [this.frameIndex], label = 'Delete keyframes') {
     const selected = this._frameIndices(indices); if (!selected.length) return 0;
@@ -1735,7 +1724,6 @@ Object.assign(Editor.prototype, editorLayerMethods, editorLayerFolderMethods, ed
 Object.assign(Editor.prototype, editorLayerAsyncMethods);
 Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorAnimationMethods));
 Object.assign(Editor.prototype, editorFrameMethods);
-Object.assign(Editor.prototype, editorFrameClipboardMethods);
 Object.assign(Editor.prototype, editorAuthoredPoseMethods);
 Object.assign(Editor.prototype, editorCameraMethods, editorCameraMotionMethods);
 Object.assign(Editor.prototype, editorHandleEditMethods);

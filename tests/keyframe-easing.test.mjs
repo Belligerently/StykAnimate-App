@@ -105,20 +105,16 @@ test('invalid curves reject atomically; hidden and terminal keys retain exact bo
   assert.throws(()=>validateAnimationDocument(saved),/Bezier/);
 });
 
-test('nonlinear scalar spans retain every unedited tick when pasting frames or baking a camera', () => {
-  for (const operation of ['paste', 'camera']) {
-    const editor = fixture(), target = {kind:'figure',uid:1};
-    editor.copyFrames([0]);
-    editor.addAnimationKeys([{target,property:'x',tick:0,value:0,interpolation:'bezier',bezier:[.1,.8,.3,.9]},
-      {target,property:'x',tick:20,value:100}]);
-    const expected = Array.from({length:21},(_,tick)=>sample(editor.report,tick).objects.find(o=>o.unique_id===1).root_x);
-    if (operation === 'paste') editor.pasteFrames(1);
-    else editor.applyCameraToFigures(undefined,{ticks:[5]});
-    validateAnimationDocument(editor.report);
-    for (let tick=0;tick<=20;tick++) {
-      if (operation==='camera' && tick===5) continue;
-      near(sample(editor.report,operation==='paste' && tick>=10 ? tick+10 : tick).objects.find(o=>o.unique_id===1).root_x,expected[tick]);
-    }
+test('nonlinear scalar spans retain every unedited tick when baking a camera', () => {
+  const editor = fixture(), target = {kind:'figure',uid:1};
+  editor.addAnimationKeys([{target,property:'x',tick:0,value:0,interpolation:'bezier',bezier:[.1,.8,.3,.9]},
+    {target,property:'x',tick:20,value:100}]);
+  const expected = Array.from({length:21},(_,tick)=>sample(editor.report,tick).objects.find(o=>o.unique_id===1).root_x);
+  editor.applyCameraToFigures(undefined,{ticks:[5]});
+  validateAnimationDocument(editor.report);
+  for (let tick=0;tick<=20;tick++) {
+    if (tick===5) continue;
+    near(sample(editor.report,tick).objects.find(o=>o.unique_id===1).root_x,expected[tick]);
   }
 });
 
@@ -178,21 +174,19 @@ test('Auto pose and scalar curves agree across a run and update neighbours after
   }
 });
 
-test('Auto preserves unedited integer samples across camera baking, clipboard insertion and native baking', () => {
-  for (const operation of ['paste','camera','bake']) {
+test('Auto preserves unedited integer samples across camera baking and native baking', () => {
+  for (const operation of ['camera','bake']) {
     const editor=fixture(),target={kind:'figure',uid:1};
     editor.report.keyframes[2].objects[0].root_x=160;
-    editor.copyFrames([0]);
     if(operation==='bake')editor.setFramesEasing([0,1,2],{interpolation:'auto'});
     else editor.addAnimationKeys([0,10,20].map((tick,i)=>({target,property:'x',tick,value:[0,100,160][i],interpolation:'auto'})));
     const expected=Array.from({length:21},(_,tick)=>sample(editor.report,tick).objects.find(o=>o.unique_id===1).root_x);
-    if(operation==='paste')editor.pasteFrames(1);
     if(operation==='camera')editor.applyCameraToFigures(undefined,{ticks:[5]});
     if(operation==='bake')editor.bakeFrames([1]);
     validateAnimationDocument(editor.report);
     for(let tick=0;tick<=20;tick++) {
       if(operation==='camera'&&tick===5)continue;
-      near(sample(editor.report,operation==='paste'&&tick>=10?tick+10:tick).objects.find(o=>o.unique_id===1).root_x,expected[tick]);
+      near(sample(editor.report,tick).objects.find(o=>o.unique_id===1).root_x,expected[tick]);
     }
     editor.undo();
     for(let tick=0;tick<=20;tick++)near(sample(editor.report,tick).objects.find(o=>o.unique_id===1).root_x,expected[tick]);

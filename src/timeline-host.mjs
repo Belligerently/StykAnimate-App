@@ -23,7 +23,7 @@ import {t as interfaceText, messageText as sayTimeline} from './localization.mjs
  * scheduleRecovery, requestRender, queueUI, renderInspector,
  * syncSelectionControls, rangeFrames(all), selectTrack, previewScrub,
  * scrubAudio(tick), stopAudioScrub(), changeFigureLayer,
- * runClipboardOperation, confirmDiscardFrame, simpleFrameCount, fail,
+ * confirmDiscardFrame, simpleFrameCount, fail,
  * setTimelineMode(mode), onMount(timeline), and getters for what app.mjs
  * creates later: propertyControls(), cameraMotionControls(), drawing(),
  * builder(), sharedClipboard(), thumbnails(), localization(), touch()}; optionally
@@ -132,7 +132,6 @@ export function createTimelineHost(ctx) {
       localizationText: (key, params) => ctx.localization?.()?.t?.(key, params) ?? key,
       onDeleteLayer: id => ctx.changeFigureLayer(interfaceText("timelineHost.deleteLayer"),options=>editor.deleteLayerAsync(id,options), {labelKey:"timelineHost.deleteLayer"}),
       hotkeys: ctx.hotkeys,
-      runClipboardOperation: ctx.runClipboardOperation,
       sharedClipboard: ctx.sharedClipboard(),
       confirmDiscardFrame: ctx.confirmDiscardFrame,
       onTrackSelect: ctx.selectTrack,

@@ -82,8 +82,6 @@ import {
   builderShowsStaticHandles,
   drawBuilderHighlight,
 } from "./builder-aids.mjs";
-import { installNativeFrameClipboard } from "./frame-clipboard-storage.mjs";
-import { ClipboardWorkerClient } from "./clipboard-worker-client.mjs";
 import { installShell } from "./shell/dock-host.mjs";
 import { createDockKeyboard } from "./shell/dock-keyboard.mjs";
 import { installDockTabs } from "./shell/dock-tabs.mjs";
@@ -201,7 +199,6 @@ const editor = new Editor({ demo: false, propertyChannels: true, layerTimeline: 
   desktop = window.stykDesktop,
   importer = new ImportClient(),
   documentExporter = new DocumentExporter(),
-  clipboardWorker = new ClipboardWorkerClient(),
   exportJobs = new Set();
 const browserRecovery = desktop ? null : new BrowserRecoverySession();
 const manualSave = new DocumentSave(), recoveryDeadline = new RecoveryDeadline();
@@ -229,7 +226,6 @@ const projects = createProjectTabsHost({editor, hooks: {
 }});
 const audioEngine = new AudioEngine({desktop, onError: error => { pause(); fail(error); }});
 let audioPreparation, audioScrubController, audioScrubAt = 0;
-editor.setFrameClipboardWorker(clipboardWorker);
 function interruptRecovery() {
   let aborted = false;
   // A resting project's copy is not interrupted: nothing the person does in front can change what it stores.
@@ -3794,7 +3790,7 @@ async function finishDocumentAction(action, savedCheckpoint = null) {
   if (!current()) return false;
   finalizingDocument = true;
   try {
-    for (const flush of [() => workspaceLayout?.flushPreferences(), () => editorSettings?.flush(), () => nativeFrameClipboard?.flush()]) {
+    for (const flush of [() => workspaceLayout?.flushPreferences(), () => editorSettings?.flush()]) {
       await flush();
       if (!current()) return false;
     }
@@ -4644,8 +4640,8 @@ const actions = {
       finishCurrentEdit();
       if (editor.branchSelected) return editor.cutSelection();
       if (rangeFrames()) {
-        const count = editor.copySelection();
-        if (count) { editor._selectionClipboard.offset = 0; editor.deleteFiguresInFrames(rangeFrames()); }
+        const count = editor.copySelection({ inPlace: true });
+        if (count) editor.deleteFiguresInFrames(rangeFrames());
         return count;
       }
       return editor.cutSelection();
@@ -4827,7 +4823,6 @@ const actions = {
   close: async () => {
     await workspaceLayout?.flushPreferences?.();
     await editorSettings?.flush();
-    await nativeFrameClipboard?.flush();
     await desktop?.close();
   },
 };
@@ -5286,7 +5281,7 @@ timelineHost = createTimelineHost({
   editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, overlays, play, pause, finishKeyboardHandle, cancelDrag,
   cancelPolygonDraft, interruptRecovery, cancelWarmPlayback: () => clearTimeout(warmTimer), warmPlayback, scheduleRecovery,
   requestRender, queueUI, renderInspector, syncSelectionControls, rangeFrames, selectTrack, previewScrub, scrubAudio, stopAudioScrub,
-  changeFigureLayer, runClipboardOperation, confirmDiscardFrame: dialogs.confirmDiscardFrame, simpleFrameCount, fail,
+  changeFigureLayer, confirmDiscardFrame: dialogs.confirmDiscardFrame, simpleFrameCount, fail,
   setTimelineMode: (mode) => editorSettings?.commit({ timelineMode: mode }),
   onMount: (timeline) => { timelineUI = timeline; window.styk.timeline = timeline; },
   propertyControls: () => propertyControls, cameraMotionControls: () => cameraMotionControls, drawing: () => drawingController,
@@ -5816,7 +5811,6 @@ if (desktop) {
   );
   desktop.onOpenFile?.(guarded(acceptNativeFile));
 }
-window.addEventListener("pagehide", () => clipboardWorker.dispose());
 window.addEventListener("pagehide", event => { if (!event.persisted) importer.dispose(); });
 window.addEventListener("pagehide", event => { if (!event.persisted) browserRecovery?.dispose(); });
 window.addEventListener("pagehide", () => projects.dispose());
@@ -5857,7 +5851,7 @@ window.styk = {
   }),
   ready: false,
 };
-let thumbnailRenderer, nativeFrameClipboard, sharedClipboard;
+let thumbnailRenderer, sharedClipboard;
 // Poses of the open document drawn through a camera of their own (the parallax monitor).
 const posePictures = new EnginePoses(editor, { stage: () => state.renderer });
 async function changeFigureLayer(label, operation, {labelKey} = {}) {
@@ -5928,87 +5922,6 @@ async function changeFigureLayer(label, operation, {labelKey} = {}) {
       $("dialog").removeEventListener("close", cancel);
       if (progressElement?.isConnected) closeDialog();
     }
-    queueUI();
-  }
-}
-let clipboardOperationTail = Promise.resolve();
-function runClipboardOperation(kind, execute) {
-  const source = editor._documentToken;
-  const operation = clipboardOperationTail.then(() => {
-    if (editor._documentToken !== source) return 0;
-    return performClipboardOperation(kind, execute);
-  });
-  clipboardOperationTail = operation.catch(() => {});
-  return operation;
-}
-async function performClipboardOperation(kind, execute) {
-  finishCurrentEdit();
-  interruptRecovery();
-  const controller = new AbortController(),
-    source = editor._documentToken,
-    dialog = $("dialog"),
-    originalContent = $("dialog-content").firstChild,
-    originalOpen = dialog.open;
-  const labels = {
-    copy: interfaceText("app.copyingFrames"),
-    cut: interfaceText("app.cuttingFrames"),
-    paste: interfaceText("app.pastingFrames"),
-  };
-  let progressElement, latest;
-  const cancel = () => controller.abort();
-  const changed = () => {
-    if (editor._documentToken !== source) cancel();
-  };
-  const onClose = () => {
-    if (!dialog.open || !progressElement?.isConnected) cancel();
-  };
-  const refresh = () => {
-    if (!progressElement?.isConnected || !latest) return;
-    if (Number.isFinite(latest.total) && latest.total > 0) {
-      progressElement.max = latest.total;
-      progressElement.value = latest.completed || 0;
-    } else progressElement.removeAttribute("value");
-  };
-  editor.addEventListener("change", changed);
-  const timer = setTimeout(() => {
-    if (controller.signal.aborted) return;
-    if (
-      $("dialog-content").firstChild !== originalContent ||
-      dialog.open !== originalOpen
-    ) {
-      cancel();
-      return;
-    }
-    showDialog(
-      labels[kind] || interfaceText("app.updatingFrames"),
-      `<progress id="clipboard-progress" style="width:100%;accent-color:#0d99ff"></progress><div class="dialog-actions"><button class="button" id="cancel-clipboard" data-i18n="common.cancel">${messageHTML("app.cancel", {})}</button></div>`,
-      {titleKey: ({copy: "app.copyingFrames", cut: "app.cuttingFrames", paste: "app.pastingFrames"})[kind] ?? "app.updatingFrames"},
-    );
-    progressElement = $("clipboard-progress");
-    $("cancel-clipboard").onclick = cancel;
-    dialog.addEventListener("close", onClose);
-    refresh();
-  }, 150);
-  try {
-    const count = await execute({
-      signal: controller.signal,
-      onProgress: (progress) => {
-        latest = progress;
-        refresh();
-      },
-    });
-    if (count && kind === "copy")
-      notify(interfaceText("app.frameCopied", {count}), "app.frameCopied", {count});
-    return count;
-  } catch (error) {
-    if (error.name !== "AbortError") throw error;
-    status({messageKey: "app.clipboardOperationCancelled", messageParams: {}});
-    return 0;
-  } finally {
-    clearTimeout(timer);
-    editor.removeEventListener("change", changed);
-    dialog.removeEventListener("close", onClose);
-    if (progressElement?.isConnected) closeDialog();
     queueUI();
   }
 }
@@ -6332,11 +6245,6 @@ async function init() {
     if (drawingController?.active) return drawingController.run(() => drawingController.action("new"));
     showAddMenu(event.currentTarget);
   }));
-  if (desktop?.beginClipboardRead)
-    nativeFrameClipboard = installNativeFrameClipboard(editor, desktop, {
-      onError: fail,
-      onRestored: queueUI,
-    });
   // Frame thumbnails: the engine draws them (src/engine/engine-thumbnails.mjs).
   thumbnailRenderer = createThumbnailRenderer(editor, { stage: () => state.renderer });
   sharedClipboard = new SharedClipboard(editor, desktop);
