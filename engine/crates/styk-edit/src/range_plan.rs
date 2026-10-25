@@ -19,18 +19,18 @@ fn invalid(key: &str) -> EditError {
 pub(crate) const NOT_NATIVE: &str = "errors.rangeFigureOperations.mustBeFiniteAndWithinTheNativeNumeric";
 
 /// `finite(value, label)`: a number, finite in single precision too.
-pub(crate) fn native_finite(value: Option<f64>) -> Result<f64, EditError> {
+pub(crate) fn native_finite(value: Option<f64>, label: &str) -> Result<f64, EditError> {
     match value {
         Some(value) if value.is_finite() && (value as f32).is_finite() => Ok(value),
-        _ => Err(invalid(NOT_NATIVE)),
+        _ => Err(crate::invalid_with(NOT_NATIVE, vec![("label", crate::label(label))])),
     }
 }
 
 /// `integer(value, min, max, label)`.
-pub(crate) fn integer(value: Option<f64>, min: f64, max: f64) -> Result<f64, EditError> {
+pub(crate) fn integer(value: Option<f64>, min: f64, max: f64, label: &str) -> Result<f64, EditError> {
     match value {
         Some(value) if value.fract() == 0.0 && value >= min && value <= max => Ok(value),
-        _ => Err(invalid("errors.rangeFigureOperations.invalid")),
+        _ => Err(crate::invalid_with("errors.rangeFigureOperations.invalid", vec![("label", crate::label(label))])),
     }
 }
 
@@ -82,7 +82,7 @@ pub(crate) enum Kind {
     Duplicate { map: Vec<(u32, u32)>, offset: f64 },
     Rotate(f64),
     Center,
-    Align { axis: String, edge: String, bounds: crate::bounds::Shared },
+    Align { axis: String, edge: String, bounds: crate::bounds::Callback },
     Delete,
     Detach,
     Reset,
@@ -113,6 +113,9 @@ impl Joints {
 /// `buildGeometry(report, frame)` for the figures at some slots of a frame record.
 pub(crate) type GeometryOf<'a> = dyn Fn(&Value, &[usize]) -> Result<HashMap<usize, Joints>, EditError> + 'a;
 
+/// The app's `boundsOf` of the figures at some slots of a frame record, by slot.
+pub(crate) type BoundsOf<'a> = dyn Fn(&Value, &[usize]) -> Result<HashMap<usize, [f64; 4]>, EditError> + 'a;
+
 /// Children by parent slot, and the slots parents first.
 pub(crate) type Hierarchy = (HashMap<usize, Vec<usize>>, Vec<usize>);
 
@@ -127,6 +130,8 @@ pub(crate) struct Context<'a> {
     /// `buildGeometry(report, frame)` for the figures at `slots` (sorted), each figure's
     /// joints, or the editor's error when one is unresolved.
     pub geometry: &'a GeometryOf<'a>,
+    /// What the app's bounds callback measures of a frame's figures.
+    pub bounds: &'a BoundsOf<'a>,
     /// The origin owner reflects retained support and local offsets in JS order.
     pub mirror_origin: &'a dyn Fn(&Value, &Value, &mut Obj, bool) -> Result<(), EditError>,
 }
@@ -272,7 +277,7 @@ pub(crate) fn joint_endpoints(object: &Value, figure: Option<&Value>, root: [f64
             let radius = length / bend;
             (start[0] + radius * (styk_math::sin(angle + bend) - styk_math::sin(angle)), start[1] + radius * (styk_math::cos(angle) - styk_math::cos(angle + bend)))
         };
-        let point = [native_finite(Some(x))? as f32 as f64, native_finite(Some(y))? as f32 as f64];
+        let point = [native_finite(Some(x), "Joint X")? as f32 as f64, native_finite(Some(y), "Joint Y")? as f32 as f64];
         let id = given(segment, "segment_id").unwrap_or(f64::NAN);
         match joints.points.iter_mut().find(|(h, _)| *h == id) {
             Some(entry) => entry.1 = point,
@@ -451,7 +456,7 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
             let mut occupied: HashSet<u32> = objects.iter().filter_map(uid).collect();
             let mut next_slots: HashMap<usize, usize> = HashMap::new();
             for &slot in &slots {
-                let id = integer(renamed(uid(&objects[slot])).map(|u| u as f64), 0.0, 4294967295.0)? as u32;
+                let id = integer(renamed(uid(&objects[slot])).map(|u| u as f64), 0.0, 4294967295.0, "duplicate figure identity")? as u32;
                 if !occupied.insert(id) {
                     return Err(invalid("errors.rangeFigureOperations.duplicateFigureIdentitiesMustBeFreshAndDistinct"));
                 }
@@ -465,8 +470,8 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
                 object.set("object_slot", Value::Num(next_slots[&slot] as f64));
                 for (key, value) in materialized(original, figure_of(context.figures, original)) { object.set(key, value); }
                 let root = if joined(slot).is_some() { get_geometry()?[&slot].root() } else { [given(original, "root_x").unwrap_or(f64::NAN), given(original, "root_y").unwrap_or(f64::NAN)] };
-                object.set("root_x", Value::Num(native_finite(Some(root[0] + offset))?));
-                object.set("root_y", Value::Num(native_finite(Some(root[1] + offset))?));
+                object.set("root_x", Value::Num(native_finite(Some(root[0] + offset), "Duplicate X")?));
+                object.set("root_y", Value::Num(native_finite(Some(root[1] + offset), "Duplicate Y")?));
                 let target = joined(slot).and_then(|j| num(&j, "target_object_slot")).filter(|t| *t >= 0.0).map(|t| t as usize);
                 let join = match (joined(slot), target.filter(|t| selected.contains(t))) {
                     (Some(join), Some(target)) => {
@@ -705,8 +710,15 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
             let groups = crate::bounds::groups(&objects, uids)?;
             if groups.len() < 2 { return Ok(None); }
             let position = if axis == "x" { "root_x" } else { "root_y" };
-            for (root, target, position_at) in crate::bounds::offsets(&objects, &groups, axis, edge, bounds)? {
-                let value = native_finite(Some(given(&objects[root], position).unwrap_or(f64::NAN) + target - position_at))?;
+            // The range measures every figure; the editor throws on one it has no geometry for.
+            let measured = match bounds {
+                crate::bounds::Callback::App => (context.bounds)(frame, &groups.iter().flat_map(|(_, members)| members.iter().copied()).collect::<Vec<_>>())?,
+                _ => HashMap::new(),
+            };
+            let measure = &mut crate::bounds::measure_with(bounds, &measured);
+            let mut measure = |slot, id| measure(slot, id).and_then(|found| found.ok_or_else(|| EditError::Unported("bounds of a figure without geometry".into())).map(Some));
+            for (root, target, position_at) in crate::bounds::offsets(&objects, &groups, axis, edge, &mut measure)? {
+                let value = native_finite(Some(given(&objects[root], position).unwrap_or(f64::NAN) + target - position_at), "Figure position")?;
                 changes.patch(root, vec![(position, Value::Num(value))], &[]);
             }
             if changes.changes.is_empty() { return Ok(None); }
@@ -743,8 +755,8 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
             let (dx, dy) = (context.canvas[0] / 2.0 - center[0], context.canvas[1] / 2.0 - center[1]);
             for root in groups {
                 let object = &objects[root];
-                let x = native_finite(Some(given(object, "root_x").unwrap_or(f64::NAN) + dx))?;
-                let y = native_finite(Some(given(object, "root_y").unwrap_or(f64::NAN) + dy))?;
+                let x = native_finite(Some(given(object, "root_x").unwrap_or(f64::NAN) + dx), "Figure X")?;
+                let y = native_finite(Some(given(object, "root_y").unwrap_or(f64::NAN) + dy), "Figure Y")?;
                 changes.patch(root, vec![("root_x", Value::Num(x)), ("root_y", Value::Num(y))], &[]);
             }
             if changes.changes.is_empty() {
@@ -812,14 +824,14 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
                         } else {
                             return Err(invalid("errors.rangeFigureOperations.cannotInferRelativeFigureScalesFromAZero"));
                         };
-                        native_finite(Some(f))?
+                        native_finite(Some(f), "Scale factor")?
                     }
                 };
                 let mut table = HashMap::new();
                 for &slot in &slots {
                     table.insert(slot, match collapsed {
                         Some(value) => value,
-                        None => native_finite(Some(scale_of(slot) * factor))?,
+                        None => native_finite(Some(scale_of(slot) * factor), "Scale")?,
                     });
                 }
                 if slots.iter().all(|s| table[s] == scale_of(*s)) {
@@ -895,28 +907,28 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
                     Kind::Scale { .. } => {
                         patch.push(("scale", Value::Num(scales.as_ref().unwrap()[&slot])));
                         if root {
-                            patch.push(("root_x", Value::Num(native_finite(Some(center[0] + (x - center[0]) * factor))?)));
-                            patch.push(("root_y", Value::Num(native_finite(Some(center[1] + (y - center[1]) * factor))?)));
+                            patch.push(("root_x", Value::Num(native_finite(Some(center[0] + (x - center[0]) * factor), "Figure X")?)));
+                            patch.push(("root_y", Value::Num(native_finite(Some(center[1] + (y - center[1]) * factor), "Figure Y")?)));
                         }
                     }
                     Kind::Rotate(radians) => {
                         if root {
                             let (dx, dy, c, s) = (x - center[0], y - center[1], styk_math::cos(*radians), styk_math::sin(*radians));
-                            patch.push(("root_x", Value::Num(native_finite(Some(center[0] + dx * c - dy * s))?)));
-                            patch.push(("root_y", Value::Num(native_finite(Some(center[1] + dx * s + dy * c))?)));
+                            patch.push(("root_x", Value::Num(native_finite(Some(center[0] + dx * c - dy * s), "Figure X")?)));
+                            patch.push(("root_y", Value::Num(native_finite(Some(center[1] + dx * s + dy * c), "Figure Y")?)));
                         }
                         let mut angles = Vec::new();
                         for a in numbers(object.get("angles")) {
-                            angles.push(Value::Num(native_finite(Some(a + radians))?));
+                            angles.push(Value::Num(native_finite(Some(a + radians), "Joint angle")?));
                         }
                         patch.push(("angles", Value::array(angles)));
                     }
                     _ => {
                         if root {
                             if horizontal {
-                                patch.push(("root_x", Value::Num(native_finite(Some(2.0 * center[0] - x))?)));
+                                patch.push(("root_x", Value::Num(native_finite(Some(2.0 * center[0] - x), "Figure X")?)));
                             } else {
-                                patch.push(("root_y", Value::Num(native_finite(Some(2.0 * center[1] - y))?)));
+                                patch.push(("root_y", Value::Num(native_finite(Some(2.0 * center[1] - y), "Figure Y")?)));
                             }
                         }
                         let angles = numbers(object.get("angles")).into_iter().map(|a| Value::Num(if horizontal { std::f64::consts::PI - a } else { -a }));

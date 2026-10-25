@@ -1,6 +1,7 @@
 // What the engine's fixture generators share: the real JavaScript editor, small
 // documents to start from, and the dump of what the editor evaluates
 // (tools/reference.mjs). Used by ik-fixtures.mjs, eval-fixtures.mjs and vfx-fixtures.mjs.
+import './v8-pin.mjs';
 import {execFileSync} from 'node:child_process';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -53,6 +54,9 @@ export function prune(document) {
   const sources = document._styk?.frameSources, tracks = document._styk?.layerSheet?.tracks;
   if (sources && tracks) {
     const used = new Set(Object.values(tracks).flatMap(track => track.keys.flatMap(key => [key.value?.frameId, ...(key.movieclipPatches ?? []).map(p => p.frameId)])));
+    // Channels refer to poses too: a sheet's legacy animation, and the stored animation a frame draft keeps beside the working one.
+    for (const animation of [document._styk.layerSheet.legacyAnimation, document._styk.simpleFrameDraft?.animationBaseline])
+      for (const channel of animation?.channels ?? []) for (const key of channel.keys) used.add(key.value?.frameId);
     for (const id of Object.keys(sources)) if (!used.has(id)) delete sources[id];
   }
   for (const figure of document.figure_types) if (figure._styk?.movieclip?.document) prune(figure._styk.movieclip.document);
@@ -67,12 +71,12 @@ export function prune(document) {
  * scene camera does when shown (--camera: the shot camera and parallax offsets), `images`
  * where pictures are drawn (--images), `scene` the frame's background (--scene), `style` each
  * object's outline (--style); `native` evaluates it on its native timeline (--native) into
- * `<name>.native.reference.json`.
+ * `<name>.native.reference.json`; `deep` loads movieclips nested deeper than a file opens (--deep).
  */
-export function writeProject(out, name, document, ticks, {vfx = false, camera = false, images = false, scene = false, style = false, native = false, inbetween = []} = {}) {
+export function writeProject(out, name, document, ticks, {vfx = false, camera = false, images = false, scene = false, style = false, native = false, deep = false, inbetween = []} = {}) {
   const file = `${out}/${name}.json`, reference = `${out}/${name}${native ? '.native' : ''}.reference.json`;
   writeFileSync(file, JSON.stringify(prune(document)) + '\n');
-  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : []), ...(camera ? ['--camera'] : []), ...(images ? ['--images'] : []), ...(scene ? ['--scene'] : []), ...(style ? ['--style'] : []), ...(native ? ['--native'] : []), ...(inbetween.length ? ['--inbetween', inbetween.map(([index, ratio]) => `${index}:${ratio}`).join(',')] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
+  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : []), ...(camera ? ['--camera'] : []), ...(images ? ['--images'] : []), ...(scene ? ['--scene'] : []), ...(style ? ['--style'] : []), ...(native ? ['--native'] : []), ...(deep ? ['--deep'] : []), ...(inbetween.length ? ['--inbetween', inbetween.map(([index, ratio]) => `${index}:${ratio}`).join(',')] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
   const dump = JSON.parse(readFileSync(reference, 'utf8'));
   delete dump.loadMs; delete dump.evalMsPerFrame;
   return {file, reference, dump};

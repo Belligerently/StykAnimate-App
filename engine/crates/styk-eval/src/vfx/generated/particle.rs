@@ -343,7 +343,7 @@ pub fn evaluate(batch: &Batch, draw: &Draw, ii: u32) -> Option<Particle> {
         let q = 1.0 - (an * 4.0).min(1.0);
         1.0 - q * q
     } else {
-        libm::pow(an.max(1e-6), v(43))
+        styk_math::pow(an.max(1e-6), v(43))
     };
     let mut size = row2(k, 1) * mix(v(20), v(21), grow) * (1.0 + (hash(n, 8, seed) - 0.5) * 2.0 * v(42)) * mix(0.3, 1.0, fade);
     if sm == GROW_POP {

@@ -46,6 +46,12 @@ pub(crate) struct GpuView {
     pub(crate) background_bounds: [f32; 4],
     pub(crate) paint_quad0: [f32; 4],
     pub(crate) paint_quad1: [f32; 4],
+    /// The artboard's corners on screen when the view is rotated or mirrored (zero otherwise):
+    /// (0,0) and (1,0), then (1,1) and (0,1) of the artboard rectangle.
+    pub(crate) orient_quad0: [f32; 4],
+    pub(crate) orient_quad1: [f32; 4],
+    /// x: the artboard is the quad above; y: scene primitives of the frame pass are clipped to it.
+    pub(crate) orient_flags: [f32; 4],
 }
 
 /// Texels per row of a lookup table (`TABLE_WIDTH` in prim.wgsl).
@@ -149,7 +155,7 @@ pub(crate) fn sampler_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
 }
 
 pub(crate) fn array_texture(device: &wgpu::Device, label: &str, size: [u32; 2], layers: u32, attachment: bool) -> (wgpu::Texture, wgpu::TextureView) {
-    let mut usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
+    let mut usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC;
     if attachment {
         // Effect passes copy layers out of the atlas and back.
         usage |= wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC;

@@ -21,19 +21,6 @@ export function defaultWorkerCount(cores = globalThis.navigator?.hardwareConcurr
   return Math.max(1, Math.min(8, cores - 1));
 }
 
-/**
- * `?engineCpu=on` (or `localStorage['stykanimate.engine.cpu'] = 'on'`): thumbnails, library
- * previews and exports are drawn by the CPU rasterizer (styk-raster) in their workers even
- * where a GPU device exists, as devices without one draw them (for comparisons).
- */
-export function engineCpuForced() {
-  try {
-    const query = new URLSearchParams(globalThis.location?.search ?? '').get('engineCpu');
-    if (query) return query === 'on';
-    return globalThis.localStorage?.getItem('stykanimate.engine.cpu') === 'on';
-  } catch { return false; }
-}
-
 let loading = null;
 
 /**
@@ -53,16 +40,13 @@ const MEMORY_MAXIMA = [32768, 16384, 8192];
  * The engine's shared memory. Its maximum is reserved when it is created and can
  * never change (docs/engine/decisions/0014-shared-memory-maximum.md): a device that
  * cannot reserve 2 GiB of address space (mobile WebKit is the risk) gets the largest
- * maximum it accepts. `stykanimate.engine.memory` (MiB) overrides it for testing.
+ * maximum it accepts.
  * It starts at `initial` pages, the size the module declares (`declaredMemoryPages`):
  * a smaller memory does not link, and the size changes with the module's static data.
  */
 export function createEngineMemory(initial, maxima = MEMORY_MAXIMA) {
-  let override = null;
-  try { override = Number(globalThis.localStorage?.getItem('stykanimate.engine.memory')) || null; } catch { /* storage unavailable */ }
-  const candidates = override ? [Math.min(32768, Math.max(256, Math.round(override * 16)))] : maxima;
   let failure;
-  for (const maximum of candidates) {
+  for (const maximum of maxima) {
     try { return Object.assign(new WebAssembly.Memory({initial, maximum, shared: true}), {maximumBytes: maximum * 65536}); }
     catch (error) { failure = error; }
   }
@@ -98,7 +82,7 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
   const memory = wasm.memory;
   // Caches are budgeted by device memory; a memory that could reserve 1 GiB or less budgets like a 2 GiB device.
   const budget = reserved.maximumBytes <= 2 ** 30 ? Math.min(deviceMemory ?? 2, 2) : deviceMemory;
-  const handle = new EngineHandle(budget ?? undefined);
+  const handle = new EngineHandle(budget ?? undefined, reserved.maximumBytes);
   // Threads need the memory to be shareable with workers, which a page that is not cross-origin isolated cannot do.
   const threaded = workers > 0 && globalThis.crossOriginIsolated !== false && typeof Worker === 'function';
   const pool = [];
@@ -148,18 +132,11 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
     /** The engine's memory now, and the most it may grow to (chosen by createEngineMemory). */
     get memoryBytes() { return memory.buffer.byteLength; },
     memoryMaximumBytes: reserved.maximumBytes,
+    /** Where the memory is: linear memory, bytes the allocator handed out, and what the engine holds of it. */
+    memory: () => JSON.parse(handle.memory()),
     createStage: canvas => Stage.create(canvas, handle),
     /** An edit session on the document `json` exactly as the editor holds it (D19). */
     editSession: (json, state, revision) => EditSession.from_document(json, state, revision),
-    /** Opens a file in the background and resolves with its description. */
-    async open(bytes, extension, name) {
-      handle.open(bytes, extension, name);
-      for (;;) {
-        const seen = progressSeen(), opened = handle.take_opened();
-        if (opened !== undefined) return JSON.parse(opened);
-        await whenProgress(seen);
-      }
-    },
     destroy() {
       handle.stop();
       for (const worker of pool) worker.terminate();

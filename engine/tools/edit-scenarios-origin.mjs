@@ -1,9 +1,10 @@
 // Animation-origin gesture recordings, built by the editor before commands are ported.
 // Construction changes are fixture setup; these scenarios prove only whole-figure
 // gestures and their native/sheet lifecycle, never Set Origin or topology commands.
+import {fileURLToPath} from 'node:url';
 import {writeFileSync} from 'node:fs';
 import {documentOf, limb, open, joint, nextKey, prune} from './fixture-kit.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 let counter = 0;
 Object.defineProperty(globalThis.crypto, 'randomUUID', {configurable: true, value: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`});

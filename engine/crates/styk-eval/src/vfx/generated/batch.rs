@@ -887,8 +887,8 @@ fn pack(layers: &[Layer<'_>], sampler: Option<&dyn Sampler>, density: f64, light
             for k in (1..=e.count).rev() {
                 let mut r = rec.clone();
                 r[54] = tick - k as f64 * e.lag;
-                r[26] *= libm::pow(e.alpha, k as f64);
-                r[121] = libm::pow(e.size, k as f64);
+                r[26] *= styk_math::pow(e.alpha, k as f64);
+                r[121] = styk_math::pow(e.size, k as f64);
                 push(&r, s.shape, blend, row);
             }
         }

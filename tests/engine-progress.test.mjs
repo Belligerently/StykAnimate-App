@@ -8,7 +8,9 @@ async function noProgress(threaded) {
   let settled = false;
   const pending = waitForEngineProgress(progress, threaded, 0, 16).then(() => { settled = true; });
   try {
-    await delay(35);
+    // 16 ms were asked for, and a Windows timer takes up to 16 ms to fire (twice for the polling
+    // owner): wait up to the interface's 250 ms ceiling for the timeout instead of a fixed 35 ms.
+    for (const end = performance.now() + 250; !settled && performance.now() < end;) await delay(1);
     assert.equal(settled, true, 'a Busy lock release needs no progress publication to retry');
     assert.equal(Atomics.load(progress, 0), 0, 'timeout cannot manufacture progress');
   } finally {

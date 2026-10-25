@@ -50,6 +50,19 @@ pub(crate) struct HandleEdit {
     bend: bool,
 }
 
+impl HandleEdit {
+    /// What the interface reads of the gesture (`_drag.handleEdit`): the figure and handle being
+    /// edited, where the handle began, and whether a bend is being edited.
+    pub(crate) fn live(&self) -> Value {
+        let mut value = Obj::new();
+        value.set("uid", self.uid.map_or(Value::Null, |uid| Value::Num(uid as f64)));
+        value.set("index", Value::Num(self.index as f64));
+        value.set("point", Value::nums(&self.point));
+        value.set("bend", Value::Bool(self.bend));
+        Value::object(value)
+    }
+}
+
 /// `handleEditSegmentPose(shape, start, end, scale, {bend, movingEnd})`: the angle, length
 /// and bend of the same circular arc between two endpoints.
 fn segment_pose(shape: &Shape, start: [f64; 2], end: [f64; 2], scale: f64, bend: bool, moving_end: bool) -> Result<(f64, f64, f64), EditError> {

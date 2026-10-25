@@ -365,7 +365,7 @@ fn native_options_true_live_tapes_match_every_complete_return_and_owner_state() 
                     panic!("{at} expected recorded error, got {result:?}")
                 };
                 assert_eq!(
-                    Some(error.as_str()),
+                    error.split('\u{1f}').next(),
                     expected.path(&["error", "key"]).and_then(Value::as_str),
                     "{at} error"
                 );
@@ -791,7 +791,7 @@ fn existing_ordinary_live_115_complete_returns_remain_exact_on_final_owners() {
                     panic!("{at}: expected actual error, got {result:?}")
                 };
                 assert_eq!(
-                    Some(error.as_str()),
+                    error.split('\u{1f}').next(),
                     expected.path(&["error", "key"]).and_then(Value::as_str),
                     "{at}"
                 );

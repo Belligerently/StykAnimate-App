@@ -1091,6 +1091,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "styk-alloc"
+version = "0.1.0"
+
+[[package]]
 name = "styk-cli"
 version = "0.1.0"
 dependencies = [
@@ -1104,6 +1108,7 @@ dependencies = [
  "styk-eval",
  "styk-export",
  "styk-formats",
+ "styk-piv",
  "styk-raster",
  "styk-render",
 ]
@@ -1112,7 +1117,9 @@ dependencies = [
 name = "styk-codec-wasm"
 version = "0.1.0"
 dependencies = [
+ "styk-alloc",
  "styk-doc",
+ "styk-formats",
  "styk-piv",
  "wasm-bindgen",
 ]
@@ -1154,6 +1161,7 @@ dependencies = [
 name = "styk-edit"
 version = "0.1.0"
 dependencies = [
+ "sha2",
  "styk-doc",
  "styk-eval",
  "styk-math",
@@ -1164,11 +1172,13 @@ dependencies = [
 name = "styk-engine"
 version = "0.1.0"
 dependencies = [
+ "styk-alloc",
  "styk-doc",
  "styk-draw",
  "styk-edit",
  "styk-eval",
  "styk-formats",
+ "styk-piv",
  "thiserror",
 ]
 
@@ -1179,10 +1189,10 @@ dependencies = [
  "base64",
  "flate2",
  "image",
- "libm",
  "lyon_path",
  "lyon_tessellation",
  "rayon",
+ "styk-alloc",
  "styk-doc",
  "styk-draw",
  "styk-drawing",
@@ -1196,6 +1206,8 @@ dependencies = [
 name = "styk-export"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "image",
  "pollster",
  "styk-doc",
  "styk-draw",
@@ -1238,6 +1250,7 @@ name = "styk-raster"
 version = "0.1.0"
 dependencies = [
  "pollster",
+ "styk-alloc",
  "styk-draw",
  "styk-eval",
  "styk-render",
@@ -1259,6 +1272,7 @@ name = "styk-wasm"
 version = "0.1.0"
 dependencies = [
  "js-sys",
+ "styk-alloc",
  "styk-doc",
  "styk-draw",
  "styk-edit",

@@ -1,7 +1,7 @@
 //! Effect layers in draw lists: which groups get a raster of their own, how
 //! they nest, and the rectangles they are filtered on (docs/engine/vfx.md,
 //! Rendering). The effects themselves are checked against the editor in
-//! `tests/vfx.rs`; pixels are compared in the app (scripts/engine-app-parity.mjs).
+//! `tests/vfx.rs`; pixels were compared in the app (D13).
 
 use std::path::{Path, PathBuf};
 
@@ -20,7 +20,7 @@ fn encode(name: &str, tick: f64, bypass: bool) -> DrawList {
     let assets = Assets::build(&prepared.doc);
     let frame = prepared.evaluate(tick);
     let scene = build(&prepared.doc, &frame);
-    let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: bypass, generators: None };
+    let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: bypass, generators: None, live: None };
     encode_composed(&prepared.doc, &assets, &scene, &overrides, &[], None)
 }
 

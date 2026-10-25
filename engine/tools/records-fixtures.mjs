@@ -4,10 +4,11 @@
 // documents), into tests/fixtures/records/<name>/ for styk-eval's tests/records.rs.
 //   node engine/tools/records-fixtures.mjs
 // Byte-stable: the files change only when the editor's evaluation does.
+import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {readdirSync, rmSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-const here = path.dirname(new URL(import.meta.url).pathname);
+const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.resolve(here, '../crates/styk-eval/tests/fixtures'), out = path.join(fixtures, 'records');
 rmSync(out, {recursive: true, force: true});
 const sources = [];

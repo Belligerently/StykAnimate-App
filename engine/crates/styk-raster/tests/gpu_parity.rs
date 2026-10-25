@@ -20,9 +20,9 @@ struct Case {
 }
 
 const CASES: [Case; 6] = [
-    Case { file: "AssetReleases/3D-Guns/Scenes/15-Guns-Pivot-3D.styk", tick: 4.0, size: [512, 288] },
-    Case { file: "AssetReleases/Vehicles/Scenes/Vehicles-Pivot-3D.styk", tick: 2.0, size: [320, 192] },
-    Case { file: "AssetReleases/Impact-FX/Scenes/Impact-FX-Fight.styk", tick: 108.0, size: [320, 192] },
+    Case { file: "engine/crates/styk-eval/tests/fixtures/spatial/mesh-instances.json", tick: 1.0, size: [512, 288] },
+    Case { file: "engine/crates/styk-eval/tests/fixtures/drawlist/outlined-text.json", tick: 0.0, size: [320, 160] },
+    Case { file: "engine/crates/styk-eval/tests/fixtures/generators/smoke.json", tick: 12.0, size: [512, 288] },
     Case { file: "engine/crates/styk-eval/tests/fixtures/vfx/pose-native.json", tick: 6.0, size: [320, 192] },
     Case { file: "engine/crates/styk-eval/tests/fixtures/generators/explosions.json", tick: 6.0, size: [512, 288] },
     Case { file: "engine/crates/styk-eval/tests/fixtures/drawlist/drawing-cel.json", tick: 0.0, size: [96, 54] },

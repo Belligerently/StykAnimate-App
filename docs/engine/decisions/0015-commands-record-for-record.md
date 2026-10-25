@@ -23,23 +23,17 @@ engine's records command by command would mean keeping two copies of that runtim
 equal by hand. Instead:
 
 1. Commands are ported and proven in the Node harness, byte for byte.
-2. In the app they run in **shadow**: the JavaScript editor stays in charge, the engine
-   runs the same call on the mirrored document, and the two are compared
-   (`src/engine/engine-edit-shadow.mjs`, `scripts/engine-edit-shadow.mjs`). No behaviour
-   changes, real documents and real gestures are covered, and the boundary's cost is measured.
+2. In the app they first ran in **shadow**: the JavaScript editor stayed in charge, the engine
+   ran the same call on the mirrored document, and the two were compared. No behaviour
+   changed, real documents and real gestures were covered, and the boundary's cost was measured.
+   The shadow is deleted: the engine owns every document (D19).
 3. Ownership flips in one step per document once its commands are ported: the engine's
    session becomes the document, and the JavaScript editor a view of it.
 
-Step 3 is implemented as the editor facade adopting the engine's results
-(`?engineEdit=on`, [`../editing.md`](../editing.md), "Engine-owned editing in the app"):
-for ported calls the engine computes and the editor keeps only its bookkeeping (publishing,
-events, history), checked by running the same interactions with and without the engine
-owning. It becomes the default for a document class once its cost is not higher than the
-editor's. The first class flipped on 2026-10-03: large figure documents (no 3D figures or
-movieclips, 1,000 segments or more across the figure definitions), where engine-owned
-editing cost 18 to 39 % less than the editor alone in the shadow driver's interactions;
-small figure documents stay with the editor (the JSON boundary and adoption cost more than
-the editor's own call), as do 3D documents and movieclips for now (editing.md).
+Step 3 became D19: one engine session holds the open document and its history, the editor
+reads what it answers (`src/engine/engine-owner.mjs`, [`../editing.md`](../editing.md), "Phase 3").
+The per-class adoption, which ran ported calls in the engine only for document classes whose
+cost was not higher than the editor's, is deleted with the shadow.
 
 ## Consequences
 

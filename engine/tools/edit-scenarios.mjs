@@ -1,3 +1,4 @@
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 // Builds the first command-replay scenarios (engine/tests/edit/) with the editor's own fixture kit.
 //   node engine/tools/edit-scenarios.mjs && node engine/tools/edit-replay.mjs --all
@@ -10,7 +11,7 @@ await import('./edit-scenarios-movieclips-joins.mjs');
 await import('./edit-scenarios-movieclips-presence.mjs');
 await import('./edit-scenarios-movieclips-membership.mjs');
 await import('./edit-scenarios-movieclips-timed.mjs');
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 // A native-timeline document with two limbs (one joined to the other) over two keyframes.
 const doc = documentOf([limb(true), limb()], i => [250 + i * 150, 160]);
 writeFileSync(`${out}/two-limbs.document.json`, JSON.stringify(doc) + '\n');
@@ -554,7 +555,7 @@ scenario('figures-layers-sheet', app, [
   {
     const {construction} = await import('../../src/rig-examples-3d.mjs');
     const {createObject, createFrame, emptyDocument} = await import('../../src/demo.mjs');
-    const {compilePoseChoices} = await import('../../scripts/hand-face/presets.mjs');
+    const {compilePoseChoices} = await import('./pose-presets.mjs');
     const eyes = () => {
       const q = construction(); q.add(0, 0, 0, 'Figure rotation');
       for (const label of ['Neutral', 'Focused', 'Closed']) {
@@ -575,7 +576,7 @@ scenario('figures-layers-sheet', app, [
     compilePoseChoices(presets, [{name: 'Expression', choices: [
       {label: 'Rest', pose: {}},
       {label: 'Smile', pose: {bend: {Neutral: 0.4}, swing: {Focused: [0.2, -0.3]}, length: {Closed: 18}}},
-    ]}], 'Neutral');
+    ]}]);
     write('pose-presets', presets);
   }
   scenario('pose-choices-sheet', app, [

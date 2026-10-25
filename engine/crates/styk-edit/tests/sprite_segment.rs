@@ -7,6 +7,8 @@ fn sprite_attachment_matches_the_editor_topology_owner() {
         "sprite-segment-retained-native",
         "sprite-segment-sparse-native",
         "sprite-segment-locked-sheet",
+        "sprite-segment-origin-sheet",
+        "sprite-segment-origin-native",
     ] {
         let reference = styk_doc::json::parse(
             &std::fs::read(folder.join(format!("{name}.reference.json"))).unwrap(),
@@ -60,18 +62,6 @@ fn setup(name: &str) -> (styk_edit::Editor, styk_doc::Value) {
         .item(1)
         .unwrap();
     (editor, source)
-}
-
-#[test]
-fn origin_sprite_attachment_remains_atomic_unported() {
-    let (mut editor, source) = setup("sprite-segment-origin-sheet");
-    let before = (editor.report_json(), editor.state());
-    assert!(matches!(
-        editor.call("addSpriteSegment", &[source]),
-        Err(styk_edit::EditError::Unported(_))
-    ));
-    assert_eq!((editor.report_json(), editor.state()), before);
-    assert!(editor.take_events().is_empty());
 }
 
 #[test]

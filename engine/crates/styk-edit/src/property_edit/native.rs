@@ -180,6 +180,10 @@ impl Draft {
                     channel.set("source", Value::str("authored"));
                     self.changed = true;
                     channel
+                } else if editor.options.property_channels && property == "pose" && target.get("kind").and_then(Value::as_str) == Some("layer") {
+                    let mut channel = editor.native_layer_pose_counted(target.get("id").and_then(Value::as_str).unwrap_or(""))?.as_obj().unwrap().clone();
+                    channel.set("source", Value::str("authored"));
+                    channel
                 } else if editor.options.property_channels && property != "pose" {
                     let mut channel = editor.native_property_channel_checked(&target, property, check)?.as_obj().unwrap().clone();
                     channel.set("source", Value::str("authored"));
@@ -424,6 +428,40 @@ impl Editor {
         )
         .iter()
         .all(|channel| native_channel_header(channel, &["x", "y", "scale", "rotation"], &mut ids))
+    }
+
+    /// `addSegment` and `addSegments` with nothing selected, drawing a new figure into a native
+    /// timeline with saved property channels (`commit_native_transaction_checked`), and the
+    /// history around it (the recordings' `@select` and `@seek` too: the interface's own `select`
+    /// and `seek` stay with the editor's view): recorded when the channels are figure transforms
+    /// and layer poses, and no gesture is open.
+    pub(crate) fn recorded_native_draw_call(&self, method: &str, reason: &str) -> bool {
+        let draws = matches!(method, "addSegment" | "addSegments");
+        if reason != "with property channels on a native timeline"
+            || !(draws || matches!(method, "@seek" | "@select" | "undo" | "redo"))
+            || !self.native_channel_transaction()
+            || (draws && (self.selection.uid.is_some() || !self.selection.uids.is_empty()))
+            || self.drag.is_some()
+            || self.property_edit.is_some()
+            || self.authored.is_some()
+            || self.native_token.is_some()
+            || self.report.path(&["_styk", "movieclipSource"]).is_some()
+            || self.report.path(&["_styk", "simpleFrameDraft"]).is_some()
+            || items(self.report.get("figure_types")).iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy))
+        {
+            return false;
+        }
+        let Some(animation) = animation(self) else { return false };
+        if !animation.is_object() || animation.get("channels").is_some_and(|channels| !channels.is_null() && !channels.is_array()) {
+            return false;
+        }
+        let mut ids = std::collections::HashSet::new();
+        items(animation.get("channels")).iter().all(|channel| {
+            let layer_pose = channel.get("property").and_then(Value::as_str) == Some("pose")
+                && channel.path(&["target", "kind"]).and_then(Value::as_str) == Some("layer")
+                && normalize_target(channel.get("target").unwrap_or(&Value::Null)).and_then(|target| channel_id(&target, "pose")).is_ok_and(|id| channel.get("id").and_then(Value::as_str) == Some(id.as_str()) && ids.insert(id));
+            layer_pose || native_channel_header(channel, &["x", "y", "scale", "rotation"], &mut ids)
+        })
     }
 
     pub(crate) fn native_transform_gate(

@@ -1,10 +1,11 @@
 // New pose sources join the active layer before the next real command records them.
+import {fileURLToPath} from 'node:url';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {withDraws} from '../../src/editor-draws.mjs';
 import {documentOf,limb,open,nextKey,prune,writeProject,writeReference} from './fixture-kit.mjs';
-const folder=new URL('../tests/edit/',import.meta.url).pathname;
-const views=new URL('../crates/styk-eval/tests/fixtures/movieclip-native-membership/',import.meta.url).pathname;mkdirSync(views,{recursive:true});
+const folder=fileURLToPath(new URL('../tests/edit/',import.meta.url));
+const views=fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-native-membership/',import.meta.url));mkdirSync(views,{recursive:true});
 const actual=JSON.parse(readFileSync(new URL('../crates/styk-eval/tests/fixtures/channels/channels-pose.json',import.meta.url),'utf8'));
 actual._styk.animation.channels=actual._styk.animation.channels.filter(c=>c.property==='pose'&&c.target.kind==='figure');
 const base=()=>{const e=open(documentOf([limb(),limb()],i=>[180+i*170,150]));nextKey(e,6);e.select(1);e.moveSelection(32.5,-7.25);e.seek(0);e.createLayer('Front');return e;};
@@ -32,7 +33,7 @@ const historyEvidence=(name,document,steps)=>{
 for(const [name,document,steps]of cases){
  writeFileSync(`${folder}/${name}.document.json`,JSON.stringify(prune(structuredClone(document)),(key,value)=>key==='runtime_segments'?undefined:value)+'\n');
  writeFileSync(`${folder}/${name}.scenario.json`,JSON.stringify({name,document:`${name}.document.json`,editor:{},steps},null,1)+'\n');
- execFileSync(process.execPath,[new URL('./edit-replay.mjs',import.meta.url).pathname,`${folder}/${name}.scenario.json`,`${folder}/${name}.reference.json`],{stdio:'inherit'});
+ execFileSync(process.execPath,[fileURLToPath(new URL('./edit-replay.mjs',import.meta.url)),`${folder}/${name}.scenario.json`,`${folder}/${name}.reference.json`],{stdio:'inherit'});
  writeFileSync(`${folder}/${name}.history.json`,JSON.stringify(historyEvidence(name,document,steps))+'\n');
  const replay=JSON.parse(readFileSync(`${folder}/${name}.reference.json`,'utf8')),final=JSON.parse(replay.steps.findLast(step=>step.document).document),ticks=[0,.25,1,2,2.25,3,3.25,4,4.75,5.25,6,7.25,10.75,15.75];
  const written=writeProject(views,name,final,ticks,{vfx:true,camera:true,native:true});writeReference(written,name);

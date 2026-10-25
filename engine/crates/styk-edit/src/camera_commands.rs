@@ -51,6 +51,11 @@ pub(crate) fn camera_values(camera: Option<&Value>) -> Value {
     Value::object(out)
 }
 
+/// `finite(camera[key], {Camera <key>})` failed.
+pub(crate) fn camera_not_finite(key: &str) -> EditError {
+    crate::invalid_with(FINITE, vec![("label", crate::label(&format!("Camera {key}")))])
+}
+
 fn field(camera: &Value, key: &str) -> f64 {
     camera.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN)
 }
@@ -59,12 +64,12 @@ fn field(camera: &Value, key: &str) -> f64 {
 fn checked(camera: &Value) -> Result<Value, EditError> {
     for key in FIELDS {
         if !camera.get(key).and_then(Value::as_f64).is_some_and(f64::is_finite) {
-            return Err(EditError::Invalid(FINITE.into()));
+            return Err(camera_not_finite(key));
         }
     }
     for key in ["x", "y", "scale"] {
         if !(field(camera, key) as f32).is_finite() {
-            return Err(EditError::Invalid("errors.editorCamera.cameraExceedsTheNativeRange".into()));
+            return Err(crate::invalid_with("errors.editorCamera.cameraExceedsTheNativeRange", vec![("field", Value::str(key))]));
         }
     }
     let scale = field(camera, "scale");
@@ -87,9 +92,9 @@ fn checked_patch(patch: &Value) -> Result<Vec<(String, f64)>, EditError> {
     let mut out = Vec::new();
     for (key, value) in object.iter() {
         if !FIELDS.contains(&key.as_ref()) {
-            return Err(EditError::Invalid("errors.editorCamera.unknownCameraValue".into()));
+            return Err(crate::invalid_with("errors.editorCamera.unknownCameraValue", vec![("key", Value::str(key))]));
         }
-        let Some(value) = value.as_f64().filter(|v| v.is_finite()) else { return Err(EditError::Invalid(FINITE.into())) };
+        let Some(value) = value.as_f64().filter(|v| v.is_finite()) else { return Err(camera_not_finite(key)) };
         out.push((key.to_string(), value));
     }
     Ok(out)
@@ -195,36 +200,41 @@ impl Editor {
     /// `centerCamera` with the editor's default callback. Its `objectBounds` returns a
     /// rectangle as x/y/width/height, which the caller rejects for missing min/max fields:
     /// no keys change, but cameraEdit still finishes gestures and checks its targets.
-    /// Supplied callbacks use the measurements already requested by the JavaScript owner.
+    /// A supplied callback is the app's, measured here, or the measurements the JavaScript
+    /// owner already made with it.
     pub(crate) fn center_camera(&mut self, axis: &str, indices: &Value, options: &Value) -> Result<Value, EditError> {
         self.camera_sheet("centerCamera")?;
         if !["both", "x", "y"].contains(&axis) {
             return Err(EditError::Invalid("errors.editorCamera.cameraCenteringAxisMustBeBothXOr".into()));
         }
-        let measured = options.get("boundsOf").and_then(|value| value.get("@measuredBounds"));
-        if options.get("boundsOf").is_some() && measured.is_none() {
-            return Err(EditError::Invalid("errors.editorCamera.provideAFigureBoundsFunction".into()));
-        }
-        let measurements = if measured.is_some() {
-            Some(crate::bounds::Measurements::for_call(self, "centerCamera", &[Value::str(axis), indices.clone()], options)?)
-        } else { None };
+        let callback = crate::bounds::Callback::of(self, "centerCamera", &[Value::str(axis), indices.clone()], options)?;
+        if let Some(callback) = &callback { crate::bounds::require_function(callback)?; }
         if self.selection.uids.is_empty() {
-            if let Some(bounds) = &measurements { bounds.borrow().finish()?; }
+            if let Some(callback) = &callback { callback.finish()?; }
             return Ok(Value::Num(0.0));
         }
         let result = self.camera_edit_at(indices_of(indices).as_ref(), |editor, target| {
-            let Some(bounds) = &measurements else { return Ok(None) };
+            let Some(callback) = &callback else { return Ok(None) };
             let frame = editor.evaluated(target.tick, true)?;
             let (mut min, mut max) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
             let objects = crate::frame::objects_of(&frame);
             // `geometry.objects` is populated parents first, in the existing hierarchy
             // traversal; callbacks see that order rather than native object-slot order.
             let (_, order) = crate::range_plan::hierarchy(&objects).map_err(|_| EditError::Unported("bounds requests with unresolved joins".into()))?;
-            for slot in order {
-                let object = &objects[slot];
-                let Some(id) = uid(&object).filter(|id| editor.selection.uids.contains(id)) else { continue };
-                let raw = bounds.borrow_mut().request(id)?;
-                let b = [num(&raw, "minX"), num(&raw, "minY"), num(&raw, "maxX"), num(&raw, "maxY")];
+            let selected: Vec<(usize, u32)> = order.into_iter().filter_map(|slot| Some((slot, uid(&objects[slot]).filter(|id| editor.selection.uids.contains(id))?))).collect();
+            let measured = match callback {
+                crate::bounds::Callback::App => editor.app_bounds(&frame, &selected.iter().map(|(slot, _)| *slot).collect::<Vec<_>>())?,
+                _ => std::collections::HashMap::new(),
+            };
+            for (slot, id) in selected {
+                let b = match callback {
+                    crate::bounds::Callback::Recorded(shared) => {
+                        let raw = shared.borrow_mut().request(id)?;
+                        [num(&raw, "minX"), num(&raw, "minY"), num(&raw, "maxX"), num(&raw, "maxY")]
+                    }
+                    // A figure without geometry is not asked.
+                    _ => match measured.get(&slot) { Some(b) => b.map(Some), None => continue },
+                };
                 if !b.iter().all(|v| v.is_some_and(f64::is_finite)) { continue; }
                 min = [min[0].min(b[0].unwrap()), min[1].min(b[1].unwrap())];
                 max = [max[0].max(b[2].unwrap()), max[1].max(b[3].unwrap())];
@@ -235,7 +245,7 @@ impl Editor {
             if axis != "x" { next.set("y", Value::Num((min[1] + max[1] - num(&editor.report, "canvas_height").unwrap_or(f64::NAN)) / 2.0)); }
             Ok(Some(Value::object(next)))
         })?;
-        if let Some(bounds) = &measurements { bounds.borrow().finish()?; }
+        if let Some(callback) = &callback { callback.finish()?; }
         Ok(result)
     }
 
@@ -302,7 +312,13 @@ impl Editor {
         self.camera_sheet("alignCameraToView")?;
         let mut values = [0.0; 5];
         for (slot, key) in values.iter_mut().zip(["x", "y", "scale", "width", "height"]) {
-            *slot = view.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| EditError::Invalid(FINITE.into()))?;
+            *slot = view.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| {
+                let mut label = Obj::new();
+                label.set("messageKey", Value::str("errors.editorCamera.canvasValueLabel"));
+                label.set("messageParams", Value::object(std::iter::once((std::sync::Arc::from("field"), Value::str(key))).collect()));
+                label.set("diagnosticValue", Value::str(&format!("Canvas {key}")));
+                crate::invalid_with(FINITE, vec![("label", Value::object(label))])
+            })?;
         }
         let [x, y, scale, width, height] = values;
         if scale <= 0.0 || width <= 0.0 || height <= 0.0 {
@@ -533,6 +549,9 @@ impl Editor {
             camera: Some(CameraDrag { indices: selected, current: baseline.clone(), baseline, entries: Vec::new(), preview: None }),
             rig: None,
             motion_path: None,
+            duplicate: None,
+            tweener: None,
+            serial: self.next_drag_serial(),
         });
         self.retained = None;
         Ok(true)

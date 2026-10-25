@@ -563,6 +563,56 @@ impl Store {
         Ok(out)
     }
 
+    /// Keeps an uploaded Pivot project for saving a document that was read from it elsewhere (the engine decodes
+    /// the file itself, in the page): the original is leased to `owner` like an import's, under the id an import
+    /// of the same bytes would have, and nothing is decoded. Answers what an import answers about the source.
+    pub fn keep_upload(&mut self, ctx: &Ctx<'_>, data: &[u8], filename: &str, owner: Option<&str>) -> PyResult<Py> {
+        ctx.checkpoint()?;
+        let owner = check_owner(owner.map(Value::str).as_ref())?.to_string();
+        let name = filename_only(filename)?;
+        if kind_of(&name) != Kind::Piv {
+            return Err(api(415, "unsupported_file", "Only a Pivot project has an original source to keep."));
+        }
+        if data.is_empty() {
+            return Err(api(400, "empty_file", "This file is empty."));
+        }
+        if data.len() > MAX_SOURCE {
+            return Err(api(413, "file_too_large", "This file exceeds the import size limit."));
+        }
+        let version = f64::from(piv::payload_version(data)?);
+        let mut hasher = Sha256::new();
+        hasher.update(Kind::Piv.name().as_bytes());
+        hasher.update([0u8]);
+        hasher.update(data);
+        let source_id = hex(&hasher.finalize());
+        let found = match self.find_source(&source_id) {
+            Some(found) => found,
+            None => {
+                let entry = Source { source_id: source_id.clone(), data: Arc::from(data), document_json: None, digest: None, filename: name.clone(), kind: Kind::Piv, version, decode_ms: 0.0, native_wire: None };
+                if entry.retained_size() > self.limits.max_cache {
+                    return Err(api(413, "cache_limit", "The project exceeds the source cache limit."));
+                }
+                self.cache_bytes += entry.retained_size();
+                self.sources.push(entry);
+                while self.cache_bytes > self.limits.max_cache || self.sources.len() > self.limits.max_cache_entries {
+                    let old = self.sources.remove(0);
+                    self.cache_bytes -= old.retained_size();
+                }
+                Found::Cached(self.sources.len() - 1)
+            }
+        };
+        let retained = self.lease(found, &owner)?;
+        Ok(Py::Dict(vec![
+            ("ok", Py::Bool(true)),
+            ("sourceId", Py::Str(source_id)),
+            ("filename", Py::Str(name)),
+            ("kind", Py::str(Kind::Piv.name())),
+            ("version", version_py(version)),
+            ("sourceOwner", Py::Str(owner)),
+            ("retained", Py::Bool(retained)),
+        ]))
+    }
+
     /// `export(request)`: the file bytes and the download name.
     pub fn export(&mut self, ctx: &Ctx<'_>, request: &Value, timings: &mut Vec<(&'static str, f64)>) -> PyResult<(Vec<u8>, String)> {
         ctx.checkpoint()?;

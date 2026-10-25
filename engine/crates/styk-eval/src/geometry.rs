@@ -154,6 +154,16 @@ pub struct ObjectGeometry {
     pub extent: Option<[f64; 4]>,
 }
 
+/// What a build collects besides the scene that is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Measure {
+    Off,
+    /// Each figure's [`ObjectGeometry::extent`], for a follow camera.
+    Follow,
+    /// The primitives the app's `boundsOf` measures ([`Scene::measured`]).
+    Bounds,
+}
+
 /// `figureBounds` in src/camera-follow.mjs, accumulated point by point.
 #[derive(Clone, Copy, Debug)]
 struct Bounds {
@@ -290,6 +300,11 @@ pub struct Scene {
     pub depths: Vec<f64>,
     /// Colour transitions of the objects that have one ([`Item::transition`]).
     pub transitions: Vec<ColorTransition>,
+    /// Built by [`build_only_measured`]: what the app's `boundsOf` measures of each object,
+    /// whether it is drawn or not ([`crate::drawlist::app_bounds`]): every segment as it stands
+    /// before a Stick Nodes shape expands it, every polygon (culled ones too) and the figure's
+    /// mesh. Empty from every other build.
+    pub measured: Vec<Item>,
 }
 
 impl Scene {
@@ -378,11 +393,13 @@ struct Built {
     depths: Vec<f64>,
     /// Colour transitions (local indices).
     transitions: Vec<ColorTransition>,
+    /// [`Scene::measured`] of this object.
+    measured: Vec<Item>,
 }
 
 impl Built {
     fn new(geometry: ObjectGeometry) -> Built {
-        Built { geometry, items: Vec::new(), points: Vec::new(), figures: Vec::new(), owners: Vec::new(), owner_scales: Vec::new(), chains: Vec::new(), clip_vfx: Vec::new(), meshes: Vec::new(), depths: Vec::new(), transitions: Vec::new() }
+        Built { geometry, items: Vec::new(), points: Vec::new(), figures: Vec::new(), owners: Vec::new(), owner_scales: Vec::new(), chains: Vec::new(), clip_vfx: Vec::new(), meshes: Vec::new(), depths: Vec::new(), transitions: Vec::new(), measured: Vec::new() }
     }
 }
 
@@ -405,7 +422,7 @@ pub fn segment_pose(obj: &Object, seg: &crate::doc::Segment, i: usize) -> (f64, 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>, measure: bool, render_output: bool, joints: Option<&[bool]>) -> Built {
+fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>, measure: Measure, render_output: bool, joints: Option<&[bool]>) -> Built {
     let obj = &frame.objects[slot];
     let n = fig.segments.len();
     let scale = obj.scale;
@@ -610,7 +627,8 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let mut raws: Vec<Option<[f64; 3]>> = Vec::new();
     // What a follow camera frames (`figureBounds`), only when asked for ([`build_measured`]).
     let mut bounds = Bounds::new();
-    if measure {
+    let mut measured: Vec<Item> = Vec::new();
+    if measure == Measure::Follow {
         for it in &segment_items {
             let seg = &fig.segments[it.index as usize];
             if seg.visible {
@@ -674,6 +692,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         // guides, and depth tested against their neighbours (`surfaceEvaluation`).
         let mut z = poly.z;
         let mut depth = (0u32, 0u32);
+        let mut culled = false;
         if let Some(surface) = &poly.surface {
             let mut projected = None;
             if projecting {
@@ -688,30 +707,30 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                     None => {}
                 }
             }
-            if measure {
+            if measure == Measure::Follow {
                 for &p in &points[range.0 as usize..range.1 as usize] {
                     bounds.add(p, 0.0);
                 }
             }
             let result = crate::spatial::evaluate_surface(surface, poly.z, &points[range.0 as usize..range.1 as usize], projected, root, &joint, &joint_depth);
             if result.culled {
-                points.truncate(p0 as usize);
-                continue;
-            }
-            z = result.z;
-            if let Some(values) = result.depth_values {
-                let d0 = surface_depths.len() as u32;
-                surface_depths.extend_from_slice(&values);
-                depth = (d0, surface_depths.len() as u32);
+                culled = true;
+            } else {
+                z = result.z;
+                if let Some(values) = result.depth_values {
+                    let d0 = surface_depths.len() as u32;
+                    surface_depths.extend_from_slice(&values);
+                    depth = (d0, surface_depths.len() as u32);
+                }
             }
         } else {
-            if measure {
+            if measure == Measure::Follow {
                 for &p in &points[range.0 as usize..range.1 as usize] {
                     bounds.add(p, 0.0);
                 }
             }
         }
-        items.push(Item {
+        let item = Item {
             slot: slot as u32,
             kind: ItemKind::Poly,
             index: pi as u32,
@@ -737,7 +756,17 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             faces: (0, 0),
             depth,
             export_vfx: false,
-        });
+        };
+        if culled {
+            // The editor measures a polygon turned away from the view; nothing draws it.
+            if measure == Measure::Bounds {
+                measured.push(item);
+            } else {
+                points.truncate(p0 as usize);
+            }
+            continue;
+        }
+        items.push(item);
     }
     // The figure's mesh: evaluated once after its bones, then split where the
     // figure's other visible primitives lie in painter order (`spatialMeshDrawables`).
@@ -788,6 +817,10 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             meshes.push(Arc::new(mesh));
         }
     }
+    if measure == Measure::Bounds {
+        measured.extend(items.iter().cloned());
+        measured.extend(segment_items.iter().cloned());
+    }
     // Drawables: polygons, mesh faces, then visible segments in record order, stably by z.
     segment_items.sort_by_key(|it| it.index);
     for it in segment_items {
@@ -827,6 +860,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     built.meshes = meshes;
     built.depths = surface_depths;
     built.transitions = transitions;
+    built.measured = measured;
     built
 }
 
@@ -1084,19 +1118,25 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
 
 /// Builds the scene for an evaluated frame.
 pub fn build(doc: &Document, frame: &Frame) -> Scene {
-    build_filtered(doc, frame, None, false, true, None)
+    build_filtered(doc, frame, None, Measure::Off, true, None)
 }
 
 /// [`build`] with every figure's [`ObjectGeometry::extent`]: what a follow camera samples.
 pub fn build_measured(doc: &Document, frame: &Frame) -> Scene {
-    build_filtered(doc, frame, None, true, true, None)
+    build_filtered(doc, frame, None, Measure::Follow, true, None)
+}
+
+/// [`build_only`] with [`Scene::measured`]: what the app's `boundsOf` reads of the objects in
+/// `slots`, for [`crate::drawlist::app_bounds`].
+pub fn build_only_measured(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
+    build_only_with(doc, frame, slots, true, None, Measure::Bounds)
 }
 
 /// [`build`] for the objects in `slots` and the objects they are joined to, the others
 /// left unresolved: what an editing call reads of one figure's geometry, without the
 /// whole frame's.
 pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
-    build_only_with(doc, frame, slots, true, None)
+    build_only_with(doc, frame, slots, true, None, Measure::Off)
 }
 
 /// [`build_only`] for a shape query: ordinary 2D objects retain their joints,
@@ -1105,7 +1145,7 @@ pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
 /// rig, spatial pose, movieclip, mesh, surface or Stick Nodes shape uses the full builder.
 /// The returned scene is query geometry; callers must not render it.
 pub fn build_only_for_shape(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
-    build_only_with(doc, frame, slots, false, None)
+    build_only_with(doc, frame, slots, false, None, Measure::Off)
 }
 
 /// [`build_only_for_shape`] for one selected segment. When no object has a pinned
@@ -1117,10 +1157,10 @@ pub fn build_only_for_shape(doc: &Document, frame: &Frame, slots: &[usize]) -> S
 /// Rich needed figures, any pinned controller, selected UID aliases and ambiguous
 /// segment topology retain the existing whole-object shape query.
 pub fn build_joint_for_shape(doc: &Document, frame: &Frame, slot: usize, joint: usize) -> Scene {
-    build_only_with(doc, frame, &[slot], false, Some((slot, joint)))
+    build_only_with(doc, frame, &[slot], false, Some((slot, joint)), Measure::Off)
 }
 
-fn build_only_with(doc: &Document, frame: &Frame, slots: &[usize], render_output: bool, joint: Option<(usize, usize)>) -> Scene {
+fn build_only_with(doc: &Document, frame: &Frame, slots: &[usize], render_output: bool, joint: Option<(usize, usize)>, measure: Measure) -> Scene {
     let count = frame.objects.len();
     let mut needed = vec![false; count];
     for &slot in slots {
@@ -1130,7 +1170,7 @@ fn build_only_with(doc: &Document, frame: &Frame, slots: &[usize], render_output
             at = frame.objects[i].join.map(|j| j.slot as usize);
         }
     }
-    build_filtered(doc, frame, Some(&needed), false, render_output, joint)
+    build_filtered(doc, frame, Some(&needed), measure, render_output, joint)
 }
 
 // The compiled parent/order plan is the sole topology owner. A query whose
@@ -1181,7 +1221,7 @@ fn joint_ancestors(frame: &Frame, figure: &Figure, slot: usize, joint: usize) ->
     Some(joints)
 }
 
-fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measure: bool, render_output: bool, joint: Option<(usize, usize)>) -> Scene {
+fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measure: Measure, render_output: bool, joint: Option<(usize, usize)>) -> Scene {
     let count = frame.objects.len();
     let mut scene = Scene {
         objects: vec![ObjectGeometry::default(); count],
@@ -1377,6 +1417,13 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
                 else { pose.entries.iter().any(|(_, stack)| crate::vfx::active(stack).next().is_some()) }
             }) || frame.vfx.as_ref().and_then(|vfx| vfx.object(slot)).is_some_and(|vfx| !vfx.figure.is_empty() || vfx.attached.is_some() || !vfx.segments.is_empty())
         });
+        for mut it in b.measured {
+            it.points = (it.points.0 + base, it.points.1 + base);
+            if it.mesh != NO_MESH {
+                it.mesh += mesh_base;
+            }
+            scene.measured.push(it);
+        }
         for mut it in b.items {
             it.export_vfx |= export_vfx;
             it.points = (it.points.0 + base, it.points.1 + base);

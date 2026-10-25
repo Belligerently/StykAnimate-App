@@ -3,7 +3,7 @@
 //! `tests/fixtures/drawlist/outlined-text.json` holds one glyph of a Pivot text
 //! figure (from `finisher tdd2.piv`) with three figure outlines: 1.5 wide at
 //! scale 1, 4 wide at scale 2.5, and 8 wide at half opacity at scale 4, all red.
-//! `scripts/engine-app-parity.mjs` compares the pixels with the editor's renderers.
+//! The app-parity rule (D13) compared the pixels with the editor's renderers.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ fn outline_triangles(doc: styk_eval::doc::Document) -> usize {
     let assets = Assets::build(&doc);
     let prepared = styk_eval::prepare(doc);
     let scene = build(&prepared.doc, &prepared.evaluate(0.0));
-    let list = encode_composed(&prepared.doc, &assets, &scene, &Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None }, &[], None);
+    let list = encode_composed(&prepared.doc, &assets, &scene, &Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None, live: None }, &[], None);
     let red = rgba8([220, 30, 30], 1.0);
     list.prims.iter().filter(|p| p.kind & 255 == K_TRI && p.color == red).count()
 }
@@ -48,7 +48,7 @@ fn frame(edit: impl FnOnce(&mut styk_eval::doc::Document)) -> styk_eval::drawlis
     let assets = Assets::build(&doc);
     let prepared = styk_eval::prepare(doc);
     let scene = build(&prepared.doc, &prepared.evaluate(0.0));
-    encode_composed(&prepared.doc, &assets, &scene, &Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None }, &[], None)
+    encode_composed(&prepared.doc, &assets, &scene, &Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None, live: None }, &[], None)
 }
 
 /// The raster layer each glyph triangle of `list` is drawn on, outermost first.

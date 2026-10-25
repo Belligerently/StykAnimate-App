@@ -3,9 +3,9 @@ import {readLibraryFile} from './library-files.mjs';
 import {engineLibraryAnimation} from './engine/engine-previews.mjs';
 
 /**
- * One hover animation at a time and one frame in flight; no decoded-document cache. The engine draws it where
- * it can (src/engine/engine-previews.mjs: the page's preview worker, kept between hovers); otherwise a
- * disposable JavaScript worker does.
+ * One hover animation at a time and one frame in flight; no decoded-document cache. The engine draws it
+ * (src/engine/engine-previews.mjs: the page's preview worker, kept between hovers); a file it cannot draw
+ * shows no animation.
  */
 export class LibraryHoverPreview {
   constructor(desktop) { this.desktop = desktop; }
@@ -22,8 +22,8 @@ export class LibraryHoverPreview {
       if (!active()) return;
       const animation = await engineLibraryAnimation(file, {signal: session.controller.signal});
       if (!active()) { animation?.close(); return; }
-      if (animation) { this.play(session, animation, file); return; }
-      this.playInWorker(session, file);
+      if (animation) this.play(session, animation);
+      else this.fail(session);
     } catch (error) {
       if (active()) { this.stop(); if (error.name !== 'AbortError') localizedAttribute(session.card, "title", "libraryHoverPreview.animationPreviewUnavailableDoubleClickToInsertThis", {}); }
     }
@@ -51,7 +51,7 @@ export class LibraryHoverPreview {
     if (matte) session.card.style.setProperty('--library-matte', matte);
   }
   /** The engine's animation: frames asked for one at a time, at most 24 a second. */
-  play(session, animation, file) {
+  play(session, animation) {
     const active = () => this.current === session && session.card.isConnected;
     session.animation = animation;
     let first = true;
@@ -62,40 +62,18 @@ export class LibraryHoverPreview {
       catch (error) { clearTimeout(session.timeout); if (error.name !== 'AbortError') this.fail(session); return; }
       clearTimeout(session.timeout);
       if (!active()) { frame?.bitmap.close(); return; }
-      // A frame the engine does not draw (filter effects appear later in the clip): the JavaScript worker takes over.
-      if (!frame) { animation.close(); session.animation = null; this.playInWorker(session, file); return; }
+      // A frame the engine does not draw: the animation ends.
+      if (!frame) { animation.close(); session.animation = null; this.fail(session); return; }
       this.show(session, frame.bitmap, {tick: frame.tick, duration: animation.duration, matte: first ? animation.matte : undefined});
       first = false;
       session.delay = setTimeout(() => { if (active()) void next(); }, 1000 / Math.min(24, animation.fps));
     };
     void next();
   }
-  /** The JavaScript worker's animation (documents the engine does not draw, pages without it). */
-  playInWorker(session, file) {
-    const active = () => this.current === session && session.card.isConnected;
-    const worker = new Worker(new URL('./library-preview-worker.mjs', import.meta.url), {type: 'module', name: 'Library hover preview'});
-    session.worker = worker;
-    worker.onerror = event => { event.preventDefault(); this.fail(session); };
-    worker.onmessageerror = () => this.fail(session);
-    session.timeout = setTimeout(() => this.fail(session), 60000);
-    worker.onmessage = ({data}) => {
-      if (!active()) { data.bitmap?.close(); return; }
-      if (data.error) { this.fail(session); return; }
-      if (!data.bitmap) return;
-      clearTimeout(session.timeout);
-      this.show(session, data.bitmap, {tick: data.tick, duration: data.duration, matte: data.matte});
-      session.delay = setTimeout(() => {
-        if (!active()) return;
-        session.timeout = setTimeout(() => this.fail(session), 15000);
-        worker.postMessage({operation: 'frame', elapsed: (performance.now() - session.started) / 1000});
-      }, 1000 / Math.min(24, data.fps));
-    };
-    worker.postMessage({operation: 'animation', file, baseURL: location.href});
-  }
   stop() {
     const session = this.current; this.current = null;
     if (!session) return;
-    clearTimeout(session.delay); clearTimeout(session.timeout); session.controller.abort(); session.worker?.terminate(); session.animation?.close();
+    clearTimeout(session.delay); clearTimeout(session.timeout); session.controller.abort(); session.animation?.close();
     session.canvas?.remove(); session.card.classList.remove('library-preview-playing');
     const hint = session.card.querySelector('.library-preview-hint'); if (hint) localizedText(hint, "libraryHoverPreview.hoverToPlay", {});
     if (session.card.dataset.matte) session.card.style.setProperty('--library-matte', session.card.dataset.matte);

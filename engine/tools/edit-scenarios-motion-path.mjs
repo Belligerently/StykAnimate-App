@@ -4,11 +4,12 @@
 // each shape reshaping the target's keys nearby (`setMotionPathFalloff`, `motionPathFalloff`):
 // figures' origins and joints, joined figures, IK targets pinned and free, two layers, a
 // movieclip, the camera; refusals and history. Run by engine/tools/edit-scenarios.mjs.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {documentOf, limb, open, nextKey, prune} from './fixture-kit.mjs';
 import {falloffWeight, MOTION_PATH_FALLOFF_SHAPES} from '../../src/motion-path-falloff.mjs';
 
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const scenario = (name, editor, steps, document) => writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor, steps}, null, 1) + '\n');
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
@@ -20,8 +21,8 @@ const to = (x, y, options) => ['updateMotionPathEdit', {x, y}, ...(options ? [op
 const commit = ['commitMotionPathEdit'], cancel = ['cancelMotionPathEdit'], falloffView = ['motionPathFalloff'];
 
 // Every weight a falloff can give (each shape, radius and distance), as the digest of their
-// bits: styk-edit's `falloff_weights` test computes the same (the sharp shape's cube is the C
-// library's `pow`, not the correctly rounded cube, for a few inputs).
+// bits: styk-edit's `falloff_weights` test computes the same (the sharp shape's cube is V8's
+// own `pow`, which engine/tools/v8-pin.mjs selects, not the correctly rounded cube).
 {
   const view = new DataView(new ArrayBuffer(8));
   let digest = 0xcbf29ce484222325n, count = 0;

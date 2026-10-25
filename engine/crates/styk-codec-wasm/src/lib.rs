@@ -1,5 +1,7 @@
 //! The Pivot codec as a WebAssembly module: `styk_piv::Codec` behind one
 //! `request` call, for the app's codec worker (`src/codec-web-worker.mjs`).
+//! The same module carries StykAnimate's own file containers for the import,
+//! library-preview and document-export workers (`native`, `src/native-file-codec.mjs`).
 //!
 //! It is a separate module from the engine's: no threads, no shared memory,
 //! built on stable Rust (`node scripts/engine-build.mjs`). The worker owns one
@@ -13,6 +15,13 @@
 
 use styk_piv::{Codec, Limits};
 use wasm_bindgen::prelude::*;
+
+/// Memory grows ahead in large steps: a host `memory.grow` costs about a millisecond whatever its size (`styk-alloc`).
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static ALLOCATOR: styk_alloc::GrowAhead = styk_alloc::GrowAhead;
+
+mod native;
 
 #[wasm_bindgen]
 extern "C" {
@@ -33,6 +42,20 @@ extern "C" {
 #[wasm_bindgen(start)]
 fn start() {
     std::panic::set_hook(Box::new(|info| console_error(&format!("StykAnimate Pivot codec panic: {info}"))));
+}
+
+/// Bytes of linear memory this instance holds. It grows with the largest working set and
+/// never shrinks; `src/native-file-codec.mjs` replaces an instance that holds too much.
+#[wasm_bindgen(js_name = memoryBytes)]
+pub fn memory_bytes() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        (core::arch::wasm32::memory_size::<0>() * 65536) as f64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0.0
+    }
 }
 
 /// The codec service: imports, exports and the source cache behind them.

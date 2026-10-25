@@ -1,10 +1,11 @@
 // Cropped movieclips retain source easing through fractional final output frames.
+import {fileURLToPath} from 'node:url';
 import {writeFileSync, mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {timeline, evaluatedFrame} from '../../src/pivot/geometry.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 import {documentOf, limb, open, nextKey, createFrame, writeProject, writeReference} from './fixture-kit.mjs';
-const out = new URL('../crates/styk-eval/tests/fixtures/movieclip-source/', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-source/', import.meta.url));
 mkdirSync(out, {recursive:true});
 for (const sheet of [false, true]) {
  const e=open(documentOf([limb(), limb()], i=>[200+i*150,160]));

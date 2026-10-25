@@ -4,8 +4,8 @@
 //
 //   node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks 0,5,9] [--every N] [--max N] [--vfx] [--camera] [--images] [--scene] [--style] [--native]
 //
-// Pivot .piv files go through the repository's Python codec first
-// (tools/decode-piv.sh), exactly like the desktop app's import service.
+// A Pivot .piv is decoded first with `node engine/tools/decode-piv.mjs <file.piv> <out.json>`
+// (the repository's Python codec); this tool reads the decoded JSON.
 //
 // --vfx adds, per tick, the effects the editor resolves (`frames[].vfx`): the
 // stacks the renderers hand to the effect executors, the generated effects,
@@ -32,6 +32,11 @@
 //
 // --native evaluates the document on its native timeline (the editor without layer sheets,
 // as documents with property channels were authored) instead of as the app loads it.
+//
+// --deep loads a document whose movieclips nest deeper than the editor opens a file
+// (eight levels, `validateMovieclipGraph`). Nested editing builds such documents in a
+// session, where only the clip entered is checked; the evaluation is the same.
+import './v8-pin.mjs';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import path from 'node:path';
@@ -39,14 +44,14 @@ import path from 'node:path';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
 const repoUrl = pathToFileURL(repo).href;
-const {decodeDocument, normalizeDecodedDocument} = await import(`${repoUrl}/src/native-container.mjs`);
+const {openDocument} = await import(`${repoUrl}/tests/support/native-files.mjs`);
 const {Editor} = await import(`${repoUrl}/src/editor.mjs`);
 const {sampleInbetweenPreview} = await import(`${repoUrl}/src/editor-inbetween.mjs`);
 const {buildGeometry} = await import(`${repoUrl}/src/pivot/geometry.mjs`);
 
 const [input, output, ...rest] = process.argv.slice(2);
 if (!input || !output) {
-  console.error('usage: node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks a,b] [--every N] [--max N] [--vfx] [--camera] [--images] [--scene] [--style] [--native]');
+  console.error('usage: node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks a,b] [--every N] [--max N] [--vfx] [--camera] [--images] [--scene] [--style] [--native] [--deep]');
   process.exit(2);
 }
 const option = name => { const i = rest.indexOf(name); return i < 0 ? undefined : rest[i + 1]; };
@@ -58,8 +63,7 @@ const scenes = rest.includes('--scene'), styles = rest.includes('--style');
 let document;
 if (/\.(styk|stkz|stykmov)$/i.test(input)) {
   const kind = /\.(styk|stkz|stykmov)$/i.exec(input)[1].toLowerCase();
-  const decoded = await decodeDocument(new Uint8Array(readFileSync(input)), kind);
-  document = normalizeDecodedDocument(decoded.document, kind);
+  document = await openDocument(new Uint8Array(readFileSync(input)), kind, {verifySource: false});
 } else {
   document = JSON.parse(readFileSync(input, 'utf8'));
 }
@@ -67,7 +71,14 @@ if (/\.(styk|stkz|stykmov)$/i.test(input)) {
 // Same editor configuration as src/app.mjs (without layer sheets for --native).
 const started = performance.now();
 const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: !rest.includes('--native')});
-editor.load(document, path.basename(input));
+if (rest.includes('--deep')) {
+  const {prepareEditorLoadSteps} = await import(`${repoUrl}/src/editor-load.mjs`);
+  // A visited set skips the graph check of the root; every nested document is still prepared.
+  const steps = prepareEditorLoadSteps(document, {sliceMs: Infinity, movieclipVisited: new Set()});
+  let step;
+  do step = steps.next(); while (!step.done);
+  editor._publishLoadedReport(step.value, path.basename(input));
+} else editor.load(document, path.basename(input));
 const loadMs = performance.now() - started;
 const total = editor.totalTicks;
 
@@ -179,7 +190,7 @@ function imageCorners(d) {
   return [corner(0, 0), corner(w, 0), corner(0, h), corner(w, h)];
 }
 
-/** What the scene camera does to a frame when it is shown (src/renderer.mjs, src/playback-worker.mjs). */
+/** What the scene camera does to a frame when it is shown (the engine's styk_eval::view::camera_matrix). */
 async function shotDumper() {
   const {cameraAtTime} = await import(`${repoUrl}/src/camera-motion.mjs`);
   const {parallaxResolver} = await import(`${repoUrl}/src/layer-parallax.mjs`);
@@ -192,7 +203,7 @@ async function shotDumper() {
 
 /**
  * What the editor resolves for effects at one tick, as the renderers hand it to
- * the effect executors (src/renderer.mjs, src/playback-worker.mjs):
+ * the effect executors:
  *
  * - `scene`: `activeVfx(vfxStack(frame))`, the camera's stack;
  * - `objects`: per slot with anything to draw, the stack of the object's own

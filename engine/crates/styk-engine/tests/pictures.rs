@@ -56,7 +56,9 @@ fn a_frame_lacks_its_drawing_cel_until_every_tile_is_uploaded() {
 
 #[test]
 fn a_frame_without_pictures_never_lacks_one() {
-    let engine = open("AssetReleases/Impact-FX/Scenes/Impact-FX-Fight.styk");
-    let list = engine.frame_now(30).unwrap().list.clone();
+    // Figures and generated effects drawn as many records, none of them a picture.
+    let engine = open("engine/crates/styk-eval/tests/fixtures/generators/explosions.json");
+    let list = engine.frame_now(6).unwrap().list.clone();
+    assert!(list.prims.len() > 100, "the frame is drawn ({} records)", list.prims.len());
     assert!(!Uploaded::default().lacks(&list));
 }

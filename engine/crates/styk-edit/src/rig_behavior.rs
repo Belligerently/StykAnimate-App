@@ -30,10 +30,10 @@ fn given(value: Option<&Value>) -> bool {
 }
 
 /// `Number.isFinite(n) && n >= min && n <= max` (`number(n, label, min, max)`).
-fn number(value: Option<&Value>, min: f64, max: f64) -> Result<(), EditError> {
+fn number(value: Option<&Value>, label: &str, min: f64, max: f64) -> Result<(), EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max => Ok(()),
-        _ => Err(invalid("errors.cameraMotion.mustBeBetweenAnd")),
+        _ => Err(crate::out_of_range("errors.cameraMotion.mustBeBetweenAnd", label, ("min", "max"), (min, max))),
     }
 }
 
@@ -85,11 +85,12 @@ fn id_key(value: Option<&Value>) -> Option<u64> {
 
 impl Checker<'_> {
     /// `reference(id, label, root)`.
-    fn reference(&self, id: Option<&Value>, root: bool) -> Result<(), EditError> {
-        let Some(n) = integer(id) else { return Err(invalid("errors.rigConstraints.refersToAMissingJointRemoveOrReconnect")) };
+    fn reference(&self, id: Option<&Value>, label: &str, root: bool) -> Result<(), EditError> {
+        let missing = || crate::invalid_with("errors.rigConstraints.refersToAMissingJointRemoveOrReconnect", vec![("label", crate::label(label))]);
+        let Some(n) = integer(id) else { return Err(missing()) };
         let known = n >= 0.0 && self.ids.contains_key(&(n as u64));
         if !known && !(root && n == 0.0) {
-            return Err(invalid("errors.rigConstraints.refersToAMissingJointRemoveOrReconnect"));
+            return Err(missing());
         }
         Ok(())
     }
@@ -104,7 +105,7 @@ impl Checker<'_> {
             return Err(invalid("errors.rigSpatial.invalidSpatialJoint"));
         }
         let reference = |checker: &Checker, id: Option<&Value>, bone: bool, dependencies: &mut Vec<Value>| -> Result<(), EditError> {
-            checker.reference(id, true)?;
+            checker.reference(id, "Rig parent", true)?;
             add(dependencies, id);
             if id.is_some_and(Value::truthy) && bone && !spatial_bone(checker.segment(id)) {
                 return Err(invalid("errors.rigSpatial.mustBeAnArticulatedSpatialJoint"));
@@ -195,7 +196,7 @@ impl Checker<'_> {
         if !value.truthy() || !is_plain_object(value) || !keys_within(value, allowed) || !anchors.is_some_and(Value::is_array) || list.is_empty() || list.len() > 16 {
             return Err(invalid("errors.rigWeighted.aWeightedJointRequires116Anchors"));
         }
-        self.reference(value.get("origin"), true)?;
+        self.reference(value.get("origin"), "Weighted origin", true)?;
         add(dependencies, value.get("origin"));
         let mut seen: Vec<Value> = Vec::new();
         let origin = value.get("origin").cloned().unwrap_or(Value::Null);
@@ -203,7 +204,7 @@ impl Checker<'_> {
             if !anchor.truthy() || !is_plain_object(anchor) || !keys_within(anchor, &["joint", "weight"]) {
                 return Err(invalid("errors.rigWeighted.invalidWeightedAnchor"));
             }
-            self.reference(anchor.get("joint"), true)?;
+            self.reference(anchor.get("joint"), "Weighted anchor", true)?;
             add(dependencies, anchor.get("joint"));
             let joint = anchor.get("joint").cloned().unwrap_or(Value::Null);
             if seen.iter().any(|j| same_value_zero(j, &joint)) || same_value_zero(&joint, &origin) {
@@ -229,19 +230,19 @@ impl Checker<'_> {
             if !keys_within(path, &["source"]) {
                 return Err(invalid("errors.rigAnglePath.aDepthGuideOnlyReferencesItsAnglePath"));
             }
-            self.reference(Some(source), false)?;
+            self.reference(Some(source), "Angle-path depth source", false)?;
             add(dependencies, Some(source));
             return Ok(());
         }
         if !keys_within(path, &["driver", "pitch", "origin", "restAngle", "pitchRestAngle", "figureRestAngle", "keys"]) {
             return Err(invalid("errors.rigAnglePath.invalidAnglePathField"));
         }
-        self.reference(path.get("driver"), false)?;
-        self.reference(path.get("origin"), true)?;
+        self.reference(path.get("driver"), "Angle-path driver", false)?;
+        self.reference(path.get("origin"), "Angle-path origin", true)?;
         add(dependencies, path.get("driver"));
         add(dependencies, path.get("origin"));
         if let Some(pitch) = path.get("pitch") {
-            self.reference(Some(pitch), false)?;
+            self.reference(Some(pitch), "Angle-path pitch", false)?;
             add(dependencies, Some(pitch));
         }
         for key in ["restAngle", "pitchRestAngle", "figureRestAngle"] {
@@ -336,20 +337,20 @@ pub(crate) fn validate_rig(segments: &[Value]) -> Result<(), EditError> {
             }
         }
         if let Some(c) = c {
-            checker.reference(c.get("start"), true)?;
-            checker.reference(c.get("end"), true)?;
+            checker.reference(c.get("start"), "Connector start", true)?;
+            checker.reference(c.get("end"), "Connector end", true)?;
             if same_value_zero(c.get("start").unwrap_or(&Value::Null), c.get("end").unwrap_or(&Value::Null)) {
                 return Err(invalid("errors.rigConstraints.chooseTwoDifferentConnectorAnchors"));
             }
-            number(c.get("restLength"), EPS, 1e6)?;
+            number(c.get("restLength"), "Connector rest span", EPS, 1e6)?;
             add(&mut dependencies, c.get("start"));
             add(&mut dependencies, c.get("end"));
         }
         if let Some(d) = d {
-            number(d.get("restLength"), EPS, 1e6)?;
-            number(d.get("min"), 0.0, 100.0)?;
+            number(d.get("restLength"), "Stretch rest length", EPS, 1e6)?;
+            number(d.get("min"), "Minimum stretch", 0.0, 100.0)?;
             let min = d.get("min").and_then(Value::as_f64).unwrap();
-            number(d.get("max"), 0.01f64.max(min), 100.0)?;
+            number(d.get("max"), "Maximum stretch", 0.01f64.max(min), 100.0)?;
             if !matches!(d.get("width").and_then(Value::as_str), Some("keep" | "inverse" | "scale")) {
                 return Err(invalid("errors.rigConstraints.chooseAValidStretchWidthResponse"));
             }
@@ -362,7 +363,7 @@ pub(crate) fn validate_rig(segments: &[Value]) -> Result<(), EditError> {
                 return Err(invalid("errors.rigConstraints.chooseAValidConnectorStretchSource"));
             }
             if given(d.get("restPosition")) {
-                number(d.get("restPosition"), EPS, 1.0)?;
+                number(d.get("restPosition"), "Rest slide position", EPS, 1.0)?;
             }
             let source = d.get("source").filter(|s| s.truthy());
             if source.is_some_and(|s| s.as_str() != Some("span")) && !given(d.get("restPosition")) {
@@ -370,14 +371,14 @@ pub(crate) fn validate_rig(segments: &[Value]) -> Result<(), EditError> {
             }
         }
         if let Some(f) = f {
-            checker.reference(f.get("driver"), false)?;
+            checker.reference(f.get("driver"), "Stretch driver", false)?;
             if !checker.segment(f.get("driver")).and_then(|s| s.path(&["_stykRig", "stretch"])).is_some_and(Value::truthy) {
                 return Err(invalid("errors.rigConstraints.theSelectedStretchDriverIsNotEnabledRemove"));
             }
             if !matches!(f.get("mode").and_then(Value::as_str), Some("stretch" | "rigid")) {
                 return Err(invalid("errors.rigConstraints.chooseStretchOrFollowWithoutDeforming"));
             }
-            number(f.get("influence"), -4.0, 4.0)?;
+            number(f.get("influence"), "Stretch influence", -4.0, 4.0)?;
             add(&mut dependencies, f.get("driver"));
             if given(f.get("automatic")) && f.get("automatic").and_then(Value::as_bool).is_none() {
                 return Err(invalid("errors.rigConstraints.invalidAutomaticStretchBinding"));
@@ -397,7 +398,7 @@ pub(crate) fn validate_rig(segments: &[Value]) -> Result<(), EditError> {
                 return Err(invalid("errors.rigConstraints.chooseAValidStretchResponse"));
             }
             if given(response.get("multiplier")) {
-                number(response.get("multiplier"), -10.0, 10.0)?;
+                number(response.get("multiplier"), "Stretch multiplier", -10.0, 10.0)?;
             }
             if given(response.get("reset")) && response.get("reset").and_then(Value::as_bool).is_none() {
                 return Err(invalid("errors.rigConstraints.invalidStretchImpulseReset"));
@@ -416,32 +417,32 @@ pub(crate) fn validate_rig(segments: &[Value]) -> Result<(), EditError> {
             {
                 return Err(invalid("errors.rigConstraints.chooseAValidAngleLockSpace"));
             }
-            number(lock.get("angle"), -1e6, 1e6)?;
-            number(lock.get("multiplier"), -10.0, 10.0)?;
+            number(lock.get("angle"), "Locked angle", -1e6, 1e6)?;
+            number(lock.get("multiplier"), "Angle multiplier", -10.0, 10.0)?;
             if mode == Some("parent") {
-                checker.reference(lock.get("reference"), false)?;
+                checker.reference(lock.get("reference"), "Angle reference", false)?;
                 add(&mut dependencies, lock.get("reference"));
-                number(lock.get("restAngle"), -1e6, 1e6)?;
+                number(lock.get("restAngle"), "Reference angle", -1e6, 1e6)?;
             }
             if mode == Some("figure") {
-                number(lock.get("restAngle"), -1e6, 1e6)?;
+                number(lock.get("restAngle"), "Figure reference angle", -1e6, 1e6)?;
             }
             if given(lock.get("figureRestAngle")) {
-                number(lock.get("figureRestAngle"), -1e6, 1e6)?;
+                number(lock.get("figureRestAngle"), "Parent lock figure reference angle", -1e6, 1e6)?;
             }
             if let Some(secondary) = lock.get("secondary").filter(|s| !s.is_null()) {
                 if mode != Some("parent") || !secondary.is_object() {
                     return Err(invalid("errors.rigConstraints.aSecondAngleReferenceRequiresAParentAngle"));
                 }
-                checker.reference(secondary.get("reference"), false)?;
+                checker.reference(secondary.get("reference"), "Second angle reference", false)?;
                 add(&mut dependencies, secondary.get("reference"));
-                number(secondary.get("restAngle"), -1e6, 1e6)?;
-                number(secondary.get("multiplier"), -10.0, 10.0)?;
+                number(secondary.get("restAngle"), "Second reference angle", -1e6, 1e6)?;
+                number(secondary.get("multiplier"), "Second rotation multiplier", -10.0, 10.0)?;
             }
         }
         let mut seen = HashSet::new();
         for id in &dependencies {
-            checker.reference(Some(id), true)?;
+            checker.reference(Some(id), "Rig parent", true)?;
             if id.truthy() {
                 let parent = checker.ids[&id_key(Some(id)).unwrap()];
                 if seen.insert(parent) {

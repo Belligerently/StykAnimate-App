@@ -4,9 +4,9 @@ use styk_doc::{Value, json};
 use styk_engine::planning::{LayerRequest, PlanError, TRANSFER_BYTES, native_layer_plan};
 use styk_eval::eval::Prepared;
 
-fn clock() -> f64 {
-    0.0
-}
+mod common;
+use common::{apply, clock, engine_with, republish};
+
 fn load(name: &str) -> (Value, Value, Prepared, LayerRequest) {
     let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../tests/layer-migration/{name}.json"));
@@ -117,59 +117,6 @@ fn cancellation_and_source_budget_preserve_original_document() {
     assert_eq!(before, json::to_string(&tree));
 }
 
-fn parent_mut<'a>(value: &'a mut Value, path: &[Value]) -> &'a mut Value {
-    if path.is_empty() {
-        return value;
-    }
-    let next = if let Some(key) = path[0].as_str() {
-        value.make_obj().unwrap().get_mut(key).unwrap()
-    } else {
-        &mut value.make_arr().unwrap()[path[0].as_f64().unwrap() as usize]
-    };
-    parent_mut(next, &path[1..])
-}
-fn apply(mut report: Value, packet: &Value) -> Value {
-    if let Some(header) = packet.get("header") {
-        return header.clone();
-    }
-    for op in packet.get("operations").unwrap().elements().unwrap().iter() {
-        let path: Vec<_> = op.get("path").unwrap().elements().unwrap().iter().collect();
-        let parent = parent_mut(&mut report, &path[..path.len() - 1]);
-        let key = path.last().unwrap();
-        let old = if let Some(key) = key.as_str() {
-            parent.get(key).cloned()
-        } else {
-            parent.item(key.as_f64().unwrap() as usize)
-        };
-        let value = if let Some(part) = op.get("append") {
-            Value::str(&format!(
-                "{}{}",
-                old.unwrap().text().unwrap(),
-                part.text().unwrap()
-            ))
-        } else if let Some(part) = op.get("extend") {
-            let mut value = old.unwrap();
-            value
-                .make_arr()
-                .unwrap()
-                .extend(part.elements().unwrap().iter());
-            value
-        } else {
-            op.get("value").unwrap().clone()
-        };
-        if let Some(key) = key.as_str() {
-            parent.make_obj().unwrap().set(key, value);
-        } else {
-            let array = parent.make_arr().unwrap();
-            let at = key.as_f64().unwrap() as usize;
-            if array.len() <= at {
-                array.resize(at + 1, Value::Null);
-            }
-            array[at] = value;
-        }
-    }
-    report
-}
 fn reconstruct(payload: Value) -> (Value, usize) {
     let mut chunks = styk_engine::planning::Chunks::new(payload).unwrap();
     let mut report = Value::Null;
@@ -213,10 +160,6 @@ fn dense_single_figure_and_channel_are_sliced_losslessly() {
 }
 
 fn sheet_fixture(name: &str) -> (Value, styk_engine::Engine, LayerRequest) {
-    use styk_engine::{
-        Budgets,
-        mirror::{Change, Record, Table},
-    };
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../tests/layer-sheet-migration/{name}.json"));
     let reference = json::parse(&std::fs::read(path).unwrap()).unwrap();
@@ -229,35 +172,7 @@ fn sheet_fixture(name: &str) -> (Value, styk_engine::Engine, LayerRequest) {
             .as_bytes(),
     )
     .unwrap();
-    let engine = styk_engine::Engine::new(clock, Budgets::for_device(None));
-    let mut properties = tree.as_obj().unwrap().clone();
-    for table in [Table::Figures, Table::Keyframes, Table::Backgrounds] {
-        properties.remove(table.key());
-    }
-    engine.stage(0, Change::Reset).unwrap();
-    engine.stage(
-        0,
-        Change::Properties(json::to_string(&Value::object(properties)).into_bytes()),
-    ).unwrap();
-    for table in [Table::Figures, Table::Keyframes, Table::Backgrounds] {
-        let values = tree.get(table.key()).unwrap().elements().unwrap();
-        engine.stage(0, Change::Layout(table, vec![-1; values.len()])).unwrap();
-        for (i, value) in values.iter().enumerate() {
-            engine.stage(
-                0,
-                Change::Set(
-                    table,
-                    i as u32,
-                    Record {
-                        skeleton: json::to_string(&value).into_bytes(),
-                        arrays: vec![],
-                        payloads: vec![],
-                    },
-                ),
-            ).unwrap();
-        }
-    }
-    engine.commit(1, 0).unwrap();
+    let engine = engine_with(&tree);
     let request = reference.get("request").unwrap();
     let request = LayerRequest {
         uids: request
@@ -287,7 +202,7 @@ fn sheet_fixture(name: &str) -> (Value, styk_engine::Engine, LayerRequest) {
     (reference, engine, request)
 }
 #[test]
-fn mirrored_sheet_kernel_uses_the_existing_bounded_worker_lane() {
+fn stored_sheet_kernel_uses_the_existing_bounded_worker_lane() {
     for name in [
         "shared",
         "vacant",
@@ -304,7 +219,7 @@ fn mirrored_sheet_kernel_uses_the_existing_bounded_worker_lane() {
         "view-changed",
     ] {
         let (reference, engine, request) = sheet_fixture(name);
-        let before = engine.mirrored().unwrap().1;
+        let before = engine.stored().unwrap().1;
         let generation = engine.generation().unwrap().id;
         let job = engine.plan_layers(1, request).unwrap();
         assert!(
@@ -359,7 +274,7 @@ fn mirrored_sheet_kernel_uses_the_existing_bounded_worker_lane() {
             assert!(progress.is_none())
         }
         assert!(
-            before.same_node(&engine.mirrored().unwrap().1),
+            before.same_node(&engine.stored().unwrap().1),
             "read-only {name}"
         );
         assert_eq!(engine.generation().unwrap().id, generation);
@@ -378,11 +293,11 @@ fn sheet_worker_refusals_cancel_and_generation_changes_preserve_canonical_owner(
         "small-budget",
     ] {
         let (reference, engine, request) = sheet_fixture(name);
-        let before = engine.mirrored().unwrap().1;
+        let before = engine.stored().unwrap().1;
         let job = engine.plan_layers(1, request).unwrap();
         engine.step();
         assert_eq!(
-            job.poll().error.unwrap().to_string(),
+            styk_edit::error_key(&job.poll().error.unwrap().to_string()),
             reference
                 .path(&["failure", "messageKey"])
                 .unwrap()
@@ -390,12 +305,12 @@ fn sheet_worker_refusals_cancel_and_generation_changes_preserve_canonical_owner(
                 .unwrap(),
             "{name}"
         );
-        assert!(before.same_node(&engine.mirrored().unwrap().1));
+        assert!(before.same_node(&engine.stored().unwrap().1));
     }
     for state in ["queued", "awaiting-ack"] {
         for change in ["cancel", "stale"] {
             let (_, engine, request) = sheet_fixture("dense");
-            let before = engine.mirrored().unwrap().1;
+            let before = engine.stored().unwrap().1;
             let previous = std::sync::Arc::downgrade(&engine.generation().unwrap());
             let job = engine.plan_layers(1, request).unwrap();
             if state == "awaiting-ack" {
@@ -405,7 +320,7 @@ fn sheet_worker_refusals_cancel_and_generation_changes_preserve_canonical_owner(
             if change == "cancel" {
                 job.cancel()
             } else {
-                engine.commit(2, 0).unwrap();
+                republish(&engine, 2);
             }
             engine.step();
             assert_eq!(
@@ -416,7 +331,7 @@ fn sheet_worker_refusals_cancel_and_generation_changes_preserve_canonical_owner(
                     PlanError::Stale
                 })
             );
-            assert!(before.same_node(&engine.mirrored().unwrap().1));
+            assert!(before.same_node(&engine.stored().unwrap().1));
             if change == "stale" {
                 assert!(previous.upgrade().is_some(), "the displaced generation remains owned until worker retirement");
                 assert!(engine.step(), "the separate generation retirement must run on its worker");

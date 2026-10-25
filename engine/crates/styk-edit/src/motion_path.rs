@@ -25,7 +25,7 @@ use styk_eval::eval::{Frame, Prepared};
 use styk_eval::geometry::Scene;
 use styk_eval::ik::joined::Assembly;
 use styk_eval::ik::{self, Controller, Skeleton, Table};
-use styk_math::{atan2, cos, hypot, shortest, sin};
+use styk_math::{atan2, cos, hypot, pow, shortest, sin};
 
 use crate::frame::objects_of;
 use crate::ik::{angle_table, assign, bake_object, controllers, displayed_angle, has_pinned, joined_table, reference_value, same_bend, set_controller, solve_frame, translate_targets};
@@ -200,6 +200,10 @@ pub(crate) struct Session {
     moved: bool,
     /// The last pointer and its options (`lastPoint`, `lastOptions`).
     last: Option<(Value, Value)>,
+    /// What the owner has not been told yet (`motion_path_view`): that the gesture began, and
+    /// that its virtual report (`session.report`) was refreshed by a pointer move.
+    fresh: bool,
+    refreshed: bool,
 }
 
 /// `Math.round`.
@@ -227,69 +231,6 @@ fn normalize_falloff(value: Option<&Value>) -> Result<Option<Falloff>, EditError
     Ok(Some(Falloff { radius: radius.min(FALLOFF_MAX), shape }))
 }
 
-/// `x ** 3` as V8 computes it on the falloff's inputs: the C library's `pow` (glibc), which is
-/// the correctly rounded cube except for these values of `x` (every one the falloff reaches
-/// within the largest radius, found with `engine/tools/edit-scenarios-motion-path.mjs`; the
-/// `falloff_weights` test checks every weight against V8's).
-const CUBES: [(u64, u64); 15] = [
-    (0x3fbb05b05b05b058, 0x3f5344e8f5f09682),
-    (0x3fc2612612612614, 0x3f6840b158800809),
-    (0x3fc9416f5ab0ca0c, 0x3f7f7696a2f278a9),
-    (0x3fd055b0bc84d1f2, 0x3f91067c97c2fb3b),
-    (0x3fd88fe9dc0588fe, 0x3facf12c83a60801),
-    (0x3fd9416f5ab0ca0c, 0x3faf7696a2f278a9),
-    (0x3fdcd6e9e06522c4, 0x3fb76c93e5f08551),
-    (0x3fdfdaee9fdaeea0, 0x3fbf914c7e7b09c6),
-    (0x3fe3896e7bf53897, 0x3fcd20fb69fd42c2),
-    (0x3fe79890cede6243, 0x3fd9a8c0c8b7d7d9),
-    (0x3fe863a1e717863a, 0x3fdc55bde5fab7bd),
-    (0x3fe927206b519b64, 0x3fdf14a9ee84df8e),
-    (0x3fe9416f5ab0ca0c, 0x3fdf7696a2f278a9),
-    (0x3fe9f7047dc11f70, 0x3fe1183c09b1671f),
-    (0x3fecd6e9e06522c4, 0x3fe76c93e5f08551),
-];
-
-fn cube(x: f64) -> f64 {
-    match CUBES.iter().find(|(input, _)| *input == x.to_bits()) {
-        Some((_, output)) => f64::from_bits(*output),
-        None => rounded_cube(x),
-    }
-}
-
-/// `x³` rounded to nearest, ties to even, for a positive normal `x` whose cube is normal.
-fn rounded_cube(x: f64) -> f64 {
-    let bits = x.to_bits();
-    let exponent = ((bits >> 52) & 0x7ff) as i64;
-    if exponent == 0 || exponent == 0x7ff || x <= 0.0 {
-        return x * x * x;
-    }
-    let m = (bits & ((1u64 << 52) - 1)) | (1u64 << 52);
-    // x = m · 2^e; m³ = high · 2^64 + low, exactly.
-    let e = exponent - 1075;
-    let square = u128::from(m) * u128::from(m);
-    let low = u128::from(square as u64) * u128::from(m);
-    let high = (square >> 64) * u128::from(m) + (low >> 64);
-    let low = low as u64;
-    let length = 64 + (128 - high.leading_zeros()) as i64;
-    let shift = (length - 53 - 64) as u32;
-    let mut q = (high >> shift) as u64;
-    let remainder = high & ((1u128 << shift) - 1);
-    let half = 1u128 << (shift - 1);
-    if remainder > half || (remainder == half && (low > 0 || q & 1 == 1)) {
-        q += 1;
-    }
-    let mut power = 3 * e + i64::from(shift) + 64;
-    if q == 1 << 53 {
-        q >>= 1;
-        power += 1;
-    }
-    let biased = power + 52 + 1023;
-    if !(1..0x7ff).contains(&biased) {
-        return x * x * x;
-    }
-    f64::from_bits(((biased as u64) << 52) | (q - (1 << 52)))
-}
-
 /// `falloffWeight(distance, radius, shape)`: 1 at the grabbed frame, 0 beyond `radius`, and
 /// strictly positive inside it for every shape.
 fn falloff_weight(distance: f64, radius: f64, shape: &str) -> f64 {
@@ -304,7 +245,7 @@ fn falloff_weight(distance: f64, radius: f64, shape: &str) -> f64 {
     let u = distance / (radius + 1.0);
     match shape {
         "linear" => 1.0 - u,
-        "sharp" => cube(1.0 - u),
+        "sharp" => pow(1.0 - u, 3.0),
         "flat" => 1.0,
         _ => 0.5 + 0.5 * cos(std::f64::consts::PI * u),
     }
@@ -412,10 +353,10 @@ fn checked_camera(current: &Value, x: f64, y: f64) -> Result<Value, EditError> {
     let field = |key: &str| camera.get(key).and_then(Value::as_f64);
     let mut values = [0.0; 4];
     for (i, key) in ["x", "y", "scale", "angle_rad"].into_iter().enumerate() {
-        values[i] = field(key).filter(|v| v.is_finite()).ok_or_else(|| EditError::Invalid("errors.editorCamera.mustBeFinite".into()))?;
+        values[i] = field(key).filter(|v| v.is_finite()).ok_or_else(|| crate::camera_commands::camera_not_finite(key))?;
     }
-    if values[..3].iter().any(|&v| !(v as f32).is_finite()) {
-        return Err(EditError::Invalid("errors.editorCamera.cameraExceedsTheNativeRange".into()));
+    if let Some(bad) = values[..3].iter().position(|&v| !(v as f32).is_finite()) {
+        return Err(crate::invalid_with("errors.editorCamera.cameraExceedsTheNativeRange", vec![("field", Value::str(["x", "y", "scale"][bad]))]));
     }
     if values[2] <= 0.0 {
         return Err(EditError::Invalid("errors.editorCamera.cameraScaleMustBePositive".into()));
@@ -436,8 +377,24 @@ impl Editor {
     /// The future actor must publish its result with the same gesture/revision guard.
     pub fn motion_display_frame_worker(&self) -> Result<Option<Value>, EditError> {
         let Some(session) = self.drag.as_ref().and_then(|drag| drag.motion_path.as_ref()).filter(|session| session.moved) else { return Ok(None) };
+        let range = self.display_range(session);
+        if self.tick < range[0] || self.tick >= range[1] { return Ok(None); }
+        let report = self.motion_virtual_report(session)?;
+        let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
+        let prepared = Prepared::new(Arc::new(doc));
+        let records = match &session.draft {
+            Some(draft) => styk_eval::records::Records::new_native_draft(&report, &prepared, draft.channels())?,
+            None => styk_eval::records::Records::new(&report, &prepared)?,
+        };
+        Ok(Some(records.evaluated(self.tick)?))
+    }
+
+    /// The ticks the gesture's virtual report changes (`session.range`) once it has moved: a
+    /// falloff's frames between the keys around its writes, the keys a channel gesture wrote and
+    /// their neighbours, the rows around a stored pose, or the spans of a layer sheet's writes.
+    fn display_range(&self, session: &Session) -> [f64; 2] {
         let total = total_ticks(&rows(&self.report));
-        let range = if session.falloff.is_some() {
+        if session.falloff.is_some() {
             let low = session.posed.iter().map(|posed| posed.tick).fold(f64::INFINITY, f64::min);
             let high = session.posed.iter().map(|posed| posed.tick).fold(f64::NEG_INFINITY, f64::max);
             [session.keys.iter().copied().filter(|tick| *tick < low).fold(0.0, f64::max),
@@ -460,16 +417,79 @@ impl Editor {
         } else {
             session.posed[0].writes.iter().fold([session.tick, session.tick + 1.0], |range, (_, entry)|
                 [range[0].min(entry.write_tick), range[1].max(entry.next_tick)])
-        };
-        if self.tick < range[0] || self.tick >= range[1] { return Ok(None); }
-        let report = if let Some(plan) = &session.plan { plan.virtual_report(&self.report)? } else { self.native_motion_report(session, false)? };
-        let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
-        let prepared = Prepared::new(Arc::new(doc));
-        let records = match &session.draft {
-            Some(draft) => styk_eval::records::Records::new_native_draft(&report, &prepared, draft.channels())?,
-            None => styk_eval::records::Records::new(&report, &prepared)?,
-        };
-        Ok(Some(records.evaluated(self.tick)?))
+        }
+    }
+
+    /// The document as the gesture shows it while it is open (`session.report`): the sheet plan
+    /// or the posed native frames laid over it.
+    fn motion_virtual_report(&self, session: &Session) -> Result<Value, EditError> {
+        if let Some(plan) = &session.plan { plan.virtual_report(&self.report) } else { self.native_motion_report(session, false) }
+    }
+
+    /// The open motion-path edit as the owner mirrors it on the editor (`editor._drag`, which the
+    /// interface reads for its trails and overlays): after every call whether it has moved, the
+    /// ticks it changes (`range`) and a falloff's writes that moved (`movedSubs`); the call that
+    /// opens it adds what stays fixed (`target`, `tick`, the `falloff`, its writes and `subs`, the
+    /// pinned figures of the grabbed frame's `baseline`); a pointer move that changed the virtual
+    /// report adds `report`, the operations that turn the document into it. `null` when no edit is
+    /// open. `consume` marks what it carries as told.
+    pub fn motion_path_view(&mut self, consume: bool) -> Result<Value, EditError> {
+        let Some(session) = self.drag.as_ref().and_then(|drag| drag.motion_path.as_deref()) else { return Ok(Value::Null) };
+        let mut out = Obj::new();
+        out.set("moved", Value::Bool(session.moved));
+        let range = if !session.moved && (session.falloff.is_some() || matches!(session.mode, Mode::Sheet | Mode::Channels)) { [session.tick, session.tick + 1.0] } else { self.display_range(session) };
+        out.set("range", Value::array(range.into_iter().map(Value::Num).collect()));
+        if session.falloff.is_some() {
+            out.set("movedSubs", Value::array(session.posed.iter().map(|posed| Value::Bool(posed.moved)).collect()));
+        }
+        if session.fresh {
+            let mut target = Obj::new();
+            target.set("kind", Value::str(if session.target.camera { "camera" } else { "node" }));
+            if !session.target.camera {
+                if let Some(uid) = session.target.uid { target.set("uid", Value::Num(uid)); }
+                if let Some(handle) = session.target.handle { target.set("handleId", Value::Num(handle)); }
+                if let Some(joint) = session.target.joint { target.set("joint", Value::Num(joint)); }
+            }
+            out.set("target", Value::object(target));
+            out.set("tick", Value::Num(session.tick));
+            if let Some(falloff) = &session.falloff {
+                let mut value = Obj::new();
+                value.set("radius", Value::Num(falloff.radius));
+                value.set("shape", Value::str(falloff.shape));
+                out.set("falloff", Value::object(value));
+                out.set("writes", Value::array(session.planned.iter().map(|write| {
+                    let mut value = Obj::new();
+                    value.set("tick", Value::Num(write.tick));
+                    value.set("weight", Value::Num(write.weight));
+                    value.set("kind", Value::str(write.kind.name()));
+                    Value::object(value)
+                }).collect()));
+                out.set("subs", Value::array(session.posed.iter().map(|posed| {
+                    let mut value = Obj::new();
+                    value.set("tick", Value::Num(posed.tick));
+                    value.set("kind", Value::str(posed.kind.name()));
+                    Value::object(value)
+                }).collect()));
+            }
+            // The figures with pinned limbs among the grabbed frame's baseline: the interface asks
+            // whether any is pinned.
+            let pinned = session.posed.first().map(|posed| posed.baseline.iter().filter(|object| has_pinned(object)).map(|object| {
+                let mut value = Obj::new();
+                value.set("unique_id", object.get("unique_id").cloned().unwrap_or(Value::Null));
+                value.set("_stykIK", object.get("_stykIK").cloned().unwrap_or(Value::Null));
+                Value::object(value)
+            }).collect()).unwrap_or_default();
+            out.set("baseline", Value::array(pinned));
+        }
+        if session.fresh || session.refreshed {
+            let ops = if session.refreshed { crate::patch::diff(&self.report, &self.motion_virtual_report(session)?) } else { Value::array(Vec::new()) };
+            out.set("report", ops);
+        }
+        if consume && let Some(session) = self.drag.as_mut().and_then(|drag| drag.motion_path.as_deref_mut()) {
+            session.fresh = false;
+            session.refreshed = false;
+        }
+        Ok(Value::object(out))
     }
 
     /// A native gesture projects its same posed records over the canonical COW
@@ -816,6 +836,8 @@ impl Editor {
             keys: Vec::new(),
             moved: false,
             last: None,
+            fresh: true,
+            refreshed: false,
         };
         if falloff_mode {
             if !self.begin_falloff(&mut session)? {
@@ -854,6 +876,9 @@ impl Editor {
             authored: false,
             rig: None,
             motion_path: Some(Box::new(session)),
+            duplicate: None,
+            tweener: None,
+            serial: self.next_drag_serial(),
         });
         Ok(true)
     }
@@ -1030,7 +1055,7 @@ impl Editor {
         if !point.is_object() {
             return Err(EditError::Unported("a motion-path point that is not an object".into()));
         }
-        let coordinate = |key: &str| point.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| EditError::Invalid("errors.editorCamera.mustBeFinite".into()));
+        let coordinate = |key: &str| point.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| crate::transform::not_finite(&format!("Motion-path {}", key.to_uppercase())));
         let point_xy = [coordinate("x")?, coordinate("y")?];
         let mut session = self.take_motion_path();
         session.last = Some((point.clone(), options.clone()));
@@ -1078,6 +1103,7 @@ impl Editor {
         }
         let changed = changed_uids(posed, None);
         if session.mode == Mode::Channels { self.write_channels(session, 0, &changed)?; }
+        session.refreshed = true;
         self.emit("edit", vec![("live", Value::Bool(true)), ("motionPath", Value::Bool(true)), ("changedUids", uid_array(&changed))]);
         Ok(true)
     }
@@ -1116,6 +1142,7 @@ impl Editor {
                     session.posed[index].written = true;
                 }
             }
+            session.refreshed = true;
         }
         let mut changed: Vec<u32> = Vec::new();
         for posed in session.posed.iter().filter(|p| p.moved) {
@@ -2007,15 +2034,6 @@ mod tests {
         }
         assert_eq!(recorded.get("count").and_then(Value::as_f64), Some(f64::from(count)));
         assert_eq!(recorded.get("digest").and_then(Value::as_str), Some(format!("{digest:016x}").as_str()));
-    }
-
-    #[test]
-    fn rounded_cubes() {
-        for x in [0.5, 0.75, 1.0 - 1.0 / 3.0, 0.1, 0.999] {
-            let exact = rounded_cube(x);
-            assert!((exact - x * x * x).abs() <= f64::EPSILON * exact, "{x}");
-        }
-        assert_eq!(rounded_cube(0.5), 0.125);
     }
 }
 

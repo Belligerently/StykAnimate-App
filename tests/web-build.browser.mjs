@@ -43,7 +43,7 @@ try {
   await page.goto(site.origin, { waitUntil: 'load' });
   await page.waitForFunction(() => window.styk?.ready === true, undefined, { timeout: 60000 });
   check('The site boots with the browser codec selected', await page.evaluate(() => document.querySelector('meta[name="styk-codec"]')?.content === 'browser' && !window.stykDesktop));
-  check('The editor renders (WebGPU or the compatibility renderer)', await page.evaluate(() => ['WebGPU', 'Canvas 2D fallback'].includes(window.styk.state.renderer.stats.backend)));
+  check('The editor renders (WebGPU or the compatibility renderer)', await page.evaluate(() => ['WebGPU', 'WebGL2'].includes(window.styk.state.renderer.stats.backend)));
   check('Opening the editor does not download the Pivot codec', !runtimeLoaded(requests));
 
   // Native projects never need the codec.

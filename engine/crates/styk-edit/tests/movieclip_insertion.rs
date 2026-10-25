@@ -149,7 +149,7 @@ fn movieclip_insertion_matches_every_editor_step() {
                     }
                 }
                 (Err(EditError::Invalid(key)), Some(error)) => assert_eq!(
-                    Some(key.as_str()),
+                    Some(styk_edit::error_key(&key)),
                     error.get("key").and_then(Value::as_str),
                     "{context}"
                 ),
@@ -282,7 +282,7 @@ fn combined_movieclip_history_uses_exact_recorded_structural_retention_and_sourc
             } else { e.call(method, &call[1..]) };
             match (result, step.get("error").filter(|v| !v.is_null())) {
                 (Ok(_), None) => (),
-                (Err(EditError::Invalid(key)), Some(error)) => assert_eq!(Some(key.as_str()), error.get("key").and_then(Value::as_str), "{name} step{index}"),
+                (Err(EditError::Invalid(key)), Some(error)) => assert_eq!(Some(styk_edit::error_key(&key)), error.get("key").and_then(Value::as_str), "{name} step{index}"),
                 (result, expected) => panic!("{name} step{index}: {result:?} vs {expected:?}"),
             }
             let expected = history.get("states").unwrap().item(index).unwrap().get("historySize").unwrap().as_f64().unwrap();

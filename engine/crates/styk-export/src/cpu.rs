@@ -24,7 +24,10 @@ pub const MAX_SLOTS: usize = 4;
 
 pub struct CpuExport {
     raster: Raster,
+    /// The pictures kept are bounded ([`Images`]); with the document's atlas (`use_assets`) a tile decodes again
+    /// the ones it samples and the budget dropped.
     images: Images,
+    assets: Option<Arc<Assets>>,
     settings: Settings,
     tiles: Vec<Tile>,
     /// Drawn tiles waiting to be resolved: premultiplied RGBA of a tile's size.
@@ -41,7 +44,7 @@ impl CpuExport {
         // As many slots as one frame has tiles (within the bound): a worker drawing ahead
         // only while slots are free never draws the next frame before this one is read.
         let slots = vec![Vec::new(); tiles.len().clamp(1, MAX_SLOTS)];
-        CpuExport { raster: Raster::new(settings.smoothing.edges()), images: Images::default(), settings, tiles, slots, resolved: Vec::new() }
+        CpuExport { raster: Raster::new(settings.smoothing.edges()), images: Images::default(), assets: None, settings, tiles, slots, resolved: Vec::new() }
     }
 
     pub fn settings(&self) -> &Settings {
@@ -62,6 +65,12 @@ impl CpuExport {
         self.slots.len()
     }
 
+    /// The atlas of the document being exported: from here on a tile decodes again, from the document, a picture it
+    /// samples that the budget made the exporter drop, instead of drawing without it.
+    pub fn use_assets(&mut self, assets: Arc<Assets>) {
+        self.assets = Some(assets);
+    }
+
     /// The document's decoded pictures, shared (not copied).
     pub fn upload_images(&mut self, assets: &Assets, images: impl IntoIterator<Item = Arc<DecodedImage>>) {
         for image in images {
@@ -70,11 +79,15 @@ impl CpuExport {
     }
 
     /// Draws tile `index` of `list` seen through `camera` into `slot`.
-    pub fn draw(&mut self, doc: &Document, list: &DrawList, camera: Option<&Camera>, index: usize, slot: usize) {
+    pub fn draw(&mut self, doc: &Document, list: &DrawList, camera: Option<&Camera>, index: usize, slot: usize) -> Result<(), String> {
+        if let Some(assets) = &self.assets {
+            self.images.ensure(list, doc, assets).map_err(|error| error.to_string())?;
+        }
         self.raster.set_edges(self.settings.smoothing.edges_for(list));
         let tile = self.tiles[index];
         let view = tile_view(doc, camera, &self.settings, &tile);
         self.slots[slot] = self.raster.render(list, &self.images, &view, tile.size).pixels;
+        Ok(())
     }
 
     /// Tile `index`, drawn into `slot`, as output pixels (straight RGBA, `tile.valid / factor`
@@ -99,7 +112,7 @@ impl CpuExport {
         let (width, factor) = (self.settings.width as usize, self.settings.smoothing.factor());
         let mut out = vec![0u8; width * self.settings.height as usize * 4];
         for index in 0..self.tiles.len() {
-            self.draw(doc, list, camera, index, 0);
+            self.draw(doc, list, camera, index, 0)?;
             let tile = self.tiles[index];
             let pixels = self.resolve(index, 0, matte)?;
             crate::gpu::place(&mut out, width, &tile, factor, pixels);

@@ -85,7 +85,7 @@ pub(crate) enum Request {
     Scale { value: Value, relative: bool },
     Rotate { radians: Value, center: Value },
     Center,
-    Align { axis: String, edge: String, bounds: crate::bounds::Shared },
+    Align { axis: String, edge: String, bounds: crate::bounds::Callback },
     Reset,
     /// Recolouring (its label comes with the options).
     Recolor(Box<crate::recolor::Recolor>),
@@ -267,16 +267,16 @@ fn validate(request: &Request, version: f64, canvas: [f64; 2], reference: Option
             let mut opacity = None;
             for (key, value) in &entries {
                 match key.as_str() {
-                    "color_override_raw" => out.push((key.clone(), integer(value.as_f64(), if version < 5.0 { -2147483648.0 } else { 0.0 }, 4294967295.0)?)),
-                    "field28" => out.push((key.clone(), integer(value.as_f64(), 0.0, 255.0)?)),
+                    "color_override_raw" => out.push((key.clone(), integer(value.as_f64(), if version < 5.0 { -2147483648.0 } else { 0.0 }, 4294967295.0, "figure color")?)),
+                    "field28" => out.push((key.clone(), integer(value.as_f64(), 0.0, 255.0, "figure transparency")?)),
                     "opacity" => {
-                        let value = native_finite(value.as_f64())?;
+                        let value = native_finite(value.as_f64(), "Opacity")?;
                         if !(0.0..=1.0).contains(&value) || owns("field28") {
                             return Err(invalid("errors.rangeFigureOperations.opacityMustBeBetween0And1And"));
                         }
                         opacity = Some(value);
                     }
-                    _ => return Err(invalid("errors.rangeFigureOperations.unsupportedAppearanceField")),
+                    other => return Err(crate::invalid_with("errors.rangeFigureOperations.unsupportedAppearanceField", vec![("key", Value::str(other))])),
                 }
             }
             if let Some(value) = opacity {
@@ -294,17 +294,17 @@ fn validate(request: &Request, version: f64, canvas: [f64; 2], reference: Option
             Kind::Order { direction, numeric }
         }
         Request::Join { target, handle } => {
-            let target = integer(target.as_f64(), 0.0, 4294967295.0)?;
-            let handle = if handle.is_null() { 0.0 } else { integer(handle.as_f64(), 0.0, 65535.0)? };
+            let target = integer(target.as_f64(), 0.0, 4294967295.0, "join target identity")?;
+            let handle = if handle.is_null() { 0.0 } else { integer(handle.as_f64(), 0.0, 65535.0, "join target handle")? };
             Kind::Join { target, handle }
         }
         Request::Scale { value, relative } => {
-            let value = native_finite(value.as_f64())?;
+            let value = native_finite(value.as_f64(), "Scale")?;
             if value < 0.0 {
                 return Err(invalid("errors.editor.scaleCannotBeNegative"));
             }
             // `referenceUid: this.selectedUid`, checked even when it is `null`.
-            let reference = Value::Num(integer(reference.map(f64::from), 0.0, 4294967295.0)?);
+            let reference = Value::Num(integer(reference.map(f64::from), 0.0, 4294967295.0, "scale reference identity")?);
             if *relative { Kind::Scale { factor: Some(value), value: None, reference: Some(reference) } } else { Kind::Scale { factor: None, value: Some(value), reference: Some(reference) } }
         }
         Request::Mirror(axis) => {
@@ -317,19 +317,20 @@ fn validate(request: &Request, version: f64, canvas: [f64; 2], reference: Option
             Kind::Mirror { horizontal, part }
         }
         Request::Duplicate { offset } => {
-            let offset = if offset.is_null() { 24.0 } else { native_finite(offset.as_f64())? };
+            let offset = if offset.is_null() { 24.0 } else { native_finite(offset.as_f64(), "Duplicate offset")? };
             Kind::Duplicate { map: map.unwrap_or_default(), offset }
         }
-        Request::Rotate { radians, .. } => Kind::Rotate(native_finite(radians.as_f64())?),
+        Request::Rotate { radians, .. } => Kind::Rotate(native_finite(radians.as_f64(), "Rotation")?),
         Request::Center => {
-            native_finite(Some(canvas[0]))?;
-            native_finite(Some(canvas[1]))?;
+            native_finite(Some(canvas[0]), "Canvas width")?;
+            native_finite(Some(canvas[1]), "Canvas height")?;
             Kind::Center
         }
         Request::Align { axis, edge, bounds } => {
             if !["x", "y"].contains(&axis.as_str()) || !["start", "center", "end"].contains(&edge.as_str()) {
                 return Err(invalid("errors.rangeFigureOperations.chooseAnAlignmentAxisAndEdge"));
             }
+            crate::bounds::require_function(bounds)?;
             Kind::Align { axis: axis.clone(), edge: edge.clone(), bounds: bounds.clone() }
         }
         Request::Delete => Kind::Delete,
@@ -339,7 +340,7 @@ fn validate(request: &Request, version: f64, canvas: [f64; 2], reference: Option
         Request::Add { .. } => unreachable!("an insertion is not planned"),
     };
     let center = match request {
-        Request::Rotate { center, .. } if !center.is_null() => Some([native_finite(num(center, "x"))?, native_finite(num(center, "y"))?]),
+        Request::Rotate { center, .. } if !center.is_null() => Some([native_finite(num(center, "x"), "Transform center X")?, native_finite(num(center, "y"), "Transform center Y")?]),
         _ => None,
     };
     Ok(Operation { kind, center })
@@ -373,11 +374,13 @@ impl Editor {
             "rotateFiguresInFrames" => self.apply_figure_range(Request::Rotate { radians: arg(0), center: arg(2).get("center").cloned().unwrap_or(Value::Null) }, range_args(args, 1)),
             "centerFiguresInFrames" => self.apply_figure_range(Request::Center, range_args(args, 0)),
             "alignFiguresInFrames" => {
-                let bounds = crate::bounds::Measurements::for_call(self, method, &args[..3.min(args.len())], &arg(3));
-                bounds.and_then(|bounds| {
-                    let request = Request::Align { axis: arg(0).as_str().unwrap_or("").to_string(), edge: arg(1).as_str().unwrap_or("").to_string(), bounds: bounds.clone() };
+                // The editor's default callback is not ported.
+                let callback = crate::bounds::Callback::of(self, method, &args[..3.min(args.len())], &arg(3))
+                    .and_then(|callback| callback.ok_or_else(|| EditError::Unported("figure bounds without a callback".into())));
+                callback.and_then(|callback| {
+                    let request = Request::Align { axis: arg(0).as_str().unwrap_or("").to_string(), edge: arg(1).as_str().unwrap_or("").to_string(), bounds: callback.clone() };
                     let result = self.apply_figure_range(request, range_args(args, 2))?;
-                    bounds.borrow().finish()?;
+                    callback.finish()?;
                     Ok(result)
                 })
             }
@@ -807,7 +810,7 @@ impl Editor {
         if movieclip && !movieclip_insertion {
             return Err(EditError::Unported("adding a movieclip".into()));
         }
-        let mut object = crate::figures::create_object(figure, identity, x, y);
+        let mut object = crate::figures::with_origin_pivot(figure, crate::figures::create_object(figure, identity, x, y));
         if movieclip {
             let mut playback = Obj::new();
             if self.sheet() {
@@ -830,7 +833,8 @@ impl Editor {
         let geometry = |record: &Value, slots: &[usize]| self.joints_of(record, slots);
         let version = num(&self.report, "version").unwrap_or(f64::NAN);
         let mirror_origin = |figure: &Value, source: &Value, record: &mut Obj, horizontal| self.mirror_origin_support(figure, source, record, horizontal);
-        let context = crate::range_plan::Context { figures, version, canvas, layer_of: &layer_of, geometry: &geometry, mirror_origin: &mirror_origin };
+        let bounds = |record: &Value, slots: &[usize]| self.app_bounds(record, slots);
+        let context = crate::range_plan::Context { figures, version, canvas, layer_of: &layer_of, geometry: &geometry, bounds: &bounds, mirror_origin: &mirror_origin };
         crate::range_plan::plan(&context, frame, uids, operation)
     }
 
@@ -987,8 +991,8 @@ impl Editor {
     /// `moveSelectionInFrames(dx, dy, indices, {movePins})`: on a layer sheet the selection's
     /// whole connected figures move at every tick of the range (`sheetMoveSelection`).
     fn move_selection_in_frames(&mut self, dx: &Value, dy: &Value, indices: Option<&Value>, options: &Value) -> Result<Value, EditError> {
-        let finite = |v: &Value| v.as_f64().filter(|n| n.is_finite()).ok_or_else(|| invalid(crate::transform::NOT_FINITE));
-        let (dx, dy) = (finite(dx)?, finite(dy)?);
+        let finite = |v: &Value, label: &str| v.as_f64().filter(|n| n.is_finite()).ok_or_else(|| crate::transform::not_finite(label));
+        let (dx, dy) = (finite(dx, "Translation X")?, finite(dy, "Translation Y")?);
         if !self.sheet() {
             return Err(EditError::Unported("moving figures across keyframes of a native timeline".into()));
         }

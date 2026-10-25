@@ -1,9 +1,18 @@
-/** Phase-1 editing bridge: retain the measurements a bounds callback already made.
- * No geometry is built here. Calls with a callback still run in the JavaScript owner;
- * the engine shadows their measured data until an off-thread bounds query replaces it.
+/** Figure-bounds callbacks of the alignment and camera-centering commands (docs/engine/editing.md).
+ * The app's own callback (`boundsOf` in src/app.mjs) is registered here with `markAppBounds`
+ * and reaches the engine as `{"@boundsCallback": "app"}`: the engine measures the figures
+ * itself (styk-edit `bounds.rs`). Any other callback is the editor's: `captureEditBounds` retains its
+ * completed measurements as bounded data for the recorders to replay (no geometry is built here).
  */
 const optionIndex = {centerCamera: 2, alignSelection: 2, alignFiguresInFrames: 3};
 export const MAX_BOUNDS_SAMPLES = 8192;
+export const APP_BOUNDS = Object.freeze({'@boundsCallback': 'app'});
+const appCallbacks = new WeakSet();
+/** Registers the app's bounds callback (the engine measures the document's figures as the app
+ * does once its images and drawings have loaded). */
+export function markAppBounds(callback) { appCallbacks.add(callback); return callback; }
+/** What the engine receives for a callback: the marker when it is the app's, else nothing. */
+export const appBoundsMarker = callback => appCallbacks.has(callback) ? APP_BOUNDS : undefined;
 const fields = ['minX', 'minY', 'maxX', 'maxY', 'x', 'y', 'width', 'height'];
 // Copy bounded data descriptors before serialization; never call an option getter or toJSON.
 function snapshot(value, budget = {left: MAX_BOUNDS_SAMPLES}, depth = 0) {
@@ -40,6 +49,7 @@ export function captureEditBounds(name, args, editor) {
   let input, copied;
   try { input = snapshot(args.slice(0, at)); copied = snapshot({...options, boundsOf: null}); }
   catch { return {args, payload: () => null}; }
+  if (appBoundsMarker(callback)) return {args, payload() { const given = input.slice(); given[at] = {...copied, boundsOf: APP_BOUNDS}; return JSON.stringify(given); }};
   const data = {version: 1, method: name, input, options: copied, tick: editor.tick, frameIndex: editor.frameIndex,
     selectedUids: [...editor.selectedUids], samples: []};
   let supported = true;

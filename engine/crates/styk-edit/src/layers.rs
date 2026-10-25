@@ -58,7 +58,7 @@ fn removed_json(value: &Option<Value>) -> String {
 }
 
 /// `createLayerState()`.
-fn created_state() -> Value {
+pub(crate) fn created_state() -> Value {
     let flags = || {
         let mut flags = Obj::new();
         flags.set("visible", Value::Bool(true));
@@ -153,6 +153,15 @@ pub(crate) type Update = (Vec<String>, Option<Value>, bool);
 
 fn path(keys: &[&str]) -> Vec<String> {
     keys.iter().map(|k| k.to_string()).collect()
+}
+
+/// The name the interface shows for a layer (`getLayer(id).name`): Scene and Camera have their own.
+pub(crate) fn layer_title(layers: Option<&Value>, id: &str) -> String {
+    match id {
+        "scene" => "Scene".into(),
+        "camera" => "Camera".into(),
+        _ => layers.and_then(|state| state.path(&["byId", id, "name"])).and_then(Value::as_str).unwrap_or("").to_string(),
+    }
 }
 
 impl Editor {
@@ -452,7 +461,7 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorCameraMotion.selectAFigureLayerForParallax".into()));
         };
         if state.path(&["byId", &id, "locked"]).is_some_and(Value::truthy) {
-            return Err(EditError::Invalid("errors.editorCameraMotion.unlockBeforeEditingParallax".into()));
+            return Err(crate::invalid_with("errors.editorCameraMotion.unlockBeforeEditingParallax", vec![("name", Value::str(&layer_title(Some(&state), &id)))]));
         }
         let patch = patch.as_obj().ok_or_else(|| EditError::Unported("a parallax change that is not an object".into()))?;
         if patch.keys().any(|key| !["enabled", "linked", "x", "y", "reference"].contains(&&**key)) {

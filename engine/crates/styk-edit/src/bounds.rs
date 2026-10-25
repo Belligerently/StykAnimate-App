@@ -1,7 +1,11 @@
-//! Phase-1 bounds callbacks: measurements already requested by the JavaScript owner.
-//! Missing, stale or differently ordered requests refuse the whole call. No geometry or
-//! media is decoded here; exact owning geometry queries remain a later prerequisite.
+//! The figure-bounds callbacks of `alignSelection`, `alignFiguresInFrames` and `centerCamera`.
+//! The app's own callback (`boundsOf` in src/app.mjs) is measured here, from the engine's
+//! geometry ([`Callback::App`]). A shadowing facade can instead hand over the measurements a
+//! callback already made, which are replayed in order ([`Callback::Recorded`]); missing,
+//! stale or differently ordered requests refuse the whole call. Any other callback is the
+//! editor's.
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use styk_doc::Value;
 use crate::{EditError, Editor};
@@ -10,6 +14,46 @@ use crate::record::{num, uid};
 const MAX_SAMPLES: usize = 8192;
 fn unported() -> EditError { EditError::Unported("bounds callback measurements missing or for different requests".into()) }
 pub(crate) type Shared = Rc<RefCell<Measurements>>;
+
+/// The `boundsOf` a call was given.
+#[derive(Clone, Debug)]
+pub(crate) enum Callback {
+    /// The app's callback, measured here by [`Editor::app_bounds`].
+    App,
+    /// Measurements the JavaScript owner made when it ran the callback itself.
+    Recorded(Shared),
+    /// Data where the editor needs a function; it throws.
+    NotCallable,
+}
+
+impl Callback {
+    /// `options.boundsOf` of a call, or `None` when it is absent (the editor's default callback).
+    /// A function reaches the engine only as the app's own, as `{"@boundsCallback": "app"}`;
+    /// any other object is data.
+    pub(crate) fn of(editor: &Editor, method: &str, input: &[Value], options: &Value) -> Result<Option<Callback>, EditError> {
+        let Some(given) = options.get("boundsOf") else { return Ok(None) };
+        if given.get("@measuredBounds").is_some() {
+            return Measurements::for_call(editor, method, input, options).map(|shared| Some(Callback::Recorded(shared)));
+        }
+        let app = given.as_obj().is_some_and(|marker| marker.len() == 1 && marker.get("@boundsCallback").and_then(Value::as_str) == Some("app"));
+        Ok(Some(if app { Callback::App } else { Callback::NotCallable }))
+    }
+
+    /// What a call does with the callback it was given, once it has used it.
+    pub(crate) fn finish(&self) -> Result<(), EditError> {
+        match self {
+            Callback::Recorded(shared) => shared.borrow().finish(),
+            _ => Ok(()),
+        }
+    }
+}
+
+fn not_callable() -> EditError { EditError::Invalid("errors.editorCamera.provideAFigureBoundsFunction".into()) }
+
+/// The error of `NotCallable`, for the call that needs a function.
+pub(crate) fn require_function(callback: &Callback) -> Result<(), EditError> {
+    if matches!(callback, Callback::NotCallable) { Err(not_callable()) } else { Ok(()) }
+}
 #[derive(Debug)]
 pub(crate) struct Measurements { samples: Vec<Value>, next: usize }
 impl Measurements {
@@ -66,9 +110,22 @@ pub(crate) fn groups(objects: &[Value], ids: &[u32]) -> Result<Vec<(usize, Vec<u
     Ok(out)
 }
 
+/// Measures the figure at a slot, identified by its unique id: its bounds as the editor's
+/// callback returns them, or `None` for a figure the editor has no geometry for.
+pub(crate) type Measure<'a> = dyn FnMut(usize, u32) -> Result<Option<[f64; 4]>, EditError> + 'a;
+
+/// Measures through a callback: the measurements the owner made, in the order it made them,
+/// or the engine's own for the app's.
+pub(crate) fn measure_with<'a>(callback: &'a Callback, measured: &'a HashMap<usize, [f64; 4]>) -> impl FnMut(usize, u32) -> Result<Option<[f64; 4]>, EditError> + 'a {
+    move |slot, id| match callback {
+        Callback::Recorded(shared) => normalized(&shared.borrow_mut().request(id)?).map(Some),
+        _ => Ok(measured.get(&slot).copied()),
+    }
+}
+
 /// Alignment offsets, after every selected member was measured; unselected joined members
 /// travel with their root but do not affect the target.
-pub(crate) fn offsets(objects: &[Value], groups: &[(usize, Vec<usize>)], axis: &str, edge: &str, measurements: &Shared) -> Result<Vec<(usize, f64, f64)>, EditError> {
+pub(crate) fn offsets(objects: &[Value], groups: &[(usize, Vec<usize>)], axis: &str, edge: &str, measure: &mut Measure<'_>) -> Result<Vec<(usize, f64, f64)>, EditError> {
     let a = usize::from(axis != "x");
     let (mut start, mut end) = (f64::INFINITY, f64::NEG_INFINITY);
     let mut extents = Vec::new();
@@ -76,7 +133,7 @@ pub(crate) fn offsets(objects: &[Value], groups: &[(usize, Vec<usize>)], axis: &
         let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
         for &slot in members {
             let id = uid(&objects[slot]).ok_or_else(unported)?;
-            let b = normalized(&measurements.borrow_mut().request(id)?)?;
+            let Some(b) = measure(slot, id)? else { continue };
             min = min.min(b[a]); max = max.max(b[a + 2]);
         }
         if !min.is_finite() { continue; }
@@ -89,19 +146,45 @@ pub(crate) fn offsets(objects: &[Value], groups: &[(usize, Vec<usize>)], axis: &
 }
 
 impl Editor {
+    /// The app's `boundsOf` of the figures at `slots` of a frame record, by slot: the figures
+    /// the editor has geometry for. Figures with geometry the engine cannot build refuse.
+    pub(crate) fn app_bounds(&self, record: &Value, slots: &[usize]) -> Result<HashMap<usize, [f64; 4]>, EditError> {
+        let prepared = self.prepared()?;
+        if let Some(feature) = prepared.doc.unsupported.first() {
+            return Err(EditError::Unported(format!("geometry with {feature}")));
+        }
+        let mut frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
+        // The reach of the effects on each figure at the frame's tick (`drawableVfxPadding`).
+        if prepared.has_vfx {
+            if frame.retained_vfx_tick.is_some() { return Err(EditError::Unported("bounds of figures with inherited effect clips".into())); }
+            frame.vfx = styk_eval::vfx::frame::evaluate(&prepared.doc, &frame);
+        }
+        let scene = styk_eval::geometry::build_only_measured(&prepared.doc, &frame, slots);
+        if !scene.warnings.is_empty() { return Err(EditError::Unported("bounds of figures with unresolved joins".into())); }
+        let bounds = styk_eval::drawlist::app_bounds(&scene, prepared.doc.as_ref());
+        Ok(slots.iter().filter_map(|&slot| Some((slot, bounds.get(slot).copied().flatten()?))).collect())
+    }
+
     pub(crate) fn align_selection(&mut self, axis: &str, edge: &str, options: &Value) -> Result<Value, EditError> {
         if !["x", "y"].contains(&axis) { return Err(EditError::Invalid("errors.editorSelection.alignmentAxisMustBeXOrY".into())); }
         if !["start", "center", "end"].contains(&edge) { return Err(EditError::Invalid("errors.editorSelection.alignmentEdgeMustBeStartCenterOrEnd".into())); }
-        let measurements = Measurements::for_call(self, "alignSelection", &[Value::str(axis), Value::str(edge)], options)?;
+        // The editor's default callback is not ported.
+        let Some(callback) = Callback::of(self, "alignSelection", &[Value::str(axis), Value::str(edge)], options)? else { return Err(unported()) };
+        require_function(&callback)?;
         if self.drag.is_some() { self.commit_drag()?; }
         let groups = groups(&self.selection_frame()?, &self.selection.uids)?;
-        if groups.len() < 2 { measurements.borrow().finish()?; return Ok(Value::Bool(false)); }
+        if groups.len() < 2 { callback.finish()?; return Ok(Value::Bool(false)); }
         let mut moved = false;
         self.object_edit("Align figures", |editor| {
             editor.expand_translation_drag()?;
             let objects = editor.frame_objects();
-            let offsets = offsets(&objects, &groups, axis, edge, &measurements)?;
-            measurements.borrow().finish()?;
+            // The geometry of the frame on show, once the gesture is expanded (`editor.geometry`).
+            let measured = match matches!(callback, Callback::App) {
+                true => editor.app_bounds(&editor.shown_frame()?, &groups.iter().flat_map(|(_, members)| members.iter().copied()).collect::<Vec<_>>())?,
+                false => HashMap::new(),
+            };
+            let offsets = offsets(&objects, &groups, axis, edge, &mut measure_with(&callback, &measured))?;
+            callback.finish()?;
             let position = if axis == "x" { "root_x" } else { "root_y" };
             for (root, target, position_at) in offsets {
                 let delta = target - position_at;

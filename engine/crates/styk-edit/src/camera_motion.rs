@@ -23,6 +23,18 @@ const MOTION_DEFAULTS: &[(&str, f64)] = &[("strength", 1.0), ("moveX", 12.0), ("
 const FOLLOW_DEFAULTS: &[(&str, f64)] = &[("strength", 1.0), ("followX", 1.0), ("followY", 1.0), ("offsetX", 0.0), ("offsetY", 0.0), ("lag", 8.0), ("deadZone", 0.0), ("lookAhead", 0.0), ("zoomFit", 0.0), ("padding", 0.2), ("maxZoom", 3.0), ("fadeIn", 6.0), ("fadeOut", 6.0)];
 
 /// `MOTION_PARAMETERS[key]`'s range.
+/// `MOTION_PARAMETERS[key][0]`: the English name of a parameter.
+fn parameter_label(key: &str) -> &str {
+    match key {
+        "strength" => "Strength", "moveX" => "Move X", "moveY" => "Move Y", "roll" => "Roll", "zoom" => "Zoom", "frequency" => "Speed",
+        "roughness" => "Roughness", "direction" => "Direction", "recovery" => "Recovery", "phase" => "Phase", "fadeIn" => "Fade in",
+        "fadeOut" => "Fade out", "seed" => "Seed", "followX" => "Horizontal", "followY" => "Vertical", "offsetX" => "Frame X",
+        "offsetY" => "Frame Y", "lag" => "Smoothness", "deadZone" => "Dead zone", "lookAhead" => "Look ahead", "zoomFit" => "Auto zoom",
+        "padding" => "Margin", "maxZoom" => "Zoom limit",
+        other => other,
+    }
+}
+
 fn range(key: &str) -> (f64, f64) {
     match key {
         "strength" => (0.0, 2.0),
@@ -78,7 +90,7 @@ fn validate_targets(targets: Option<&Value>) -> Result<(), EditError> {
 }
 
 /// `validateCameraMotion(state)`.
-fn validate(state: &Value) -> Result<(), EditError> {
+pub(crate) fn validate(state: &Value) -> Result<(), EditError> {
     let clips: Vec<Value> = state.get("clips").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
     if state.get("version").and_then(Value::as_f64) != Some(1.0) || state.get("clips").and_then(Value::elements).is_none() || clips.len() > CLIP_LIMIT {
         return Err(invalid("errors.cameraMotion.invalidCameraMotionTableMaximum256Clips"));
@@ -108,7 +120,7 @@ fn validate(state: &Value) -> Result<(), EditError> {
         if kind == "follow" {
             validate_targets(clip.get("targets"))?;
             if duration.unwrap() > FOLLOW_FRAMES {
-                return Err(invalid("errors.cameraMotion.aFollowClipCanLastUpToFrames"));
+                return Err(crate::invalid_with("errors.cameraMotion.aFollowClipCanLastUpToFrames", vec![("value", Value::str("100,000"))]));
             }
         } else if clip.get("targets").is_some() {
             return Err(invalid("errors.cameraMotion.onlyFollowClipsHaveFollowedFigures"));
@@ -123,7 +135,12 @@ fn validate(state: &Value) -> Result<(), EditError> {
             let value = params.get(key).and_then(Value::as_f64);
             let whole = ["seed", "fadeIn", "fadeOut", "lookAhead"].contains(key);
             if !value.is_some_and(|v| v.is_finite() && v >= min && v <= max && (!whole || v.fract() == 0.0)) {
-                return Err(invalid("errors.cameraMotion.mustBeBetweenAnd"));
+                let mut parameter = Obj::new();
+                parameter.set("key", Value::str(key));
+                parameter.set("label", Value::str(parameter_label(key)));
+                let mut reference = Obj::new();
+                reference.set("@motionParameter", Value::object(parameter));
+                return Err(crate::invalid_with("errors.cameraMotion.mustBeBetweenAnd", vec![("label", Value::object(reference)), ("min", Value::Num(min)), ("max", Value::Num(max))]));
             }
         }
     }

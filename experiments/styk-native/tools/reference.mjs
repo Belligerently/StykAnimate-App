@@ -12,7 +12,7 @@ import path from 'node:path';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../../..');
-const {decodeDocument, normalizeDecodedDocument} = await import(`${repo}/src/native-container.mjs`);
+const {openDocument} = await import(`${repo}/tests/support/native-files.mjs`);
 const {Editor} = await import(`${repo}/src/editor.mjs`);
 
 const [input, output, ...rest] = process.argv.slice(2);
@@ -25,8 +25,7 @@ const option = name => { const i = rest.indexOf(name); return i < 0 ? undefined 
 let document;
 if (/\.(styk|stkz|stykmov)$/i.test(input)) {
   const kind = /\.(styk|stkz|stykmov)$/i.exec(input)[1].toLowerCase();
-  const decoded = await decodeDocument(new Uint8Array(readFileSync(input)), kind);
-  document = normalizeDecodedDocument(decoded.document, kind);
+  document = await openDocument(new Uint8Array(readFileSync(input)), kind, {verifySource: false});
 } else {
   document = JSON.parse(readFileSync(input, 'utf8'));
 }

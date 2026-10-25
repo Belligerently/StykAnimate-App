@@ -66,15 +66,15 @@ npm test             # unit tests
 python -m unittest discover -s backend -p "test_*.py"
 ```
 
-Browser tests (`tests/*.browser.mjs`) run against `npm run serve` with Chrome or Playwright Chromium, for example `node tests/timeline.browser.mjs`. Some tests read a local corpus of Pivot projects that is not distributed; they skip and name the missing file. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) shows what runs on every pull request.
+Browser tests (`tests/*.browser.mjs`) run against `npm run serve` with Chrome or Playwright Chromium, for example `node tests/timeline.browser.mjs`. Some tests read a local corpus of Pivot projects that is not distributed; they skip and name the missing file. Desktop tests and scripts (`tests/*.desktop.mjs`, `scripts/smoke-*.mjs`) open the app in a window; set `STYK_BACKGROUND_WINDOW=1` to open it off-screen without taking focus (packaged builds too). [`.github/workflows/ci.yml`](.github/workflows/ci.yml) shows what runs on every pull request.
 
 ## How the code is organized
 
 | Location | Responsibility |
 | --- | --- |
 | `src/editor*.mjs`, `src/pivot/` | Document model, commands, undo/redo, rigs, native evaluation and validation |
-| `src/renderer*.mjs`, `src/prepared-frames.mjs` | WebGPU rendering, incremental edits, GPU playback packets |
-| `src/playback*.mjs`, `src/document-transport.mjs` | Worker evaluation, playback caches, bounded document snapshots |
+| `src/engine/engine-stage.mjs`, `src/engine/engine-playback.mjs` | The scene canvas drawn by the engine, playback tickets |
+| `src/document-transport.mjs` | Bounded document snapshots |
 | `engine/` | The Rust engine: document store, Pivot and Stick Nodes codecs, evaluation, rendering, editing (`docs/RUST-ENGINE-PORT.md`) |
 | `src/engine/` | How the app reaches the engine (stage, playback, export, editing) |
 | `src/import-*.mjs`, `backend/`, `codecs/`, `native/` | Import into the editor, the Python codec kept as a test oracle, native helpers |
@@ -86,7 +86,7 @@ Browser tests (`tests/*.browser.mjs`) run against `npm run serve` with Chrome or
 | `tests/`, `scripts/` | Tests, smoke tests, benchmarks, build and release scripts |
 | `docs/` | Feature contracts and architecture |
 
-Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Feature behavior is documented in `docs/`, for example [the timeline](docs/TIMELINE.md), [scene editing](docs/SCENE-EDITING.md) and [the renderer](docs/renderer.md).
+Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Feature behavior is documented in `docs/`, for example [the timeline](docs/TIMELINE.md), [scene editing](docs/SCENE-EDITING.md) and [the engine's rendering](docs/engine/rendering.md).
 
 ## Contributing
 

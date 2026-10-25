@@ -7,8 +7,9 @@ changing the interface or breaking the app at any commit. The plan is
 
 ## Where it starts
 
-The editor owns the document as JavaScript objects and runs every command; the
-engine mirrors it ([document.md](document.md), [D12](decisions/0012-document-mirror.md)).
+The editor owned the document as JavaScript objects and ran every command; the engine
+mirrored it ([D12](decisions/0012-document-mirror.md), superseded: the engine opens the document and
+the session publishes it, [document.md](document.md)).
 Commands mutate records copy-on-write, record history entries (records before
 and after), and emit change events the interface listens to.
 
@@ -19,11 +20,9 @@ and after), and emit change events the interface listens to.
   records into the same bytes, leaves the same selection and returns the same
   event detail (`kind`, `frameIndices`, `figureIndices`, `sourceIds`,
   `structural`, `definition`, labels).
-- In the app a ported command first runs in **shadow** (below): the JavaScript editor
-  stays in charge and the engine's answer is compared, on real documents and gestures.
-  Ownership of a document moves to the engine in one step once its commands are ported
-  ([D15](decisions/0015-commands-record-for-record.md), revised): adopting records command
-  by command would need two copies of the editor's runtime state kept equal by hand.
+- In the app the engine owns the open document (Phase 3 below,
+  [D15](decisions/0015-commands-record-for-record.md) and [D19](decisions/0019-engine-owns-the-document.md)):
+  ported commands run in its session, and the editor shows what the session answers.
 - Every port is checked by the **command-replay harness**: a scenario (a
   document, editor options, a list of `[method, ...arguments]` steps including
   undo and redo) runs in the JavaScript editor, which records the document
@@ -52,25 +51,55 @@ and after), and emit change events the interface listens to.
 ### Camera and builder prerequisites (2026-10-04)
 
 The camera owner includes V8-exact logarithms and the native editor follows cached travel.
-`Prepared::travel_ready` reads worker preparation only; `Pose::shot` retains the source
-key for that view. A browser edit session refuses a cold follow tick or a changed report
-instead of preparing the path on the interface thread. Native read/bake replays match;
-canonical worker session publication remains required before app bake adoption.
+`Prepared::travel_ready` reads worker preparation only (the stage presents with it and never shapes a
+path on the interface thread); `Pose::shot` retains the source key for that view. An edit session shapes
+the follow path of each revision it makes itself, as far as the frame it shows needs (see "Follow documents
+in the session" below). Native read/bake replays match; canonical worker session publication remains
+required before app bake adoption.
 
-Measured bounds are captured once from the callback the editor already runs and sent as
-bounded data (8,192 samples, receiver/UID/tick/range order preserved). Centering/alignment
-shadow those completed measurements; the callback still belongs to the editor. Joined
-spatial IK, branch thickness, native-property tokens, sprite insertion and drawing a new
-figure have focused recorded native/sheet coverage; their remaining origin/native-channel
-branches refuse explicitly, and no facade/class gate opens from this prerequisite.
-`CommandKind::FigureSplice` preserves library insertion and native-frame undo/redo.
+#### Follow documents in the session (2026-10-24)
+
+A session started from the mirror's typed views (as the app starts one) edits a follow-camera document through
+every revision it makes, as a session started from the document does; it never refuses for want of a worker's
+preparation. `Follow` shapes a path nobody has started through the clip frame asked for and no further
+(`Clip::path`); a path that exists grows a chunk of 256 frames at a time, so a playing clip extends it rarely.
+Cost: each revision starts a cold path, so a call whose frame the follow clips shape costs about 13 µs per clip
+frame up to the playhead, on the interface thread: measured natively (dev profile, `nudgeHandle` on the
+recorded follow document with its clips and sheet lengthened) 0.4 ms at tick 6, 28 ms at tick 1994 and 280 ms
+at tick 19994. Sharing the prefix of a path across revisions that leave the followed figures alone is the
+way to bring that down (not done). Tests: `tests/follow_sessions.rs` (a mirror-started session and a
+document-started one answer every call alike), `styk_eval::follow` (a cold path is shaped through the frame
+asked, then grows in chunks).
+
+Figure bounds (`alignSelection`, `alignFiguresInFrames`, `centerCamera`): the app's own
+callback (`boundsOf` in `src/app.mjs`, registered with `markAppBounds` in
+`src/engine/engine-edit-bounds.mjs`) reaches the session as `{"@boundsCallback": "app"}` and the
+engine measures the figures itself (`styk-edit/src/bounds.rs`: the frame the editor measures,
+its geometry built by `styk_eval::geometry::build_only_measured`, `objectBounds` and the reach
+of the figures' effects in `styk_eval::drawlist::app_bounds`), as the app does once its images
+and drawings have loaded: sprite sizes come from the document, not from the app's live
+resources. The corners of sprites and text are placed with `styk-math`'s `sin`, `cos` and
+`hypot` (the deltas and camera positions stored from these bounds depend on them); segment
+points come from the evaluation geometry, whose straight-segment ends are single-precision
+(plan section 6). Recorded measurements of any other callback still replay (8,192 samples,
+receiver/UID/tick/range order preserved; the recorder hands them over); a callback the
+session is not given as one of these, data where a function is wanted, and the editor's default
+callback refuse or fail as the editor does. The four measured-bounds recordings give the editor's
+documents at every step with the engine measuring, and `picking-bounds` fixtures compare the
+engine's bounds with the editor's bit for bit. Joined spatial IK, branch thickness (also with
+animation origins), native-property tokens, sprite insertion (also with animation origins) and
+drawing a new figure (also into a native timeline's saved channels, which key the layer's pose)
+have recorded native/sheet coverage. `CommandKind::FigureSplice` preserves library insertion and
+native-frame undo/redo. Adding and deleting figures are admitted on documents with animation origins too (an added
+figure gets its pivot as `createObject` gives it); no tape records them (they were compared with the editor, undone and redone,
+on every origin document when they were admitted).
 
 The joined pinned motion-path oracle correction is exercised in the app through cancel,
 commit and history (one adopted + 11 exact calls). Measured bounds compare eight calls;
 new-figure identity-capacity refusal compares two and preserves the whole project.
 Electron follow pictures pass all nine stored/preview/onion captures (mean 0.0553–0.0884,
-zero solid pixels). The strict follow app check still refuses cold paths and baking at
-new revisions; it does not certify adoption until worker publication is connected.
+zero solid pixels). The strict follow app check (2026-10-04) refused cold paths and baking at
+new revisions; sessions no longer refuse them (2026-10-24, above), and baking still waits for worker publication.
 Forty-five admitted recordings match all 1,290 steps; four guard recordings confirm refusal.
 The 41 derived evaluated groups / 362 ticks are included. Public portable additions are
 `styk_math::log`, `Prepared::travel_ready`, `Pose::shot` and `CommandKind::FigureSplice`;
@@ -100,8 +129,7 @@ Main check and 1,340 byte-stable fixture JSON. The full warmed default run adopt
 one Split with exact document/history/selection/full undo. Build UI Split/Undo,
 branch scope, repeated sessions and drawing/discard also pass without page errors;
 inspected desktop/compact screenshots use the compatibility renderer, not engine-1
-GPU certification. See the separate
-[command measurement](../performance/RUST-EDITING-COMMANDS.md). Other Session answers
+GPU certification. Other Session answers
 and Rust signatures are unchanged; mobile consumers opting in must read the fields.
 
 ### Ordinary sheet Unique publication (2026-10-05)
@@ -127,8 +155,7 @@ recordings / 79 exact calls, 266 JS tests and Main check. Required-profile shipp
 is 10,257,065 bytes. Actual warmed default UI copies at ticks 2 and 2.25 preserve
 twelve paired document/history/selection/phase boundaries, undo/redo and full undo.
 Both Unique calls have positive Native/adoption clocks without fallback; the
-matched command timing is diagnostic only, not a class-cost gate. See
-[command measurements](../performance/RUST-EDITING-COMMANDS.md).
+matched command timing is diagnostic only, not a class-cost gate.
 
 ### Layer folder publication (2026-10-05)
 
@@ -180,9 +207,7 @@ schema and stored math do not change. Mobile consumers opting in must handle the
 requested null/pair field; the mobile pin remains untouched. Checks pass 238 Rust
 tests, three recordings / 106 exact calls, 263 JS tests and Main check. The actual
 default proof matches all 34 paired boundaries and full undo, including nine
-successful pastes, three duplicates and three expected validation errors. See
-[command measurements](../performance/RUST-EDITING-COMMANDS.md); this does not
-advance a class gate or full-class cost row.
+successful pastes, three duplicates and three expected validation errors.
 
 ### Recorded worker movieclips, history and publication (2026-10-04)
 
@@ -235,11 +260,8 @@ then publishes the document; restoration must preserve that ordering.
 
 `Session::prepare_worker_history` and `prepare_worker_call_values` operate on the same
 worker-owned editor. `PreparedPublication::guard_worker_checked` validates the original
-report, selection, counters and history before exchanging heads. Engine publication
-pairs that exchange with the acknowledged mirror generation. Its opaque
-`EditPublicationAdmission` retains canonical roots and their shared byte charge through
-terminal ACK, cancellation or refusal. This is a prerequisite for the durable actor;
-it does not make the current interface-thread Session a worker actor.
+report, selection, counters and history before exchanging heads. Nothing in the engine calls it any
+more (see the removed worker-hosted Session below).
 
 Recorded origin sheet motion paths use `Editor::motion_display_frame_worker` for the
 editor's transient display read while the canonical shown-frame owner remains unchanged.
@@ -286,131 +308,20 @@ Evaluation also adds `MovieclipSource`, `Document::movieclip_source` and
 `Frame`/`Keyframe::retained_vfx_tick`. These portable fields keep cropped source clocks
 and inherited effect evaluation intact; downstream struct literals need the new fields.
 
-### Quiet actor and exclusive live capability (2026-10-04)
+### The worker-hosted Session (removed)
 
-The Engine's existing Core can own one moved Session. Quiet requests prepare on workers,
-stream bounded packets, and wait for packet and readiness acknowledgements. Final
-publication exchanges the canonical Engine and editor heads under the same State and
-cancellation guard. Committed quiet and live requests retain displaced roots and their
-admission charge until terminal ACK, including cancellation after publication. Close
-retires them on the owning worker.
-Fresh bootstrap preserves loaded revision/serial/saved counters; attaching
-an existing Session preserves its history and exact warm checkpoint. Unsupported warm,
-clipboard, live, metadata and absent-field states refuse before transfer or mutation.
-
-`prepareFreshEditWorker` and `projectWorker` are explicit asynchronous host primitives,
-with no app call-site or document-class activation. Project controls admit at most three
-existing scalar fields from the original Fields/history owner. They keep the old host
-root behind a dependent-query barrier, then accept the actual committed identity before
-exchanging scalar slots. Busy reads preserve that root. The same finite progress wait
-retries lock contention without fabricating progress or resubmitting a command. Every
-Ready attempt checks cancellation and view ownership; cancellation after an actual
-commit cannot roll back or replay it. Postcommit host failure retires the worker owner.
-
-Separately, consuming `Session::into_worker` produces the portable exclusive
-`WorkerSession` capability. Its private identity and operation epoch guard prepared live
-operations using the same editor, publication, history, source and SceneBudget owners.
-The actual editor's working document and shown frame remain separate. Ten ordinary
-native/sheet lifecycle tapes compare all 115 calls, complete returns, state, events,
-display, exported history fields/weights and runtime flags. Eight recorded native
-`propertyChannels:true` tapes now also match all 93 calls through the same exclusive
-worker and Core owner; their original options are preserved. Five asynchronous
-preflight tapes remain evidence for a future protocol, not admitted live calls. This
-capability is coupled to Core's portable `Handle::submit_live` for the twelve recorded
-methods. It remains outside browser ready/shown tickets and app writer transfer.
-
-Core moves the same Session into its WorkerSession capability during initialization,
-attachment and detachment. Working-only operations exchange the editor/display heads
-without publishing a stored Mirror root or rebuilding its Loader. Actual history
-revision changes publish the stored root even when the committed JSON is identical.
-Each ready display and displaced display uses the same SceneBudget reservation.
-Quiet undo/redo after a live gesture uses that same display owner. Ready is a raw/typed
-Frame and Scene here; no encoded DrawList or actual Stage presentation is certified.
-After terminal ACK, the current ready display remains alive and its raw record stays
-charged to the SAME receiver reservation. Admission counts current, canonical,
-prepared and response raw heads as one shared union before cloning. It grows only the
-positive delta, then shrinks to the actual current raw head after worker disposal of
-all detached aliases. `Arc::get_mut` supplies the hard uniqueness barrier including
-Weak aliases. New preparation returns Busy before Session mutation while an alias
-survives; existing drop-first retirement wakes only the original Core, including idle
-request-zero recovery, without polling or another queue. Close/no-ready releases the
-charge after the physical ready drop. The receiver cap remains 1 GiB, separate from
-128 MiB editing/materialization. This covers receiver/current-ready raw storage;
-Editor history/clipboards, typed/encoded ownership, physical union and leases remain open.
-
-`WorkerSession::prepare_worker_history` is the additive portable history entry point;
-`Handle::submit_live` adds portable Core submission. Existing browser bindings do not
-activate it. Preserve complete return values, events, history and displayed frames from
-the recorded oracle rather than substituting the editor's working document for display.
-
-The private native property projector adopts the original scalar curve through the
-existing marker/source, Draft, Records, typed channel sampler and Animation/history
-owners. Recorded automatic easing, rotation winding and source ordering are preserved.
-The recorded worker-only lifecycle now dispatches through the existing checked native
-owner, AuthoredDrag and guarded publication; legacy calls and wider native combinations
-remain refused. Cold baseline/presence/typed preparation
-between cancellation checks is not certified as bounded dense work.
-The additive `Records::pose_source_frame(id, native_index)` lookup preserves retained
-source precedence. A row hint requires verified unique native frame identities; raw or
-unvalidated records must use `None` for first-match semantics.
-
-The Session's single response builder borrows the existing worker check callback only
-for worker preparation. Original host cancellation/Invalid/Unported errors escape that
-preparation even if a later callback succeeds; recorded editor Invalid stays canonical
-JSON. Legacy calls keep the same serializer and dispatcher. Complete original returns,
-actual displayed records, exported history and source/cancel lifecycle are compared.
-
-Portable offline tool addition: `replay::replay_session_live_worker(&Value, &Value)`
-consumes one fresh Session and checks its actual initial document/state/history/display/
-runtime before the first call, then every prepared and guarded step. Counters must be
-lossless nonnegative whole JavaScript integers; counts also fit platform `usize` before
-casts. `styk edit-replay --live-worker <session> <returns> [pairs...]` exits nonzero for
-any refusal, mismatch or invalid pair. Its original recordings are separate immutable
-inputs; foreign warm history is not fabricated. This adds a portable replay API for the
-mobile pin and worker command support; browser capability/class gates are unchanged.
-
-`mirror::{WorkerPublication, WorkerEditPublication}` provide an opaque scoped worker
-candidate. Preparation retains the same Mirror guard, CommitMarker and Loader, and
-exposes borrowed access to the exact prebuilt Generation/Assets before the existing
-final State exchange. `prepare_record_publication_worker` and
-`prepare_edit_publication_worker` use that owner; existing commit methods delegate to
-it. Commit consumes it once and returns worker retirements; cancellation, stop, stale
-generation or disposal preserve the old heads and leave callbacks uncalled. Working
-displays borrow the current generation; actual history revision changes still publish
-when stored JSON is identical. This adds portable APIs for the mobile pin, with no
-ACK-spanning guard, Core ready-storage change or browser adoption.
-
-The additive opt-in `prepare_edit_typed_publication_worker` pairs the actual Editor
-WorkerFrame Scene with candidate Assets using `GuardedPublication::typed_cache_worker`.
-Its opaque `GuardedTypedCache` borrows the same guarded after-Cache report, Loader and
-Prepared; it cannot be supplied from another host or independently compiled Scene.
-The raw layerSheet must be an object, the actual Prepared must have a typed sheet and
-the existing checked layer planner must admit its descriptors. Malformed or missing
-sheets refuse atomically. All typed heads and the SceneBudget lineage must match;
-image namespace and imported glyph identity are preserved, including working-only
-operations whose guarded after report differs from the acknowledged stored root.
-The displaced typed Loader is retired on the worker through the existing publication
-retirement. These three additive APIs are platform neutral for the mobile pin.
-
-Recorded namespace and glyph operations compare the complete editor observations;
-native/nested figure import and background import remain explicit refusals. The ordinary
-independent-loader publication API and Core route are unchanged. Actual encoded
-Ready/Shown adoption still needs this opt-in capability connected to the existing worker
-owner; pairing is not Stage, release or whole-document D7 certification.
-
-Portable mobile pin additions: `RevisionCounters`, `Session::{start_worker_prepared,
-revision,history_checkpoint_worker,into_worker}`, `WorkerSession`, `WorkerPrepared`,
-`WorkerFrame`, `PreparedPublication::{revision,project_fields_response_worker}`,
-`RetainedScene`, `RetainedScene::scene`, `SceneBudget::retain_worker`; the Engine
-`session` module's `Stamp`, `Epochs`, `Phase`, `Error`, `Success`, `Packet`, `Poll`,
-`FreshHistory`, `Handle` and Engine attach/detach/fresh-session methods. Browser
-`EditWorker` and typed Busy bindings remain in `styk-wasm`. Exclusive app writer
-transfer, bounded live transport, cold query ordering, actual ready/shown/resource ACK
-and complete disposal remain required before class adoption or deletion.
+An earlier route moved one Session onto the engine's worker (the "quiet actor": bounded packets,
+acknowledgements, a paired publication of the engine's and the editor's heads). D19 superseded it: the
+Session lives on the interface thread and publishes the document it changes itself
+([document.md](document.md#opening-a-document)). The engine's side of that route (its `session` module,
+the staged-record transfer, the guarded publications) and the interface's (`engine-session-worker.mjs`,
+`engine-project-worker.mjs`) are deleted. `styk-edit` still has the worker-side entry points they called
+(`Session::start_worker_prepared`, `into_worker`, `PreparedPublication`, `styk edit-replay --live-worker`)
+with their tests, and nothing in the engine or the app calls them.
 
 ## Status of phase 1
 
-`engine/crates/styk-edit` holds an `Editor` over the report as the mirror receives it, with
+`engine/crates/styk-edit` holds an `Editor` over the document the engine holds, with
 the playhead, the selection, the gesture in progress and a history of its own (for the
 harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 <reference.json>…` and `cargo test -p styk-edit` replay every recording in
@@ -432,7 +343,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | Steering planted 3D limbs: dragging a knee or elbow swings the limb's bend plane (`getSpatialIKPole`, `setSpatialIKPole`); twisting a bone of the limb swings its swivel and twisting the ankle or wrist marker turns the foot or hand (`twistSpatialJoint`); a whole figure turned with its 3D targets, bend planes and planted orientations (`setSpatialPose` with `wholeFigure`); `resetSpatialPose` for a bone, a mechanism or the whole rig, releasing its targets | yes | ik-spatial-steer-sheet, ik-spatial-side-steer-sheet, ik-spatial-mirrored-steer-sheet, spatial-reset-sheet |
 | Posing 3D IK targets (`styk-edit/src/spatial_ik.rs`): a planted target moves with its knee kept on its side on screen (`_flatSpatialIKPole`), the depth key pushes it in depth and a plain drag continues from there (`poseSpatialIKDepth`, `_spatialIKPointer`), `setSpatialIKTarget` sets depth, pole and swivel; a free 3D limb is captured once per gesture with its 3D target and followers' orientations (`captureSpatialIK`, `_drag.ikCapture`) and solved without following the target's orientation; IK posing on rigged figures, the drawn angles read from the rig (`RigJoint`) | yes, not across joined figures | ik-spatial-target-sheet, ik-spatial-side-target-sheet, ik-spatial-free-sheet |
 | Rig controls: a joint in a rig space takes the pointer through `authoredRigTarget` (from `styk_eval::ik::rig`; the drawn shape and rig space from geometry's `RigJoint`), an angle lock only stretches along its chord and does not turn, a connector slides (`slideConnector`, `setConnectorPosition`) and bends through the pointer (`_bendConnector`); skins, angle paths and weighted joints are not posed by hand | yes, without 3D bones and IK posing on rigged figures | rig-sheet, ik-rig-follow-sheet, ik-rig-stretch-sheet |
-| IK settings (`styk-edit/src/ik_settings.rs`): `setNodeIK` switches a controller on (pinned where the limb is drawn, refused on a joint a rig derives and on chains that would share bones) or off (the limb kept as drawn, a 3D limb's record kept), pins and releases it (released lengths kept on the chain), sets stretch, chain length, bend side ("Both" recapturing the bend) and a 3D limb's swivel; `rotateIKTarget` turns a target (a free limb captured first, its branches turning with it); `setSpatialFeetPinned` plants or releases every foot of a 3D figure in one gesture | yes, not across joined figures | ik-settings-sheet, ik-settings-pinned-sheet, ik-settings-spatial-sheet, ik-settings-rig-sheet, ik-settings-followers-sheet |
+| IK settings (`styk-edit/src/ik_settings.rs`): `setNodeIK` switches a controller on (pinned where the limb is drawn, refused on a joint a rig derives and on chains that would share bones) or off (the limb kept as drawn, a 3D limb's record kept), pins and releases it (released lengths kept on the chain), sets stretch, chain length, bend side ("Both" recapturing the bend) and a 3D limb's swivel; `rotateIKTarget` turns a target (a free limb captured first, its branches turning with it); `setSpatialFeetPinned` plants or releases every foot of a 3D figure in one gesture. Across joined figures the same run on the assembly's temporary skeleton: the displayed pose is baked into every figure of it and the limb is captured across it | yes | ik-settings-sheet, ik-settings-pinned-sheet, ik-settings-spatial-sheet, ik-settings-rig-sheet, ik-settings-followers-sheet; joined: ik-spatial-joined-* (feet and pins), `tests/joined_node_ik.rs` (switching on from nothing, chain, stretch, bend, release, off, refusals, posing, a free target turning) |
 | `poseJoint` on the end of a limb with an IK controller (`poseIKTarget`): a pinned target moves; an unpinned limb is captured as drawn, solved to the pointer and baked, its followers and bend kept in the controller; across joined figures on the assembly's skeleton (`poseGraph`, `captureFor`) | yes, without perspective or 3D controllers | startup-sheet, ik-unpinned-sheet, pinned-ik-sheet, ik-joined-unpinned-sheet, startup-join-sheet |
 | Gestures around pinned limbs: the solution baked before a pose edit (`_objectEdit(…, {posed})`, `_bakeIKFollowers`), follower offsets turned with their joint (`_rotateIKFollowers`), the bend remembered after every change (`_rememberIKBends`), a stretched end followed by its pin (`_followStretchedIK`); a gesture on joined figures takes in their whole assembly (`_ikPoseSlots`, `_expandIKDrag`) | yes | pinned-ik-sheet, ik-followers-sheet, ik-chains-sheet, ik-joined-sheet, ik-joined-late-sheet |
 | The project palette (`styk-edit/src/palette.rs`): `addPaletteColor`, `addPaletteColors`, `removePaletteColor`, `movePaletteColor` (colours as `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` or bytes), one `palette` history entry each; compared in both editors | yes | palette-sheet |
@@ -449,7 +360,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | Effect clips added, copied and pasted (`styk-edit/src/vfx_clips.rs`): `addVfxClip` (for the whole animation unless timed; a generated effect at the playhead's frame for its usual length, `GENERATOR_DURATIONS`), `copyVfxClip` (its effects sampled at the playhead: numbers and `0xRRGGBB` colours between keys, along the earlier key's easing), `pasteVfxClip` (with its keys, or with the values copied and no keys; a timed clip at the given start), `duplicateVfxClip` (after itself) and `addVfxGroupEffect`; identities and generated effects' seeds are the editor's (D18). Built-in and saved presets, attached scopes and paint colours sampled between keys also match the remaining-effect recordings below | yes | vfx-clip-add-sheet |
 | Batches (`movieclipBatch`, as the timeline runs several commands as one entry): `beginBatch`, `endBatch`, `abortBatch` (and `@batch` in recordings) record the entries made in between as one `movieclip-batch` entry with the revision before the batch, send the batch's own change event, collect pose sources after it and undo the entries of a failed batch; undo and redo replay the entries in order and restore the batch's selection. In the app the facade opens and closes the session's batch around the editor's, compares the closing event and state, starts no session inside a batch and ends the session if the batch fails or brings its own starting selection | yes | batch-sheet |
 | The timeline's layer selection: `selectSheetLayer` (the layer active and, with its contents, its figures on show selected, the first not joined to another the main one), seeks following it, `keepSelectionOnSeek`, any other selection dropping it, history restoring it; `setActiveLayer` | yes | sheet-selection-sheet |
-| The figure clipboard (`styk-edit/src/figure_clipboard.rs`): `copySelection` (snapshots of the selected figures, joined ones where geometry draws them, joins kept only inside the copy, their definitions, layers and drawing order), `cutSelection` (pasted back in place), `pasteSelection` at the playhead (`insertionPlan`: new identities, a copy of each definition in the default and unique modes or the definition itself as an instance, offsets growing with each paste, front depth, joins and IK followers renamed, IK targets moved, node effects moved to the new definition; `insert`; `_commitSheetRange` keying the pasted figures' layers, with the new definitions added by the sheet's publication and removed by its undo), `duplicateSelection` (instances with new identities on their own layers, the clipboard kept). Movieclip instances: their definitions shared unless pasted as unique, a copy of one on show carrying on from where it was copied (`movieclipSamples`), an instance pasted where it is not on show keeping its identity (`linked`, `retained`), others playing on the presence clock from their start; movieclips alone are inserted as frame replacements of their own (`replaceAt`), and a pasted movieclip keys the playhead rather than a held cell. A session pastes only what it copied: the facade asks the engine only when the editor's clipboard is the object the session's copy made | yes, without drawings, figures with effect clips, branch selections and clipboards from another document or format version | figure-clipboard-sheet, figure-clipboard-ik-sheet, figure-clipboard-vfx-sheet, figure-clipboard-clip-sheet |
+| The figure clipboard (`styk-edit/src/figure_clipboard.rs`): `copySelection` (snapshots of the selected figures, joined ones where geometry draws them, joins kept only inside the copy, their definitions, layers and drawing order), `cutSelection` (pasted back in place), `pasteSelection` at the playhead (`insertionPlan`: new identities, a copy of each definition in the default and unique modes or the definition itself as an instance, offsets growing with each paste, front depth, joins and IK followers renamed, IK targets moved, node effects moved to the new definition; `insert`; `_commitSheetRange` keying the pasted figures' layers, with the new definitions added by the sheet's publication and removed by its undo), `duplicateSelection` (instances with new identities on their own layers, the clipboard kept). Movieclip instances: their definitions shared unless pasted as unique, a copy of one on show carrying on from where it was copied (`movieclipSamples`), an instance pasted where it is not on show keeping its identity (`linked`, `retained`), others playing on the presence clock from their start; movieclips alone are inserted as frame replacements of their own (`replaceAt`), and a pasted movieclip keys the playhead rather than a held cell. Figures with effect clips paste them too: the clips follow the copies with new clip and effect identities (draws), timed clips keep their distance from the frame they were copied at (trimmed where that takes them before the first frame), and the paste is one entry (a batch, unless one is open); copies of figures with an animation origin find their pivot again where they stand. A session pastes only what it copied: the facade asks the engine only when the editor's clipboard is the object the session's copy made | yes, without drawings, branch selections and clipboards from another document or format version | figure-clipboard-sheet, figure-clipboard-ik-sheet, figure-clipboard-vfx-sheet, figure-clipboard-clip-sheet |
 | Project settings (`styk-edit/src/project.rs`): `setFPS` (with the frame delay format 4 stores), `setCanvasSize`, `updateProject`, one `fields` history entry each (`_fields`, nothing recorded when unchanged); compared in both editors, not adopted | yes | project-settings-sheet, project-settings-format4-sheet |
 | `importFigure(document, {position})`: a file's first frame (or a single definition) pasted as new figures with new definitions, centred on its unjoined roots at the position (the canvas's centre by default), joins named by slot in the file kept, the first figure selected; owned with the large figure class, adoption carrying the new definitions | yes, without movieclips, drawings and animation origins | import-figure-sheet |
 | `setLayerParallax(id, patch)`: a figure layer's response to camera travel (linked axes following the one given, the reference the camera on show unless set), validated as `validateParallax`, one `layers` history entry | yes | layer-parallax-sheet, layer-parallax-camera-sheet |
@@ -459,19 +370,19 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | Handle Edit Mode (`styk-edit/src/handle_edit.rs`): `beginHandleEditDrag({label, bend})`, `editHandlePosition(x, y, {bend})` (one edit outside a gesture), `commitHandleEditDrag`, `cancelHandleEditDrag`; the segments meeting the handle keep their arcs (`handleEditSegmentPose`, a bend edit keeping the tangent at the moved end), figures joined at the handle move with it, a gesture back at its start restores what it moved; angles of pinned limbs as solved, stretched lengths kept; rigged figures refused, movieclips `Unported` | yes | handle-edit-native, handle-edit-sheet, handle-edit-startup-sheet, handle-edit-ik-sheet, handle-edit-chain-sheet, handle-edit-sticknodes-sheet, handle-edit-full-turn-sheet |
 | Whole figures by a handle (`styk-edit/src/figure_transform.rs`): `beginFigureHandleDrag(x, y, {rotate, scale, joint, label})`, `transformFigureHandle(x, y, {rotate, scale, ctrlKey, shiftKey})` (one edit outside a gesture), `commitFigureHandleDrag`, `cancelFigureHandleDrag`; the selected figures and those joined below them turn and scale about the dragged figure's origin, turns past a half turn accumulate, Ctrl keeps the scale and Shift the angle, back at the start the figures are restored | yes | figure-transform-native, figure-transform-sheet, figure-transform-ik-sheet |
 | Handle commands (`styk-edit/src/handle_commands.rs`): `nudgeHandle(dx, dy, options)` (screen pixels through the view's zoom, rotation and mirroring; a root moves its figure, a joint poses, bends, stretches, moves in Handle Edit Mode or turns the whole figure), `alignHandle` (on an axis through its start or the figure's origin), `locateEditedHandle` (to where the handle is on the previous or next key), `segmentValues`, `beginSegmentValueEdit`, `setSegmentValues` (degrees, relative to the incoming tangent through joined origins, in Handle Edit Mode or by turning), `copySegmentValues` (text, compared as a view), `pasteSegmentValues`; a session pastes only the values it copied. Nudges go through the frame's camera and the camera motion clips moving it at the playhead (`cameraAtTime`, computed with V8's `Math`: `styk_eval::camera::impulse`); follow clips: `Unported` | yes, without follow clips | handle-commands-native, handle-commands-sheet, handle-commands-ik-sheet, handle-commands-camera-native, handle-commands-camera-sheet, camera-motion-handles-sheet |
-| Camera commands on a layer sheet (`styk-edit/src/camera_commands.rs`): `copyCamera`, `pasteCamera`, `setCameraValues`, `resetCamera`, `transformCamera`, `alignCameraToView`, `locateCamera` (each changed value a camera key through `addAnimationKeys`), camera drags (`beginCameraDrag`, `updateCameraDrag` previewing its keys on the frame on show, `commitCameraDrag`, `cancelCameraDrag`, and `commitDrag`/`cancelDrag` during one; other calls while one is open: `Unported`), `locateHandle` (the handle's figure moved by where the handle is on the neighbouring key); a session pastes only a camera it copied. `applyCameraToFigures(indices, {ticks})`: at each chosen frame whose camera is not the identity, every figure keyed where the camera shows it (root through the inverse camera matrix, scale, rotation) and the camera keyed back to the identity, through `_sheetPropertyEntries`, the camera being where camera motion clips put it at that frame. On a native timeline, follow clips, and `centerCamera`: `Unported` | yes, on layer sheets | camera-commands-sheet, camera-bake-sheet, camera-motion-handles-sheet |
-| Motion paths on a layer sheet (`styk-edit/src/motion_path.rs`): `beginMotionPathEdit(target, tick, {label, falloff})`, `updateMotionPathEdit(point, {stretch, isolate, movePins})`, `commitMotionPathEdit`, `cancelMotionPathEdit` (and `commitDrag`, `cancelDrag`, a seek and undo during one), `setMotionPathFalloff`, `motionPathFalloff`. A trail point dragged at its own tick poses a copy of the frame evaluated there while the playhead stays put: a figure's origin translates its connected figures (pinned targets carried with `movePins`; a joined figure's origin turns its parent's joint), a joint turns its subtree and the figures joined below it (stretched, isolated; pinned limbs' displayed solution baked first), the end of a limb with IK moves a pinned target or solves and bakes a free limb (across joined figures too), the camera's trail moves the camera; each pointer move rewrites one key per track in place (`_sheetPoseDraftWrite`: a held cell at its key unless auto key is on, the figures a key's movieclip replacements placed captured in those replacements), and the commit publishes once. A falloff (`planFalloff`, every shape) moves the target's keys inside the influence by weight, with edge keys holding the original pose and held keys claimed by the strongest write; the sharp shape's cube is V8's (`pow`, not the correctly rounded cube for 15 inputs; every weight is checked against the editor's). Refusals: ticks outside the animation or between frames, a figure, handle or static joint that is not there, locked layers, a full-turn bend stretched. On a native timeline, rigged and 3D figures, and turning a joint of joined figures with pinned limbs whose followers would turn (the editor reads those followers with the dragged figure's own definition and the assembly's layout, and throws once the assembly is larger): `Unported` | yes, on layer sheets | motion-path-sheet, motion-path-falloff-sheet, motion-path-autokey-sheet, motion-path-layers-sheet, motion-path-locked-sheet, motion-path-movieclip-sheet, motion-path-camera-sheet, motion-path-ik-sheet, motion-path-ik-unpinned-sheet, motion-path-ik-pinned-sheet, motion-path-ik-followers-sheet, motion-path-ik-joined-sheet, motion-path-ik-joined-unpinned-sheet, motion-path-sticknodes-sheet |
+| Camera commands on a layer sheet (`styk-edit/src/camera_commands.rs`): `copyCamera`, `pasteCamera`, `setCameraValues`, `resetCamera`, `transformCamera`, `alignCameraToView`, `locateCamera` (each changed value a camera key through `addAnimationKeys`), camera drags (`beginCameraDrag`, `updateCameraDrag` previewing its keys on the frame on show, `commitCameraDrag`, `cancelCameraDrag`, and `commitDrag`/`cancelDrag` during one; other calls while one is open: `Unported`), `locateHandle` (the handle's figure moved by where the handle is on the neighbouring key); a session pastes only a camera it copied. `applyCameraToFigures(indices, {ticks})`: at each chosen frame whose camera is not the identity, every figure keyed where the camera shows it (root through the inverse camera matrix, scale, rotation) and the camera keyed back to the identity, through `_sheetPropertyEntries`, the camera being where camera motion clips put it at that frame. On a native timeline and for follow clips: `Unported`. `centerCamera` takes the app's bounds callback (see the measured bounds above) and, with the editor's default callback, is `Unported` | yes, on layer sheets | camera-commands-sheet, camera-bake-sheet, camera-motion-handles-sheet |
+| Motion paths on a layer sheet (`styk-edit/src/motion_path.rs`): `beginMotionPathEdit(target, tick, {label, falloff})`, `updateMotionPathEdit(point, {stretch, isolate, movePins})`, `commitMotionPathEdit`, `cancelMotionPathEdit` (and `commitDrag`, `cancelDrag`, a seek and undo during one), `setMotionPathFalloff`, `motionPathFalloff`. A trail point dragged at its own tick poses a copy of the frame evaluated there while the playhead stays put: a figure's origin translates its connected figures (pinned targets carried with `movePins`; a joined figure's origin turns its parent's joint), a joint turns its subtree and the figures joined below it (stretched, isolated; pinned limbs' displayed solution baked first), the end of a limb with IK moves a pinned target or solves and bakes a free limb (across joined figures too), the camera's trail moves the camera; each pointer move rewrites one key per track in place (`_sheetPoseDraftWrite`: a held cell at its key unless auto key is on, the figures a key's movieclip replacements placed captured in those replacements), and the commit publishes once. A falloff (`planFalloff`, every shape) moves the target's keys inside the influence by weight, with edge keys holding the original pose and held keys claimed by the strongest write; the sharp shape's cube is `styk_math::pow` (V8's own `pow`, which is not always the correctly rounded cube; every weight is checked against the editor's). Refusals: ticks outside the animation or between frames, a figure, handle or static joint that is not there, locked layers, a full-turn bend stretched. On a native timeline, rigged and 3D figures, and turning a joint of joined figures with pinned limbs whose followers would turn (the editor reads those followers with the dragged figure's own definition and the assembly's layout, and throws once the assembly is larger): `Unported` | yes, on layer sheets | motion-path-sheet, motion-path-falloff-sheet, motion-path-autokey-sheet, motion-path-layers-sheet, motion-path-locked-sheet, motion-path-movieclip-sheet, motion-path-camera-sheet, motion-path-ik-sheet, motion-path-ik-unpinned-sheet, motion-path-ik-pinned-sheet, motion-path-ik-followers-sheet, motion-path-ik-joined-sheet, motion-path-ik-joined-unpinned-sheet, motion-path-sticknodes-sheet |
 | `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`: the editor's `transaction`, a draft of the whole frame in which figures come and go; deleting with a movieclip instance selected leaves the cell as replacements by nothing (`sheetDeleteFigures`, `replaceAt`) | yes, on a layer sheet; not for several figures at once | figures-sheet, figures-layers-sheet, figure-clipboard-clip-sheet |
 | Property edits on a layer sheet (`styk-edit/src/property_edit.rs`): `addAnimationKeys`, `addAnimationKey`, the sheet branches of `beginAnimationEdit`, `previewAnimationEdit`, `commitAnimationEdit` and `cancelAnimationEdit`, and the commands that reach `_sheetPropertyEntries` there: `setSceneColor`, `setSceneBackground`, `setBackgroundColor`, `updateFigureStyle` with property channels, `updatePolygon`'s opacity, `setVfxParameter`. Per tick, the frame there with the one-key channels the entries build composed (`styk_eval::records::Records::compose_channels`) is written as a key of each layer they touch, through the planner and `publish` (a held cell at its key unless auto key is on); a value left out is the one on show (`animationValue`, `Records::property_value`). A scrub's preview (`_sheetPropertyPreview`) is the frame on show until the edit ends; the session holds it the same way and its answer to `previewAnimationEdit` carries it, which the app compares and does not adopt. While an edit is open only its own calls run in the engine; undo and redo cancel it first. Owned with the class: what the commands publish is adopted, `beginAnimationEdit`, `previewAnimationEdit` and `cancelAnimationEdit` run in both and are compared (a key whose movieclip frames are replaced keeps its replacements, its pose written from the frame without them: `at(…, {skipMovieclipPatches})`, `Records::evaluated_options`) | yes, without fill styles and native timelines | property-scrub-sheet, property-autokey-sheet, property-keys-sheet, property-locked-sheet, scene-color-sheet, figure-style-sheet, polygon-opacity-sheet, vfx-parameter-sheet, property-clip-patches-sheet |
 | Effects in a figure's, a segment's or the scene's stack on a layer sheet (`styk-edit/src/vfx_stack.rs`): `addVfx` (to one or several targets, scene effects on the scene only, no vignette on figures), `removeVfx`, `resetVfx`, `duplicateVfx`, `moveVfx`, `reorderVfx`, `pasteVfx` (the same effect replaced, another kind of the same identity under a new one, the scope set when given), each the stack keyed at the playhead through `addAnimationKeys`; new identities are the editor's (D18) | yes, including recorded presets, `setVfxScope` and pasting with attached parts | vfx-stack-sheet |
-| Figures changed across frames (`styk-edit/src/range.rs`, `range_plan.rs`: `applyFigureRange`, `planFigureFrameOperation`): `updateFiguresInFrames` (colour override, transparency, opacity; an override drops a colour transition), `orderFiguresInFrames`, `joinFiguresInFrames`, `detachFiguresInFrames`, `deleteFiguresInFrames`, `duplicateInFrames` (joins kept among the copies), `mirrorFiguresInFrames`, `scaleFiguresInFrames` (an absolute scale keeps the figures' proportions; a zero scale collapses), `rotateFiguresInFrames`, `centerFiguresInFrames`, `resetPoseInFrames`, `addFigureInFrames`, and `moveSelectionInFrames` (`sheetMoveSelection`). Every frame of the range (the timeline's chosen ticks as the app passes them, keyframe starts, or the playhead) is planned on its evaluated frame; figures joined below a changed one are re-joined at their parent's handle (`jointEndpoints`: single precision, `styk-math`); one `_commitSheetRange` keys every layer whose figures changed at each tick (a held cell at its key unless auto key is on), or on a native timeline one `figure-range` entry patches the keyframes | yes, without movieclips among the changed figures on a native timeline (on a layer sheet a deletion with a movieclip among them leaves replacements by nothing, and a duplicated movieclip plays on the presence clock from its start), duplicating figures with effect clips (random identities), aligning (the app measures bounds with a function of its own), pasting across frames, and adding, duplicating or deleting across frames of a native timeline | range-appearance-sheet, range-appearance-colors-sheet, range-joins-sheet, range-transforms-sheet, range-autokey-sheet, range-locked-sheet, range-native, range-ik-pinned-sheet, range-ik-joined-sheet, range-ik-followers-sheet, range-movieclip-sheet, range-clip-sheet |
+| Figures changed across frames (`styk-edit/src/range.rs`, `range_plan.rs`: `applyFigureRange`, `planFigureFrameOperation`): `updateFiguresInFrames` (colour override, transparency, opacity; an override drops a colour transition), `orderFiguresInFrames`, `joinFiguresInFrames`, `detachFiguresInFrames`, `deleteFiguresInFrames`, `duplicateInFrames` (joins kept among the copies), `mirrorFiguresInFrames`, `scaleFiguresInFrames` (an absolute scale keeps the figures' proportions; a zero scale collapses), `rotateFiguresInFrames`, `centerFiguresInFrames`, `resetPoseInFrames`, `addFigureInFrames`, and `moveSelectionInFrames` (`sheetMoveSelection`). Every frame of the range (the timeline's chosen ticks as the app passes them, keyframe starts, or the playhead) is planned on its evaluated frame; figures joined below a changed one are re-joined at their parent's handle (`jointEndpoints`: single precision, `styk-math`); one `_commitSheetRange` keys every layer whose figures changed at each tick (a held cell at its key unless auto key is on), or on a native timeline one `figure-range` entry patches the keyframes | yes, without movieclips among the changed figures on a native timeline (on a layer sheet a deletion with a movieclip among them leaves replacements by nothing, and a duplicated movieclip plays on the presence clock from its start), duplicating figures with effect clips (random identities), pasting across frames, and adding, duplicating or deleting across frames of a native timeline | range-appearance-sheet, range-appearance-colors-sheet, range-joins-sheet, range-transforms-sheet, range-autokey-sheet, range-locked-sheet, range-native, range-ik-pinned-sheet, range-ik-joined-sheet, range-ik-followers-sheet, range-movieclip-sheet, range-clip-sheet |
 | Figure order: `bringToFront`, `sendToBack`, `moveSelectionLayer`, `orderSelection` on whole figures and `orderFiguresInFrames`, as depths (`_stykZIndex`) within each layer: reordered ties separated in the direction of the move, a run pushed past ±1,000,000 shifted back or numbered again | yes, with property channels or depths on show (always in the app); a partial selection of one figure orders its segments through `moveBuilderOrder` (below) | range-order-sheet, builder-order-sheet |
 | Recolouring (`styk-edit/src/recolor.rs`): `editFigureColors`, `setFigureColor`, `replaceFigureColor` (with a whole figure selected, the colour looked up in the palette of the figure and those joined below it, `attachedFigurePalette`, and replaced in each figure that shows it), `resetFigureColors`, and `updatePolygon`'s colour on a figure on show (`mode: 'style'`): the instance's style overlay (`_stykStyle`) written as `recolorObject` writes it, from the colours on show (`resolveInstanceFigure`'s overlays, `displayedSegmentPaint`: overrides mixed in, a full override solid), gradient ends and paint stops, polygons and mesh colours; a reset samples the definition's paints; format 4's whole-figure colour switches the figure to its segments' colours; validated as `validateRecolor` does (palette targets, paints, refusing hidden or locked layers); through the range operation, so at the playhead or across a range | yes, without movieclips and the builder's segment styles (`updateBuilderSegmentStyle`) | recolor-sheet, recolor-format4-sheet, recolor-mesh-sheet, recolor-native |
 | Flipping a branch: `mirrorSelection` and `mirrorFigure` with one figure's joint selected turn its segment over (angle and bend), figures joined below following; `mirrorFigure` on whole figures | yes; a selected branch and several selected segments stay with the editor (the facade, below) | range-branch-sheet, range-native, transform-native, range-transforms-sheet |
-| The builder's segment styles (`styk-edit/src/builder.rs`): `updateBuilderSegmentStyle(patch, {branch})`, `updateSegmentStyle`, `updateSegmentBranchStyle`, `convertSegment` (a shape or the construction flag written into the definition with the raw flags following; colours, gradient ends and paints recoloured on the figure on show through `editFigureColors`, opacity and thickness keyed with property channels through `addAnimationKeys`, else written into the definition, a branch's polygons included), `setBranchCaps`, `setBranchFill`, `setPolygonOpacity` (keyed with property channels), `moveBuilderOrder` and `setBuilderOrder` (the figure's combined drawing order of segments and polygons, raised, lowered or placed alone or with a branch; keyed at the playhead as held keys after the preview's live event, as `beginBranchStyleAnimation` and `commitBranchStyleAnimation` do, or written into the definition without property channels; `orderSelection` on one segment of a figure reaches it), `updateFigureStyle` on the definition (a name, or the outline without property channels): one `native-properties` history entry of the paths changed (`applyPatch`), a `figure` entry for the figure's own style; definition edits compared in both editors, not adopted | yes; `changeBranchThickness` stays JavaScript | builder-styles-sheet, builder-styles-native, builder-styles-override-native, builder-order-sheet, builder-order-native |
+| The builder's segment styles (`styk-edit/src/builder.rs`): `updateBuilderSegmentStyle(patch, {branch})`, `updateSegmentStyle`, `updateSegmentBranchStyle`, `convertSegment` (a shape or the construction flag written into the definition with the raw flags following; colours, gradient ends and paints recoloured on the figure on show through `editFigureColors`, opacity and thickness keyed with property channels through `addAnimationKeys`, else written into the definition, a branch's polygons included), `setBranchCaps`, `setBranchFill`, `setPolygonOpacity` (keyed with property channels), `moveBuilderOrder` and `setBuilderOrder` (the figure's combined drawing order of segments and polygons, raised, lowered or placed alone or with a branch; keyed at the playhead as held keys after the preview's live event, as `beginBranchStyleAnimation` and `commitBranchStyleAnimation` do, or written into the definition without property channels; `orderSelection` on one segment of a figure reaches it), `updateFigureStyle` on the definition (a name, or the outline without property channels): one `native-properties` history entry of the paths changed (`applyPatch`), a `figure` entry for the figure's own style; definition edits compared in both editors, not adopted | yes, `changeBranchThickness` too (also with animation origins) | builder-styles-sheet, builder-styles-native, builder-styles-override-native, builder-order-sheet, builder-order-native |
 | Rig relationships (`styk-edit/src/rig_behavior.rs`): `setRigBehavior` (stretch, follow, response, attachment, angle locks, angle paths, weighted joints and connectors merged into a joint; removing a driver's stretch releases its parts), `enableSmartStretch` (from the length on show, the branch below following), `setAngleLock` and `setSecondaryAngleReference` (measured on the figure on show, a parent lock walking past static parents, the authored angle for an authored lock), `bindStretchParts`: each validated as `rigConstraintPlan` validates a rig (`validate_rig`, every relationship's references and ranges and no joint depending on itself) and refusing to derive a joint an enabled IK controller drives; one `native-properties` history entry of the `_stykRig` fields changed; compared in both editors, not adopted | yes; Smart Stretch on a connector stays JavaScript | rig-behavior-sheet, rig-behavior-native, rig-behavior-ik-sheet |
 | The figure's topology (`styk-edit/src/topology.rs`, `_topologyEdit`): `addSegment`, `addSegments` (a stroke from the selected joint, each segment taking its parent's colour and width as shown), `deleteSingleSegment` and `unsplitSegment` (the children taken by the parent; Ctrl+Delete refits them to the joints they reached, `fit` and `mergedBend` on `styk-math`), `deleteSegment` (with branches), `mirrorSegment`, `mirrorSegmentBranch`, `moveBuilderSegment` (every pose repacked in the new order), `splitBuilderSegments`, `splitSegment`, `splitSegmentBranch` (polygons gaining the midpoints, the pieces taking consecutive draw-order places), `duplicateSegment`, `duplicateSegmentBranch` (with the branch's polygons and renamed rig relationships), `addConnector`, `addWeightedJoint`, `replaceFigureDefinition` (the text editor's apply: each pose keeps its handles' offsets from the old definition). Every pose of the figure in the keyframes and pose sources follows; figures joined to a removed handle stay where they were drawn and those joined below a reshaped segment are placed again on its handle (`componentGeometry`, `canonicalizeChildren`); IK controllers (chains, followers), 3D shapes, style overlays, Stick Nodes shapes and effect owners follow their handles (`repairIKTopology`, `repairTopologyStyles`); the result is validated as `validateScene` validates what a topology edit can break (handles, numbers, hierarchy, rig, surfaces, poses, joins) and rolled back on a refusal; one `topology` history entry keeps the definition and the poses it touched, by identity, before and after; compared in both editors, not adopted | yes, animation-origin cases below; without frame drafts, IK across joined figures, saved channels a changed handle animates, pose choices, 3D meshes, drawing a new figure, drawing into a rigged figure and duplicating 3D joints | topology-sheet, topology-native, topology-joined-sheet, topology-joined-native, topology-ik-sheet, topology-followers-sheet, topology-rig-sheet, topology-vfx-sheet, topology-sticknodes-sheet, replace-definition-sheet, replace-definition-joined-native |
-| Rig edits by dragging (`styk-edit/src/rig_drag.rs`): `beginRigDrag({reposition, bend, label})`, `editRigJoint(x, y, {stretch, isolate, reposition})` (a joint repositioned with its children refitted, its branch or the joint alone turned and stretched, through the rig's spaces with `authoredRigTarget`; an angle-locked joint stretched along its chord; a connector slid), `bendJoint` during a bend gesture (the branch turned with the joint, static joints included), `commitRigDrag` and `cancelRigDrag` (and `commitDrag`, `cancelDrag`, undo during one): the preview on the frame on show, then one `topology` entry changing the definition and every pose of it by the gesture's deltas (lengths by ratio), joined children placed again; compared in both editors, not adopted | yes, with the topology edits' limits | rig-drag-sheet, rig-drag-native, rig-drag-plain-sheet |
+| Rig edits by dragging (`styk-edit/src/rig_drag.rs`): `beginRigDrag({reposition, bend, label})`, `editRigJoint(x, y, {stretch, isolate, reposition})` (a joint repositioned with its children refitted, its branch or the joint alone turned and stretched, through the rig's spaces with `authoredRigTarget`; an angle-locked joint stretched along its chord; a connector slid), `bendJoint` during a bend gesture (the branch turned with the joint, static joints included), `commitRigDrag` and `cancelRigDrag` (and `commitDrag`, `cancelDrag`, undo during one): the preview on the frame on show, then one `topology` entry changing the definition and every pose of it by the gesture's deltas (lengths by ratio), joined children placed again; the owner mirrors the gesture on the editor (Rig edits and camera drags, below) | yes, with the topology edits' limits | rig-drag-sheet, rig-drag-native, rig-drag-plain-sheet |
 | Animation-origin whole figures (`styk-edit/src/origin.rs`): translation, rotation, scaling, reflection, reset and centre preserve the pivot, local offset and retained ghost support; begin/commit/cancel, returning to the start, fractional seeks and history follow native and authored sheet lifecycles. Stored arithmetic uses `styk-math`; the saved-channel calls below are admitted separately, and unrecorded origin command families still refuse atomically. | yes, these calls only; class remains unowned | origin-gestures-layout-native/sheet, origin-gestures-offsets-native/sheet, origin-gestures-support-native/sheet/autokey-sheet |
 | Origin joints and handles (`styk-edit/src/origin.rs`, `pose.rs`, `figure_transform.rs`): pose, rotate and bend joints, Handle Edit Mode and whole-figure handle turns/scales synchronize retained ghosts once, preserving captured metadata, cancellation, fractional views and native/sheet history. Complex rig, pose-choice, mesh, drawing, movieclip and unrecorded IK branches refuse atomically. | yes, recorded calls only; class remains unowned | origin-pose-layout/offsets/support-native/sheet/autokey-sheet, origin-pose-support-free/pinned-native/sheet |
 | Saved origin channels (`styk-edit/src/property_edit.rs`): begin/preview/commit/cancel animation edits and single/batch x/y/scale/rotation keys match both stored documents and the shown frame after every call. Admission inspects the actual target tick and attachment ancestors, including future definitions; absent post-exposure keys are admitted only for an already recorded ordinary target. Malformed joins and future rig targets refuse before changing live state. | yes, recorded calls only; class remains unowned | origin-channels-layout/offsets/support-sheet/autokey-sheet, origin-channels-saved-layout/support-sheet/autokey-sheet, origin-channels-future-sheet |
@@ -556,7 +467,7 @@ document difference the harness can see):
   (measured with the driver's branch step: without this, owned editing deleted the whole
   figure).
 - **Records the editor changes in place** (a topology edit rewrites the figure and every
-  pose of it, drawing edits name their figures): the mirror sees changes by identity, so the
+  pose of it, drawing edits name their figures): the owner sees changes by identity, so the
   facade notes what the change events name (a definition edit: every figure; one that
   changes structure outside a sheet publication: every figure, keyframe and pose source)
   and resends it before the next session starts (measured: after deleting a branch in the
@@ -569,10 +480,6 @@ document difference the harness can see):
 - **`runtime_segments`** of legacy Pivot poses are read by the range operations (lengths and
   bends materialized before a transform, and by geometry): the facade keeps those calls in the
   editor for documents whose keyframes carry them.
-- **`runtime_segments`** are not in the engine's copy (the mirror strips them). The
-  editor's history snapshots keep them, so on a native timeline a gesture that moves a
-  figure with `runtime_segments` and puts it back is a change in JavaScript and none in
-  the engine. On a layer sheet a commit compares poses without them, as the engine does.
 - **The history byte budget** (`historyBytes`) is not ported; the engine's history trims
   by count (80 entries) only. Phase 1 keeps the app's history in JavaScript.
 - **Validation**: a published sheet is checked as `validateLayerSheetChanges` checks it
@@ -580,97 +487,7 @@ document difference the harness can see):
   counter), with the editor's errors; movieclip replacement records, the million-key
   limits, `validateObjectChanges` and `validateLayerState` are not ported.
 - **Audio ripple** (`editor.audioRipple`): inserting or removing frames on every track
-  also shifts audio in the editor; the facade runs those in JavaScript while it is on.
-
-## Shadow editing in the app
-
-With `?engineShadow=on` (or `localStorage['stykanimate.engine.shadowEdit'] = 'on'`) every
-ported call the app makes also runs in the engine: `EngineHandle.edit_session` starts
-`styk_edit::session::Session` on the mirrored document with the editor's view and
-counters, `EditSession.call` answers each call as JSON (result, state, events, the
-gesture's draft, and the sheet, layers and pose sources a command published), and
-`src/engine/engine-edit-shadow.mjs` compares that with what the editor did. The editor
-stays in charge; nothing from the engine is applied. A session lives while every change
-to the document goes through calls it shadows; anything else ends it, and the next one
-starts when the mirror holds the editor's revision again. Results accumulate in
-`globalThis.__stykEditShadow`.
-
-With `--exact-math` the driver replaces the page's `Math.sin`, `cos`, `atan2`, `hypot`,
-`asin` and `acos` by the engine's (exported from the WebAssembly binding for this purpose,
-`styk-wasm/src/math.rs`) before the document loads: the editor then computes what Node
-computes, and the comparison is exact. This is how a difference is told from the browser's
-own rounding: on the Kung-Fu Master and Karate Fighter rigs, dragging a free 3D foot
-differed by up to 1.54 rad in 34 angles with Chromium's `Math` (a knee's side decided on a
-nearly degenerate limb) and was identical with the engine's (95 of 95 calls on each rig,
-measured 2026-10-03; also exact: the start-up document 94 of 94, a 3D catalogue scene 74 of
-74, joined 55 of 55, the rigged document 78 of 78, sheet-movieclip-loose 78 of 78). With
-the driver's 3D steps added (a planted knee dragged, a bone twisted with the right button,
-the rig reset), measured the same day: the planted-leg fixture 140 of 140, the Kung-Fu
-Master and Karate Fighter rigs 115 of 115 each, a 3D dojo prop 94 of 94.
-With the driver's property steps (scrubs with their previews, keyed values, the scene's
-colour and background, the figure's outline, an effect's parameter keyed and scrubbed),
-measured 2026-10-04 with the engine's `Math`: the start-up document 211 of 211 calls the same,
-the property calls among them (`beginAnimationEdit` 4, `previewAnimationEdit` 6,
-`commitAnimationEdit` 3, `cancelAnimationEdit` 3, `addAnimationKeys` 2, `setSceneColor`,
-`setBackgroundColor`, `setSceneBackground`, `updateFigureStyle` and `setVfxParameter` 1 each);
-owned editing the same as the editor alone (106,877 bytes, 55 history entries, and after
-undoing everything). The previews are compared: an engine composing a preview with the edit's
-first value instead of its last was caught (2 previews different). On documents saved with
-property channels (the channel fixtures as the app holds them), the same day: `channels-figure`
-184 of 184 calls the same, owned editing the same as the editor alone (70,724 bytes, 46
-history entries, and after undoing everything); `channels-pose` 152 of 152; `channels-vfx`
-184 of 184.
-
-With the driver's motion-path steps (trail points of the figure's origin, a joint and an IK hand
-dragged at another tick, a falloff switched and changed mid-gesture, a cancelled one, and two
-gestures made with the pointer on the shown trail, one with the right button), measured
-2026-10-04 with the engine's `Math`: the start-up document 392 of 392 calls the same, among them
-`beginMotionPathEdit` 8, `updateMotionPathEdit` 33, `commitMotionPathEdit` 7,
-`setMotionPathFalloff` 2 and `cancelMotionPathEdit` 1; owned editing (one round) the same as the
-editor alone (290,090 bytes, 80 history entries, and after undoing everything) with the 7 commits
-adopted, and warmed up (`--warm`) the same again.
-
-`node scripts/engine-edit-shadow.mjs [--file <document.json>]` drives the real app in
-headless Chromium: pointer drags on joint handles and on the origin, keyboard undo and
-redo, transforms, timeline keys and frames, duplicate/join/unjoin/delete, motion-path trail
-points (through the editor, and with the pointer on the shown trail), on a figure with
-3D bones a planted knee, a right-button twist and resetting the rig, and on a rig with pose
-choices another choice. Measured
-2026-10-03 (WebAssembly, SwiftShader), one run each:
-
-| Document | Calls run in the engine | The same as the editor | Different | Editor time | Engine time |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| joined-chain (imported, joined figures) | 77 | 77 | 0 | 57.7 ms | 28.2 ms |
-| sheet-layers (two layers, held key) | 77 | 77 | 0 | 59.9 ms | 30.2 ms |
-| sheet-movieclip-loose (a movieclip) | 77 | 77 | 0 | 62.6 ms | 30.6 ms |
-| sheet-mixed-keys (imported and authored keys) | 77 | 77 | 0 | 57.9 ms | 27.8 ms |
-| the document the app starts with (unpinned IK on every limb) | 77 | 77 | 0 | 174.0 ms | 81.7 ms |
-| startup-pinned (every limb pinned) | 88 | 88 | 0 | 167.1 ms | 100.0 ms |
-| followers (a pinned foot with followers and a polygon) | 88 | 88 | 0 | 181.5 ms | 93.3 ms |
-| joined (IK across four joined figures) | 54 | 54 | 0 | 71.4 ms | 43.9 ms |
-
-"The same" means equal keys, order, strings and integers, and numbers within 1e-9
-relative: 28 to 53 of the 77 calls differ from Chromium's editor in the last digits of a
-pose, because Chromium's `Math` is not Node's ([D16](decisions/0016-v8-exact-math.md)).
-The engine time includes the JSON boundary. The IK documents were measured 2026-10-03
-after IK editing was ported, joined figures included: every call the script makes runs in
-the engine (on joined, two undos reach history from before the session, which ends it and
-starts the next). Their times include a duplicate, join and unjoin that each re-evaluate
-the frame with IK.
-
-### Replaying an app session natively
-
-With `?engineEditCapture=on` (or `localStorage['stykanimate.engine.editCapture'] = 'on'`) the
-facade keeps each session's starting document and state and every call it sends (name,
-arguments and the view, draws included); the first eight sessions to meet an unported call,
-a difference or another error are kept in `__stykEditShadow.captures`, one per reason.
-`node scripts/engine-edit-shadow.mjs … --capture <folder>` writes them as
-`<run>-<n>.capture.json`, and `styk edit-session <file>` replays one in `styk-edit` natively,
-printing each answer's status, so a refusal or difference met in the app can be debugged
-without the browser. The first one found this way (2026-10-04): `setNodeIK` on any figure
-but the first refused with "posing an IK target outside the frame", because the limb was
-captured from the native keyframe, which on a layer sheet holds fewer figures than the frame
-on show (`ik-settings-second-figure-sheet`).
+  also shifts audio. Ported with the audio commands (`audio.rs`; see Phase 3).
 
 ## Values the editor draws at random (D18)
 
@@ -679,255 +496,8 @@ Commands that draw identities or seeds draw them through `src/editor-draws.mjs`.
 and stores each step's draws as `draws: [[kind, value], …]`; the replay hands them to the
 engine before the step (`Editor::set_draws`), and a port takes them in order and by kind
 (`draw_uuid`, `draw_seed`, `draw_random`), answering `Unported` when it would draw what it was
-not handed. In the app the facade records what the editor drew during its run of the call and
-sends it in the call's view; such calls run in both and are compared, never owned.
-
-## Engine-owned editing in the app
-
-The engine runs ported calls in the editor's place while a session lives (the same
-`src/engine/engine-edit-shadow.mjs`): by default for documents of an editing class in
-`OWNED_CLASSES` (D15: a class flips after exact behavior and the current class-cost
-gate below pass), for every document with `?engineEdit=on` (or
-`localStorage['stykanimate.engine.ownEdit'] = 'on'`), and never with `off`; `?engineShadow=on`
-keeps the editor in charge and compares. `editingClass(report)` names a document's class:
-`unported` for classes whose full editing coverage is not yet established (property
-channels on a native timeline, animation origins, a captured movieclip's own document;
-the engine draws them). Origin whole-figure calls can be compared or forced through the
-recorded whitelist, and the topology calls can be compared in shadow; their class has
-not flipped (D15).
-`channels` for documents whose layer sheet keeps saved property channels (`legacyAnimation`,
-edited since 2026-10-04; not owned by default: on `channels-figure` owned editing cost
-289.3 ms against the editor's 116.9 ms in one run, and large documents are not measured),
-`movieclips` when a
-figure is a movieclip, `3d` when a figure has 3D bones or a mesh,
-`large figures` from 1,000 segments across its figure definitions, else `figures`. The
-calls that change the document
-(the gestures' moves, poses and transforms, `commitDrag`, the layer timeline's keys and
-frames, joining, duplicating and deleting figures) run in the engine only; the editor
-adopts what they produced and does not compute it:
-
-- a gesture's draft: the engine's figures replace the editor's in its draft, and the
-  editor's snapshots take in the figures the engine's gesture took in (`drag` in the
-  answer: their identities and whether the gesture moves whole connected figures);
-- what a call published: `adoptLayerSheet` (src/editor-layer-sheet.mjs) runs the editor's
-  own `publish` on a plan made of the engine's sheet, layers and new pose sources, so
-  validation, layer bookkeeping, events and the history entry are the editor's. The answer
-  carries only the tracks the call replaced (`trackOrder` names them all); the others stay
-  the editor's objects, shared with history as before;
-- a committed gesture's draft stays on show as in `_commitSheetPose`
-  (`_authoredCommitPreview`): the answer carries its figures (`retained`), as the commit
-  leaves them (joined figures' roots refreshed from geometry), in place of the editor's
-  draft or, for a gesture the call began and ended itself, of the frame it showed;
-- the selection, the next figure identity, the live-edit events and a seek the call made.
-
-Owned calls request `changesOnly: true` in the existing session view. The response
-contains only changed COW draft/retained figures and sheet fields, with explicit order,
-removal and retained-frame metadata when needed. The facade reconstructs the publication
-from its current records, preserving untouched identities and runtime movieclip samples.
-Full responses remain the default for shadow comparison and native session consumers;
-public Rust signatures are unchanged. Eighteen recorded families / 483 native calls and
-18 JavaScript adoption tests compare the compact and full paths. The actual origin app
-run adopts 62 calls and compares 65 exactly, with document/history/selection/full undo
-identical. The startup app retry adopts 165 and compares 295 exactly, preserving its
-290,105-byte document, 80 history entries, selection and full undo. This protocol change
-does not open another document class.
-
-Selecting, seeking, starting and cancelling a gesture, and undo and redo run in both and are
-compared as in shadow mode (history stays the editor's). A motion-path gesture's begin, pointer
-moves, falloff changes and cancel run in both too, since the app draws the live trail from the
-editor's session (`motionPathReport`, its display frame); its commit is owned: the editor
-adopts what it publishes and ends its own session (a commit that changed nothing ends it too). Commands the timeline groups into one history entry
-(`movieclipBatch`) run their ported calls through the session, then the batch's own event ends
-it, and undoing the batch ends the next one (history the session did not record); measured
-with the driver's batch step, owned editing still matches the editor alone. A call the engine refuses, or whose
-answer the editor cannot adopt, runs in the editor alone and ends the session; an error runs
-the editor's call so that the editor raises it with its message. If the engine itself fails a call (it
-throws), the editor runs it and engine sessions stop for the rest of the page. In shadow mode the answer's
-unchanged tracks are checked to be the editor's unchanged objects.
-
-`node scripts/engine-edit-shadow.mjs --own [--file <document.json> | --import <file.piv>]`
-runs the same interactions twice, with the editor alone and with the engine owning, and
-compares the documents, the history labels and the selection after them and after undoing
-everything. Numbers may differ in their last digits ([D16](decisions/0016-v8-exact-math.md)):
-the engine computes with Node's `Math`, the browser's editor with Chromium's. Measured
-2026-10-03, headless Chromium:
-
-| Document | Calls adopted from the engine | Same as the editor alone | Numbers differing in last digits |
-| --- | ---: | --- | ---: |
-| the document the app starts with | 54 | yes (32,872 bytes, 13 history entries) | 31 |
-| startup-pinned | 65 | yes | 43 |
-| followers | 65 | yes | 76 |
-| joined (four joined figures with IK) | 39 | yes | 38 |
-| joined-chain | 54 | yes | 50 |
-| sheet-layers | 54 | yes | 80 |
-| sheet-movieclip-loose | 54 | yes | 28 |
-| AyameDemo.piv, imported (48.7 MB document) | 55 | yes (10 history entries) | 996 |
-
-Two adoption defects were found this way and fixed: on AyameDemo the committed draft the
-editor keeps on show was dropped, so the next gesture began from a fresh evaluation
-(another figure slot and keyframe index); on joined-chain the kept draft lacked the joined
-roots the commit refreshes, so the next gesture began with a joined figure 13 px away.
-
-### Which classes the engine edits by default
-
-For `figures`, `movieclips` and `channels`, the full paired cost gate is
-`C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
-eligible JS fallback and failed attempts once; `J` is editor-alone cost and
-`N = min(candidate.report.calls, editorAlone.report.calls)` for the complete timed
-workload, not only eligible calls. Full report counts may differ; eligible method
-counts and exact document/history/selection/full undo must match. A matching class
-checkpoint and positive actual default pose/move/commit adoption are also required.
-D13 is unchanged. `figures` is owned by default since 2026-10-05, alongside
-`large figures` and `3d`. Its three B14 excess averages are 0.047679/0.067983/0.071809 ms
-per conservative full timed call, passing the absolute-average arm. The committed
-engine checkpoint and final focused gate checks pass. Actual default startup/rig/joined
-runs each report31 owned/15 compared/46 calls with positive Native pose/move/commit
-clocks and exact document/history/selection/full undo; their short timings are admission
-proof only. Movieclips is owned by default on both original layer-sheet inputs. Full costs
-246.210/228.600 and 202.875/176.945 ms candidate/JS pass the same rule at
-0.042332/0.076041 ms excess over 416/341 conservative full calls. The committed
-`379c2dbb` engine checkpoint and 87 focused final gate tests/Main check pass. Actual
-default sheet/loose runs report 18/31 owned and positive Native pose/move/commit clocks
-with exact document/history/selection/full undo; method counts include fallback and
-short smoke timings prove admission only. Playback comparison, worker-only
-conversion/Bake and native/source/origin exclusions remain unchanged. The prior channels full measurement costs 226.105/179.890 ms and 0.133569 ms
-excess per 346 paired full calls fail both user arms despite exact behavior/accounting.
-The measured gap to the per-call arm is 11.615 ms. Focused 129 JS/17 recordings/303
-calls and the matching 39d9 engine checkpoint pass (849 native, two existing ignored,
-64 stages/60 unchanged generators/358 containers). The class patch is unapplied,
-default admission has not run, and native/source/origin exclusions are unchanged. The verified source-sampling fix shares successful imported frames once per source time
-within one layer-sheet sampling call, using the original sampler across scene, camera,
-layers and mixed imported endpoints. The lookup is cleared per call and failed reads
-are not retained; focused count/output controls pass 3→1. This targets channels cost,
-but the fresh full run still fails at 233.630/174.045 ms and 0.172211 ms excess per full
-call, with a 24.985 ms gap to the per-call arm. Exact behavior matches; no causal total
-speed, class opening, default, new checkpoint or API/stored-math/public-state claim.
-The same-layer guard skips only an identical raw active-layer string before report
-copy-on-write. Selection and restoration keep their current preparation/evaluated
-frame; missing, null, nonstring and different IDs retain original writes, events,
-results and history. Both new controls and 226 Rust tests / 53 recordings / 2,060
-exact calls pass, alongside 125 JS tests and Main check. Fresh full cost remains above
-the rule at 224.030/181.885 ms and 0.121806 ms excess/call, leaving 7.545 ms. Channels
-stays closed; no matching new checkpoint/default or causal speed claim. Public APIs
-and stored arithmetic are unchanged.
-
-Source cleanup now ends before history sheet scans when current references or
-flattened history capture IDs already cover every generated source. Otherwise the
-original retention readers and removal order run. Undo/redo, imported sources, frame
-identity and history behavior are unchanged. Both recorded controls and 92 focused
-Rust tests pass, as do 53 recordings / 2,060 exact calls, 125 JS tests and Main check.
-Fresh full cost is 240.965/176.585 ms with 0.186069 ms excess per call, leaving
-29.780 ms to the per-call arm; both cost arms fail. Channels stays closed, with no
-matching new checkpoint/default or causal speed claim. APIs, schema and stored
-arithmetic are unchanged; mobile needs no adaptation.
-
-Successful isolated one-shot move adoption now publishes the original moved authored
-copy-on-write frame and preserves ready or pending scoped geometry. Complex/joined
-fallback, events, document/history/selection/full undo and Rust/Wasm APIs are unchanged.
-All 128 JS tests, Main check and seven recordings / 158 calls pass. The
-original full paired cost is 369.790/352.875 ms, passing both user arms at 4.793% and
-0.048887 ms excess per call. This loaded result establishes no causal speed gain;
-channels remains closed pending matching checkpoint and actual default adoption.
-Channels is owned by default after its original full paired cost, matching committed
-c4c580de engine checkpoint and actual cold default adoption pass. Full cost is
-369.790/352.875 ms, passing both user arms at 4.793% and 0.048887 ms excess per full
-call. The checkpoint passes 856 native tests (two existing ignored), 64 stages and
-358 containers; 132 final JS tests, four recordings / 94 exact calls and Main check
-pass. Cold default classes mode reports 31 owned / 15 compared / 46 calls, positive
-Native pose/move/commit clocks and exact document/history/selection/full undo.
-Method counts include fallback; its short timings prove admission only. Native/source/
-origin exclusions, APIs, stored arithmetic, shipping and D13 are unchanged.
-Historical measurements below retain their original
-rule and outcomes.
-
-`large figures` since 2026-10-03. `node scripts/engine-edit-shadow.mjs --own --default`
-runs the shadow driver's interactions with the editor alone, then with the app as users get
-it; on large figure documents the engine owned every call it could and cost less in total,
-in every run (headless Chromium, the machine under other load, two rounds):
-
-| Document | Calls owned | Editor alone | Engine owning, adoption included | Same document, history and selection |
-| --- | ---: | ---: | ---: | --- |
-| 20 figures of 200 segments | 54 | 163.2 ms, 213.6 ms | 100.1 ms, 175.8 ms | yes |
-| AyameDemo.piv (537 figure definitions, 6,854 segments) | 54 | 946.7 ms, 1,171.2 ms | 757.7 ms, 801.8 ms | yes |
-
-**Earlier figures measurements (class closed at capture):**
-
-`figures` stays with the editor: on the document the app starts with, the same run cost
-87.8 ms owned against 76.8 ms alone, a pose about 0.31 ms in the engine plus 0.49 ms to adopt
-its answer against the editor's 0.58 ms for the whole call (medians of 48 in the app; the
-answer crosses the JSON boundary and the editor's own events and caches still run). Warmed
-up (`--warm`: the interactions once untimed, then timed, since the browser optimizes hot
-WebAssembly after its first calls: session calls measured in one page went from 0.24 to
-0.09–0.13 ms a pose), small figure documents still cost more owned: the start document 66.1
-against 50.5 ms, rig 123.3 against 50.9 ms, joined-chain 75.1 against 46.1 ms (startup-pinned
-95.3 against 260.2 ms). The editor computes a pose of a ten-segment figure in about 0.07 ms;
-the engine's call (0.25–0.35 ms in the app) and the adoption of its answer cannot get below
-that while both editors keep their own bookkeeping, so small documents wait for the engine
-to own the document outright (S5, phases 2 and 3). Running the animation while calling the
-session did not slow the calls (the engine's worker threads do not contend with it).
-
-`3d` flipped on 2026-10-04: with every 3D command and gesture the shadow driver drives ported,
-owned editing was the same as the editor alone and cost less on each 3D document measured
-(`node scripts/engine-edit-shadow.mjs --own --warm --exact-math`, one run each, the machine
-under other load):
-
-| Document | Calls owned | Editor alone | Engine owning, adoption included |
-| --- | ---: | ---: | ---: |
-| a planted 3D leg (ik/spatial) | 97 | 217.6 ms | 101.5 ms |
-| Kung-Fu Master (81 segments, 3D, IK; imported) | 100 | 510.1 ms | 228.9 ms |
-| Hand-Right (3D hand; imported) | 110 | 513.4 ms | 480.3 ms |
-
-With the browser's own `Math` instead of the engine's, an owned 3D pose can differ from the
-editor's by more than its last digits (one angle of the planted leg by 4.6e-6 rad after a
-drag): the 3D solvers iterate on values the browser rounds differently (D16); the engine's
-answer is the same in every browser. `movieclips` stays with the editor: every call the driver
-makes on the movieclip documents now runs in the engine (229 of 229 the same), but these small
-documents cost more owned, as small figure documents do (sheet-movieclip 433.9 ms against
-299.4, sheet-movieclip-loose 528.3 against 337.4, owned the same as the editor alone).
-
-What the same calls cost on AyameDemo.piv (one run each; the editor's time from a shadow
-run, the engine's from an owned run, adoption included). The first measurement found
-`poseJoint` at 200.6 ms; the causes were fixed: a rotation's targets were found with list
-membership tests (quadratic in the figure's 515 segments) and on every call, each angle was
-changed by unpacking and repacking the whole angle array, every evaluation scanned the
-document for 3D, and every call drew the whole frame. Sessions now also start from the
-mirror's prepared document instead of converting it again.
-
-| Call | Calls | Editor | Engine | Adoption |
-| --- | ---: | ---: | ---: | ---: |
-| `poseJoint` (pointer drags) | 36 | 25.3 ms | 56.1 ms | 15.9 ms |
-| `moveSelection` | 3 | 10.2 ms | 17.0 ms | 8.0 ms |
-| `sheetInsertFrames` | 1 | 393.3 ms | 359.6 ms | 70.8 ms |
-| `duplicateFigure`, `joinTo`, `unjoinFigure`, `deleteSelection` | 4 | 365.9 ms | about 100 ms | about 40 ms |
-
-All owned calls together: 899 ms against the editor's 898 ms. Those whole-run totals mix in
-the session's first call (about 6 ms once, while the browser compiles the engine's code to
-its fast tier) and the load of the machine, so the costs were then measured call by call.
-
-`node scripts/engine-edit-cost.mjs <file>...` (headless Chromium, the same document,
-figure and joint): four drags of 15 pointer moves, the first not counted, through an edit
-session as engine-owned editing calls it (the answer parsed) and through the editor (the
-time its change listeners take subtracted: both pay it). Adopting a pose answer adds about
-0.05 ms. Medians, 2026-10-03, after two fixes found this way: publishing a gesture matched
-each key of a layer against every earlier key (quadratic in a layer's keys), and the
-document's typed views re-read every style overlay after each commit (AyameDemo's commit
-was 7.7 ms in WebAssembly, and natively 12.7 to 13.0 ms against 1.5 to 1.7 ms after, in
-interleaved runs of `styk edit-bench`):
-
-| Document | Class | Pose: editor | Pose: engine | Commit: editor | Commit: engine |
-| --- | --- | ---: | ---: | ---: | ---: |
-| the document the app starts with (10 segments, unpinned IK) | figures | 0.325 ms | 0.16 ms | 0.81 ms | 0.22 ms |
-| rig (connectors, angle locks) | figures | 0.19 ms | 0.065 ms | 0.58 ms | 0.115 ms |
-| joined-chain (three joined figures) | figures | 0.22 ms | 0.075 ms | 0.68 ms | 0.185 ms |
-| 20 figures of 200 segments | figures | 0.36 ms | 0.23 ms | 4.02 ms | 1.915 ms |
-| AyameDemo.piv (105 figures, largest 699 segments) | figures | 1.59 ms | 0.835 ms | 3.1 ms | 2.69 ms |
-| a planted 3D leg (ik/spatial) | 3d | 0.855 ms | 0.895 ms | 0.585 ms | 0.195 ms |
-| Kung-Fu Master (81 segments, 3D, IK) | 3d | 1.66 ms | 0.74 ms | 0.5 ms | 0.25 ms |
-| Hand-and-Face Talk and React (6 figures) | 3d | 1.985 ms | 1.31 ms | 0.055 ms | 0.115 ms |
-
-Figures of 10 to 800 segments (synthetic trees, one figure) measured the same way: poses
-0.07 to 0.235 ms in the engine against 0.185 to 0.93 ms, commits 0.11 to 0.44 ms against
-0.52 to 1.36 ms.
+not handed. In the app the owner hands the session a few fresh values of each kind with every
+call (`pool` in `src/engine/engine-owner.mjs`) and keeps the ones the call did not take.
 
 ## What a gesture costs in the engine
 
@@ -945,10 +515,10 @@ report. Native build, one run each while the machine was busy with other work
 | Undo | 6.1 ms | 5.2 ms |
 
 The same tool on AyameDemo as the app holds it after import (its layer sheet, 105 figures
-on show, uid 9043 with 515 segments at tick 734), after the fixes above: a joint-pose step
-median 0.39 ms (8.42 ms before: also the drag's cached rotation targets, as the editor's
-`_drag.rotationTargets`, and the geometry of the posed figure and those it hangs from only,
-`geometry::build_only`), a move step 0.02 ms, commits 5.0–9.0 ms, undo 2.1 ms.
+on show, uid 9043 with 515 segments at tick 734): a joint-pose step median 0.39 ms (8.42 ms
+before the drag cached its rotation targets, as the editor's `_drag.rotationTargets`, and built
+the geometry of the posed figure and those it hangs from only, `geometry::build_only`), a move
+step 0.02 ms, commits 5.0–9.0 ms, undo 2.1 ms.
 
 Not measured: WebAssembly, and the boundary (arguments in, changed records out).
 
@@ -962,6 +532,12 @@ differed for 0.8 % of sines and 0.7 % of cosines, in fdlibm's cosine kernel, and
 `hypot`; on 2.8 million inputs (random angles, tiny and huge values up to 1e308, every
 n·π/2 up to 64 and its neighbours, special values) it returned V8's bits every time.
 `engine/tools/math-fixtures.mjs` records the regression set its tests use.
+
+`Math.pow` and `**` are `styk_math::pow`, V8's own fdlibm-based `pow`. Node 24 computes
+them with the platform's by default (Windows and Linux differ for 0.05 % of inputs), so
+every tool that records the editor imports `engine/tools/v8-pin.mjs` first, which starts
+V8's own (`--no-use-std-math-pow`) and fails if Node does not run it. A tool that runs
+the editor must import it before anything else, and so must a child process it starts.
 
 ## Connected-figure selection in the Rust command API (2026-10-23)
 
@@ -1000,8 +576,7 @@ effect-model modules have no callers and are deleted.
 
 Decision [D19](decisions/0019-engine-owns-the-document.md). One `styk-edit` session per
 open document holds the document and its history; `src/engine/engine-owner.mjs` installs
-it on the editor (`?engineOwner=on` while it is verified in the app; the shadow above is
-the default until then).
+it on the editor, for every document.
 
 - **Calls.** Every public editor method except queries, view calls (selecting, seeking)
   and lifecycle runs in the session. Its answer (`patch: true`) carries the document patch
@@ -1020,41 +595,121 @@ the default until then).
   (figures, order and fields that differ from the frame the edit began on) laid over the
   edit's frame, as `_sheetPropertyPreview`. Ending an edit that is not open answers false
   without asking the session.
-- **Refusals.** A call the session refuses (`Unported`), a gesture whose live state the
-  interface reads from the editor (motion paths, figure handles, rigs, camera drags, frame
-  drafts) and an error the session raised without changing anything run in the editor on the
-  read view. If the session holds a property or effect-clip edit then, the edit becomes the
-  editor's own first (`@dropEdits`: the session forgets it, the mirrored record loses
-  `engine`), so the editor's code ends or amends it as it would have its own. What they recorded becomes
-  session history entries of kind `External` (`external.rs`): the session keeps their place,
+- **Motion-path edits.** `beginMotionPathEdit`…`setMotionPathFalloff` run in the session. Every
+  answer carries `motionPath` (`null`, or how the open edit stands: whether it has moved and the
+  ticks its trail changes, `range`, and a falloff's writes that moved). The call that opens it adds
+  what stays fixed (the target, the tick, the falloff and its writes, and the pinned figures of
+  the grabbed frame), and a pointer move that changed the trail adds `report`: the operations
+  that turn the document into the report the gesture shows (a sheet plan's changed tracks and
+  pose sources; the posed native frames). The owner shows them as the editor's own `_drag`
+  (marked `engine`, with `motionPath`, `target`, `falloff`, `range`, and `report` and
+  `display` built when read: the document with those operations, and the playhead's pose under
+  it, which the stage draws), so the trails (`motionPathReport()`), the arc
+  (`motionPathFalloff()`), the stage and the pinned-origin modifier read what they read from the
+  editor's session. Ending the gesture is the session's too (`commitDrag`,
+  `cancelDrag` and a seek end it). A pointer move that is rejected (a pointer that is not finite,
+  a stretch the editor refuses) raises the error and leaves the edit open, as in the editor.
+- **Figure-handle, Handle Edit Mode and segment-value gestures.** `beginFigureHandleDrag`…`cancelFigureHandleDrag`,
+  `beginHandleEditDrag`…`cancelHandleEditDrag`, `beginSegmentValueEdit` and `setSegmentValues` run in the
+  session, as drags the owner already mirrors (`gesture`: the draft, `_drag` with the figures it took).
+  Every answer of an open one carries `handleGesture` (`null` between gestures): `figureHandle` (the figure,
+  the toolbar's `rotate` and `scale` it began with, the pivot `origin`, the `distance` the scale is measured
+  from, and where the turns stand: `lastAngle` and `rotation`, summed across half turns), `handleEdit` (the figure
+  and handle being edited, where it began, whether a bend is edited) and `segmentValueOptions`. The owner shows
+  them as `_drag.figureHandle`, `_drag.handleEdit` and `_drag.segmentValueOptions`: the stage's pivot marker reads
+  `figureHandle.transform.origin`, and the segment-values dialog keeps the gesture it began (`_drag` stays one
+  object) and reads the segment's values from the draft. Ctrl and Shift come with each move and are not
+  gesture state.
+- **Rig edits and camera drags.** `beginRigDrag`…`cancelRigDrag` and `beginCameraDrag`…`cancelCameraDrag`
+  run in the session. A rig edit is a pose gesture to the interface: it reads the `_drag` the owner
+  mirrors (`gesture`: the figures it took, the draft on a layer sheet, the keyframe itself on a native
+  timeline), and the answer's `drag` says `rig: true`. A camera drag takes no figure (`camera: true`);
+  the frame it shows is the frame it began on with the camera it moves, so a pointer move answers only
+  that camera (`cameraPreview`, not the frame) and the owner lays it over the frame on show as
+  `_sheetPropertyPreview`. A joint position that is not finite, or any call the session answers with an
+  error that leaves the gesture open, raises the error and the gesture stays open.
+- **Duplicate drag and the tweener.** `beginDuplicateDrag` duplicates the selected figures whole and
+  begins a translation gesture on the copies (`styk-edit/src/duplicate_drag.rs`): the copies are recorded
+  into the gesture, not into history; `commitDrag` (or `finishDuplicateDrag(true)`) records them and the
+  move as one `movieclip-batch` entry labelled `Duplicate figures`, `cancelDrag` undoes the copies and
+  records nothing. `beginTween` plans a pose gesture between the keys either side of the playhead
+  (`tweener.rs`: a two-pose document per blend, sampled with the evaluator's native interval) and
+  `updateTween(amount, mode)` poses the draft from it; the gesture keys the playhead on the layers it posed
+  when it ends (`Authored.key_at_playhead`), even where nothing changed; `push` reflects the perspective and
+  proportions of a 3D figure around the pose it began with as it does its root and angles. Both show on the editor as an
+  ordinary mirrored pose gesture, and both run on documents with animation origins (`origin::gesture_call`): a
+  tweened figure keeps its pivot with its pose and a copy finds its pivot again where it stands (the figures must have
+  an origin the typed owner decodes).
+- **One gesture after another.** Every gesture the session opens has a `serial` (`drag.serial`, which the owner keeps
+  on `_drag`). A call that ends one gesture and begins the next (`beginDuplicateDrag` over a duplicate drag,
+  `beginRigDrag` over a move) answers `draftBase`: the new draft as its difference from the draft on show, because
+  figures the gestures did not take (joined ones the commit moved) changed with the first. The owner builds the new
+  `_drag` and draft from it instead of carrying the old ones on.
+- **Grouped edits.** `movieclipBatch(label, operation)` is the owner's: it asks the session to begin a
+  batch (`beginBatch`), runs `operation` (whose calls the session runs one by one into the batch), and ends
+  it (`endBatch`: one history entry) or, if `operation` throws, aborts it (`abortBatch`: what it did is
+  undone, the error raised). The batch calls are not gated by the document's features.
+- **Working frames.** The interface never starts one on a layer sheet. `disableFrameDrafts` (the
+  timeline mounting in Advanced mode) commits what is open and converts a draft a file was saved with when
+  it is an Update (`frame_draft.rs`); `beginFrameDraftPreview` and `endFrameDraftPreview` answer false.
+  Starting, adding, updating and discarding a working frame, the editor's low-level API for native timelines, is
+  refused.
+- **Audio.** Adding tracks, importing, splitting, duplicating, copying, cutting and pasting clips take
+  their identities from the draws (a call that makes more than the pool holds is asked again with more) and
+  `rippleAudio` cuts through clips; the `audioRipple` option travels with the view, and frame inserts and
+  removals of every layer then ripple the audio inside one entry. The interface asks only whether an
+  audio clip was copied (`editor._audioClipboard`), which the owner marks.
+- **Errors.** A session error carries its message key and, when the message names values (`Unlock {name}
+  before editing it`, `{label} must be finite`), their JSON (`errorParams`; `invalid_with` in Rust: a text,
+  `{"@label": text}` for a field label, `{"@motionParameter": …}`, `{"@vfxParameter": …}`). The owner raises
+  the editor's own error from them. A message that needs a value the engine does not name yet says that a value is
+  not valid (`errors.engineOwner.invalidValue`). A call the session refuses (`Unported`: a document it does
+  not edit) raises `errors.engineOwner.notSupported` and never runs in the editor.
+- **What still runs in the editor.** A call the session has no command for at all (it answers `unported` with the call's own
+  name) runs in the JavaScript editor on the read view (the drawing commits, the layer and background commands, the
+  bakes, inbetweens, the frame clipboard, disconnecting and combining figures, 3D rig values); `report.editor` counts
+  them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
   history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and
-  the changed records are written back. Edits other modules make in place or through
-  `editor._record` are written back the same way before the next call.
-- **History.** Undo/redo are the session's. The editor's stacks mirror the session's
-  (`depths`): its own commands for external entries, placeholders for native ones, so code
+  the changed records are written back. A session gesture or edit still open when such a call is made is committed first.
+  Edits other modules make in place (the camera-motion and parallax previews, the inspector's native property
+  tokens) or through `editor._record` are written back the same way before the next call, and editing the inside of a
+  movieclip (`enterMovieclip`) is the editor's alone until it is left. An entry the editor records is always written
+  back, even when the editor's own byte limit retired older entries as it landed (a movieclip's whole document in a
+  large project outweighs it): the session retires by its own weights and the editor's stacks follow it.
+- **History.** Undo/redo are the session's. Undo ends a gesture that is open first; redo does too for a motion-path edit,
+  a rig edit or a camera drag (the session does not redo under them) and leaves any other gesture open under the entry
+  it applies, as the editor does. The editor's stacks
+  mirror the session's (`depths`): its own commands for external entries, placeholders for native ones, so code
   that reads or amends the entry on top keeps working.
-- **Start.** In the app the session starts on the stage's mirrored document (it reuses the
-  stage's prepared views); `@shape` then brings key order and what the mirror leaves out
-  (audio) to the read view exactly. History the editor recorded before the session started
-  is taken over with `@externalStacks`. Sessions of documents open in other tabs are kept.
+- **Start.** The session starts when the document opens, on the tree and typed views the engine
+  opened it with (`OpenedDocument.start_session`), the same tree the editor's read view was built
+  from, so there is no history to take over and nothing to bring to the read view. It becomes the
+  engine's document when the editor publishes it (`EditSession.activate`); the engine publishes each
+  change it makes ([document.md](document.md#opening-a-document)). Sessions of documents open in other
+  tabs are kept.
 - **Legacy pose caches.** Pivot imports carry `runtime_segments` on every pose; the range
   operations materialize lengths and bends from it before dropping it, as the editor does.
 
-Checks: `tests/engine-owner.test.mjs` replays every recorded tape (325) on the editor alone
-and on an owned editor, from the exact document and from the mirror (there with the legacy
-pose cache on every pose), comparing document,
-selection, history and the frame on show after every step and after undoing everything,
-with the session's document compared to the read view after every call.
-`node scripts/engine-app-tape.mjs --owner <tape…>` does the same in the running app, and
-`node scripts/engine-owner-cost.mjs <file>` measures the editing cost rule.
+Checks: `tests/engine-owner.test.mjs` replays every recorded tape (503 of the 507 that the editor ran
+on its own views; the four with `@native` token steps are left out) on an owned editor, as the app has it (the document
+opened on the engine), against `engine/tests/edit/*.reference.json`, and with the legacy pose cache on every pose (where
+only the session's document is compared with the read view): the
+document, selection, history labels and flags, counters, change events (without the playhead fields and the
+flags that are off), the message of every error and the probes the tapes take of the editor's own views (the
+frame on show, the motion-path display, the selection state) after every step, with the session's document
+compared to the read view after every call. Thirteen tapes end where the engine refuses what the editor did next
+(`expectedFrontiers`: a bounds callback other than the app's, native documents with property channels); none needs
+the editor to run a call. `tests/engine-owner-gestures.test.mjs` states what the interface reads of the duplicate
+drag, the tweener, grouped edits, working frames, audio and the calls that run in the editor.
 Known differences: the frame on show may lack the derived `object_count` the editor's
-caches sometimes keep, and the internal `layerRevision` cache key can differ by one around
-source pruning; neither is visible.
+caches sometimes keep, the internal `layerRevision` cache key can differ by one around
+source pruning, and the display frame of a saved origin motion on a native document differs from the editor's
+by an ulp; none is visible. A redo under an open motion-path edit, rig edit or camera drag ends the gesture first (the editor left it open). A
+message for an error whose values the engine does not name yet is the generic one.
 
-Still to come: the frame on show, handles and picking as engine queries (phase 2), the
-remaining refusals ported, the stage committing the session's tree instead of the mirror,
-and opening and saving through `styk-formats` and `styk-piv` directly.
+Still to come: the frame on show, handles and picking as engine queries (phase 2), the commands that still run in
+the editor ported (and their history entries with them), and saving through `styk-formats` and `styk-piv` directly.
 
 ## Invariants
 

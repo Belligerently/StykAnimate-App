@@ -5,7 +5,7 @@ import path from 'node:path';
 import {repo,emptyDocument,createObject,createFrame,open} from './fixture-kit.mjs';
 import {createVfx,activeVfx,vfxStack} from '../../src/vfx.mjs';
 import {exportFrameGeometry} from '../../src/export-frame-core.mjs';
-import {hasDrawableVfx} from '../../src/vfx-canvas.mjs';
+import {hasDrawableVfx} from '../../src/vfx-drawable.mjs';
 import {generatorBatchFor} from '../../src/vfx-generator-frame.mjs';
 import {evaluateParticle} from '../../src/vfx-generators.mjs';
 let counter=0;

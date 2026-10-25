@@ -63,10 +63,10 @@ stroke worker returns, every undo record, tile, PNG, blob and chunk is byte-iden
 - Linear memory never shrinks: a worker replaces an instance that grew past 256 MiB after a
   job (between strokes for the stroke worker), so an idle worker cannot keep the peak of its
   largest job, as JavaScript's collector would not.
-- `x ** y` with exponents other than 1, 2 and 0.5 (custom pressure-size and opacity curves)
-  uses the platform's `pow`: glibc natively (what Node uses on Linux), the `libm` crate's in
-  WebAssembly. Browsers already disagree among themselves here (D16); the fixtures compare
-  natively.
+- `x ** y` (custom pressure-size and opacity curves) is `styk_math::pow`, V8's own `pow`,
+  natively and in WebAssembly (D16); the fixtures are recorded with Node pinned to it
+  (`engine/tools/v8-pin.mjs`), so they replay on every platform. A browser's `**` is the
+  platform's and can differ in the last digit.
 - The JavaScript modules remain the oracle and the fallback until nothing calls them.
   The authoritative store (`TileStore` on the interface thread), its memory accounting, the
   renderer's presenters and the GPU brush (WGSL on the JavaScript renderer's device) stay

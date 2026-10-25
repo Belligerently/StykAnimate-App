@@ -80,3 +80,7 @@ for (const kind of ['locked', 'origin']) {
     ['setLayerVisible', layer, false], ['addSpriteSegment', sprite()], ['setLayerVisible', layer, true], ['undo'], ['redo'],
   ] : [['@select', 1, 2], ['addSpriteSegment', sprite()], ['undo'], ['redo']]);
 }
+{
+  const e = open(fixture()); e.select(1, 2); e.setOrigin(33);
+  write('sprite-segment-origin-native', e.serialize(), {}, [['@select', 1, 2], ['addSpriteSegment', sprite()], ['undo'], ['redo']]);
+}

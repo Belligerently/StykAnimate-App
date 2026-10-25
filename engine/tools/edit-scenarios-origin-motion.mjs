@@ -1,9 +1,10 @@
 // Remote-time origin gestures, recorded before their command admission opens.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {open} from './fixture-kit.mjs';
 import {buildGeometry} from '../../src/pivot/geometry.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
 const shown = editor => JSON.stringify(snapshotPoseFrame(editor.evaluatedFrame));

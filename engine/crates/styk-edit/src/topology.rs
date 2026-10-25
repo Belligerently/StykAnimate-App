@@ -1031,16 +1031,16 @@ impl Editor {
         if count + list.len() > MAX_SEGMENTS {
             return Err(invalid("errors.editorRigConstraints.figureSegmentCapacityReached"));
         }
-        let check = |value: Option<&Value>| match value {
+        let check = |value: Option<&Value>, label: &str| match value {
             Some(Value::Num(n)) if n.is_finite() => Ok(*n),
-            _ => Err(invalid("errors.editorCamera.mustBeFinite")),
+            _ => Err(crate::transform::not_finite(label)),
         };
         let mut prepared = Vec::new();
         for spec in &list {
             let field = |key: &str| spec.get(key);
-            let length = match field("length") { None => 50.0, some => check(some)? };
-            let angle = match field("angle") { None => 0.0, some => check(some)? };
-            let thickness = match field("thickness") { None => None, some => Some(check(some)?) };
+            let length = match field("length") { None => 50.0, some => check(some, "Segment length")? };
+            let angle = match field("angle") { None => 0.0, some => check(some, "Segment angle")? };
+            let thickness = match field("thickness") { None => None, some => Some(check(some, "Segment thickness")?) };
             if length < 0.0 || thickness.is_some_and(|t| t < 0.0) {
                 return Err(invalid("errors.editor.segmentLengthAndThicknessCannotBeNegative"));
             }
@@ -1706,7 +1706,7 @@ impl Editor {
         let fraction = match options.get("fraction") {
             None => 0.5,
             Some(Value::Num(n)) if n.is_finite() => *n,
-            Some(_) => return Err(invalid("errors.editorBuilderBranch.mustBeAFiniteNumberBetweenAnd")),
+            Some(_) => return Err(crate::out_of_range("errors.editorBuilderBranch.mustBeAFiniteNumberBetweenAnd", "Split fraction", ("min", "max"), (f64::NEG_INFINITY, f64::INFINITY))),
         };
         if fraction <= 0.0 || fraction >= 1.0 {
             return Err(invalid("errors.editorBuilderBranch.splitFractionMustBeBetweenZeroAndOne"));
@@ -1885,7 +1885,7 @@ impl Editor {
         let offset = match options.get("angleOffset") {
             None => 0.0,
             Some(Value::Num(n)) if n.is_finite() => *n,
-            Some(_) => return Err(invalid("errors.editorBuilder.mustBeAFiniteNumberBetweenAnd")),
+            Some(_) => return Err(crate::out_of_range("errors.editorBuilder.mustBeAFiniteNumberBetweenAnd", "Branch rotation", ("minimum", "maximum"), (f64::NEG_INFINITY, f64::INFINITY))),
         };
         let flag = |key: &str| match options.get(key) {
             None => Ok(false),
@@ -2230,13 +2230,13 @@ impl Editor {
             Some(Value::Null) => return Err(EditError::Unported("connector options that are null".into())),
             Some(o) => o.clone(),
         };
-        let range = |value: Option<&Value>, fallback: f64, min: f64, max: f64| match value {
+        let range = |value: Option<&Value>, label: &str, fallback: f64, min: f64, max: f64| match value {
             None => Ok(fallback),
             Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max => Ok(*n),
-            Some(_) => Err(invalid("errors.cameraMotion.mustBeBetweenAnd")),
+            Some(_) => Err(crate::out_of_range("errors.cameraMotion.mustBeBetweenAnd", label, ("min", "max"), (min, max))),
         };
-        let position = range(options.get("position"), 0.5, 0.0, 1.0)?;
-        let thickness = range(options.get("thickness"), 6.0, 0.0, 1e6)?;
+        let position = range(options.get("position"), "Slide position", 0.5, 0.0, 1.0)?;
+        let thickness = range(options.get("thickness"), "Thickness", 6.0, 0.0, 1e6)?;
         let (start, end) = (start.cloned().unwrap_or(Value::Null), end.cloned().unwrap_or(Value::Null));
         let (prepared, frame, scene) = self.evaluate()?;
         let evaluated = frame.objects.iter().find(|o| Some(o.uid) == uid(&object));

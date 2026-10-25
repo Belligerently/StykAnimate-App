@@ -7,17 +7,17 @@
 import {readFileSync} from 'node:fs';
 import {repo, repoUrl, open} from './fixture-kit.mjs';
 
-const {decodeDocument, normalizeDecodedDocument} = await import(`${repoUrl}/src/native-container.mjs`);
+const {openDocument} = await import(`${repoUrl}/tests/support/native-files.mjs`);
 const {activeVfx, vfxStack} = await import(`${repoUrl}/src/vfx.mjs`);
 
 const {buildGeometry} = await import(`${repoUrl}/src/pivot/geometry.mjs`);
 const {connectedVfxGeometry} = await import(`${repoUrl}/src/vfx-connected.mjs`);
 const {objectBounds} = await import(`${repoUrl}/src/renderer-geometry.mjs`);
-const {drawableVfxPadding, hasDrawableVfx} = await import(`${repoUrl}/src/vfx-canvas.mjs`);
+const {drawableVfxPadding, hasDrawableVfx} = await import(`${repoUrl}/src/vfx-drawable.mjs`);
 
 const [file, tick = '0'] = process.argv.slice(2);
 const kind = /\.(styk|stkz|stykmov)$/i.exec(file)?.[1].toLowerCase();
-const document = kind ? normalizeDecodedDocument((await decodeDocument(new Uint8Array(readFileSync(file)), kind)).document, kind) : JSON.parse(readFileSync(file, 'utf8'));
+const document = kind ? await openDocument(new Uint8Array(readFileSync(file)), kind, {verifySource: false}) : JSON.parse(readFileSync(file, 'utf8'));
 const editor = open(document);
 editor.seek(Number(tick));
 const frame = editor.evaluatedFrame || editor.frame, report = editor.report;

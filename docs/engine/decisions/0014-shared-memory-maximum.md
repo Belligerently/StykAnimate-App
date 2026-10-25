@@ -17,8 +17,7 @@ The page creates the memory itself (`createEngineMemory` in
 declares for the memory it imports, read from the module's import section
 (`declaredMemoryPages` in `src/engine/engine-memory.mjs`): that size grows with
 the module's static data, and a smaller memory does not link, which leaves the
-page on the JavaScript renderer with only a console warning. `localStorage['stykanimate.engine.memory']`
-(MiB) forces a maximum for testing. A memory of 1 GiB or less budgets the
+page on the JavaScript renderer with only a console warning. A memory of 1 GiB or less budgets the
 frame cache like a 2 GiB device (48 MiB). If no maximum can be reserved the
 engine does not start and the JavaScript renderer draws, as without the engine
 build.
@@ -35,7 +34,31 @@ whose limits differ from desktop WebKit.
 ## Consequences
 
 The module's declared maximum stays 2 GiB (`scripts/engine-build.mjs`); the
-page may choose less. An allocation beyond the chosen maximum traps the
-module; recovering from that (leaving the engine for the session without
-blocking the interface) is not implemented yet and is listed in the plan's
-open problems, as is verification on real Apple devices.
+page may choose less. The page also tells the engine the maximum it got
+(`new EngineHandle(deviceMemory, maximumBytes)`), and the allocator keeps the last
+sixteenth of it for what nothing can refuse: work that cannot be held is refused
+with a message instead of the module trapping, and the caches that held the memory
+are bounded ([../memory.md](../memory.md)). An allocation nothing checks that goes
+beyond the maximum still traps the module; recovering from that (leaving the engine
+for the session without blocking the interface) is not implemented, nor is
+verification on real Apple devices.
+
+## 4 GiB on the desktop (2026-10-24)
+
+Not taken. The trap in the gate (tdd2 uriel nemesis, 41 MB, then a movieclip edit; a
+second large document opened beside a shown one) was not a lack of address space:
+decoded pictures queued without a bound (759 MiB), the editor session's typed-view cache
+never released a record, and each undo and redo added the document's pictures to the
+image table again (70 to 110 MiB each). With those bounded, in the desktop app:
+tdd2 holds 183 MiB after opening (before: 942, 1,576 MiB of heap); tdd2, svr_uriel and
+testingupload.styk open in tabs of one app, each posed, edited with a movieclip and an
+effect, undone and redone, peak at 1,107 MiB of linear memory and 899 MiB handed out
+(of 1,920 MiB below the reserve). Opening the three twice more, one after the other, keeps
+six large documents open at 1,298 MiB handed out; the seventh open (tdd2 again) is refused
+with "There is not enough memory for this. Close other projects…" (`errors.engine.outOfMemory`),
+the app plays on, and a smaller document (svr_uriel) still opens after it, at 2,020 MiB of
+linear memory and 1,496 MiB handed out, with no page error. One large document, or two,
+leave more than 1 GiB. A 4 GiB maximum would double the address space every page reserves
+for no document the measurements need, and a pointer above 2 GiB crossing to JavaScript has
+to be unsigned everywhere; it can be reconsidered if a document is found whose opened
+state alone nears 1 GiB.

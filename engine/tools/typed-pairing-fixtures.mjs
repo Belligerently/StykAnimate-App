@@ -1,11 +1,11 @@
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import path from 'node:path';
-import {repo,open,documentOf,limb,createObject,createFrame} from './fixture-kit.mjs';
+import {repo,repoUrl,open,documentOf,limb,createObject,createFrame} from './fixture-kit.mjs';
 import {deflateSync} from 'node:zlib';
 import assert from 'node:assert/strict';
 const out=process.argv.includes('--out')?process.argv[process.argv.indexOf('--out')+1]:path.join(repo,'engine/tests/typed-pairing');
 mkdirSync(out,{recursive:true});
-const {createImageFigure,createImageBackground}=await import(repo+'/src/media-authoring.mjs');
+const {createImageFigure,createImageBackground}=await import(`${repoUrl}/src/media-authoring.mjs`);
 Object.defineProperty(performance,'now',{value:()=>0,configurable:true});
 let ids=0;Object.defineProperty(globalThis.crypto,'randomUUID',{configurable:true,value:()=>`00000000-0000-4000-8000-${String(++ids).padStart(12,'0')}`});
 const json=value=>JSON.stringify(value,(key,item)=>key==='runtime_segments'?undefined:item);

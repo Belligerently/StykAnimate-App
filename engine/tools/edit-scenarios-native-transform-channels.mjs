@@ -1,5 +1,6 @@
 // Native scalar authoring uses the actual Editor animation owner. Projection
 // recordings remain prerequisites, separately named, until prepared on a worker.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {documentOf, limb, open, joint, nextKey, prune} from './fixture-kit.mjs';
@@ -108,7 +109,7 @@ for (const kind of ['plain','layout','offsets','support']) for (const mode of ['
   for(const method of ['previewAnimationEdit','addAnimationKeys','addAnimationKey'])if(!mutations.has(method))throw Error(`${name}: ${method} made no observable mutation`);
   if(mode!=='projection')recordSamples(planning,`${name}-final`);
   const file=new URL(`${name}.scenario.json`,out);writeFileSync(file,JSON.stringify({name,document,editor,steps:calls},null,1)+'\n');
-  execFileSync(process.execPath,[new URL('./edit-replay.mjs',import.meta.url).pathname,file.pathname,new URL(`${name}.reference.json`,out).pathname]);
+  execFileSync(process.execPath,[fileURLToPath(new URL('./edit-replay.mjs',import.meta.url)),fileURLToPath(file),fileURLToPath(new URL(`${name}.reference.json`,out))]);
   console.log(`${name}: ${calls.length} actual Editor steps${mode==='projection'?' (worker projection prerequisite)':''}`);
 }
 writeFileSync(new URL('native-transform-channels.samples.json',out),JSON.stringify(samples)+'\n');
@@ -121,7 +122,7 @@ for(const kind of ['plain','rig','rig-joined']) {
     ['addAnimationKey',figure(3),'x',8,455.25],['@frame'],['undo'],['@frame'],['redo'],['@frame'],['@seek',8.5],['@frame'],
     ['addAnimationKeys',[{target:figure(1),property:'x',tick:8,value:301.25},{target:figure(3),property:'scale',tick:8,value:.85}]],['@frame'],['undo'],['@frame'],['redo'],['@frame']];
   const file=new URL(`${name}.scenario.json`,out);writeFileSync(file,JSON.stringify({name,document,editor,steps:calls},null,1)+'\n');
-  execFileSync(process.execPath,[new URL('./edit-replay.mjs',import.meta.url).pathname,file.pathname,new URL(`${name}.reference.json`,out).pathname]);
+  execFileSync(process.execPath,[fileURLToPath(new URL('./edit-replay.mjs',import.meta.url)),fileURLToPath(file),fileURLToPath(new URL(`${name}.reference.json`,out))]);
   console.log(`${name}: ${calls.length} actual Editor steps${kind==='plain'?'':' (atomic refusal prerequisite)'}`);
 }
 // The editor commits an earlier gesture before validating a new key. Until
@@ -137,6 +138,6 @@ for(const kind of ['property-key','property-begin','pose-key']) {
   ];
   const calls=[...prefix,['cancelAnimationEdit'],['undo'],['redo']].flatMap(call=>[call,['@frame']]);
   const file=new URL(`${name}.scenario.json`,out);writeFileSync(file,JSON.stringify({name,document,editor:{},steps:calls},null,1)+'\n');
-  execFileSync(process.execPath,[new URL('./edit-replay.mjs',import.meta.url).pathname,file.pathname,new URL(`${name}.reference.json`,out).pathname]);
+  execFileSync(process.execPath,[fileURLToPath(new URL('./edit-replay.mjs',import.meta.url)),fileURLToPath(file),fileURLToPath(new URL(`${name}.reference.json`,out))]);
   console.log(`${name}: ${calls.length} actual Editor steps (error-side-effect refusal prerequisite)`);
 }

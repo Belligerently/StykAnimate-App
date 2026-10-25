@@ -732,7 +732,7 @@ impl Editor {
             let order = frame_order(frame.as_obj().unwrap());
             let positions = order.iter().enumerate().filter(|(_, u)| selected.contains(&(**u as u32))).map(|(i, _)| i).collect::<Vec<_>>();
             if positions.first().zip(positions.last()).is_some_and(|(a, b)| b - a + 1 != positions.len()) {
-                return Err(error("selectedFiguresCrossOtherFiguresInTheStacking"));
+                return Err(crate::invalid_with("errors.editorMovieclips.selectedFiguresCrossOtherFiguresInTheStacking", vec![("value", Value::Num(tick + 1.0))]));
             }
         }
         Ok(())

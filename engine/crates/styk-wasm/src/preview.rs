@@ -22,14 +22,16 @@
 //! the CPU's pictures), replaced when another file is drawn (library files hold few
 //! pictures, if any).
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
+use styk_engine::edit::{EditOptions, EditScene};
 use styk_engine::export::{ExportFrames, AHEAD};
-use styk_engine::thumbnails::library::{fitted, LibraryPreview, Sample, SAMPLE, SIZE};
+use styk_engine::thumbnails::library::{fit, fitted, LibraryPreview, Sample, NOWHERE, SAMPLE, SIZE};
 use styk_engine::thumbnails::{card, Framing, CARD, MAX_SIDE};
 use styk_engine::thumbnails::inbetween::{InbetweenPreview, Onions};
 use styk_engine::{Engine, Generation};
-use styk_raster::{Edges, Images, Raster};
+use styk_raster::{Edges, Images, Place, Raster};
 use styk_render::{DrawingGrid, Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
 
@@ -48,8 +50,11 @@ struct Gpu {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     renderer: Renderer,
-    /// The library file whose pictures the atlas holds (its lineage).
+    /// The library file whose pictures the atlas holds (its lineage), or the pinned document (its lineage and pages).
     atlas: Option<(u64, u32, usize)>,
+    /// The pictures of the pinned document uploaded into the atlas. The device holds them: the CPU keeps only the
+    /// ones it is asked to draw with, and decodes again a picture it must upload once more.
+    uploaded: HashSet<Place>,
 }
 
 /// The open document's frames for thumbnails, and its pictures for the CPU.
@@ -76,6 +81,8 @@ pub struct Previews {
     engine: Option<Engine>,
     thumbnails: Option<DocumentThumbnails>,
     monitor: Option<MonitorRequest>,
+    /// The pose of the last [`Previews::pose`], kept so the next pose of the same document is parsed against it.
+    pose: Option<EditScene>,
     /// Constant descriptor and result-source receipt of the same monitor packet.
     monitor_background: Option<[f64; 19]>,
     monitor_pixels: bool,
@@ -88,7 +95,7 @@ fn drawn(width: u32, height: u32, started: f64, evaluated: f64, extra: &str) -> 
 
 impl Previews {
     fn with(gpu: Option<Gpu>, backend: String) -> Previews {
-        Previews { gpu, backend, raster: Raster::new(Edges::Smooth), library_images: None, picture: (0, 0, Vec::new()), library: None, samples: Vec::new(), engine: None, thumbnails: None, monitor: None, monitor_background: None, monitor_pixels: false }
+        Previews { gpu, backend, raster: Raster::new(Edges::Smooth), library_images: None, picture: (0, 0, Vec::new()), library: None, samples: Vec::new(), engine: None, thumbnails: None, monitor: None, pose: None, monitor_background: None, monitor_pixels: false }
     }
 }
 
@@ -137,7 +144,7 @@ impl Previews {
         };
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, &queue, format);
-        Ok(Previews::with(Some(Gpu { device, queue, surface, config, renderer, atlas: None }), format!("{:?} · {}", info.backend, info.name)))
+        Ok(Previews::with(Some(Gpu { device, queue, surface, config, renderer, atlas: None, uploaded: HashSet::new() }), format!("{:?} · {}", info.backend, info.name)))
     }
 
     /// Previews drawn by the CPU rasterizer (styk-raster): every picture is handed over as
@@ -230,6 +237,55 @@ impl Previews {
         self.samples.clear();
     }
 
+    /// A picture of a document that is not the open one (a small document the interface built:
+    /// an effect's still, a background, a rig being tested, a figure of the asset library): `bytes`
+    /// of a file of `extension` (`json` for the editor's own document), its frame at `tick`
+    /// framed as `mode` and `params` say (`Placement`) in a `width × height` picture, on
+    /// `background` (ARGB) or, when that is not a number, on the document's own backgrounds.
+    /// The document is opened for this call only. Returns the timings as JSON, and whether the
+    /// frame has artwork (`artwork`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn sketch(&mut self, bytes: &[u8], extension: &str, tick: f64, width: u32, height: u32, mode: u32, params: &[f64], background: f64) -> Result<String, JsError> {
+        if !(1..=PICTURE_SIDE).contains(&width) || !(1..=PICTURE_SIDE).contains(&height) || !tick.is_finite() {
+            return Err(js_error(format!("Pictures are 1 to {PICTURE_SIDE} pixels a side ({width}×{height} asked).")));
+        }
+        let placement = Placement::parse(mode, params)?;
+        let started = clock();
+        let preview = LibraryPreview::open(bytes, extension).map_err(js_error)?;
+        let sample = preview.sample_on(tick, clock, background.is_finite().then_some(background as u32));
+        let evaluated = clock();
+        let view = placement.view(preview.doc(), None, sample.bounds, width, height);
+        self.draw_view(&preview, &sample.list, &view, width, height)?;
+        Ok(drawn(width, height, started, evaluated, &format!(",\"artwork\":{}", sample.drawn)))
+    }
+
+    /// The open document's pose `json` (a keyframe record, as the stage is sent edit frames)
+    /// seen through the scene camera it carries, framed as `mode` and `params` say, on
+    /// transparency: the parallax monitor shows how a camera position moves the layers. Like
+    /// [`Previews::inbetween`]: 0: drawn; 1: some pictures of the document are not ready yet;
+    /// 2: the engine holds another revision. Fails for a pose it cannot read.
+    #[allow(clippy::too_many_arguments)]
+    pub fn pose(&mut self, revision: f64, json: &str, width: u32, height: u32, mode: u32, params: &[f64]) -> Result<u32, JsError> {
+        if !(1..=PICTURE_SIDE).contains(&width) || !(1..=PICTURE_SIDE).contains(&height) {
+            return Err(js_error(format!("Pictures are 1 to {PICTURE_SIDE} pixels a side ({width}×{height} asked).")));
+        }
+        let placement = Placement::parse(mode, params)?;
+        let Some(engine) = self.engine.clone() else { return Ok(STALE) };
+        let Some(generation) = engine.generation().filter(|g| g.revision == revision as u64) else { return Ok(STALE) };
+        self.pin(&engine, &generation)?;
+        let pictures = self.thumbnails.as_mut().expect("pinned above");
+        for image in pictures.frames.take_images(usize::MAX) { pictures.images.add_shared(&generation.assets, image); }
+        if pictures.frames.images_pending() > 0 { return Ok(WAIT) }
+        let scene = self.pose.get_or_insert_with(EditScene::default);
+        scene.update(&generation, json.as_bytes()).map_err(js_error)?;
+        // A preview has no frame budget: every earlier anchor of generated effects is evaluated.
+        let options = EditOptions { camera: true, prepare_camera: true, clock: None, anchor_budget_ms: f64::INFINITY, background: Some(0), ..Default::default() };
+        let list = scene.draw_list(&generation, &options).map_err(js_error)?.ok_or_else(|| js_error("the pose has no frame"))?;
+        let view = placement.view(&generation.prepared.doc, scene.camera().as_ref(), None, width, height);
+        self.draw_document(&generation, &list, &view, width, height, DrawingGrid::Destination, styk_render::paint::PaintContext::Native)?;
+        Ok(READY)
+    }
+
     /// Frame thumbnails show the open document of the engine at `address` (from
     /// `EngineHandle::address`, consumed).
     pub fn adopt_engine(&mut self, address: usize) {
@@ -319,7 +375,9 @@ impl Previews {
                 if self.gpu.is_some() {
                     self.raster.set_drawing_grid(grid);
                     self.raster.set_paint_context(paint);
-                    self.picture = (width,height,self.raster.render(&list,&self.thumbnails.as_ref().expect("pinned above").images,&view,[width,height]).straight());
+                    let pictures = self.thumbnails.as_mut().expect("pinned above");
+                    pictures.images.ensure(&list, &generation.prepared.doc, &generation.assets).map_err(js_error)?;
+                    self.picture = (width,height,self.raster.render(&list,&pictures.images,&view,[width,height]).straight());
                 }
                 self.monitor_pixels = true;
             }
@@ -391,6 +449,7 @@ impl Previews {
             return Ok(WAIT);
         }
         let doc = &thumbnails.frames.generation().prepared.doc;
+        thumbnails.images.ensure(&frame.list, doc, &assets).map_err(js_error)?;
         let framing = card(doc, frame.camera.as_ref(), width, height);
         let view = view_of(framing, CARD, true, true);
         // The thumbnail worker paints directly on its fitted Canvas destination.
@@ -399,6 +458,69 @@ impl Previews {
         self.picture = (width, height, self.raster.render(&frame.list, &thumbnails.images, &view, [width, height]).straight());
         // Drawn: its place among the frames prepared ahead is free again.
         let _ = thumbnails.frames.take(tick);
+        Ok(READY)
+    }
+
+    /// Draws the artwork of `tick` of the open document at `revision` (`ExportFrames::composite`:
+    /// on transparency, without background, effects or camera) for the drawing workspace's fill
+    /// and magic wand, with the CPU rasterizer into the CPU's picture. `matrix` takes world
+    /// units to pixels (`[a, b, c, d, e, f]`, canvas order) and the picture is the `width ×
+    /// height` pixels from `(x, y)`, drawn in tiles of at most 1,024 pixels a side. 0: drawn; 1:
+    /// the frame's pictures are not all decoded yet (wait for the engine's progress, then ask
+    /// again); 2: the engine holds another revision (or no document, or no engine was adopted).
+    #[allow(clippy::too_many_arguments)]
+    pub fn composite(&mut self, revision: f64, tick: u32, x: i32, y: i32, width: u32, height: u32, matrix: &[f64]) -> Result<u32, JsError> {
+        const SIDE: u32 = 1024;
+        const MAX_PIXELS: u64 = 64 << 20;
+        let matrix: [f64; 6] = matrix.try_into().map_err(|_| js_error("a composite transform has six numbers"))?;
+        if !matrix.iter().all(|v| v.is_finite()) || (matrix[0] * matrix[3] - matrix[1] * matrix[2]).abs() < 1e-12 {
+            return Err(js_error("the composite transform is not invertible"));
+        }
+        if width == 0 || height == 0 || width as u64 * height as u64 > MAX_PIXELS {
+            return Err(js_error(format!("A composite is 1 to {MAX_PIXELS} pixels ({width}×{height} asked).")));
+        }
+        let Some(engine) = self.engine.clone() else { return Ok(STALE) };
+        let Some(generation) = engine.generation().filter(|g| g.revision == revision as u64) else { return Ok(STALE) };
+        self.pin(&engine, &generation)?;
+        let pictures = self.thumbnails.as_mut().expect("pinned above");
+        if tick >= pictures.frames.ticks() {
+            return Err(js_error(format!("The document has no tick {tick} ({} ticks).", pictures.frames.ticks())));
+        }
+        let assets = pictures.frames.generation().assets.clone();
+        for image in pictures.frames.take_images(usize::MAX) {
+            pictures.images.add_shared(&assets, image);
+        }
+        if pictures.frames.images_pending() > 0 {
+            return Ok(WAIT);
+        }
+        let list = pictures.frames.composite(tick);
+        pictures.images.ensure(&list, &pictures.frames.generation().prepared.doc, &assets).map_err(js_error)?;
+        self.raster.set_drawing_grid(DrawingGrid::Destination);
+        self.raster.set_paint_context(styk_render::paint::PaintContext::Native);
+        let [a, b, c, d, e, f] = matrix;
+        let mut out = vec![0u8; width as usize * height as usize * 4];
+        for top in (0..height).step_by(SIDE as usize) {
+            for left in (0..width).step_by(SIDE as usize) {
+                let (w, h) = (SIDE.min(width - left), SIDE.min(height - top));
+                let view = ViewParams {
+                    matrix: [a, b, c, d, e - x as f64 - left as f64, f - y as f64 - top as f64],
+                    artboard: [0.0, 0.0, w as f64, h as f64],
+                    clip_to_artboard: false,
+                    clear: [0.0; 4],
+                    zoom: a.hypot(b),
+                    pan: [0.0, 0.0],
+                    stretch: 1.0,
+                    camera_view: false,
+                    camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
+                };
+                let tile = self.raster.render(&list, &pictures.images, &view, [w, h]).straight();
+                for row in 0..h as usize {
+                    let to = ((top as usize + row) * width as usize + left as usize) * 4;
+                    out[to..to + w as usize * 4].copy_from_slice(&tile[row * w as usize * 4..(row + 1) * w as usize * 4]);
+                }
+            }
+        }
+        self.picture = (width, height, out);
         Ok(READY)
     }
 
@@ -411,6 +533,11 @@ impl Previews {
         }
         out.copy_from(pixels);
         Ok(())
+    }
+
+    /// Lets go of the last picture the CPU drew (a large one is not kept for the next request).
+    pub fn forget_picture(&mut self) {
+        self.picture = (0, 0, Vec::new());
     }
 
     /// The size of the last picture the CPU drew: width, height.
@@ -431,6 +558,7 @@ impl Previews {
         self.thumbnails = None;
         self.engine = None;
         self.monitor = None;
+        self.pose = None;
         self.library_images = None;
         self.picture = (0, 0, Vec::new());
         self.raster.release();
@@ -482,14 +610,20 @@ impl Previews {
     /// Monitor and in-between frames share this worker's existing atlas/device and
     /// the pinned document's decoded pictures; library files reuse the same device.
     fn draw_document(&mut self, generation: &Generation, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32, grid: DrawingGrid, paint: styk_render::paint::PaintContext) -> Result<(), JsError> {
-        let pictures = self.thumbnails.as_ref().expect("a document is pinned");
+        let pictures = self.thumbnails.as_mut().expect("a document is pinned");
+        // The pictures the list samples are held on the CPU (decoded again where the budget dropped them) ...
+        pictures.images.ensure(list, &generation.prepared.doc, &generation.assets).map_err(js_error)?;
         if let Some(gpu) = self.gpu.as_mut() {
-            let layout = (generation.lineage, generation.assets.pages, pictures.images.len());
+            let layout = (generation.lineage, generation.assets.pages, 0);
             if gpu.atlas != Some(layout) {
                 gpu.renderer.prepare_sprites(&generation.assets);
-                gpu.renderer.upload_images(&generation.assets, pictures.images.decoded());
+                gpu.uploaded.clear();
                 gpu.atlas = Some(layout);
             }
+            // ... and the device is given the ones it lacks: it keeps them, so the CPU need not.
+            let lacking: Vec<(Place, &Arc<styk_eval::assets::DecodedImage>)> = Images::places(list).into_iter().filter(|place| !gpu.uploaded.contains(place)).filter_map(|place| Some((place, pictures.images.get(place)?))).collect();
+            gpu.renderer.upload_images(&generation.assets, lacking.iter().map(|(_, image)| &***image));
+            gpu.uploaded.extend(lacking.into_iter().map(|(place, _)| place));
             gpu.renderer.set_drawing_grid(grid);
             gpu.renderer.set_paint_context(paint);
             gpu.draw(list, view, width, height)?;
@@ -505,6 +639,12 @@ impl Previews {
     /// into the canvas with the GPU, else into the CPU's picture.
     fn draw(&mut self, preview: &LibraryPreview, list: &Arc<styk_draw::DrawList>, bounds: [f64; 4], size: u32) -> Result<(), JsError> {
         let view = view_of(fitted(bounds, size), [0.0; 4], false, false);
+        self.draw_view(preview, list, &view, size, size)
+    }
+
+    /// Draws `list` of `preview`'s file as `view` places it, `width × height`: into the
+    /// canvas with the GPU, else into the CPU's picture.
+    fn draw_view(&mut self, preview: &LibraryPreview, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32) -> Result<(), JsError> {
         let Some(gpu) = self.gpu.as_mut() else {
             if self.library_images.as_ref().is_none_or(|(lineage, _)| *lineage != preview.lineage) {
                 let mut images = Images::default();
@@ -516,7 +656,7 @@ impl Previews {
             let images = &self.library_images.as_ref().expect("set above").1;
             self.raster.set_drawing_grid(DrawingGrid::Destination);
             self.raster.set_paint_context(styk_render::paint::PaintContext::Native);
-            self.picture = (size, size, self.raster.render(list, images, &view, [size, size]).straight());
+            self.picture = (width, height, self.raster.render(list, images, view, [width, height]).straight());
             return Ok(());
         };
         if gpu.atlas.is_none_or(|(lineage, _, _)| lineage != preview.lineage) {
@@ -524,10 +664,58 @@ impl Previews {
             let images = preview.images();
             gpu.renderer.upload_images(preview.assets(), images.iter());
             gpu.atlas = Some((preview.lineage, preview.assets().pages, images.len()));
+            gpu.uploaded.clear();
         }
         gpu.renderer.set_drawing_grid(DrawingGrid::Destination);
         gpu.renderer.set_paint_context(styk_render::paint::PaintContext::Native);
-        gpu.draw(list, &view, size, size)
+        gpu.draw(list, view, width, height)
+    }
+}
+
+/// The largest side of a [`Previews::sketch`] or [`Previews::pose`] picture.
+const PICTURE_SIDE: u32 = 4096;
+
+/// How a picture is placed in its `width × height` rectangle: the `mode` and `params` of the
+/// worker's messages.
+enum Placement {
+    /// 0: the canvas fitted and centred, seen through the scene camera.
+    Card,
+    /// 1, `[zoom, pan x, pan y]`: the canvas at `zoom` pixels a unit, its origin at the pan, seen
+    /// through the scene camera (the camera monitor's placement).
+    Camera { zoom: f64, pan: [f64; 2] },
+    /// 2, `[margin]`: the artwork's bounds fitted, with `margin` pixels around them.
+    Fit { margin: f64 },
+    /// 3, `[a, b, c, d, e, f]`: world to pixels as given.
+    Matrix([f64; 6]),
+}
+
+impl Placement {
+    fn parse(mode: u32, params: &[f64]) -> Result<Placement, JsError> {
+        match (mode, params) {
+            (_, p) if !p.iter().all(|v| v.is_finite()) => Err(js_error("Invalid picture placement.")),
+            (0, []) => Ok(Placement::Card),
+            (1, &[zoom, x, y]) if zoom > 0.0 => Ok(Placement::Camera { zoom, pan: [x, y] }),
+            (2, &[margin]) if margin >= 0.0 => Ok(Placement::Fit { margin }),
+            (3, &[a, b, c, d, e, f]) => Ok(Placement::Matrix([a, b, c, d, e, f])),
+            _ => Err(js_error("Invalid picture placement.")),
+        }
+    }
+
+    /// The view of a `width × height` picture of `doc` (seen through `camera` where the placement
+    /// calls for it) whose artwork covers `bounds`.
+    fn view(&self, doc: &styk_eval::doc::Document, camera: Option<&styk_eval::doc::Camera>, bounds: Option<[f64; 4]>, width: u32, height: u32) -> ViewParams {
+        match *self {
+            Placement::Card => view_of(card(doc, camera, width, height), [0.0; 4], true, true),
+            Placement::Camera { zoom, pan } => {
+                let artboard = [pan[0], pan[1], pan[0] + doc.canvas[0] as f64 * zoom, pan[1] + doc.canvas[1] as f64 * zoom];
+                view_of(Framing { matrix: styk_eval::view::camera_matrix(doc, camera, zoom, pan), artboard, zoom, pan }, [0.0; 4], true, true)
+            }
+            Placement::Fit { margin } => view_of(fit(bounds.unwrap_or(NOWHERE), width, height, margin), [0.0; 4], false, false),
+            Placement::Matrix(m) => {
+                let zoom = (m[0] * m[3] - m[1] * m[2]).abs().sqrt().max(1e-6);
+                view_of(Framing { matrix: m, artboard: [0.0, 0.0, width as f64, height as f64], zoom, pan: [m[4], m[5]] }, [0.0; 4], false, false)
+            }
+        }
     }
 }
 

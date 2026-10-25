@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {MessageChannel} from 'node:worker_threads';
 import {createHash} from 'node:crypto';
 import {base64ToBytes} from '../src/base64.mjs';
-import {buildContainerV2,decodeDocument} from '../src/native-container.mjs';
+import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 
 async function worker(t) {
   const prior=Object.getOwnPropertyDescriptor(globalThis,'self'),scope=new EventTarget(),messages=[];

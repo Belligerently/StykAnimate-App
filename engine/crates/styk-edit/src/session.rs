@@ -4,8 +4,8 @@
 //! editor state the document does not carry, runs the editor's calls by name, and
 //! answers with everything the JavaScript editor would show for the same call: the
 //! returned value, the playhead and selection, the change events, the gesture's draft,
-//! and the parts of the document a command published. `src/engine/engine-edit-shadow.mjs`
-//! compares that with what the JavaScript editor did (docs/engine/editing.md).
+//! and the parts of the document a command published. `src/engine/engine-owner.mjs`
+//! applies it to the JavaScript editor (docs/engine/editing.md).
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -361,7 +361,7 @@ impl Session {
         editor.set_view(number(&state, "tick").unwrap_or(0.0), number(&state, "frameIndex").unwrap_or(0.0) as usize, selection_of(&state));
         // A metadata restore may inspect stable handles of the figure on show:
         // the interface session must use the mirror's already prepared owner.
-        if let Some((loader, prepared)) = prepared { editor.adopt_prepared(loader, prepared); editor.worker_prepared_only = true; }
+        if let Some((loader, prepared)) = prepared { editor.adopt_prepared(loader, prepared); }
         editor.set_selection_metadata(&state).map_err(|error| format!("{error:?}"))?;
         let counter = |key: &str| number(&state, key).unwrap_or(0.0) as u64;
         editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"), counter("nextUid"));
@@ -492,6 +492,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let before = editor.report().clone();
     let retained = editor.retained_frame();
     let draft = editor.authored.as_ref().map(|edit| edit.frame.clone());
+    let gesture_before = editor.drag.as_ref().map(|drag| drag.serial);
     let project_requested = view.get("projectFieldsPublication") == Some(&Value::Bool(true))
         && matches!(method, "setFPS" | "setCanvasSize" | "updateProject")
         && editor.sheet() && editor.drag.is_none() && draft.is_none()
@@ -551,6 +552,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             return Ok(response_value(answer));
         }
         editor.set_auto_key(flag(view, "autoKey"));
+        editor.audio_ripple = flag(view, "audioRipple");
         // Selecting changes the active layer without a new revision of the document.
         if let Some(active) = view.get("activeLayerId").and_then(Value::as_str) {
             editor.set_active_layer_id(active);
@@ -612,6 +614,8 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     drop(command_scope);
     let _answer_scope = crate::prof::scope("call::answer");
     let topology_changed = topology_requested && matches!(&result, Ok(Value::Bool(true)));
+    // The owner runs a refused call in the editor and does not adopt its answer.
+    let adopted = !matches!(&result, Err(EditError::Unported(_)));
     let unique_result = unique_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
     let rename_result = rename_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
     let layer_changed = layer_requested && result.as_ref().is_ok_and(Value::truthy);
@@ -637,9 +641,12 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             answer.push(("status", Value::str("unported")));
             answer.push(("reason", Value::str(&what)));
         }
-        Err(EditError::Invalid(key)) => {
+        Err(EditError::Invalid(text)) => {
             answer.push(("status", Value::str("error")));
-            answer.push(("error", Value::str(&key)));
+            answer.push(("error", Value::str(crate::error_key(&text))));
+            if let Some(params) = crate::error_params(&text) {
+                answer.push(("errorParams", params));
+            }
         }
     }
     answer.push(("state", editor.state_value()));
@@ -746,6 +753,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         // The owner holds the frame the edit began on: it takes the difference.
         if changes_only && method == "previewAnimationEdit" && let Some(base) = editor.property_edit_base() {
             answer.push(("previewChanges", frame_delta(&preview, &base)));
+        } else if changes_only && method == "updateCameraDrag" {
+            // A camera drag previews the frame on show with another camera: that is all that differs.
+            answer.push(("cameraPreview", preview.get("camera").cloned().unwrap_or(Value::Null)));
         } else {
             let mut frame = preview.as_obj().cloned().unwrap_or_default();
             let objects: Vec<Value> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
@@ -820,6 +830,13 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         // The effect-clip and property edits the session holds, which the editor shows as its own.
         answer.push(("vfxEdit", Value::Bool(editor.vfx_edit.is_some())));
         answer.push(("animationEdit", editor.animation_edit_view(method == "beginAnimationEdit")));
+        // The figure-handle, handle-edit and segment-value gesture it holds (`_drag.figureHandle` and the others).
+        answer.push(("handleGesture", editor.handle_gesture_view()));
+        // The motion-path edit it holds, which the editor shows as its own (`_drag`).
+        match editor.motion_path_view(adopted) {
+            Ok(view) => answer.push(("motionPath", view)),
+            Err(error) => answer.push(("motionPathError", Value::str(&format!("{error:?}")))),
+        }
         // The timeline's chosen layer, which history restores with the selection.
         answer.push(("sheetSelection", editor.sheet_selection.as_ref().map_or(Value::Null, |chosen| response_value(vec![("id", Value::str(&chosen.id)), ("contents", Value::Bool(chosen.contents))]))));
     }
@@ -834,6 +851,11 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         }
     } else { editor.draft_figures() };
     answer.push(("draft", figures.map_or(Value::Null, Value::array)));
+    // A call that ended a gesture and began another: the new draft as its difference from the old one on show,
+    // since figures the gestures did not take (joined ones the commit moved) changed with the first.
+    if changes_only && let (Some(edit), Some(drag), Some(old), Some(previous)) = (&editor.authored, &editor.drag, gesture_before, draft.as_ref()) && drag.serial != old {
+        answer.push(("draftBase", frame_delta(&edit.frame, previous)));
+    }
     answer.push(("drag", editor.drag_value()));
     Ok(response_value(answer))
 }

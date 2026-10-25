@@ -1,4 +1,4 @@
-//! Read-only background layer planning against the acknowledged COW mirror.
+//! Read-only background layer planning against the document the engine holds.
 //! Publication remains an editor command: a plan never changes the engine document.
 
 use std::collections::{HashMap, HashSet};
@@ -24,11 +24,11 @@ pub enum PlanError {
     Invalid(String),
     #[error("{0} is not ported")]
     Unported(String),
-    #[error("Layer migration was cancelled.")]
+    #[error("Planning was cancelled.")]
     Cancelled,
-    #[error("The document changed while layer migration was prepared.")]
+    #[error("The document changed while the plan was prepared.")]
     Stale,
-    #[error("Layer migration planning timed out.")]
+    #[error("Planning timed out.")]
     TimedOut,
 }
 
@@ -552,7 +552,7 @@ fn string_part(value: &Value, offset: usize) -> (String, usize, bool) {
 impl Chunks {
     pub fn new(payload: Value) -> Result<Self, PlanError> {
         if payload.as_obj().is_none() {
-            return Err(invalid("layer planner payload must be a record"));
+            return Err(invalid("planner payload must be a record"));
         }
         Ok(Self {
             stack: vec![Walk {
@@ -580,7 +580,7 @@ impl Chunks {
                 let path_bytes = path_size(&path);
                 if path_bytes > CHUNK_BYTES / 4 {
                     return Err(invalid(
-                        "layer migration transfer path exceeds the packet budget",
+                        "planning transfer path exceeds the packet budget",
                     ));
                 }
                 match &value {
@@ -645,7 +645,7 @@ impl Chunks {
                 let path_bytes = path_size(&path);
                 if path_bytes > CHUNK_BYTES / 4 {
                     return Err(invalid(
-                        "layer migration transfer path exceeds the packet budget",
+                        "planning transfer path exceeds the packet budget",
                     ));
                 }
                 let size = bounded_size(&value, CHUNK_BYTES / 4);
@@ -686,7 +686,7 @@ impl Chunks {
         let json = styk_doc::json::to_string(&Value::object(packet));
         if json.len() > CHUNK_BYTES || bytes > CHUNK_BYTES {
             return Err(invalid(
-                "layer migration transfer packet exceeds the budget",
+                "planning transfer packet exceeds the budget",
             ));
         }
         Ok(Some(json))
@@ -741,6 +741,12 @@ impl Core {
             (engine.now() + IDLE_TIMEOUT_MS).to_bits(),
             Ordering::Release,
         );
+    }
+    /// The latest progress, for the host to take; the job's idle time restarts.
+    fn report(&self, engine: &Engine, progress: Progress) {
+        self.touch(engine);
+        self.mailbox.lock().unwrap_or_else(|e| e.into_inner()).progress = Some(progress);
+        engine.notify_progress();
     }
     fn check(&self, engine: &Engine) -> Result<(), PlanError> {
         match self.cancelled.load(Ordering::Acquire) {
@@ -849,7 +855,7 @@ impl LayerJob {
             return Ok(false);
         };
         if !state.delivered || state.awaiting != Some(sequence) {
-            return Err(invalid("layer migration packet ACK arrived out of order"));
+            return Err(invalid("planning packet ACK arrived out of order"));
         }
         state.awaiting = None;
         state.delivered = false;
@@ -906,11 +912,141 @@ pub(crate) fn cancel_current(engine: &Engine) {
         core.schedule();
     }
 }
+/// What the editor asks of in-between planning: a ratio, the chosen native keys (ascending,
+/// once each, as the editor orders them) and its next pose-source identity.
+#[derive(Clone, Debug)]
+pub struct InbetweenRequest {
+    pub ratio: f64,
+    pub indices: Vec<usize>,
+    pub next_frame_identity: u64,
+}
+
+/// A planner's work on the worker: the engine's document in, the payload out.
+type Kernel = Box<
+    dyn FnOnce(&Engine, &Core, &Value, &styk_eval::load::Loader, &Prepared) -> Result<Value, PlanError>
+        + Send
+        + 'static,
+>;
+
 impl Engine {
-    /// Queue read-only native or sheet planning against the acknowledged mirror.
+    /// Queue read-only native or sheet planning against the document the engine holds.
     /// The host must run engine workers; never call `step` on a browser UI for it.
     /// A newer job cancels the previous one, bounding mailbox and task ownership.
     pub fn plan_layers(&self, revision: u64, request: LayerRequest) -> Result<LayerJob, PlanError> {
+        // Requests contain only IDs: bound this UI copy independently of document size.
+        if request.uids.len() > 10_000
+            || request.target_layer.len() > 128
+            || request
+                .deleted_layer
+                .as_ref()
+                .is_some_and(|id| id.len() > 128)
+        {
+            return Err(invalid("planning request exceeds the ID budget"));
+        }
+        self.plan(
+            revision,
+            Box::new(move |engine, core, tree, loader, prepared| {
+                if tree.path(&["_styk", "layerSheet"]).is_some() {
+                    let mut loader = loader.clone();
+                    let plan = styk_edit::layer_planning::sheet_layer_plan(
+                        tree,
+                        prepared,
+                        &mut loader,
+                        styk_edit::layer_planning::Request {
+                            uids: &request.uids,
+                            target_layer: &request.target_layer,
+                            deleted_layer: request.deleted_layer.as_deref(),
+                            next_frame_identity: request.next_frame_identity,
+                            max_source_bytes: request.max_source_bytes,
+                        },
+                        || {
+                            core.check(engine)
+                                .map_err(|error| styk_edit::EditError::Invalid(error.to_string()))
+                        },
+                        |progress| {
+                            core.report(
+                                engine,
+                                Progress {
+                                    phase: progress.phase,
+                                    completed: progress.completed as u32,
+                                    total: progress.total as u32,
+                                    source_frames: progress.source_frames,
+                                    object_poses: progress.object_poses,
+                                    segment_values: progress.segment_values,
+                                },
+                            );
+                        },
+                        engine.inner.clock,
+                    );
+                    // Preserve cancellation/stale/timeout identity from the same
+                    // worker guard, rather than reporting it as validation failure.
+                    core.check(engine)?;
+                    return plan
+                        .map(|plan| {
+                            plan.map(|plan| plan.payload()).unwrap_or_else(|| {
+                                let mut result = Obj::new();
+                                result.set("plan", Value::Null);
+                                Value::object(result)
+                            })
+                        })
+                        .map_err(edit_error);
+                }
+                native_layer_plan(
+                    tree,
+                    prepared,
+                    &request,
+                    || core.check(engine),
+                    |progress| core.report(engine, progress),
+                    engine.inner.clock,
+                )
+            }),
+        )
+    }
+
+    /// Queue read-only in-between planning (`styk_edit::inbetween_planning`) the same way:
+    /// the plan crosses in bounded packets that each need an ACK, and a newer document
+    /// or a cancellation retires the job on the workers.
+    pub fn plan_inbetweens(&self, revision: u64, request: InbetweenRequest) -> Result<LayerJob, PlanError> {
+        if request.indices.len() > 100_000 {
+            return Err(invalid("planning request exceeds the index budget"));
+        }
+        self.plan(
+            revision,
+            Box::new(move |engine, core, tree, _, prepared| {
+                let plan = styk_edit::inbetween_planning::plan(
+                    tree,
+                    prepared,
+                    &styk_edit::inbetween_planning::Request {
+                        ratio: request.ratio,
+                        indices: &request.indices,
+                        next_frame_identity: request.next_frame_identity,
+                    },
+                    || {
+                        core.check(engine)
+                            .map_err(|error| styk_edit::EditError::Invalid(error.to_string()))
+                    },
+                    |progress| {
+                        core.report(
+                            engine,
+                            Progress {
+                                phase: progress.phase,
+                                completed: progress.completed as u32,
+                                total: progress.total as u32,
+                                source_frames: 0,
+                                object_poses: 0,
+                                segment_values: 0,
+                            },
+                        );
+                    },
+                );
+                // Cancellation, replacement and timeout keep their own identity.
+                core.check(engine)?;
+                plan.map_err(edit_error)
+            }),
+        )
+    }
+
+    fn plan(&self, revision: u64, kernel: Kernel) -> Result<LayerJob, PlanError> {
         if self.inner.stopping.load(Ordering::Acquire) {
             return Err(PlanError::Cancelled);
         }
@@ -922,23 +1058,11 @@ impl Engine {
         if current_revision != revision {
             return Err(PlanError::Stale);
         }
-        // Requests contain only IDs: bound this UI copy independently of document size.
-        if request.uids.len() > 10_000
-            || request.target_layer.len() > 128
-            || request
-                .deleted_layer
-                .as_ref()
-                .is_some_and(|id| id.len() > 128)
-        {
-            return Err(invalid("layer migration request exceeds the ID budget"));
-        }
         // One active planner, plus at most its one coalesced continuation. A
         // caller replacing a job cancels it and retries after worker disposal.
         if self.inner.planning.lock().is_some() {
             cancel_current(self);
-            return Err(invalid(
-                "layer migration planner is busy; wait for worker disposal",
-            ));
+            return Err(invalid("a planner is busy; wait for worker disposal"));
         }
         let mailbox = Arc::new(Mutex::new(Mailbox::default()));
         let core = Arc::new(Core {
@@ -956,9 +1080,7 @@ impl Engine {
         {
             let mut active = self.inner.planning.lock();
             if active.is_some() {
-                return Err(invalid(
-                    "layer migration planner is busy; wait for worker disposal",
-                ));
+                return Err(invalid("a planner is busy; wait for worker disposal"));
             }
             *active = Some(core.clone());
         }
@@ -969,76 +1091,13 @@ impl Engine {
         self.spawn_retained(move |engine| {
             let result = (|| {
                 core.check(engine)?;
-                let (revision, tree, mut loader, prepared) =
-                    engine.mirrored_for_editing().ok_or(PlanError::Stale)?;
+                let (revision, tree, loader, prepared) =
+                    engine.stored_for_editing().ok_or(PlanError::Stale)?;
                 if revision != core.revision {
                     return Err(PlanError::Stale);
                 }
                 core.check(engine)?;
-                if tree.path(&["_styk", "layerSheet"]).is_some() {
-                    let plan = styk_edit::layer_planning::sheet_layer_plan(
-                        &tree,
-                        &prepared,
-                        &mut loader,
-                        styk_edit::layer_planning::Request {
-                            uids: &request.uids,
-                            target_layer: &request.target_layer,
-                            deleted_layer: request.deleted_layer.as_deref(),
-                            next_frame_identity: request.next_frame_identity,
-                            max_source_bytes: request.max_source_bytes,
-                        },
-                        || {
-                            core.check(engine)
-                                .map_err(|error| styk_edit::EditError::Invalid(error.to_string()))
-                        },
-                        |progress| {
-                            core.touch(engine);
-                            core.mailbox
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .progress = Some(Progress {
-                                phase: progress.phase,
-                                completed: progress.completed as u32,
-                                total: progress.total as u32,
-                                source_frames: progress.source_frames,
-                                object_poses: progress.object_poses,
-                                segment_values: progress.segment_values,
-                            });
-                            engine.notify_progress();
-                        },
-                        engine.inner.clock,
-                    );
-                    // Preserve cancellation/stale/timeout identity from the same
-                    // worker guard, rather than reporting it as validation failure.
-                    core.check(engine)?;
-                    return plan
-                        .map(|plan| {
-                            plan.map(|plan| plan.payload()).unwrap_or_else(|| {
-                                let mut result = Obj::new();
-                                result.set("plan", Value::Null);
-                                Value::object(result)
-                            })
-                        })
-                        .map_err(|error| match error {
-                            styk_edit::EditError::Invalid(message) => PlanError::Invalid(message),
-                            styk_edit::EditError::Unported(feature) => PlanError::Unported(feature),
-                        });
-                }
-                native_layer_plan(
-                    &tree,
-                    &prepared,
-                    &request,
-                    || core.check(engine),
-                    |progress| {
-                        core.touch(engine);
-                        core.mailbox
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .progress = Some(progress);
-                        engine.notify_progress();
-                    },
-                    engine.inner.clock,
-                )
+                kernel(engine, &core, &tree, &loader, &prepared)
             })();
             match result {
                 Err(error) => core.finish(engine, Err(error)),
@@ -1060,13 +1119,19 @@ impl Engine {
     }
 }
 
+/// A refusal of a kernel: its message keys and reasons travel as they are.
+fn edit_error(error: styk_edit::EditError) -> PlanError {
+    match error {
+        styk_edit::EditError::Invalid(message) => PlanError::Invalid(message),
+        styk_edit::EditError::Unported(feature) => PlanError::Unported(feature),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        Budgets,
-        mirror::{Change, Record, Table},
-    };
+    use crate::Budgets;
+    use crate::document::{OpenOptions, OpenSource};
     fn clock() -> f64 {
         0.0
     }
@@ -1085,34 +1150,9 @@ mod tests {
         )
         .unwrap();
         let engine = Engine::new(clock, Budgets::for_device(None));
-        let mut properties = tree.as_obj().unwrap().clone();
-        for table in [Table::Figures, Table::Keyframes, Table::Backgrounds] {
-            properties.remove(table.key());
-        }
-        engine.stage(0, Change::Reset).unwrap();
-        engine.stage(
-            0,
-            Change::Properties(styk_doc::json::to_string(&Value::object(properties)).into_bytes()),
-        ).unwrap();
-        for table in [Table::Figures, Table::Keyframes, Table::Backgrounds] {
-            let values = tree.get(table.key()).unwrap().elements().unwrap();
-            engine.stage(0, Change::Layout(table, vec![-1; values.len()])).unwrap();
-            for (i, value) in values.iter().enumerate() {
-                engine.stage(
-                    0,
-                    Change::Set(
-                        table,
-                        i as u32,
-                        Record {
-                            skeleton: styk_doc::json::to_string(&value).into_bytes(),
-                            arrays: Vec::new(),
-                            payloads: Vec::new(),
-                        },
-                    ),
-                ).unwrap();
-            }
-        }
-        engine.commit(1, 0).unwrap();
+        let text = styk_doc::json::to_string(&tree);
+        let opened = engine.open_document(OpenSource::Json { bytes: text.as_bytes(), name: "layer planning" }, OpenOptions::default(), &|| false).unwrap();
+        engine.activate(&opened.typed, &opened.tree, 1).unwrap();
         let request = LayerRequest {
             uids: vec![1],
             target_layer: "layer-2".into(),
@@ -1122,28 +1162,14 @@ mod tests {
         };
         (engine, request)
     }
+    /// The document the engine holds, published again at `revision`: a new generation of the same lineage.
+    fn republish(engine: &Engine, revision: u64) -> Result<Option<crate::Committed>, crate::document::OpenError> {
+        let lineage = engine.generation().unwrap().lineage;
+        engine.publish_tree(lineage, engine.stored().unwrap().1, revision)
+    }
     fn replacement(engine: &Engine, revision: u64) -> crate::Generation {
         let previous = engine.generation().unwrap();
         crate::Generation { id: 0, lineage: previous.lineage, revision, prepared: previous.prepared.clone(), assets: previous.assets.clone(), open_ms: 0.0, anchors: None }
-    }
-
-    #[test]
-    fn refused_publication_preserves_the_current_planner_and_ack_cursor() {
-        let (engine, request) = fixture();
-        let job = engine.plan_layers(1, request).unwrap();
-        engine.step();
-        let packet = job.poll().chunk.unwrap();
-        let core = job.core.upgrade().unwrap();
-        let previous = engine.generation().unwrap();
-        let guard = crate::mirror::RecordGuard { generation: previous.id, lineage: previous.lineage, revision: previous.revision, nonce: 71 };
-        let mut exchange = Some(|| panic!("refused publication must not exchange heads"));
-        assert!(engine.publish_with(replacement(&engine, 2), Some((guard, Arc::new(AtomicBool::new(true)))), &mut exchange).is_none());
-        assert!(exchange.is_some());
-        assert_eq!(core.cancelled.load(Ordering::Acquire), 0);
-        assert_eq!(core.check(&engine), Ok(()));
-        assert!(job.ack(packet.sequence).unwrap());
-        engine.step();
-        assert!(job.poll().chunk.is_some(), "the accepted current cursor remains usable");
     }
 
     #[test]
@@ -1156,14 +1182,14 @@ mod tests {
         let worker = engine.clone();
         let wait = barriers.clone();
         let thread = std::thread::spawn(move || crate::allocation::with_pause(pointer, 2, wait, || {
-            crate::allocation::watch(pointer, || worker.publish_with(generation, None, &mut Some(|| ())))
+            crate::allocation::watch(pointer, || worker.install_generation(generation))
         }));
         barriers[0].wait();
         let job = engine.plan_layers(1, request).unwrap();
         let core = job.core.upgrade().unwrap();
         barriers[1].wait();
         let (result, counts) = thread.join().unwrap();
-        assert!(result.is_some());
+        assert_ne!(result.0, 0);
         assert_eq!((counts.allocations, counts.deallocations), (0, 0), "{counts:?}");
         assert_eq!(core.cancelled.load(Ordering::Acquire), 2);
         assert_eq!(core.check(&engine), Err(PlanError::Stale));
@@ -1183,14 +1209,14 @@ mod tests {
         let worker = engine.clone();
         let wait = barriers.clone();
         let thread = std::thread::spawn(move || crate::allocation::with_pause(pointer, 1, wait, || {
-            worker.commit(2, 0)
+            republish(&worker, 2)
         }));
         barriers[0].wait();
         let job = engine.plan_layers(2, request).unwrap();
         let core = job.core.upgrade().unwrap();
         barriers[1].wait();
         assert!(thread.join().unwrap().is_ok());
-        assert_eq!(engine.mirrored().unwrap().0, 2, "the actual canonical commit updates both owners");
+        assert_eq!(engine.stored().unwrap().0, 2, "the publication updates both owners");
         assert_eq!(core.cancelled.load(Ordering::Acquire), 0);
         assert_eq!(core.check(&engine), Ok(()));
         engine.step();
@@ -1201,7 +1227,7 @@ mod tests {
     #[test]
     fn planning_is_queued_and_acknowledgements_bound_the_cursor() {
         let (engine, request) = fixture();
-        let before = styk_doc::json::to_string(&engine.mirrored().unwrap().1);
+        let before = styk_doc::json::to_string(&engine.stored().unwrap().1);
         let job = engine.plan_layers(1, request.clone()).unwrap();
         assert!(job.poll().chunk.is_none());
         assert_eq!(engine.inner.state.lock().retained_tasks.len(), 1);
@@ -1237,14 +1263,14 @@ mod tests {
         assert_eq!(job.poll().error, Some(PlanError::Cancelled));
         assert!(engine.inner.planning.lock().is_none());
         assert_eq!(
-            styk_doc::json::to_string(&engine.mirrored().unwrap().1),
+            styk_doc::json::to_string(&engine.stored().unwrap().1),
             before
         );
     }
     #[test]
     fn a_job_delivers_one_delta_packet_per_ack_without_publishing() {
         let (engine, request) = fixture();
-        let before = engine.mirrored().unwrap().1;
+        let before = engine.stored().unwrap().1;
         let id = engine.generation().unwrap().id;
         let job = engine.plan_layers(1, request).unwrap();
         let mut received = 0;
@@ -1282,7 +1308,7 @@ mod tests {
             engine.generation().unwrap().prepared.total_ticks
         );
         assert_eq!(engine.generation().unwrap().id, id);
-        assert!(before.same_node(&engine.mirrored().unwrap().1));
+        assert!(before.same_node(&engine.stored().unwrap().1));
         assert!(engine.inner.planning.lock().is_none());
     }
     #[test]
@@ -1294,7 +1320,7 @@ mod tests {
         let old_head = Arc::downgrade(&old);
         let old_planner = job.core.clone();
         drop(old);
-        engine.commit(2, 0).unwrap();
+        republish(&engine, 2).unwrap();
         assert_eq!(engine.inner.state.lock().retained_tasks.len(), 2, "one planner plus one displaced-head retirement");
         assert!(old_head.upgrade().is_some(), "publication retains the old head until its worker disposal");
         assert!(old_planner.upgrade().is_some());
@@ -1340,15 +1366,9 @@ mod tests {
             job.poll();
             match operation {
                 "publish" => {
-                    engine.stage(0, Change::Reset).unwrap();
-                    engine.stage(
-                        0,
-                        Change::Properties(
-                            br#"{"version":5,"canvas_width":1,"canvas_height":1,"fps":24}"#
-                                .to_vec(),
-                        ),
-                    ).unwrap();
-                    engine.commit(2, 0).unwrap();
+                    let other = br#"{"version":5,"canvas_width":1,"canvas_height":1,"fps":24,"figure_types":[],"backgrounds":[],"keyframes":[]}"#;
+                    let opened = engine.open_document(OpenSource::Json { bytes: other, name: "other" }, OpenOptions::default(), &|| false).unwrap();
+                    engine.activate(&opened.typed, &opened.tree, 2).unwrap();
                 }
                 "stop" => engine.stop(),
                 "timeout" => {

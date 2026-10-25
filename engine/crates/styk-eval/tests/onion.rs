@@ -4,7 +4,7 @@
 //! segments 1 and 2 have custom paints (linear, radial) and segment 4 a
 //! secondary colour. The editor's onion skins (`onion-skin.mjs`) replace each
 //! drawable's colour with the tint and drop its secondary colour, but a custom
-//! paint keeps its own colours; `scripts/engine-app-parity.mjs` compares the
+//! paint keeps its own colours; the app-parity rule (D13) compared the
 //! pixels with the editor's renderer.
 
 use std::path::Path;
@@ -22,7 +22,7 @@ fn a_tinted_ghost_keeps_custom_paints_and_drops_secondary_colours() {
     let prepared = styk_eval::prepare(doc);
     let scene = build(&prepared.doc, &prepared.evaluate(0.0));
     let ghost_scene = build(&prepared.doc, &prepared.evaluate(8.0));
-    let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None };
+    let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None, live: None };
     let plain = encode_composed(&prepared.doc, &assets, &scene, &overrides, &[], None);
     let ghost = Ghost { scene: &ghost_scene, opacity: 0.14, tint: Some(TINT), hidden: &[] };
     // One figure: the ghost under the current pose.
@@ -53,7 +53,7 @@ fn a_tinted_ghost_draws_solid_paints_in_its_tint() {
         let prepared = styk_eval::prepare(doc);
         let scene = build(&prepared.doc, &prepared.evaluate(0.0));
         let ghost_scene = build(&prepared.doc, &prepared.evaluate(8.0));
-        let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None };
+        let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None, live: None };
         let ghost = Ghost { scene: &ghost_scene, opacity: 0.14, tint: Some(TINT), hidden: &[] };
         let list = encode_composed(&prepared.doc, &assets, &scene, &overrides, &[ghost], Some(&[Layer::Ghost(0, 0), Layer::Current(0)]));
         let tint = u32::from_le_bytes([TINT[0], TINT[1], TINT[2], 255]);

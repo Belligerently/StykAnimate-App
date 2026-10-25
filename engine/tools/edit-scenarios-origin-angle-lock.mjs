@@ -1,9 +1,10 @@
 // Actual-editor origin angle-lock/reference recordings precede Rust admission.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {open} from './fixture-kit.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
 const shown = editor => JSON.stringify(snapshotPoseFrame(editor.evaluatedFrame));
@@ -70,7 +71,7 @@ for (const kind of ['layout', 'offsets', 'support', 'saved-layout', 'saved-suppo
     for (const method of ['setAngleLock', 'setSecondaryAngleReference', 'setRigBehavior']) if (!mutations.has(method)) throw Error(`${name}: ${method} never changed a document`);
     if (errors.size < 5) throw Error(`${name}: insufficient invalid/reference coverage`);
     writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor, steps: calls}, null, 1) + '\n');
-    execFileSync(process.execPath, [new URL('./edit-replay.mjs', import.meta.url).pathname, `${out}/${name}.scenario.json`, `${out}/${name}.reference.json`], {stdio: 'inherit'});
+    execFileSync(process.execPath, [fileURLToPath(new URL('./edit-replay.mjs', import.meta.url)), `${out}/${name}.scenario.json`, `${out}/${name}.reference.json`], {stdio: 'inherit'});
     console.log(`${name}: ${calls.length} steps, mutations ${JSON.stringify([...mutations])}, ${errors.size} distinct failures`);
   }
 }

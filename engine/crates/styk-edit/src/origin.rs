@@ -8,10 +8,10 @@ use crate::record::{num, uid};
 use crate::{EditError, Editor};
 
 pub(crate) fn recorded_call(method: &str) -> bool {
-    choice_call(method) || posing_call(method) || constraint_call(method) || rig_tool_call(method) || rig_pose_call(method) || property_call(method) || range_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
+    gesture_call(method) || choice_call(method) || posing_call(method) || constraint_call(method) || rig_tool_call(method) || rig_pose_call(method) || property_call(method) || range_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
         "commitDrag" | "cancelDrag" | "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" |
         "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" | "setOrigin" | "mirrorSegment" | "mirrorSegmentBranch" | "splitSegment" | "splitSegmentBranch" | "splitBuilderSegments" | "unsplitSegment" |
-        "deleteSingleSegment" | "deleteSegment" | "addSegment" | "addSegments" | "moveBuilderSegment" | "duplicateSegment" | "duplicateSegmentBranch" | "replaceFigureDefinition" | "undo" | "redo")
+        "deleteSingleSegment" | "deleteSegment" | "addSegment" | "addSegments" | "addSpriteSegment" | "changeBranchThickness" | "moveBuilderSegment" | "duplicateSegment" | "duplicateSegmentBranch" | "replaceFigureDefinition" | "undo" | "redo")
 }
 
 pub(crate) fn property_call(method: &str) -> bool {
@@ -23,14 +23,14 @@ pub(crate) fn motion_call(method: &str) -> bool {
 }
 
 pub(crate) fn recorded_channel_call(method: &str) -> bool {
-    choice_call(method) || constraint_call(method) || property_call(method) || range_call(method) || rig_tool_call(method) || rig_pose_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" | "commitDrag" | "cancelDrag" |
+    gesture_call(method) || choice_call(method) || constraint_call(method) || property_call(method) || range_call(method) || rig_tool_call(method) || rig_pose_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" | "commitDrag" | "cancelDrag" |
         "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" | "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" |
         "poseJoint" | "rotateJoint" | "bendJoint" | "undo" | "redo")
 }
 
 pub(crate) fn range_call(method: &str) -> bool {
     matches!(method, "rotateFiguresInFrames" | "mirrorFiguresInFrames" | "scaleFiguresInFrames" | "resetPoseInFrames" | "centerFiguresInFrames" |
-        "detachFiguresInFrames" | "joinFiguresInFrames" | "moveSelectionInFrames" | "joinTo" | "unjoinFigure" | "joinFigure")
+        "detachFiguresInFrames" | "joinFiguresInFrames" | "moveSelectionInFrames" | "joinTo" | "unjoinFigure" | "joinFigure" | "addFigure" | "deleteSelection" | "deleteFigure")
 }
 
 pub(crate) fn posing_call(method: &str) -> bool {
@@ -39,6 +39,11 @@ pub(crate) fn posing_call(method: &str) -> bool {
 }
 
 pub(crate) fn choice_call(method: &str) -> bool { method == "setPoseChoice" }
+
+/// The tweener and the Alt-drag duplicate: gestures that pose or copy whole figures.
+pub(crate) fn gesture_call(method: &str) -> bool {
+    matches!(method, "beginTween" | "updateTween" | "beginDuplicateDrag" | "finishDuplicateDrag")
+}
 
 /// Only the recorded sparse 2D angle-lock definition changes, not general rig patches.
 pub(crate) fn constraint_call(method: &str) -> bool {
@@ -120,6 +125,26 @@ impl Editor {
     /// recordings are admitted. Reuse the gesture owner's affected slots.
     pub(crate) fn origin_pose_gate(&self) -> Result<(), EditError> {
         self.origin_plain_targets(&self.selection.uids)
+    }
+
+    /// The tweener blends, and the duplicate drag copies and moves, whole connected figures; neither
+    /// edits a rig or a pose by hand, so every definition the evaluator and the typed origin owner
+    /// read is admitted. A figure whose origin does not decode, or that lost its pivot, is refused.
+    pub(crate) fn origin_gesture_gate(&self, method: &str) -> Result<(), EditError> {
+        if !matches!(method, "beginTween" | "beginDuplicateDrag") { return Ok(()); }
+        let objects = self.selection_frame()?;
+        let slots = crate::select::resolve_join_selection(&objects, &self.selection.uids, true)
+            .map_err(|_| EditError::Unported("an invalid animation-origin hierarchy".into()))?;
+        for slot in slots {
+            let object = &objects[slot];
+            if let Some(figure) = self.figure_of(object).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
+                self.origin_figure(&figure)?;
+                if !object.get("_stykAnimationOrigin").is_some_and(Value::truthy) {
+                    return Err(EditError::Unported("an animation-origin figure without its pivot".into()));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The Rig tool's recorded 2D lifecycle reuses pose admission
@@ -401,7 +426,7 @@ impl Editor {
     /// `touch` and both commit paths synchronize only the gesture's captured poses.
     /// Pointer return preserves the exact original pivot metadata instead of rounding it again.
     pub(crate) fn synchronize_origins(&mut self, before: &[Value]) -> Result<(), EditError> {
-        for (slot, updated) in self.origin_updates(&self.frame_objects(), before, false)? {
+        for (slot, updated) in self.origin_updates(&self.frame_objects(), before, false, &[])? {
             self.frame_object_mut(slot).unwrap().set("_stykAnimationOrigin", updated);
         }
         Ok(())
@@ -409,7 +434,12 @@ impl Editor {
 
     /// The same synchronization owner for independently planned range frames.
     pub(crate) fn synchronize_origin_frame(&self, frame: &mut Value, before: &[Value], include_new: bool) -> Result<(), EditError> {
-        let updates = self.origin_updates(&crate::frame::objects_of(frame), before, include_new)?;
+        self.synchronize_origin_frame_with(frame, before, include_new, &[])
+    }
+
+    /// The same, with the definitions an insertion is about to add (the document does not hold them yet).
+    pub(crate) fn synchronize_origin_frame_with(&self, frame: &mut Value, before: &[Value], include_new: bool, added: &[Value]) -> Result<(), EditError> {
+        let updates = self.origin_updates(&crate::frame::objects_of(frame), before, include_new, added)?;
         if !updates.is_empty() {
             let objects = frame.make_obj().and_then(|frame| frame.get_mut("objects")).and_then(Value::make_arr)
                 .ok_or_else(|| EditError::Invalid("an origin frame without objects".into()))?;
@@ -418,10 +448,10 @@ impl Editor {
         Ok(())
     }
 
-    fn origin_updates(&self, objects: &[Value], before: &[Value], include_new: bool) -> Result<Vec<(usize, Value)>, EditError> {
-        let figures: HashMap<u32, Value> = self.report.get("figure_types").and_then(Value::elements).map(|items| items.iter()
+    fn origin_updates(&self, objects: &[Value], before: &[Value], include_new: bool, added: &[Value]) -> Result<Vec<(usize, Value)>, EditError> {
+        let figures: HashMap<u32, Value> = self.report.get("figure_types").and_then(Value::elements).map(|items| items.iter().chain(added.iter().cloned()).collect::<Vec<_>>()).unwrap_or_default().into_iter()
             .filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy))
-            .filter_map(|figure| Some((num(&figure, "figure_type_id")? as u32, figure))).collect()).unwrap_or_default();
+            .filter_map(|figure| Some((num(&figure, "figure_type_id")? as u32, figure))).collect();
         if figures.is_empty() { return Ok(Vec::new()); }
         let mut updates = Vec::new();
         let previous: HashMap<u32, &Value> = before.iter().filter_map(|object| Some((uid(object)?, object))).collect();

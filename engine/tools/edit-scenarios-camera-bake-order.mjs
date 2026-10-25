@@ -1,7 +1,8 @@
 // Imported endpoints materialize in document track order, independent of write touch order.
 // Uses only the editor's existing camera commands, so this planner regression stands alone.
+import {fileURLToPath} from 'node:url';
 import {writeFileSync} from 'node:fs';
-const out = new URL('../tests/edit/', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit/', import.meta.url));
 writeFileSync(`${out}camera-bake-offset-sheet.scenario.json`, JSON.stringify({
   name: 'camera-bake-offset-sheet', document: 'camera-chain.document.json',
   editor: {layerTimeline: true, propertyChannels: true},

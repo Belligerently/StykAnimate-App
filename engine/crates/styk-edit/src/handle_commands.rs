@@ -558,9 +558,7 @@ impl Editor {
             scale: num(c, "scale").unwrap_or(1.0), angle: num(c, "angle_rad").unwrap_or(0.0),
             is_default: c.get("is_default").is_some_and(Value::truthy), motion_offset: None,
         });
-        let travel = if self.worker_prepared_only {
-            prepared.travel_ready(base, tick).ok_or_else(|| EditError::Unported("follow path for this tick has not been prepared on a worker".into()))?
-        } else { prepared.travel(base, tick) };
+        let travel = prepared.travel(base, tick);
         if travel != base {
             if let Some(travel) = travel {
                 let mut out = camera.filter(|c| !c.get("is_default").is_some_and(Value::truthy)).and_then(|c| c.as_obj().cloned()).unwrap_or_default();

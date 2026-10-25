@@ -549,8 +549,9 @@ impl Editor {
             }
             Binding::Order { entries, targets } => {
                 if value.fract() != 0.0 || value < 1.0 || value > entries.len() as f64 {
-                    return Err(invalid(
+                    return Err(crate::invalid_with(
                         "errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom",
+                        vec![("length", Value::Num(entries.len() as f64))],
                     ));
                 }
                 let next = reorder(entries, targets, None, value - token.plan.initial)?;

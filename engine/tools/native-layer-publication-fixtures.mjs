@@ -1,8 +1,7 @@
 // Actual async native editor commands, migration descriptors and history (D15).
 import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
 import {open} from './fixture-kit.mjs';
-import {planLayerMembershipMigrationSteps} from '../../src/editor-layer-migration.mjs';
-import {migrationPlanPayload} from '../../src/playback-planning.mjs';
+import {planLayerMembershipMigrationSteps, migrationPlanPayload} from '../../src/editor-layer-migration.mjs';
 const out=new URL('../tests/native-layer-publication/',import.meta.url);mkdirSync(out,{recursive:true});
 Object.defineProperty(performance,'now',{value:()=>0,configurable:true});
 const json=value=>JSON.stringify(value,(key,item)=>key==='runtime_segments'?undefined:item);

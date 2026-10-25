@@ -169,7 +169,7 @@ impl Scene {
     /// memory measurement or limit.
     pub fn account_buffers(&mut self) {
         let mut bytes = [arc::<Scene>(), buffer(&self.objects), buffer(&self.items), buffer(&self.points), buffer(&self.figures), buffer(&self.figure_of), strings(&self.warnings),
-            buffer(&self.owners), buffer(&self.owner_scales), buffer(&self.chains), buffer(&self.clip_vfx), buffer(&self.meshes), buffer(&self.depths), buffer(&self.transitions)]
+            buffer(&self.owners), buffer(&self.owner_scales), buffer(&self.chains), buffer(&self.clip_vfx), buffer(&self.meshes), buffer(&self.depths), buffer(&self.transitions), buffer(&self.measured)]
             .into_iter().fold(0usize, usize::saturating_add);
         let mut spaces = HashSet::new();
         let mut rigs = HashSet::new();

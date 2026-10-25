@@ -146,9 +146,9 @@ fn interior_slope(h0: f64, h1: f64, before: f64, after: f64) -> f64 {
 }
 
 fn bezier_coordinate(t: f64, a: f64, b: f64) -> f64 {
-    // `(1 - t) ** 2` is `x * x` in V8; `t ** 3` is the platform's `pow` (D16), which `powf`
-    // calls: `t * t * t` rounds twice and stored channel values differed in their last bit.
-    3.0 * (1.0 - t).powi(2) * t * a + 3.0 * (1.0 - t) * t * t * b + t.powf(3.0)
+    // `(1 - t) ** 2` is `x * x` in V8; `t ** 3` is V8's `pow` (D16): `t * t * t` rounds twice
+    // and stored channel values differed in their last bit.
+    3.0 * (1.0 - t).powi(2) * t * a + 3.0 * (1.0 - t) * t * t * b + styk_math::pow(t, 3.0)
 }
 
 pub fn cubic_bezier_progress(t: f64, p: [f64; 4]) -> f64 {

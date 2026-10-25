@@ -62,6 +62,19 @@ platform `pow`; ten tests that open the asset packs, absent here and in CI); `np
 test assumes no Miniconda), 8 skipped. Draft PR CI on Windows also failed four JavaScript test
 files (one an absolute-path import, fixed in `f78648b7`).
 
+**State on 2026-10-24 (`63e8aafa`, pushed):** merged since the start: the tools and tests on
+Windows paths; effect-clip, property and motion-path edits in the session; native movieclip
+commands in the session; `.styk`, `.stkz`, `.stykmov` open and save through Rust (the
+JavaScript container codec and the vendored zstd deleted); one V8 `pow` with the fixture tools
+pinned to it (regeneration byte-stable on Windows and Linux). Counters: owner tapes 325 / 8,308
+steps, 0 failing, native 3,836, editor 549 (from the mirror 3,805 / 594); refusals left:
+bounds-callback alignment 32, origin/native-channel combinations 6, follow projections (mirror
+variant only). Inventory 357: 173 js, 126 partial, 33 ported, 23 verified, 2 removed. Windows:
+`npm test` 4,121 tests, 0 fail; Rust 886 pass, 11 fail before the pow merge (10 read the asset
+packs: `private-fixtures`); parity 59 ok, 5 fail before the pow merge (all pow regeneration
+stages and the Rust suite). The weekly usage limit stopped all streams on 2026-10-23; they were
+resumed from their worktrees on 2026-10-24 with continuation notes in their briefs.
+
 **Streams (wave 1, 2026-10-22):** `win-paths` (scripts, tools and tests on Windows paths;
 parity runs on Windows), `v8-pow` (one V8-exact `pow` in `styk-math`), `owner-cost` (per-figure
 memoized records; the default-ownership blocker), `bench-windows` (the section 5 driver on
@@ -227,7 +240,7 @@ Each stage leaves the app fully working, with its tests, parity results and docs
 | Stage | Subsystem | Replaces | Gate while both exist |
 | --- | --- | --- | --- |
 | S0 | Plan, inventory, baseline measurements, "before" screenshots, workspace, wasm build | — | — |
-| S1 | Formats: container reader/writer, PIV/STK codec, Stick Nodes | `native-container.mjs`, `zlib-sync.mjs`, vendored zstd, Python codec + Pyodide + PyInstaller sidecar, C++ scanner | Python codec remains a test oracle only |
+| S1 | Formats: container reader/writer, PIV/STK codec, Stick Nodes | `native-container.mjs` and the vendored zstd (both deleted: the workers open and save through `styk-formats::files`), `zlib-sync.mjs` (drawing tiles only now), Python codec + Pyodide + PyInstaller sidecar, C++ scanner | Python codec remains a test oracle only |
 | S2 | Document store + evaluation + geometry (all features: IK, channels, meshes, follow camera, text) | `src/pivot/`, evaluation modules | Rust evaluation checked against JS per primitive |
 | S3 | Renderer (WebGPU, WebGL2, CPU), effects, generators, images; playback on the thread pool | `renderer*.mjs`, `playback*.mjs`, `prepared-frames.mjs`, `vfx-*` executors, Canvas 2D renderer | per document: a scene using a feature the new renderer lacks keeps the old renderer |
 | S4 | Export frames, thumbnails, library previews | `export-frame-*`, `thumbnail-*`, `library-preview-*`, image codecs | per format |
@@ -245,13 +258,22 @@ tolerance the current export tests use.
 | --- | --- |
 | `engine/tools/reference.mjs` + `styk compare` | geometry, primitive by primitive, against the JS editor |
 | `engine/tools/reference-render.mjs` + `styk diff` | pixels against the app's renderer |
-| `engine/tools/container-parity.mjs` | decoded documents (and `styk container roundtrip` the written bytes) against `src/native-container.mjs` |
+| `engine/tools/container-parity.mjs` | the document the app's open path produces against the Rust store's reader (`styk container json`), and the bytes the app's save path writes against the file (`styk container roundtrip` does the same in the store); the JavaScript reader it was checked against is deleted |
+| `engine/tools/container-fixtures.mjs` → `engine/tests/containers` | the repository's native files (projects of versions 1 and 2 with every section kind, a figure, movieclips), written from fixture documents through the app's save path; regeneration is byte-stable and the parity container stage compares them. No engine test reads the local asset packs |
 | `engine/tools/ik-fixtures.mjs`, `engine/tools/eval-fixtures.mjs` → `cargo test -p styk-eval` | small projects the editor builds with its own commands, and what it evaluates (IK, movieclip replacements); regeneration is byte-stable |
 | `scripts/engine-app-parity.mjs` | the running app with and without the engine (`?engine=off`): stage pixels per tick, with onion skins and after playback |
 | `styk edit-replay --worker <reference.json>` | recorded worker-only native/sheet commands through the same strict every-step comparator |
 | `scripts/engine-edit-shadow.mjs --selection-adoption --focused --own --warm --exact-math` | actual new-ID selection after duplicate/paste, history and full undo |
 | `styk parity formats` (S1) | decoded documents and written bytes against the JS and Python codecs |
 | `scripts/ui-snapshots.mjs --touch --compare … --chrome-only` | the interface, pixel by pixel |
+
+The tools and scripts run on Windows as well as Linux, from a folder whose path has a drive letter and
+a space: a file URL becomes a path with `fileURLToPath` (never `.pathname`; `tests/windows-paths.test.mjs`
+guards it), an absolute path given to `import()` goes through `pathToFileURL`, the Rust CLI is
+`styk.exe`, and the Python codec oracle runs through `engine/tools/decode-piv.mjs` (the interpreter
+`scripts/run-python.mjs` picks) instead of a shell script. The tools that run the editor import
+`engine/tools/v8-pin.mjs` first, so `Math.pow` is V8's own on every platform (Node 24's default is the
+platform's; D16).
 
 Corpus: every file in `~/Downloads`, `~/Downloads/pivs`, `~/Downloads/WafflesPack` (127 files,
 with its `.stk` folders), the repository fixtures and asset packs. `Jay on a new app.styk`
@@ -267,7 +289,7 @@ Each gets an ADR under `docs/engine/decisions/` when it lands.
 | D1 | The engine workspace is `engine/` at the repository root, started from `experiments/styk-native` (kept as the measured reference). | One owner per concern; the prototype's numbers stay reproducible. | done |
 | D2 | The document store is a lossless, copy-on-write tree (ordered keys, exact numbers, packed numeric arrays) with typed evaluation views derived per record. | Saves must be byte-identical and unknown fields must survive; the prototype's typed model is read-only and lossy. An edit clones only the records it touches. | done (store, typed views per changed record) |
 | D3 | One WebAssembly module with threads (SharedArrayBuffer, COOP/COEP on the web build, Cloudflare and the Electron host). | One shared document for every worker instead of one copy per worker (today each playback worker holds its own). Synchronous queries from the UI thread. | done (headers on every host; playback of supported documents runs on it) |
-| D4 | Strangler gate per document for the renderer (`src/engine/engine-eligibility.mjs` names the first feature the engine lacks), per command group for editing. | The app must work at every commit. | renderer gate in use |
+| D4 | Strangler gate for the renderer (`src/engine/engine-eligibility.mjs` named the first feature of a document the engine lacked; deleted once the engine drew every document), per command group for editing. | The app must work at every commit. | renderer gate deleted; editing gated per command group |
 | D5 | zstd from the C library (`zstd-sys` 1.5.7) compiled to WebAssembly and natively. | Measured: at level 3 it reproduces the bytes of the vendored zstd build on all 448 version 2 files of the corpus. | done |
 | D6 | One threaded WebAssembly build, on a pinned nightly (`nightly-2026-09-15`, `-Z build-std` with atomics, 2 GiB shared memory). A page that is not cross-origin isolated runs the same module without workers, in slices on the interface thread. | Stable Rust ships no atomics-enabled standard library for `wasm32-unknown-unknown`. One build keeps one bundle. | done |
 | D7 | The interface thread never blocks: shared state is taken with a spinning lock (critical sections are a queue push or a pointer swap), and no rayon in WebAssembly (parallelism there is whole frames on the engine's workers). | `Atomics.wait` throws on a browser's interface thread; rayon parks the calling thread. Found the hard way: the first frame prepared on the interface thread trapped. | done |
@@ -279,7 +301,7 @@ Each gets an ADR under `docs/engine/decisions/` when it lands.
 | D13 | App-level pixel parity (`scripts/engine-app-parity.mjs`) fails a step when any pixel differs by more than 32 levels together with all eight neighbours, or the mean difference exceeds 0.25 levels. | The two renderers cover edge pixels by different rules: differences one or two pixels thick along outlines are expected, a moved, missing or recoloured shape differs over an area. The threshold is fixed; it is not tuned to pass. | done |
 | D14 | The page creates the engine's shared memory with the largest maximum the browser reserves (2 GiB, else 1 GiB, else 512 MiB; override `stykanimate.engine.memory`), and budgets caches to it. | Mobile WebKit may refuse a 2 GiB reservation. Desktop Chromium and WebKit accept 2 GiB and grow it; the fallback path is exercised by refusing the larger maxima. Real iOS devices are unverified. | done |
 | D15 | Editing moves to the engine command by command (`docs/engine/editing.md`): a ported facade method runs in `styk-edit` and returns the changed records and event detail, which the JavaScript document and history adopt; unported commands run in JavaScript and reach the engine through the mirror. Every port is checked by the command-replay harness (`engine/tools/edit-replay.mjs`): documents byte for byte, selection, history and events after every step. | The app keeps working at every commit while about 800 editor methods move; the harness turns each port into a mechanical comparison. | in use; revised 2026-10-03: ported commands run in shadow in the app before ownership flips, class by class; the engine edits large figure and 3D documents by default ([ADR](engine/decisions/0015-commands-record-for-record.md)) |
-| D16 | Engine arithmetic whose results are stored in documents uses `styk-math`: fdlibm 5.3 `sin`, `cos`, `atan2` and V8's `hypot`, bit for bit as Node computes them. | The harnesses run the editor in Node and compare bytes; Rust's `f64::sin` differed from it for 2.7 % of two million inputs, `f64::atan2` 17 %. Browsers disagree among themselves too (Chromium 153 differs from Node for 3.9 % of sines and 17 % of `atan2`), so the app already stores last-digit differences per browser: the engine gives one answer everywhere. | in use ([ADR](engine/decisions/0016-v8-exact-math.md)) |
+| D16 | Engine arithmetic whose results are stored in documents uses `styk-math`: fdlibm 5.3 `sin`, `cos`, `atan2`, V8's `hypot` and V8's own `pow`, bit for bit as Node computes them. | The harnesses run the editor in Node and compare bytes; Rust's `f64::sin` differed from it for 2.7 % of two million inputs, `f64::atan2` 17 %. Browsers disagree among themselves too (Chromium 153 differs from Node for 3.9 % of sines and 17 % of `atan2`), so the app already stores last-digit differences per browser: the engine gives one answer everywhere. Node 24's `Math.pow` is the platform's (it differs between Windows and Linux for 0.05 % of inputs), so the recording tools pin it to V8's own with `--no-use-std-math-pow` (`engine/tools/v8-pin.mjs`). | in use ([ADR](engine/decisions/0016-v8-exact-math.md)) |
 | D17 | The drawing raster engine is its own crate, `styk-drawing`, bound as a separate non-threaded WebAssembly module (`styk-drawing-wasm`) that each drawing worker instantiates for itself; JavaScript reaches it through `src/engine/engine-drawing.mjs`. | The drawing workers cancel a job by terminating the worker; a terminated thread of the shared-memory engine module could die holding its allocator or a lock (D7) and block every other thread. Tiles already cross to the workers in bounded transfers, so a module per worker costs no extra copy. | in use ([ADR](engine/decisions/0017-drawing-raster-engine.md)) |
 | D18 | What the editor draws at random (identities, seeds) is drawn through one module (`src/editor-draws.mjs`) and handed to the engine with the call: the replay recorder draws a fixed sequence and records each step's draws; the facade records the editor's draws and sends them with the engine's run; the engine takes them in order and by kind, answering `Unported` when it would draw what it was not handed. | Ports of commands that draw are compared record for record like the others (D15), and recordings stay reproducible. | in use ([ADR](engine/decisions/0018-editor-draws.md)) |
 | D19 | One engine session per document owns the document and history; each answer carries a copy-on-write document patch the editor applies to its read view; refused calls run in JavaScript and are written back. | Per-command adoption code (200–400 lines per family) would be discarded by phase 3; a generic patch makes porting a command just its Rust implementation and replays. | in progress ([ADR](engine/decisions/0019-engine-owns-the-document.md)) |
@@ -359,6 +381,31 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 ## 6. Open problems
 
+- **Planning jobs on the engine's workers** (2026-10-24): the editor's layer-move and
+  in-between planners run on the engine's worker threads (`src/engine/engine-planning.mjs`,
+  `Engine::plan_layers`, `Engine::plan_inbetweens`); the JavaScript playback worker no longer
+  plans. Open: (1) a layer-sheet document never reaches the layer planner, because the editor
+  plans its moves itself on the interface thread (`prepareSheet`, sliced), so the engine's
+  sheet kernel (`sheet_layer_plan`) is not used by the app; (2) an in-between on a layer sheet,
+  or of authored poses with camera-motion or effect clips, answers `EngineUnported` and is
+  planned on the interface thread in slices (as is any host without worker threads); (3) the
+  browser and Akane runs of `docs/INSERT-INBETWEEN.md` were made with the old worker planner
+  and are not repeated; (4) no recorded tape reaches a background planner (the tapes with layer
+  commands move layers and folders, not figures), so the recordings under `engine/tests/layer-migration`,
+  `layer-sheet-migration` and `inbetween` are the evidence.
+- **Owner gesture mirror reuses `_drag` when a begin replaces an open gesture** (2026-10-24,
+  low): `gesture()` keeps the mirrored engine `_drag` object when a `begin*` call commits the
+  open gesture and starts another in the same call, so the figure-handle pivot marker and a
+  later takeover read the old gesture's uid, origin and `before`. Documents and history stay
+  exact; the app's pointer handlers cancel an open drag before beginning one. Fix with the
+  owner default: a begin that returns a drag while an engine drag is mirrored makes a new one.
+- **Stand-in coverage after the asset packs left** (2026-10-24): five of 30 deliberate
+  breakages went unnoticed by the repository documents that replaced the asset packs in the
+  engine tests (effect alpha and softness in the CPU/GPU comparison, an entry margin and a
+  tile shift in export tiles, a zoom level in smooth sprites); no solid-text lone-glyph,
+  captions-in-effects or beam case in `gpu_parity`.
+- **Opening large Pivot files (2026-10-24, `perf-open`):** the codec's and the engine commit's hotspots were one cause: dlmalloc grows the WebAssembly memory a page at a time and each `memory.grow` costs 1.1-1.7 ms in Node on Windows whatever its size (`dlmalloc::sys::System::alloc` in the named profiles; ~24 K grows for a 1.5 GB working set). `styk-alloc` (the global allocator of `styk-wasm` and `styk-codec-wasm`) grows ahead in 16-128 MiB steps, halving at the memory's maximum (D14); output bytes are unchanged (the import body of all nine private documents hashes the same as the native codec's). Node probe, medians of three interleaved runs at 3-65 % machine load, before -> after: `tdd2 uriel nemesis.piv` codec import 5.2 -> 2.7 s (CPU 10.3 -> 2.9 s), engine commit 1.7 -> 0.6 s; `svr_uriel.piv` 4.9 -> 2.3 s and 2.2 -> 0.5 s. Native `styk-piv` imports the same documents in 0.9-1.1 s. Still open on the way to the 4 s / 2.5 s targets: the mirror's JavaScript lifting (~2.4 s CPU for tdd2, of which ~1.3 s are the base64 scans in `document-lift.mjs`; its fingerprint is pinned by a collision test) and the engine's image decoding that follows the commit (2.8 s, on workers in the app), the codec's remaining 2.7 s (1.5 s of it software SHA-256 in WebAssembly: the source's id and `document_digest` of the canonical document), and the document's three crossings (see the open-path finding in the handoff above), which the engine loading documents itself removes.
+
 - **Owned editing classes:** large figures, 3D, figures, movieclips and channels are open. The current user cost rule, matching committed checkpoints and actual default core/full-undo proof pass. Exact behavior and D13 are unchanged; no causal speed claim.
 - **Channels scope:** the original full paired cost passes at 369.790/352.875 ms, 4.793% and 0.048887 ms excess per full call. Matching c4c580de checkpoint and actual cold default adoption pass; final gate checks cover the two JavaScript files separately. Native/source/origin exclusions and APIs remain unchanged.
 
@@ -408,17 +455,17 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   still prevent renderer deletion. Hardware-opt-in headless web previously returned an
   empty engine canvas for all nine rig views; no new hardware claim or threshold change.
 
-- **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4).
-  `node engine/tools/gate-census.mjs` (2026-10-03, the gate itself on each file loaded as
-  the app loads it): of 382 native documents (the asset catalogue, the private corpus and
-  the repository's fixtures; Pivot figures left out), the engine draws 380; 2 do not load in
-  Node (`svr_uriel.piv` exceeds Node's string limit; the unrepaired Jay file is invalid). The
-  gate still refuses frame drafts (temporary editing state, only ever shown as onion skins)
-  and movieclips nested deeper than 16 levels; property channels are drawn by the engine and
-  edited by it on layer sheets (class `channels`, not owned by default; `_styk.animation` on a
-  native timeline stays with the editor). Electron's WebGPU canvas shows nothing under Xvfb on this
-  machine, so Electron app parity of new features ran the engine on WebGL2 there. A drawing stroke not
-  yet published still makes its frame fall back to the JavaScript renderer.
+- **Every document is drawn by the engine** (the renderer gate, D4, and its census are gone,
+  2026-10-24). Its last two reasons, frame drafts (temporary editing state, only ever shown as
+  onion skins) and movieclips nested deeper than 16 levels, left once the engine drew both,
+  compared with the editor in the app (Electron WebGPU and the web build: 14 runs, 120 steps, every one
+  drawn by the engine, no solid pixel, mean at most 0.049 levels; [rendering.md](engine/rendering.md#every-document)).
+  Property channels are drawn by the engine and edited by it on layer sheets (class `channels`, not
+  owned by default; `_styk.animation` on a native timeline stays with the editor). Electron's WebGPU
+  canvas shows nothing under Xvfb on the Linux machine, so Electron app parity of earlier features ran the
+  engine on WebGL2 there. What still sends a frame to the JavaScript renderer is not the
+  document: a failed engine, a drawing stroke not yet published, a drawing preview, a rotated or
+  mirrored view.
 - **Exports through the engine** (`styk-export`, `src/engine/engine-export.mjs`): an export
   holds a second GPU device and a second copy of the document's pictures for its duration
   (+52–361 MiB GPU memory measured); its first frame waits for every picture (URIEL 3:
@@ -429,10 +476,10 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   Scene-effect camera images
   wider than 3,968 px are upscaled. Not verified: Windows, macOS, real displays, other GPUs,
   Firefox, Safari, packaged builds.
-- **Drawing raster engine** (`styk-drawing`, D17): custom pressure curves use libm's `pow` in
-  WebAssembly (measured natively: dab shapes differ in their last digits, pixels identical);
-  jobs peak higher in module memory (released above 256 MiB per instance); tile preparation
-  and the per-sample brush model are slower; the GPU brush stays JavaScript. Each completed
+- **Drawing raster engine** (`styk-drawing`, D17): custom pressure curves use `styk_math::pow`,
+  V8's own `pow` on every platform (D16); jobs peak higher in module memory (released above
+  256 MiB per instance); tile preparation and the per-sample brush model are slower; the GPU
+  brush stays JavaScript. Each completed
   publication of a large cel costs the interface thread 0.2–0.7 s while the engine stage syncs
   the new asset (both engines; 2,040-tile cel), now kept out of undo and redo but still paid
   after strokes and fills. Not verified: Windows, macOS, packaged builds, real pens.
@@ -441,8 +488,9 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   animation-origin command families stay with the editor. Owned editing of `channels-figure` took 289.3 ms against the editor's
   116.9 ms (one run, loaded machine): records rebuild channel bindings and convert frames for
   geometry on every evaluation, and scrub previews carry whole frames, so the `channels` class
-  is not owned until large documents are measured. Bézier easing uses `pow`, which in
-  WebAssembly is libm and may differ from a browser's in the last bit (not observed).
+  is not owned until large documents are measured. Bézier easing uses `styk_math::pow`
+  (V8's own), which differs in the last bit from the platform's `pow` that V8 13.6 (Node 24's
+  default) computes for about 8 % of the easing's `t ** 3` inputs.
 - **Previews on WebGL2 and without WebGPU canvases:** thumbnails and library previews are
   drawn by the CPU rasterizer in the engine's preview worker where the stage cannot draw them
   (WebGL2 stages, where one device cannot draw to a second canvas, and WebGPU canvases that
@@ -462,8 +510,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   Thumbnails equal the stage and export frames. In-between previews and the camera-motion
   preview still draw in the JavaScript thumbnail worker (a sampled pose that is not in the
   document).
-- **Range commands, open after the port**: pasting and aligning across frames (the app
-  measures alignment bounds with a function of its own), movieclips among the changed figures,
+- **Range commands, open after the port**: pasting across frames, movieclips among the changed figures,
   duplicating figures with effect clips, adding, duplicating or deleting across native
   keyframes, ordering one figure's segments, and the builder's segment styles stay in the
   editor. Documents whose poses carry `runtime_segments` keep the range calls in the editor.
@@ -507,7 +554,8 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   branch thickness, sprite segments, native property gestures, drawing new figures and
   recorded native/sheet movieclip creation, insertion, extension and awaited Bake.
   Joined pinned motion paths and measured-bounds shadow transport now match in the app;
-  bounds callbacks still run in the editor until the canonical worker query is connected.
+  the app's own bounds callback is measured by the engine itself (`styk-edit/src/bounds.rs`), so
+  alignment and camera centering run in the session without a JavaScript callback.
   Follow UI sessions refuse cold ticks/revisions instead of evaluating them on the interface
   thread; native bake replays do not certify UI admission. Still unported in `styk-edit`:
   unrecorded complex origin definitions and motion-path/pose-choice/spatial combinations
@@ -573,10 +621,11 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   Generated effects drawn by the editor's Canvas 2D fallback (tinted sprites, an 8- or
   32-step colour ramp, a 4,000-particle preview budget) differ from its WebGPU renderer, so
   web parity (the engine on WebGL2 against the fallback) cannot pass on them; the engine
-  draws them as on WebGPU devices. `Math.pow` has no V8-exact counterpart (Node uses the
-  platform's); the engine uses `libm::pow` only where a last-bit difference cannot reach a
-  stored value (D16). URIEL 3's explosion targets an object the document does not contain,
-  so neither renderer draws it: an effect with a missing target draws nothing, silently.
+  draws them as on WebGPU devices. `Math.pow` and `**` are `styk_math::pow` everywhere in
+  the engine: V8's own fdlibm-based `pow`, which Node 24 runs only with
+  `--no-use-std-math-pow` (its default is the platform's, which differs between Windows and
+  Linux), so the recording tools pin Node to it (`engine/tools/v8-pin.mjs`, D16). URIEL 3's
+  explosion targets an object the document does not contain, so neither renderer draws it: an effect with a missing target draws nothing, silently.
 - **Some evaluation trigonometry is still the platform's** (D16): tweens, the IK solver,
   rig constraints, 3D quaternions and camera motion use `styk-math` (now with `asin`, `acos`
   and `log1p`), but geometry uses `f64::sin` and `cos`; its points are rounded to single
@@ -770,7 +819,14 @@ performance claim. Eight native-channel authoring tapes remain unadmitted.
 
 **Containers** (`engine/tools/container-parity.mjs`, `styk container roundtrip`): 461 native
 files decode to the same document as `src/native-container.mjs`; all 448 version 2 files are
-written back byte-identical.
+written back byte-identical. Before that reader and writer were deleted (2026-10-23), the app's
+Rust-backed path (`styk_formats::files` in the codec module, `src/native-file-codec.mjs`) was
+compared with them on 259 repository files and two 16 and 40 MB projects made from private Pivot
+files: the same documents (array sharing included), 261 of 261 saves byte-identical to the
+JavaScript writer, every version 2 file (252 repository files and both projects) byte-identical
+to itself (the embedded original stored first, as the export worker does), and, on 1,760 damaged
+copies, the same files accepted with the same documents and the same files refused. Refusals now carry the localized message
+where the browser's inflate or `JSON.parse` used to raise its own text.
 
 **Pivot codec** (`engine/tools/piv/parity.sh`, replayed by `styk-piv replay` on the final
 binary): 13,369 requests of 679 scenarios answer as the Python codec does: 3,041 imports
@@ -1089,14 +1145,14 @@ effect executors are deleted):
    motion families match, including future target and ancestor guards; scalar-only
    motion, native property projection and unrecorded complex combinations remain gated.
 5. Small gates: rotated and mirrored views (renderer), follow camera, layer parallax, colour
-   transitions, Stick Nodes sprites, frame drafts, retained movieclip sources,
+   transitions, Stick Nodes sprites, retained movieclip sources,
    `runtime_segments` fallbacks; exact fractional prepared playback remains required.
 6. Every other drawing path through the engine: thumbnails, library previews, the camera
    monitor, the drawing workspace (live strokes), export frames (S4).
 7. A CPU rasterizer for exports, thumbnails and devices without WebGPU or WebGL2: done
    (milestone log). Left: the camera monitor on WebGL2 stages.
 8. Delete the JavaScript renderer, raster caches, stand-ins and density buckets, playback
-   workers, effect executors; the eligibility gate disappears.
+   workers, effect executors; the eligibility gate is gone (2026-10-24).
 
 **S1, formats:** done: the Rust codec runs in the app in place of Pyodide and the Python
 sidecar, and the Python codec stays only as the development oracle (milestone log, 10:05).
@@ -1311,5 +1367,6 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 20:00 UTC | Preserve clipboard paste counters | Paste and duplicate publish certified counters through original events and clipboard restoration; additive opt-in Session JSON, Rust signatures/math unchanged. **Counters:** inventory unchanged 175/123/34/23/1; classes 5→5; deleted JS 2→2; command rows 7→8; full cost rows 43 and engine-1 0/28 unchanged. | 238 Rust / 106 recorded calls / 263 JS and Main check pass. All 34 paired boundaries and full undo match; aggregate paste 24.860/20.630 ms is diagnostic only. |
 | 2026-10-11 | Adopt layer metadata, project settings and movieclip rename | The leftover diff from the stopped agent, finished: the eight layer metadata commands, `setFPS`/`setCanvasSize`/`updateProject` and sheet `renameMovieclip` adopt the engine's answer in the default classes mode. New `scripts/engine-app-tape.mjs` replays recorded tapes in the app. Worktrees archived and removed. **Counters:** inventory 175/123/34/23/1 unchanged; OWNED_CLASSES 5; app-owned commands 98→110; deleted JS 2. | styk-edit tests and 126 adoption tests pass; check passes. In the app, seven tapes (101 steps, 43 owned calls) match the editor alone at every step and after full undo. |
 | 2026-10-11 | D19: the engine owns the document | Generic document patches (`styk_edit::patch`, checked on every native replay step); the owner (`engine-owner.mjs`): persistent session per document, patches applied copy-on-write to the read view, session history with external entries for editor-run calls (`external.rs`), gestures mirrored, sessions per tab, start from the mirror with `@shape`, legacy Pivot pose caches materialized like the editor. Tools: `tests/engine-owner.test.mjs`, `scripts/engine-app-tape.mjs --owner`, `scripts/engine-owner-cost.mjs [--app]`. **Counters:** inventory unchanged; OWNED_CLASSES 5; deleted JS 2. | 325 tapes / 8,308 steps match in Node from the document and from the mirror (with legacy caches); 28 app tapes match. Cost in the app: Jay C 91.4 / J 89.5 ms (pass), URIEL 3 C 145.9 / J 54.4 ms (fail). Patch key-order fix: native heavy calls 6.3 → 2 ms. |
-
 | 2026-10-23 | Add connected selection to the Rust command API | `styk-edit` Editor/Session accepts `selectConnected`, preserving candidate/add ordering, active selection, no-op events and history. Iterative traversal handles cycles and invalid/missing join slots. App routing and ownership gates unchanged; inventory classifications stay 175/123/34/23/1. | Five feature tests, 81 recorded steps in both direct and Session routes; all 120 selected Rust tests pass, plus 33 JS tests (one build-dependent skip). Seven fixture files regenerate byte-identically; npm run check passes. Native macOS evidence only; browser/WebAssembly and performance unverified. |
+| 2026-10-23 | S7 Windows; S5 owner gestures; S1 native files | The tools and tests run on Windows paths; effect-clip and property edits and native movieclip commands run in the session; `.styk`/`.stkz`/`.stykmov` open and save through `styk-formats` in the codec module, the JavaScript container codec and vendored zstd deleted. **Counters:** owner editor calls 1,389 → 849; inventory 175/123/34/23/1 → 173/126/33/23/2; deleted JS modules +2 (native-container, vendored zstd). | Owner tapes 0 failing in both variants; `npm test` on Windows 4,121, 0 fail; old and new container codecs equal on 259 native files and two large documents (documents, saves, cache) before deletion. |
+| 2026-10-24 | D16 pow; S5 motion paths | `styk_math::pow` is V8's legacy fdlibm pow and every fixture tool pins Node to it (`engine/tools/v8-pin.mjs`); motion-path edits run in the session (redo under an open edit hands it to the editor). **Counters:** engine pow call sites on platform pow 9 → 0; owner editor calls 849 → 549. | pow: 0 mismatches on 6.17 M recorded and 2 M fresh inputs; regeneration byte-stable on Windows and Linux; four crates 455 tests pass; owner tapes 0 failing. |

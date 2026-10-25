@@ -161,6 +161,8 @@ pub struct EditOptions<'a> {
     /// anchors (the editor's 6 ms); without a clock, all of them are evaluated.
     pub clock: Option<crate::Clock>,
     pub anchor_budget_ms: f64,
+    /// Drawing cels the interface holds live ([`styk_eval::live`]), drawn in place of their published tiles.
+    pub live: Option<&'a styk_eval::live::LiveCels>,
 }
 
 /// A clock for hosts that give none: anchors are then always evaluated.
@@ -317,7 +319,7 @@ impl EditScene {
                 });
             }
         }
-        let overrides = Overrides { hidden: &hidden, translations, background: options.background, bypass_effects: options.bypass_effects, generators: batch.as_deref() };
+        let overrides = Overrides { hidden: &hidden, translations, background: options.background, bypass_effects: options.bypass_effects, generators: batch.as_deref(), live: options.live.map(|cels| styk_eval::live::LiveView { cels, base: generation.assets.pages }) };
         if options.onions.is_empty() {
             let frame_scene = scene;
             return Ok(Some(Arc::new(encode_composed(doc, &generation.assets, &frame_scene, &overrides, &[], None))));

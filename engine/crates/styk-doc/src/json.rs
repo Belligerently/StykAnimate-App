@@ -52,6 +52,40 @@ pub fn parse_with(text: &[u8], hook: &mut dyn StringHook) -> Result<Value, JsonE
     Ok(value)
 }
 
+/// A member of a scanned root object: its key, and the bytes of its value in the text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Member {
+    pub key: String,
+    pub value: std::ops::Range<usize>,
+}
+
+/// Checks JSON text without building a tree, as [`parse`] would read it, and returns where each
+/// member of a root object lies (`None` when the root is not an object).
+pub fn scan(text: &[u8]) -> Result<Option<Vec<Member>>, JsonError> {
+    scan_with(text, &mut KeepStrings)
+}
+
+/// [`scan`], passing every string value through `hook` as [`parse_with`] does. An error from the
+/// hook ends the scan; the values it returns are dropped, so a hook that only checks builds nothing.
+pub fn scan_with(text: &[u8], hook: &mut dyn StringHook) -> Result<Option<Vec<Member>>, JsonError> {
+    let mut parser = Parser { text, at: 0, keys: HashMap::new(), shapes: HashMap::new(), scratch: String::new(), hook };
+    if text.starts_with(&[0xef, 0xbb, 0xbf]) {
+        parser.at = 3;
+    }
+    parser.space();
+    let members = if parser.text.get(parser.at) == Some(&b'{') {
+        Some(parser.scan_root()?)
+    } else {
+        parser.skip(0)?;
+        None
+    };
+    parser.space();
+    if parser.at != text.len() {
+        return Err(parser.error("unexpected text after the document"));
+    }
+    Ok(members)
+}
+
 struct Parser<'a> {
     text: &'a [u8],
     at: usize,
@@ -263,6 +297,160 @@ impl<'a> Parser<'a> {
         out.push_str(std::str::from_utf8(&source[run..]).map_err(|_| fail(run, "invalid UTF-8 in a string"))?);
         self.scratch = out;
         Ok(())
+    }
+
+    /// Passes a string value to the hook, keeping nothing.
+    fn check_string(&mut self, start: usize, end: usize, escaped: bool) -> Result<(), JsonError> {
+        let result = if escaped {
+            self.unescape(start, end)?;
+            let scratch = std::mem::take(&mut self.scratch);
+            let result = self.hook.string(&scratch);
+            self.scratch = scratch;
+            result
+        } else {
+            let text = std::str::from_utf8(&self.text[start..end]).map_err(|_| self.error("invalid UTF-8 in a string"))?;
+            self.hook.string(text)
+        };
+        match result {
+            Some(Err(error)) => Err(error),
+            _ => Ok(()),
+        }
+    }
+
+    /// Reads a key without interning it, returning its text.
+    fn key_text(&mut self) -> Result<String, JsonError> {
+        if self.text.get(self.at) != Some(&b'"') {
+            return Err(self.error("expected a key"));
+        }
+        let (start, end, escaped) = self.string_span()?;
+        if escaped {
+            self.unescape(start, end)?;
+            return Ok(self.scratch.clone());
+        }
+        std::str::from_utf8(&self.text[start..end]).map(str::to_string).map_err(|_| self.error("invalid UTF-8 in a key"))
+    }
+
+    /// Validates a key without copying or interning it.
+    fn skip_key(&mut self) -> Result<(), JsonError> {
+        if self.text.get(self.at) != Some(&b'"') {
+            return Err(self.error("expected a key"));
+        }
+        let (start, end, escaped) = self.string_span()?;
+        if escaped {
+            self.unescape(start, end)
+        } else {
+            std::str::from_utf8(&self.text[start..end]).map(drop).map_err(|_| self.error("invalid UTF-8 in a key"))
+        }
+    }
+
+    /// The members of the root object, each value skipped and its bytes noted.
+    fn scan_root(&mut self) -> Result<Vec<Member>, JsonError> {
+        self.at += 1;
+        self.space();
+        let mut members = Vec::new();
+        if self.text.get(self.at) == Some(&b'}') {
+            self.at += 1;
+            return Ok(members);
+        }
+        loop {
+            let key = self.key_text()?;
+            self.space();
+            if self.text.get(self.at) != Some(&b':') {
+                return Err(self.error("expected : after a key"));
+            }
+            self.at += 1;
+            self.space();
+            let start = self.at;
+            self.skip(1)?;
+            members.push(Member { key, value: start..self.at });
+            self.space();
+            match self.text.get(self.at) {
+                Some(b',') => {
+                    self.at += 1;
+                    self.space();
+                }
+                Some(b'}') => {
+                    self.at += 1;
+                    return Ok(members);
+                }
+                _ => return Err(self.error("expected , or } in an object")),
+            }
+        }
+    }
+
+    /// Reads one value as `value` does and builds nothing.
+    fn skip(&mut self, depth: usize) -> Result<(), JsonError> {
+        match self.text.get(self.at) {
+            Some(b'{') => {
+                if depth >= MAX_DEPTH {
+                    return Err(JsonError::Depth(MAX_DEPTH));
+                }
+                self.at += 1;
+                self.space();
+                if self.text.get(self.at) == Some(&b'}') {
+                    self.at += 1;
+                    return Ok(());
+                }
+                loop {
+                    self.skip_key()?;
+                    self.space();
+                    if self.text.get(self.at) != Some(&b':') {
+                        return Err(self.error("expected : after a key"));
+                    }
+                    self.at += 1;
+                    self.space();
+                    self.skip(depth + 1)?;
+                    self.space();
+                    match self.text.get(self.at) {
+                        Some(b',') => {
+                            self.at += 1;
+                            self.space();
+                        }
+                        Some(b'}') => {
+                            self.at += 1;
+                            return Ok(());
+                        }
+                        _ => return Err(self.error("expected , or } in an object")),
+                    }
+                }
+            }
+            Some(b'[') => {
+                if depth >= MAX_DEPTH {
+                    return Err(JsonError::Depth(MAX_DEPTH));
+                }
+                self.at += 1;
+                self.space();
+                if self.text.get(self.at) == Some(&b']') {
+                    self.at += 1;
+                    return Ok(());
+                }
+                loop {
+                    self.skip(depth + 1)?;
+                    self.space();
+                    match self.text.get(self.at) {
+                        Some(b',') => {
+                            self.at += 1;
+                            self.space();
+                        }
+                        Some(b']') => {
+                            self.at += 1;
+                            return Ok(());
+                        }
+                        _ => return Err(self.error("expected , or ] in an array")),
+                    }
+                }
+            }
+            Some(b'"') => {
+                let (start, end, escaped) = self.string_span()?;
+                self.check_string(start, end, escaped)
+            }
+            Some(b't') => self.literal(b"true", Value::Null).map(drop),
+            Some(b'f') => self.literal(b"false", Value::Null).map(drop),
+            Some(b'n') => self.literal(b"null", Value::Null).map(drop),
+            Some(b'-' | b'0'..=b'9') => self.number().map(drop),
+            Some(_) => Err(self.error("unexpected character")),
+            None => Err(self.error("unexpected end of text")),
+        }
     }
 
     fn array(&mut self, depth: usize) -> Result<Value, JsonError> {
@@ -719,5 +907,64 @@ mod tests {
             assert_eq!(checks,3);
             assert_eq!(utf16_units_checked(&value,||Ok::<_, &str>(())).unwrap(),utf16_units(&value));
         }
+    }
+
+    /// A hook that notes every string value it is given.
+    struct Seen(Vec<String>);
+    impl StringHook for Seen {
+        fn string(&mut self, text: &str) -> Option<Result<Value, JsonError>> {
+            self.0.push(text.to_string());
+            None
+        }
+    }
+
+    #[test]
+    fn a_scan_accepts_and_refuses_exactly_what_a_parse_does() {
+        for text in [
+            r#"{"version":5,"fps":33,"keyframes":[{"objects":[{"unique_id":1,"angles":[0,1.5707963267948966,-0.25],"join":null}]}]}"#,
+            r#"{"a":"quote \" slash \\ tab \t unit \u001f é 漢 😀 \ud83d\ude00 \ud800"}"#,
+            r#"[1e+21,1e-7,0.000001,-0.5,5e-324,true,false,null]"#,
+            r#"  {"b":1,"2":2,"b":5}  "#,
+            r#"[[],{},[[]],[{}],""]"#,
+            "\u{feff}{}",
+            r#""just a string""#,
+            "12",
+            // refused
+            "", "{", "[1,]", "[,1]", r#"{"a":1,}"#, r#"{"a" 1}"#, r#"{a:1}"#, r#"{"a":01}"#, r#"{"a":1.}"#, r#"{"a":1e}"#, "tru", "nul", r#"{"a":"\q"}"#,
+            r#"{"a":"\u12"}"#, "\"line\nbreak\"", r#"{"a":1} x"#, r#"["unterminated"#, r#"{"a":[}"#,
+        ] {
+            assert_eq!(scan(text.as_bytes()).is_ok(), parse(text.as_bytes()).is_ok(), "{text:?}");
+        }
+        let deep = "[".repeat(MAX_DEPTH + 1) + &"]".repeat(MAX_DEPTH + 1);
+        assert_eq!(scan(deep.as_bytes()), Err(JsonError::Depth(MAX_DEPTH)));
+        assert_eq!(parse(deep.as_bytes()).err(), Some(JsonError::Depth(MAX_DEPTH)));
+        let nested = "[".repeat(MAX_DEPTH) + &"]".repeat(MAX_DEPTH);
+        assert!(scan(nested.as_bytes()).is_ok() && parse(nested.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn a_scan_reports_the_root_members_and_every_string_value() {
+        let text = br#" {"a": 1, "b\u0063": {"x":"in"}, "d":["s",{"k":"v"}], "e": "t"} "#;
+        let mut seen = Seen(Vec::new());
+        let members = scan_with(text, &mut seen).unwrap().unwrap();
+        assert_eq!(members.iter().map(|m| m.key.as_str()).collect::<Vec<_>>(), ["a", "bc", "d", "e"]);
+        let slice = |i: usize| std::str::from_utf8(&text[members[i].value.clone()]).unwrap();
+        assert_eq!((slice(0), slice(1), slice(2), slice(3)), ("1", r#"{"x":"in"}"#, r#"["s",{"k":"v"}]"#, r#""t""#));
+        assert_eq!(seen.0, ["in", "s", "v", "t"], "string values in document order; keys are not strings values");
+        assert_eq!(scan(b"[1]").unwrap(), None);
+        assert_eq!(scan(b"{}").unwrap(), Some(Vec::new()));
+        assert_eq!(scan("\u{feff}{\"a\":2}".as_bytes()).unwrap().unwrap()[0].value, 8..9);
+    }
+
+    #[test]
+    fn a_hook_error_ends_a_scan() {
+        struct Refuse;
+        impl StringHook for Refuse {
+            fn string(&mut self, text: &str) -> Option<Result<Value, JsonError>> {
+                (text == "bad").then_some(Err(JsonError::Syntax { offset: 0, message: "refused" }))
+            }
+        }
+        assert!(scan_with(br#"{"a":["ok","bad"]}"#, &mut Refuse).is_err());
+        assert!(scan_with(br#"{"a":["ok","fine"]}"#, &mut Refuse).is_ok());
     }
 }

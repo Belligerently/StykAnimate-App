@@ -1,8 +1,10 @@
 // The camera used by editing: authored camera, follow travel, then preset impulses.
 // Record with the actual editor before porting, including edits invalidating the shared path.
+import './v8-pin.mjs';
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {createCameraMotion} from '../../src/camera-motion.mjs';
-const out = new URL('../tests/edit/', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit/', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const read = name => JSON.parse(readFileSync(`${out}${name}`, 'utf8'));
 const write = (name, document) => writeFileSync(`${out}${name}.document.json`, JSON.stringify(document) + '\n');

@@ -1,5 +1,6 @@
 // The app's bounds callback, using its existing renderer owner and fixture resources.
 import {objectBounds} from '../../src/renderer-geometry.mjs';
+import {markAppBounds} from '../../src/engine/engine-edit-bounds.mjs';
 export function appBounds(resources = {}) {
   const cache = new WeakMap();
   return geometry => {
@@ -13,12 +14,16 @@ export function appBounds(resources = {}) {
     return bounds;
   };
 }
+/** The plain marker is the app's callback as the app has it, which the engine measures itself;
+ * with `resources` it is a variant the engine does not know (its measurements are recorded). */
+export const isAppMarker = value => value?.['@boundsCallback'] === 'app' && value.resources === undefined;
 export function recordedBounds(value) {
   if (!value || typeof value !== 'object' || !Object.hasOwn(value, '@boundsCallback')) return null;
   if (value['@boundsCallback'] === 'app') {
     const given = value.resources ?? {};
-    return appBounds({...given, ...(given.imageSize ? {image: () => ({naturalWidth: given.imageSize[0], naturalHeight: given.imageSize[1]})} : {}),
+    const callback = appBounds({...given, ...(given.imageSize ? {image: () => ({naturalWidth: given.imageSize[0], naturalHeight: given.imageSize[1]})} : {}),
       ...(given.drawingBounds ? {drawing: () => ({store: {bounds: given.drawingBounds}})} : {})});
+    return isAppMarker(value) ? markAppBounds(callback) : callback;
   }
   if (value['@boundsCallback'] === 'constant') return () => value.value;
   throw new Error('Unknown bounds callback in editing scenario');

@@ -10,6 +10,7 @@
 import {createServer} from 'node:http';
 import {createReadStream, statSync, existsSync} from 'node:fs';
 import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 
 const root = path.resolve(import.meta.dirname, '..');
 const TYPES = {'.html': 'text/html; charset=utf-8', '.mjs': 'text/javascript', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm',
@@ -42,7 +43,7 @@ export function startEngineServer({port = 47860, files = []} = {}) {
   return new Promise(resolve => server.listen(port, '127.0.0.1', () => resolve({origin: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(done => server.close(done))})));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const args = process.argv.slice(2), files = [];
   let port = 47860;
   for (let i = 0; i < args.length; i++) {

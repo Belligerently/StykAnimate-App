@@ -55,60 +55,6 @@ fn drawing_keeps_the_open_pose_gesture_and_its_history_order() {
 }
 
 #[test]
-fn native_channel_creation_remains_atomic_unported() {
-    use styk_doc::Value;
-    use styk_edit::{EditError, Editor, Options, Selection};
-    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
-    let reference = styk_doc::json::parse(
-        &std::fs::read(folder.join("draw-new-figure-native-channels.reference.json")).unwrap(),
-    )
-    .unwrap();
-    let steps = reference.get("steps").unwrap();
-    let first = steps.item(0).unwrap();
-    let mut editor = Editor::new(
-        styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap(),
-        Options {
-            property_channels: true,
-            layer_timeline: false,
-            auto_key: false,
-        },
-    );
-    editor.set_view(
-        0.0,
-        0,
-        Selection {
-            uid: None,
-            uids: Vec::new(),
-            joint: -1,
-        },
-    );
-    let before = (
-        editor.report_json(),
-        editor.state(),
-        editor.drag_value(),
-        editor.draft_figures(),
-    );
-    let call: Vec<Value> = steps
-        .item(2)
-        .unwrap()
-        .get("call")
-        .unwrap()
-        .elements()
-        .unwrap()
-        .iter()
-        .collect();
-    assert!(matches!(
-        editor.call(call[0].as_str().unwrap(), &call[1..]),
-        Err(EditError::Unported(_))
-    ));
-    assert_eq!(
-        (
-            editor.report_json(),
-            editor.state(),
-            editor.drag_value(),
-            editor.draft_figures()
-        ),
-        before
-    );
-    assert!(editor.take_events().is_empty());
+fn drawing_into_native_channels_keys_the_layer_pose() {
+    replay(&["draw-new-figure-native-channels"]);
 }

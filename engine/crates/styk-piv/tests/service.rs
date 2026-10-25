@@ -455,3 +455,38 @@ fn nothing_a_client_sends_makes_the_service_panic() {
         }
     }
 }
+
+#[test]
+fn an_upload_kept_for_saving_is_the_original_an_import_of_it_would_have_leased() {
+    let raw = opaque_source(0);
+    // The engine decodes the file itself: the codec only keeps the bytes, under the id an import gives them.
+    let mut keeper = Service::new();
+    let kept = parse(&keeper.call("POST", "/api/source/keep?filename=kept.piv", &[("X-Styk-Source-Owner", A)], &raw).body);
+    assert_eq!((str_at(&kept, "kind"), number(&kept, "version"), str_at(&kept, "sourceOwner")), ("piv".to_string(), 5.0, A.to_string()));
+    let mut importer = Service::new();
+    let imported = importer.import_owned("kept.piv", &raw, A);
+    assert_eq!(str_at(&kept, "sourceId"), str_at(&imported, "sourceId"));
+    // The decoded document saves against the kept original: unchanged, the original file comes back.
+    let document = at(&imported, "document");
+    assert_eq!(keeper.export(&document, Some(&str_at(&kept, "sourceId")), "piv").body, raw);
+    // The original is served for a native save, and survives the cache.
+    keeper.evict();
+    let (source, metadata) = keeper.source_record(&str_at(&kept, "sourceId"));
+    assert_eq!(source, raw);
+    assert_eq!(str_at(&metadata, "sha256"), str_at(&imported, "document/source_sha256"));
+    // Released, it is gone.
+    keeper.post_json("/api/source/release", &object(&[("ownerId", string(A))]));
+    keeper.evict();
+    assert_eq!(outcome(&keeper.get(&format!("/api/source?id={}", str_at(&kept, "sourceId")))), (410, "source_expired".to_string()));
+}
+
+#[test]
+fn only_a_pivot_project_is_kept_and_the_owner_must_be_valid() {
+    let mut service = Service::new();
+    let refuse = |service: &mut Service, name: &str, body: &[u8], owner: &str| outcome(&service.call("POST", &format!("/api/source/keep?filename={name}"), &[("X-Styk-Source-Owner", owner)], body));
+    assert_eq!(refuse(&mut service, "x.styk", b"abc", A), (415, "unsupported_file".to_string()));
+    assert_eq!(refuse(&mut service, "x.piv", b"", A), (400, "empty_file".to_string()));
+    assert_eq!(refuse(&mut service, "x.piv", &opaque_source(0), "not-an-owner"), (400, "invalid_source_owner".to_string()));
+    // Not a Pivot file: its version byte is not one.
+    assert_eq!(refuse(&mut service, "x.piv", b"\x09junk", A).0, 422);
+}

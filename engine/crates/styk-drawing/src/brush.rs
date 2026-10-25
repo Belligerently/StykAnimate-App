@@ -13,7 +13,7 @@ use std::rc::Rc;
 use styk_doc::Value;
 
 use crate::error::{fail, Result};
-use crate::js::{clamp, clamp01, max, min, pow, to_u32};
+use crate::js::{clamp, clamp01, max, min, to_u32};
 
 pub const BLENDS: [&str; 7] = ["normal", "behind", "multiply", "screen", "overlay", "color", "smudge"];
 pub const LINEAR_PRESSURE: [f64; 4] = [0.25, 0.25, 0.75, 0.75];
@@ -277,7 +277,7 @@ impl Brush {
     /// `dabRadius(brush, pressure)`: the radius at a (curve-mapped) pressure before jitter
     /// and taper.
     pub fn dab_radius(&self, pressure: f64) -> f64 {
-        self.size * (if self.pressure_size { max(0.05, pow(clamp01(pressure), self.size_curve)) } else { 1.0 }) / 2.0
+        self.size * (if self.pressure_size { max(0.05, styk_math::pow(clamp01(pressure), self.size_curve)) } else { 1.0 }) / 2.0
     }
 
     pub fn smudge(&self) -> bool {
@@ -411,7 +411,7 @@ pub fn dab_shape(brush: &Brush, p: &Point, seed: u32) -> Option<Dab> {
         x += styk_math::cos(a) * d;
         y += styk_math::sin(a) * d;
     }
-    let mut opacity = brush.opacity * if brush.pressure_opacity { pow(pressure, brush.opacity_curve) } else { 1.0 };
+    let mut opacity = brush.opacity * if brush.pressure_opacity { styk_math::pow(pressure, brush.opacity_curve) } else { 1.0 };
     if brush.opacity_jitter > 0.0 {
         opacity *= 1.0 - brush.opacity_jitter * jitter_at(seed, i, 1);
     }
@@ -580,7 +580,7 @@ impl StrokePath {
 
     /// Dab spacing at this pressure before the 0.25 px floor.
     pub fn raw_spacing(&self, pressure: f64) -> f64 {
-        self.size * self.spacing_ratio * if self.pressure_size { max(0.05, pow(clamp01(pressure), self.size_curve)) } else { 1.0 }
+        self.size * self.spacing_ratio * if self.pressure_size { max(0.05, styk_math::pow(clamp01(pressure), self.size_curve)) } else { 1.0 }
     }
 
     fn string_length(&self) -> f64 {

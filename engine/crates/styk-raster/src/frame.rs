@@ -71,7 +71,7 @@ impl<'a> Frame<'a> {
         let n = list.groups.len().max(1);
         let planned = plan::plan_with_grid(
             list,
-            &plan::View { matrix: view.matrix, size, zoom: view.zoom, pan: view.pan, stretch: view.stretch, camera_view: view.camera_view, camera_limit: view.camera_limit, max_texture: MAX_TEXTURE },
+            &plan::View { matrix: view.matrix, size, zoom: view.zoom, pan: view.pan, orient: plan::IDENTITY, stretch: view.stretch, camera_view: view.camera_view, camera_limit: view.camera_limit, max_texture: MAX_TEXTURE },
             drawing_grid,
         );
         let det = view.matrix[0] * view.matrix[3] - view.matrix[1] * view.matrix[2];
@@ -462,7 +462,7 @@ impl<'a> Frame<'a> {
         // Canvas sampling, as prim.wgsl: positive blends its parent, negative uses Mitchell.
         let mut sampling = 0.0f32;
         if drawing {
-            // A tile of display level b.w: the view shows one level per cel (`drawing-gpu.mjs`).
+            // A tile of display level b.w: the view shows one level per cel (docs/engine/drawing.md).
             let level = p.b[3];
             let tile_pixels = (u[0] * u[0] + u[1] * u[1]).sqrt() / (64.0 * layer.aa);
             // Equivalent to floor(-log2(base pixels)), without GPU rounding at exact

@@ -121,3 +121,39 @@ fn cold_missing_and_malformed_inputs_leave_scene_frame_and_measurement_unchanged
     assert_eq!(format!("{scene:?}"), before_scene);
     assert_eq!(measured, before_measured);
 }
+
+#[test]
+fn app_bounds_are_what_the_editors_callback_measured_of_every_figure() {
+    // The recorded measurements are the app's own `boundsOf` (`objectBounds` over a figure's
+    // segments, polygons and mesh) with the app's resources as they stand once everything has
+    // loaded: the `published` variant. The other variants stand for resources the engine does not own.
+    let mut references: Vec<_> = std::fs::read_dir(folder()).unwrap().filter_map(|entry| {
+        let path = entry.ok()?.path();
+        path.to_str()?.ends_with(".reference.json").then_some(path)
+    }).collect();
+    references.sort();
+    let mut compared = 0;
+    for reference in references {
+        let name = reference.file_name().unwrap().to_str().unwrap().strip_suffix(".reference.json").unwrap();
+        let prepared = styk_eval::prepare(styk_eval::open(&folder().join(format!("{name}.json"))).unwrap());
+        let reference = parse(&reference);
+        for sample in reference.get("frames").unwrap().elements().unwrap() {
+            let tick = number(&sample.get("tick").unwrap());
+            let frame = if reference.get("native").unwrap().as_bool().unwrap() { prepared.native_at(tick) } else { prepared.evaluate(tick) };
+            let slots: Vec<usize> = (0..frame.objects.len()).collect();
+            let scene = styk_eval::geometry::build_only_measured(&prepared.doc, &frame, &slots);
+            let measured = styk_eval::drawlist::app_bounds(&scene, prepared.doc.as_ref());
+            for measurement in sample.get("measurements").unwrap().elements().unwrap() {
+                if measurement.get("resource").unwrap().as_str() != Some("published") { continue; }
+                let slot = number(&measurement.get("slot").unwrap()) as usize;
+                let expected = bounds(&measurement.get("bounds").unwrap());
+                let actual = measured[slot].unwrap_or_else(|| panic!("{name}@{tick}/slot{slot}: no bounds"));
+                let bits = |b: [f64; 4]| b.map(f64::to_bits);
+                assert_eq!(bits(actual), bits([expected.left, expected.top, expected.right, expected.bottom]), "{name}@{tick}/slot{slot}");
+                compared += 1;
+            }
+        }
+    }
+    assert_eq!(compared, 61, "figures compared");
+    eprintln!("app bounds: {compared} figures identical to the editor's");
+}

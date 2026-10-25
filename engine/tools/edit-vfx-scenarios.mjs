@@ -1,13 +1,14 @@
 // Editor-owned recordings for effect paints, presets and connected scopes (D15).
 // node engine/tools/edit-vfx-scenarios.mjs
 // node engine/tools/edit-replay.mjs --all
+import {fileURLToPath} from 'node:url';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {documentOf, limb, open, prune} from './fixture-kit.mjs';
 import {VFX_PRESETS} from '../../src/vfx-presets.mjs';
 import {createVfx} from '../../src/vfx.mjs';
 import {createVfxClip} from '../../src/vfx-clips.mjs';
 
-const out = new URL('../tests/edit/', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit/', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const figure = uid => ({kind: 'figure', uid}), segment = {kind: 'segment', uid: 1, handleId: 22}, scene = {kind: 'scene'};
 const paint = (type = 'linear') => ({type, angle: 45, stops: [{offset: 1, color: [240.5, 60.2, 80], opacity: .6}, {offset: 0, color: [40, 120.5, 255], opacity: 1}]});

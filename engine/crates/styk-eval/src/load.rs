@@ -1,9 +1,9 @@
 //! Document tree → typed [`Document`]: the views evaluation reads.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
-use styk_doc::Value;
+use styk_doc::{Obj, Value};
 
 use crate::doc::*;
 use crate::text::parse_svg_path;
@@ -38,23 +38,26 @@ pub struct Loader {
     /// resources. Cloning a Loader must preserve it along with those resources.
     scene_budget: Arc<crate::geometry::SceneBudget>,
     /// One image table shared by the root document and every nested movieclip.
-    /// Append-only: an index, once handed out, names the same image for good.
+    /// Append-only: an index, once handed out, names the same image for good. An image is in it once, however
+    /// many records, revisions or copies of its payload (an undo that builds a record anew) name it.
     pub images: Vec<ImageData>,
     pub unsupported: Vec<String>,
     /// Records read leniently or ignored (invalid effect records).
     pub notes: Vec<String>,
-    /// Image index by the address of its payload (a blob's bytes or a string's text).
-    image_of: HashMap<usize, u32>,
+    /// Image index by the address of its payload (a blob's bytes or a string's text), while the payload exists.
+    image_of: HashMap<usize, (Payload, u32)>,
+    /// The images with the same length and hash, to find an image whose payload was made anew.
+    images_by_content: HashMap<(usize, u64), Vec<u32>>,
     /// Typed views by the address of the record they were built from. The source
-    /// value is held so the address cannot be reused by another record.
-    figures: HashMap<usize, (Value, Arc<Figure>)>,
-    keyframes: HashMap<usize, (Value, Arc<Keyframe>)>,
+    /// is held (without keeping it alive, see [`Source`]) so the address cannot be reused by another record.
+    figures: HashMap<usize, (Source, Arc<Figure>)>,
+    keyframes: HashMap<usize, (Source, Arc<Keyframe>)>,
     /// Resolved style overlays by base figure (address; the figure is held) and overlay key.
     styled: HashMap<(usize, String), (Arc<Figure>, Arc<Figure>)>,
     /// Effect clips by the address of the `vfxClips` record they were built from.
-    vfx_clips: HashMap<usize, (Value, Option<Arc<crate::vfx::Clips>>)>,
+    vfx_clips: HashMap<usize, (Source, Option<Arc<crate::vfx::Clips>>)>,
     /// Property channels by the address of the animation record they were built from.
-    animations: HashMap<usize, (Value, Option<Arc<crate::channels::Animation>>)>,
+    animations: HashMap<usize, (Source, Option<Arc<crate::channels::Animation>>)>,
     /// Records converted (not reused) by the last [`Loader::document`] call.
     pub converted: Converted,
 }
@@ -64,6 +67,58 @@ pub struct Loader {
 pub struct Converted {
     pub figures: usize,
     pub keyframes: usize,
+}
+
+/// The record a typed view was made from. It does not keep the record alive: the view is dropped
+/// ([`Loader::release_unused`]) once nothing else holds the record, whoever else caches views of it (a record that
+/// each of several loaders held would be held by all of them for ever). While it exists the record's allocation is
+/// not reused, so an address names one record only.
+#[derive(Clone)]
+struct Source(Weak<Obj>);
+
+impl Source {
+    fn of(value: &Value) -> Source {
+        Source(match value {
+            Value::Obj(object) => Arc::downgrade(object),
+            _ => Weak::new(),
+        })
+    }
+
+    /// Whether something still holds the record.
+    fn held(&self) -> bool {
+        self.0.strong_count() > 0
+    }
+}
+
+/// The payload of an image field, held without keeping it alive (as [`Source`] does for records).
+#[derive(Clone)]
+enum Payload {
+    Bytes(Weak<[u8]>),
+    Text(Weak<str>),
+}
+
+impl Payload {
+    fn held(&self) -> bool {
+        match self {
+            Payload::Bytes(bytes) => bytes.strong_count() > 0,
+            Payload::Text(text) => text.strong_count() > 0,
+        }
+    }
+}
+
+/// A hash of `bytes` (eight at a time; not a cryptographic one): images whose length and hash agree are compared
+/// byte by byte.
+fn content_hash(bytes: &[u8]) -> u64 {
+    const K: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut hash = bytes.len() as u64 ^ K;
+    let mut words = bytes.chunks_exact(8);
+    for word in &mut words {
+        hash = (hash ^ u64::from_le_bytes(word.try_into().expect("eight bytes"))).wrapping_mul(K).rotate_left(29);
+    }
+    for &byte in words.remainder() {
+        hash = (hash ^ byte as u64).wrapping_mul(K).rotate_left(29);
+    }
+    hash ^ (hash >> 32)
 }
 
 /// The address of a container node, the identity typed views are cached by.
@@ -168,6 +223,7 @@ impl Loader {
             unsupported: Vec::new(),
             notes: Vec::new(),
             image_of: HashMap::new(),
+            images_by_content: HashMap::new(),
             figures: HashMap::new(),
             keyframes: HashMap::new(),
             styled: HashMap::new(),
@@ -186,20 +242,29 @@ impl Loader {
             let Some(field) = v.get(*key) else { continue };
             // The same payload (the same blob, or the same string) is one image, however
             // many records or revisions name it.
-            let identity = match field {
-                Value::Blob(blob) => blob.bytes.as_ptr() as usize,
-                Value::Str(text) => text.as_ptr() as usize,
+            let (identity, payload) = match field {
+                Value::Blob(blob) => (blob.bytes.as_ptr() as usize, Payload::Bytes(Arc::downgrade(&blob.bytes))),
+                Value::Str(text) => (text.as_ptr() as usize, Payload::Text(Arc::downgrade(text))),
                 _ => continue,
             };
-            if let Some(&index) = self.image_of.get(&identity) {
+            if let Some(&(_, index)) = self.image_of.get(&identity) {
                 return Some(index);
             }
             if let Some(bytes) = field.payload_bytes()
                 && !bytes.is_empty()
             {
-                self.images.push(ImageData { bytes, color_key: None });
-                let index = self.images.len() as u32 - 1;
-                self.image_of.insert(identity, index);
+                // The same picture in a payload made anew is the picture the table has.
+                let content = (bytes.len(), content_hash(&bytes));
+                let index = match self.images_by_content.get(&content).and_then(|known| known.iter().copied().find(|&at| *self.images[at as usize].bytes == *bytes)) {
+                    Some(index) => index,
+                    None => {
+                        self.images.push(ImageData { bytes, color_key: None });
+                        let index = self.images.len() as u32 - 1;
+                        self.images_by_content.entry(content).or_default().push(index);
+                        index
+                    }
+                };
+                self.image_of.insert(identity, (payload, index));
                 return Some(index);
             }
         }
@@ -381,7 +446,7 @@ impl Loader {
             }
             let figure = Arc::new(self.figure(f, version)?);
             self.converted.figures += 1;
-            self.figures.insert(address, (f.clone(), figure.clone()));
+            self.figures.insert(address, (Source::of(f), figure.clone()));
             return Ok(figure);
         }
         Ok(Arc::new(self.figure(f, version)?))
@@ -395,7 +460,7 @@ impl Loader {
             return clips.clone();
         }
         let clips = crate::vfx::parse::clips(Some(v), &mut self.notes);
-        self.vfx_clips.insert(address, (v.clone(), clips.clone()));
+        self.vfx_clips.insert(address, (Source::of(v), clips.clone()));
         clips
     }
 
@@ -407,7 +472,7 @@ impl Loader {
             return animation.clone();
         }
         let animation = crate::channels::parse(Some(v), &mut self.notes);
-        self.animations.insert(address, (v.clone(), animation.clone()));
+        self.animations.insert(address, (Source::of(v), animation.clone()));
         animation
     }
 
@@ -418,19 +483,25 @@ impl Loader {
             }
             let frame = Arc::new(self.keyframe(k)?);
             self.converted.keyframes += 1;
-            self.keyframes.insert(address, (k.clone(), frame.clone()));
+            self.keyframes.insert(address, (Source::of(k), frame.clone()));
             return Ok(frame);
         }
         Ok(Arc::new(self.keyframe(k)?))
     }
 
-    /// Forgets the views of records that are no longer part of any live document
-    /// (the loader is their only holder). Call after publishing a revision.
+    /// How many typed records the loader holds: figures, keyframes, effect clips, animations and styled figures.
+    pub fn cached_records(&self) -> [usize; 5] {
+        [self.figures.len(), self.keyframes.len(), self.vfx_clips.len(), self.animations.len(), self.styled.len()]
+    }
+
+    /// Forgets the views of records that nothing holds any more (not the document, not its history, not another
+    /// loader's document). Call after converting a revision.
     pub fn release_unused(&mut self) {
-        self.figures.retain(|_, (source, _)| !source_unshared(source));
-        self.keyframes.retain(|_, (source, _)| !source_unshared(source));
-        self.vfx_clips.retain(|_, (source, _)| !source_unshared(source));
-        self.animations.retain(|_, (source, _)| !source_unshared(source));
+        self.figures.retain(|_, (source, _)| source.held());
+        self.keyframes.retain(|_, (source, _)| source.held());
+        self.vfx_clips.retain(|_, (source, _)| source.held());
+        self.animations.retain(|_, (source, _)| source.held());
+        self.image_of.retain(|_, (payload, _)| payload.held());
         let live: std::collections::HashSet<usize> = self.figures.values().map(|(_, figure)| Arc::as_ptr(figure) as usize).collect();
         self.styled.retain(|(base, _), _| live.contains(base));
     }
@@ -468,9 +539,10 @@ impl Loader {
         let is_drawing = styk.get("drawing").is_some();
         let pixels_per_unit = styk.get("drawing").and_then(|d| num(d, "pixelsPerUnit")).unwrap_or(1.0);
         let drawing_bounds = styk.path(&["drawing", "bounds"]).and_then(|b| Some([num(b, "x")?, num(b, "y")?, num(b, "width")?, num(b, "height")?]));
+        let cel_id: Option<Arc<str>> = styk.path(&["drawing", "celId"]).and_then(Value::as_str).filter(|id| !id.is_empty()).map(Arc::from);
         let mut images = Vec::new();
         for a in f.get("image_assets").and_then(Value::as_arr).into_iter().flatten() {
-            images.push(self.image_asset(a, is_drawing, pixels_per_unit, drawing_bounds));
+            images.push(self.image_asset(a, is_drawing, pixels_per_unit, drawing_bounds, cel_id.as_ref()));
         }
         let mut texts = Vec::new();
         for a in f.get("text_assets").and_then(Value::as_arr).into_iter().flatten() {
@@ -600,7 +672,7 @@ impl Loader {
         }
     }
 
-    fn image_asset(&mut self, a: &Value, smooth: bool, pixels_per_unit: f64, bounds: Option<[f64; 4]>) -> ImageAsset {
+    fn image_asset(&mut self, a: &Value, smooth: bool, pixels_per_unit: f64, bounds: Option<[f64; 4]>, cel_id: Option<&Arc<str>>) -> ImageAsset {
         let index = ["asset_index", "table_index", "image_index", "sprite_index"]
             .iter()
             .find_map(|k| num(a, k))
@@ -632,7 +704,8 @@ impl Loader {
             (Some(w), Some(h)) => Some([w, h]),
             _ => None,
         };
-        ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, size, image, smooth, tiles }
+        let cel = cel_id.map(|id| CelRef { id: id.clone(), anchor: point(a.get("drawing_anchor")).unwrap_or(start) });
+        ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, size, image, smooth, tiles, cel }
     }
 
     fn movieclip(&mut self, m: &Value) -> Result<Option<Arc<Movieclip>>, Error> {
@@ -1125,14 +1198,6 @@ fn raw_has_vfx(d: &Value) -> bool {
     }
     styk.and_then(|s| s.path(&["movieclipSource", "document"])).is_some_and(raw_has_vfx)
         || d.get("figure_types").and_then(Value::as_arr).is_some_and(|f| f.iter().any(|f| f.path(&["_styk", "movieclip", "document"]).is_some_and(raw_has_vfx)))
-}
-
-/// Whether the loader's cache holds the last reference to a record.
-fn source_unshared(source: &Value) -> bool {
-    match source {
-        Value::Obj(object) => Arc::strong_count(object) == 1,
-        _ => true,
-    }
 }
 
 impl Loader {

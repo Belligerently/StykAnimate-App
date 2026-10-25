@@ -4,7 +4,7 @@ import {documentChunks} from './document-transport.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
 import {codecJob} from './codec-job.mjs';
 import {browserCodecHost} from './codec-web-host.mjs';
-import {createContainerCompressionCache} from './native-container.mjs';
+import {createContainerCompressionCache} from './container-cache.mjs';
 
 function abortError(message = 'Document export cancelled.') { return new DOMException(message, 'AbortError'); }
 async function yieldToInput() {
@@ -171,7 +171,10 @@ export class DocumentExporter {
     const timer = this.timeoutMs > 0 ? setTimeout(() => fail(Object.assign(messageError(new Error(''), "errors.documentExport.documentExportTimedOut", {}), { telemetryCode: 'timeout', telemetryStage: 'serialize' })), this.timeoutMs) : null;
     try {
       const link = backendJob.link();
-      await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, jobId: backendJob.id, ...link.fields}, cacheEntries: this.compressionCache.snapshot()}, link.transfer);
+      // The cached blocks move to the worker for this export and come back with its result.
+      const cacheEntries = this.compressionCache.take();
+      await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, jobId: backendJob.id, ...link.fields}, cacheEntries},
+        [...link.transfer, ...cacheEntries.map(entry => entry.bytes.buffer)]);
       const snapshotStarted = performance.now();
       const chunks = documentChunks(report, {maxRecords: this.targetRecords, maxBytes: this.targetBytes,
         timeBudgetMs: 3, omitRuntimeSegments: true});

@@ -106,7 +106,7 @@ sys.path[:0] = [${JSON.stringify(path.join(root, 'backend'))}]
 import server, browser_service
 data = sys.stdin.buffer.read()
 status, headers, body = browser_service.BrowserCodec().request('POST', '/api/import?filename=media.piv', {'Accept': 'application/json'}, data)
-sys.stdout.write(body.decode())`;
+sys.stdout.buffer.write(body)`;
   const native = spawnSync(python.command, [...python.args, '-c', script], {input: piv, encoding: 'utf8', maxBuffer: 1 << 26});
   assert.equal(native.status, 0, native.stderr);
   assert.deepEqual(volatile(inWasm), volatile(JSON.parse(native.stdout)));

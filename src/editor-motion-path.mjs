@@ -342,17 +342,17 @@ function refreshSession(editor, session) {
   refreshDisplay(editor, session);
 }
 
-/** The playhead's pose while the virtual report changes it. */
-function refreshDisplay(editor, session) {
-  session.display = null;
+/** The playhead's pose while the virtual report changes it, or null outside the ticks it changes. */
+function displayOf(editor, session) {
   const tick = editor.tick;
-  if (tick < session.range[0] || tick >= session.range[1]) return;
+  if (tick < session.range[0] || tick >= session.range[1]) return null;
   const rows = timeline(session.report), {index, t} = rowForTick(rows, tick);
   const frame = evaluatedFrame(session.report, index, t, tick);
   const dirty = previewDirtySlots(session, frame);
-  session.display = {frame,
-    geometry: dirty.size ? buildGeometry(session.report, frame, {previous: editor.geometry ?? {objects: new Map()}, dirtySlots: dirty}) : null};
+  return {frame, geometry: dirty.size ? buildGeometry(session.report, frame, {previous: editor.geometry ?? {objects: new Map()}, dirtySlots: dirty}) : null};
 }
+
+function refreshDisplay(editor, session) { session.display = displayOf(editor, session); }
 
 /** Write the working pose into animation channels at the session tick. Keys and
  * retained sources are rewritten in place across pointer moves, so one gesture
@@ -938,4 +938,8 @@ export const editorMotionPathMethods = {
 
   /** The live document for trail sampling while a session is open. */
   motionPathReport() { return this._drag?.motionPath ? this._drag.report : this.report; },
+
+  /** The playhead's pose under the report of a gesture the engine session holds, which the owner mirrors
+   * without building it (`display` is read from the mirror when the stage draws). */
+  _motionPathDisplay(session) { return displayOf(this, session); },
 };

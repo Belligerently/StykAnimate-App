@@ -24,8 +24,8 @@ digits depending on the browser it runs in, and there is no single set of bytes 
 match. The engine takes one definite answer, Node's, because the command-replay and
 record harnesses run the editor in Node: there the comparison is byte for byte, which
 is what found wrong key orders, a 2π winding and a held pose. In a browser the shadow
-comparison (`src/engine/engine-edit-shadow.mjs`) accepts numbers within 1e-9 relative
-and requires everything else to be equal.
+comparison (since deleted) accepted numbers within 1e-9 relative
+and required everything else to be equal.
 
 ## Consequences
 
@@ -43,9 +43,45 @@ a command uses it.
 Added 2026-10-03 for generated effects (their batches and particles are compared with the
 editor's bit for bit): `exp`, which is the `libm` crate's fdlibm port except that V8 returns
 `Math.E` for 1 (two million inputs: no other difference; `f64::exp` differed for 10 %;
-6,048 recorded in `exp.bin`). `Math.pow` cannot be had the same way: Node's is the
-platform's (glibc on Linux; against it, two million inputs differed only for exponents 2
-and 0.5, which V8 computes as `x * x` and a square root), so it depends on the platform
-Node runs on, and fdlibm's (`libm::pow`) differed for 9 %. Engine code uses `libm::pow`
-only where a last-bit difference cannot reach a stored value (generated-effect sizes and
-material texels, rounded to single precision and bytes).
+6,048 recorded in `exp.bin`).
+
+Added 2026-10-23: `pow`, for `Math.pow` and `**` (custom pressure-size and opacity curves,
+Bézier easing, rig influence and angle paths, generated-effect sizes and trails, the sharp
+falloff of a motion path). It could not be had from the platform: V8 13.6 (Node 24)
+computes it with the C library's `pow` unless started with `--no-use-std-math-pow`, and
+those differ between platforms (Node 24 on Windows against Node 24 on Linux, on the same
+inputs: 2,830 of 6.17 million, 0.05 %, each by one unit in the last place), so recordings
+made on Linux (glibc) did not replay on Windows, and the pressure-size curve of the drawing
+fixtures was the first to fail there. V8's own `pow`
+(`ieee754::legacy::pow`: fdlibm 5.3 with V8's form of the last step, `(z * t1) / ((t1 - 2) -
+(w + z * w))`, which Node 22 still uses by default) is the same everywhere, and `styk-math`
+ports it. Against Node run with `--no-use-std-math-pow`, 6,174,743 inputs (random doubles
+of every magnitude, the drawing curves' domain, Bézier `t ** 3`, the generators' and the
+rig's exponents, integers, halves, negative bases, subnormals, near-overflow and
+near-underflow results, bases near 1 with huge exponents, NaN, infinities and signed zeros)
+gave no difference, on Windows and on Linux; Rust's `f64::powf` (the platform's) differed for
+6.4 %, the `libm` crate's `pow` (fdlibm 5.3 as FreeBSD and musl have it) for 2.9 %, and Node
+24's own default for 6.4 % (99.7 % of those by one unit in the last place, the rest by more).
+`pow.bin` records 86,024 of them.
+
+Engine code uses `styk_math::pow` for every `**` and `Math.pow` of the editor whose result
+is stored, natively and in WebAssembly, without a platform branch. The tools that record
+the editor pin Node's `Math.pow` to V8's own before it loads (`engine/tools/v8-pin.mjs`:
+`v8.setFlagsFromString('--no-use-std-math-pow')`, imported first by every tool that runs
+the editor and by each child process it starts, and refusing to go on if `Math.pow` or
+`**` is not V8's own), so recordings no longer depend on the machine they are made on:
+Node 24.11 on Windows, Node 24.11 on Linux and Node 22 (without the flag) record the same
+bytes: regenerating the 60 fixture tools of the parity suite changes no file on Windows or on
+Linux (WSL), and the pow-dependent ones change none under Node 22.21. The editor running in an
+app (Electron, a browser) still computes `**` with its platform's `pow`, so a value it stores
+can differ from the engine's in the last digit; the shadow comparison accepts that (1e-9
+relative), as it does for a browser's `sin`.
+
+Recording the fixtures with Node pinned changed nothing but `pow` results. The six trigonometry,
+exponential and logarithm tables of `styk-math` build some inputs with `10 ** r`: 134 to 605
+inputs per table moved by one or two units in the last place (and their results with them);
+the tables also write every NaN in one canonical form, so Windows and Linux record the same
+bytes. In the drawing fixtures the ten digests of the one case with custom pressure and
+opacity curves changed; in the motion path falloff fixture the digest of the sharp shape
+(`(1 - u) ** 3`) changed; and 40 numbers moved by one or two units in the last place in the
+generator batches (9), the effect vectors (1) and the native transform projection oracle (30).

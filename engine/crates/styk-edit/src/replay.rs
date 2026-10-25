@@ -172,7 +172,7 @@ fn replay_with_worker(reference: &Value, worker: bool, max_source_bytes: usize) 
             }
             (Err(EditError::Invalid(key)), Some(error)) => {
                 let recorded = error.get("key").and_then(Value::as_str).or_else(|| error.get("message").and_then(Value::as_str)).unwrap_or("");
-                if recorded != key {
+                if recorded != crate::error_key(key) {
                     differences.push(format!("error {key}, the editor's was {recorded}"));
                 }
             }

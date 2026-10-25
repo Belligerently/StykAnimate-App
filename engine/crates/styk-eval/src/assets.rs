@@ -136,7 +136,8 @@ struct Cursor {
     used: bool,
 }
 
-fn dimensions(data: &ImageData) -> Option<(u32, u32)> {
+/// The pixel size of an image from its header, without decoding it.
+pub(crate) fn dimensions(data: &ImageData) -> Option<(u32, u32)> {
     image::ImageReader::new(Cursor2::new(&data.bytes[..])).with_guessed_format().ok()?.into_dimensions().ok()
 }
 
@@ -425,6 +426,54 @@ pub fn decode_cel(assets: &Assets, cel: &Arc<DrawingTiles>) -> Vec<DecodedImage>
         .collect()
 }
 
+/// One picture to decode: an image of the document, or a drawing cel (every display level of it).
+#[derive(Clone, Copy, Debug)]
+pub enum Picture {
+    /// An index into `Document::images`.
+    Image(usize),
+    /// A drawing cel, by its key in [`Assets::cels`].
+    Cel(usize),
+}
+
+impl Assets {
+    /// The pixels decoding `picture` produces, as far as is known without decoding it: its atlas places.
+    pub fn picture_bytes(&self, picture: Picture) -> usize {
+        match picture {
+            Picture::Image(index) => self.atlas.get(index).filter(|entry| entry.valid).map_or(0, |entry| (entry.w as usize + 2) * (entry.h as usize + 2) * 4),
+            Picture::Cel(cel) => {
+                let side = (crate::drawing::TILE + 2 * crate::drawing::BORDER) as usize;
+                self.cels.get(&cel).map_or(0, |(tiles, _)| tiles.levels.iter().map(Vec::len).sum::<usize>() * side * side * 4)
+            }
+        }
+    }
+}
+
+/// Decodes `picture` of `doc` (an image, or every display level of a drawing cel) for the atlas `assets` laid out.
+/// The decoders allocate in pieces nothing can refuse, so a picture is decoded only when the memory can hold its
+/// work; an error says it cannot (see `styk_alloc::reserve`).
+pub fn decode_picture(doc: &Document, assets: &Assets, picture: Picture) -> Result<Vec<DecodedImage>, styk_alloc::OutOfMemory> {
+    match picture {
+        Picture::Image(index) => {
+            let _working = styk_alloc::reserve(decode_image_working_bytes(assets, index))?;
+            Ok(decode_image(doc, assets, index).into_iter().collect())
+        }
+        Picture::Cel(cel) => {
+            let Some((tiles, _)) = assets.cels.get(&cel) else { return Ok(Vec::new()) };
+            let _working = styk_alloc::reserve(3 * assets.picture_bytes(picture))?;
+            Ok(decode_cel(assets, tiles))
+        }
+    }
+}
+
+/// The most memory [`decode_image`] holds at once: the picture decoded at its own size (twice: the decoder keeps
+/// its own copy), then resized and bordered at the size of its atlas place (twice). Zero for an image without one.
+pub fn decode_image_working_bytes(assets: &Assets, index: usize) -> usize {
+    let Some(entry) = assets.atlas.get(index).filter(|entry| entry.valid) else { return 0 };
+    let source = entry.source_w as usize * entry.source_h as usize * 4;
+    let stored = (entry.w as usize + 2) * (entry.h as usize + 2) * 4;
+    2 * source + 2 * stored
+}
+
 /// Decodes image `index` of `doc` for the atlas `assets` laid out. `None` when the
 /// image has no place in the atlas or cannot be decoded.
 pub fn decode_image(doc: &Document, assets: &Assets, index: usize) -> Option<DecodedImage> {
@@ -443,7 +492,10 @@ pub fn decode_image(doc: &Document, assets: &Assets, index: usize) -> Option<Dec
     }
     let (w, h) = (entry.w as usize, entry.h as usize);
     let (gw, gh) = (w + 2, h + 2);
-    let mut out = vec![0u8; gw * gh * 4];
+    // The one allocation of the picture's size that is not the decoder's: a failure is a picture that cannot be shown.
+    let mut out = Vec::new();
+    out.try_reserve_exact(gw * gh * 4).ok()?;
+    out.resize(gw * gh * 4, 0u8);
     let source = rgba.as_raw();
     for gy in 0..gh {
         let sy = gy.saturating_sub(1).min(h - 1);

@@ -23,17 +23,18 @@
 #[cfg(test)]
 mod allocation;
 pub mod anchors;
+pub mod document;
 pub mod edit;
 pub mod export;
 mod frames;
 mod images;
-pub mod mirror;
 pub mod planning;
-pub mod session;
 mod publication;
 pub use publication::PublicationRetirement;
+mod store;
 mod sync;
 pub mod thumbnails;
+pub use store::Committed;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -46,7 +47,7 @@ pub use images::{DecodedImage, Uploaded};
 use sync::Shared;
 
 type Task = Box<dyn FnOnce(&Engine) + Send>;
-enum OrdinaryTask { Run(Task), Redecode(images::DecodeScope) }
+enum OrdinaryTask { Run(Task), Redecode(images::DecodeScope), Decode(Arc<Generation>, images::Picture) }
 type TaskQueue = std::collections::LinkedList<OrdinaryTask>;
 
 /// Detach the first existing node without allocating or freeing it. The worker
@@ -67,9 +68,14 @@ pub type Notifier = fn(&std::sync::atomic::AtomicU32);
 
 /// Memory the frame cache may hold, by device class. Draw lists are small (tens
 /// to hundreds of KiB), so even the smallest budget holds seconds of animation.
+/// Decoded pictures wait for the renderer under a budget of their own, a share of the
+/// memory the module may use.
 #[derive(Clone, Copy, Debug)]
 pub struct Budgets {
     pub frame_cache_bytes: usize,
+    /// Pixels decoded and not yet taken by the renderer, at most (a picture is decoded only while
+    /// the pictures waiting and being decoded are fewer than this). See [`Budgets::PICTURE_SHARE`].
+    pub picture_bytes: usize,
 }
 
 impl Budgets {
@@ -81,8 +87,15 @@ impl Budgets {
             Some(_) => 384 << 20,
             None => 192 << 20,
         };
-        Budgets { frame_cache_bytes }
+        let ceiling = styk_alloc::ceiling();
+        Budgets { frame_cache_bytes: frame_cache_bytes.min(ceiling / Budgets::FRAME_CACHE_SHARE), picture_bytes: ceiling / Budgets::PICTURE_SHARE }
     }
+
+    /// Pictures waiting for the renderer may take a thirtieth of the memory the module may use (64 MiB of a
+    /// 2 GiB memory), and the frame cache an eighth (240 MiB), whatever the device claims to have. Where the
+    /// module has no limit (native tools, tests) neither is a bound in practice.
+    pub const PICTURE_SHARE: usize = 30;
+    pub const FRAME_CACHE_SHARE: usize = 8;
 }
 
 /// One open document, immutable. A new one replaces it on every change.
@@ -102,8 +115,7 @@ pub struct Generation {
 }
 
 impl Generation {
-    /// Ticks that can be evaluated: none while a mirrored document has its figure
-    /// definitions but not yet its frames.
+    /// Ticks that can be evaluated: none for a document without keyframes.
     pub fn playable_ticks(&self) -> u32 {
         if self.prepared.doc.keyframes.is_empty() { 0 } else { self.prepared.total_ticks }
     }
@@ -139,18 +151,18 @@ struct State {
 
 struct Inner {
     state: Shared<State>,
-    /// Changes staged for the next commit.
-    staged: Shared<mirror::transfer::Staged>,
-    record_slots: Arc<std::sync::atomic::AtomicUsize>,
-    record_budget: Arc<mirror::transfer::Budget>,
-    mirror: std::sync::Mutex<mirror::Mirror>,
+    /// The document in front (store.rs).
+    store: std::sync::Mutex<store::Store>,
     clock: Clock,
     next_generation: AtomicU64,
     stopping: AtomicBool,
+    /// [`Budgets::picture_bytes`].
+    picture_bytes: usize,
+    /// Pictures not decoded because the module was too low on memory ([`Engine::pictures_refused`]).
+    pictures_refused: std::sync::atomic::AtomicUsize,
     progress: std::sync::atomic::AtomicU32,
     notifier: Option<Notifier>,
     planning: Shared<Option<Arc<planning::Core>>>,
-    session: Shared<Option<Arc<session::Core>>>,
 }
 
 /// The engine. Cheap to clone; every clone is the same engine.
@@ -175,17 +187,15 @@ impl Engine {
                     tasks: Default::default(),
                     retained_tasks: Default::default(),
                 }),
-                staged: Shared::new(Default::default()),
-                record_slots: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-                record_budget: Arc::new(Default::default()),
-                mirror: Default::default(),
+                store: Default::default(),
                 clock,
                 next_generation: AtomicU64::new(1),
                 stopping: AtomicBool::new(false),
+                picture_bytes: budgets.picture_bytes,
+                pictures_refused: Default::default(),
                 progress: std::sync::atomic::AtomicU32::new(0),
                 notifier,
                 planning: Shared::new(None),
-                session: Shared::new(None),
             }),
         }
     }
@@ -224,13 +234,10 @@ impl Engine {
     /// Makes `generation` the open document and queues the decoding of its images
     /// that the previous revision did not already have. Returns its id.
     pub(crate) fn publish(&self, generation: Generation) -> u64 {
-        self.publish_record(generation, None).expect("an unguarded publication cannot be refused")
-    }
-
-    pub(crate) fn publish_record(&self, generation: Generation, guard: Option<(mirror::RecordGuard, Arc<AtomicBool>)>) -> Option<u64> {
-        let (id, retirement, ()) = self.publish_with(generation, guard, &mut Some(|| ()))?;
+        let (id, retirement) = self.install_generation(generation);
+        // What the replaced generation held is dropped on a worker, never on the interface thread.
         if retirement.needs_worker() { self.spawn_retained(move |_| drop(retirement)); }
-        Some(id)
+        id
     }
 
     /// Runs `task` in the background: on a worker inside [`Engine::work`], or on the
@@ -277,9 +284,13 @@ impl Engine {
 
     /// Asks every worker to return from [`Engine::work`].
     pub fn stop(&self) {
-        session::cancel_current(self);
         planning::cancel_current(self);
-        self.stop_record_batches();
+        {
+            let mut state = self.inner.state.lock();
+            // Workers return once the flag is set, so a decode being prepared must not be installed after it.
+            state.images.cancel_preparation();
+            self.inner.stopping.store(true, Ordering::SeqCst);
+        }
         self.inner.state.notify_all();
     }
 
@@ -289,7 +300,6 @@ impl Engine {
         loop {
             if self.inner.stopping.load(Ordering::SeqCst) {
                 // Cancellation retains cleanup until a worker runs it.
-                if session::service_current(self) { continue; }
                 let task = detach_task(&mut self.inner.state.lock().retained_tasks);
                 if let Some(mut node) = task { node.pop_front().expect("detached task")(self); self.notify_progress(); continue; }
                 return;
@@ -303,9 +313,7 @@ impl Engine {
     /// Runs one unit of background work on the calling thread, if there is any.
     /// A host without worker threads calls this between its own tasks.
     pub fn step(&self) -> bool {
-        session::expire_current(self);
         planning::expire_current(self);
-        if session::service_current(self) { return true; }
         let job = {
             let mut state = self.inner.state.lock();
             if let Some(task) = detach_task(&mut state.retained_tasks) {
@@ -315,7 +323,7 @@ impl Engine {
                 // image barrier defers evaluation; no ordinary task is reordered.
                 if state.frames.maintenance_due() { Job::Frames(state.frames.work(state.current.clone())) }
                 else { return false; }
-            } else if let Some(task) = detach_task(&mut state.tasks) {
+            } else if let Some(task) = next_task(&mut state, self.inner.picture_bytes) {
                 if let Some(OrdinaryTask::Redecode(scope)) = task.front()
                     && !self.inner.stopping.load(Ordering::SeqCst) { state.images.start_preparation(*scope); }
                 Job::Task(task)
@@ -328,11 +336,27 @@ impl Engine {
             Job::Task(mut node) => match node.pop_front().expect("detached task") {
                 OrdinaryTask::Run(task) => task(self),
                 OrdinaryTask::Redecode(scope) => self.prepare_redecode(scope),
+                OrdinaryTask::Decode(generation, picture) => self.decode_picture(&generation, picture),
             },
             Job::Frames(work) => { if !work.step(self) { return false; } }
         }
         self.notify_progress();
         true
+    }
+}
+
+/// The next ordinary task. A picture to decode while the pictures waiting for the renderer are at their budget is
+/// parked (its node moves to the store, nothing is allocated) until the renderer takes some ([`Engine::take_images`]).
+fn next_task(state: &mut State, picture_bytes: usize) -> Option<TaskQueue> {
+    loop {
+        let mut task = detach_task(&mut state.tasks)?;
+        if let Some(OrdinaryTask::Decode(generation, picture)) = task.front()
+            && !state.images.admit_decode(picture_bytes, images::estimate(generation, *picture))
+        {
+            state.images.park(&mut task);
+            continue;
+        }
+        return Some(task);
     }
 }
 

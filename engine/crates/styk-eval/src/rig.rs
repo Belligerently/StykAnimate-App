@@ -683,11 +683,12 @@ fn sample_angle_path(keys: &[[f64; 4]], angle: f64) -> [f64; 3] {
     let next_span = (after[0] - b[0] + tau) % tau;
     let tangent = |left: f64, right: f64, h0: f64, h1: f64| if left * right <= 0.0 { 0.0 } else { (3.0 * (h0 + h1)) / ((2.0 * h1 + h0) / left + (h1 + 2.0 * h0) / right) };
     let mut out = [0.0; 3];
+    let cube = styk_math::pow(u, 3.0);
     for k in 1..4 {
         let slope = (b[k] - a[k]) / span;
         let m0 = tangent((a[k] - before[k]) / prev_span, slope, prev_span, span);
         let m1 = tangent(slope, (after[k] - b[k]) / next_span, span, next_span);
-        out[k - 1] = (2.0 * u.powi(3) - 3.0 * u * u + 1.0) * a[k] + (u.powi(3) - 2.0 * u * u + u) * span * m0 + (-2.0 * u.powi(3) + 3.0 * u * u) * b[k] + (u.powi(3) - u * u) * span * m1;
+        out[k - 1] = (2.0 * cube - 3.0 * u * u + 1.0) * a[k] + (cube - 2.0 * u * u + u) * span * m0 + (-2.0 * cube + 3.0 * u * u) * b[k] + (cube - u * u) * span * m1;
     }
     out
 }
@@ -892,7 +893,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             let width_response = driver_rig.and_then(|d| d.stretch.as_ref()).map(|s| s.width).unwrap_or(WidthResponse::Keep);
             let influence = r.follow.as_ref().map(|f| f.influence).unwrap_or(1.0);
             let amount = if src.legacy && response.and_then(|x| x.multiplier).is_none() {
-                ((if incoming < 0.0 { -1.0 } else { 1.0 }) * (if influence < 0.0 { incoming.abs().max(0.01) } else { incoming.abs() }).powf(influence)).clamp(-100.0, 100.0)
+                ((if incoming < 0.0 { -1.0 } else { 1.0 }) * styk_math::pow(if influence < 0.0 { incoming.abs().max(0.01) } else { incoming.abs() }, influence)).clamp(-100.0, 100.0)
             } else {
                 (1.0 + (incoming - 1.0) * response.and_then(|x| x.multiplier).unwrap_or(1.0)).clamp(-100.0, 100.0)
             };

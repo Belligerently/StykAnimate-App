@@ -1,10 +1,11 @@
 // Legal spatial pose-choice/origin documents, built by Editor before Rust admission.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {open, documentOf, createObject, createFrame} from './fixture-kit.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 import {animationRotation} from '../../src/animation-origin.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
 const shown = editor => JSON.stringify(snapshotPoseFrame(editor.evaluatedFrame));
 const read = name => JSON.parse(readFileSync(`${out}/${name}.document.json`, 'utf8'));
@@ -74,7 +75,7 @@ for (const kind of ['visibility', 'presets', 'mixed']) for (const joined of kind
   const object = editor.evaluatedFrame.objects[0], rotation = animationRotation(editor.figure, object), ordinary = object.angles[0] - editor.figure.segments[0].angle_rad;
   if (kind !== 'visibility' && rotation === ordinary) throw Error(`${name}: origin choice does not distinguish first-angle arithmetic`);
   writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor: options, steps: calls}, null, 1) + '\n');
-  execFileSync(process.execPath, [new URL('./edit-replay.mjs', import.meta.url).pathname, `${out}/${name}.scenario.json`, `${out}/${name}.reference.json`], {stdio: 'inherit'});
+  execFileSync(process.execPath, [fileURLToPath(new URL('./edit-replay.mjs', import.meta.url)), `${out}/${name}.scenario.json`, `${out}/${name}.reference.json`], {stdio: 'inherit'});
   console.log(`${name}: ${calls.length} steps, ${previews} changed choice frames`);
 }
 

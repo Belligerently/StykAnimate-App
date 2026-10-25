@@ -14,6 +14,9 @@ use crate::js_error;
 /// sprites fills its atlas over a few frames instead of stalling one.
 const IMAGE_UPLOAD_BYTES: usize = 8 << 20;
 
+/// Device errors kept for the interface between two reads; later ones are dropped.
+const MAX_REPORTED_ERRORS: usize = 8;
+
 /// [`Stage::pictures_pending`]: the last frame drawn has all its pictures (or none it
 /// lacks can still come), lacks some that are decoded and wait for upload (draw again
 /// on the next frame), or lacks some still being decoded (draw again once the engine's
@@ -45,16 +48,34 @@ pub struct Stage {
     backend: String,
     /// The document lineage and page count the sprite atlas is allocated for.
     pub(crate) atlas_of: Option<(u64, u32)>,
+    /// Counts the sprite textures allocated, so the views sharing the stage's follow a new one.
+    pub(crate) atlas_serial: u32,
+    /// Drawing cels the interface holds live, drawn in place of their published tiles
+    /// (`styk_eval::live`), and the atlas pages after the document's own allocated for their slots.
+    pub(crate) live: styk_eval::live::LiveCels,
+    live_pages: u32,
     /// The atlas places uploaded so far, and whether the last frame drawn lacked a
     /// picture ([`Stage::pictures_pending`]).
     uploaded: Uploaded,
     pictures: u32,
+    /// Bytes of pictures the last frame uploaded to the atlas.
+    upload_bytes: usize,
     pub(crate) edit: EditScene,
     /// Effects are drawn (the editor's effects preview is on).
     pub(crate) effects: bool,
+    /// The workspace view's rotation (radians) and mirroring, applied to every frame drawn
+    /// ([`Stage::set_view_orientation`]).
+    rotation: f64,
+    flip: bool,
     /// Edit and ghost poses received, so a camera monitor list knows when it is stale.
     pub(crate) edits: u64,
     pub(crate) shown: Shown,
+    /// Why the device was lost, once it is (polled by the interface: `Stage::device_lost`).
+    lost: Arc<std::sync::OnceLock<String>>,
+    /// Errors the device reported that nobody captured, until the interface takes them.
+    errors: Arc<std::sync::Mutex<Vec<String>>>,
+    /// The last frame drawn nothing because the surface had no texture to give (lost or resizing).
+    surface_missed: bool,
     /// The camera monitor and frame thumbnails, drawn on this device (`views.rs`).
     pub(crate) views: crate::views::Views,
 }
@@ -114,7 +135,28 @@ impl Stage {
             color_space: Default::default(),
         };
         surface.configure(&device, &config);
+        let lost = Arc::new(std::sync::OnceLock::new());
+        let reason = lost.clone();
+        device.set_device_lost_callback(move |why, message| {
+            let _ = reason.set(format!("{why:?}: {message}"));
+        });
+        // An error nobody captures would otherwise panic and stop the whole engine module: it is
+        // kept for the interface to report, and running out of memory ends the device.
+        let errors: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+        let (reported, exhausted) = (errors.clone(), lost.clone());
+        device.on_uncaptured_error(Arc::new(move |error: wgpu::Error| {
+            if matches!(error, wgpu::Error::OutOfMemory { .. }) {
+                let _ = exhausted.set(format!("out of memory: {error}"));
+            }
+            let mut kept = reported.lock().unwrap_or_else(|e| e.into_inner());
+            if kept.len() < MAX_REPORTED_ERRORS {
+                kept.push(error.to_string());
+            }
+        }));
         let renderer = Renderer::new(&device, &queue, format);
+        // A stage over a document that is already open (the canvas was replaced after a lost device):
+        // the pictures decoded so far went to the stage before it.
+        engine.engine.redecode_images();
         let is_webgpu = info.backend == wgpu::Backend::BrowserWebGpu;
         Ok(Stage {
             engine: engine.engine.clone(),
@@ -127,19 +169,70 @@ impl Stage {
             renderer,
             backend: format!("{:?} · {}", info.backend, info.name),
             atlas_of: None,
+            atlas_serial: 0,
+            live: Default::default(),
+            live_pages: 0,
             uploaded: Uploaded::default(),
             pictures: PICTURES_COMPLETE,
+            upload_bytes: 0,
             edit: EditScene::default(),
             effects: true,
+            rotation: 0.0,
+            flip: false,
             edits: 0,
             shown: Shown::Nothing,
+            lost,
+            errors,
+            surface_missed: false,
             views: Default::default(),
         })
+    }
+
+    /// Why the graphics device was lost (the browser reset it, the driver stopped), or an empty
+    /// string while it is not. A lost stage draws nothing more: the page makes a new one.
+    pub fn device_lost(&self) -> String {
+        self.lost.get().cloned().unwrap_or_default()
+    }
+
+    /// The errors the device reported that nothing captured since the last call (validation
+    /// errors, out of memory), newline-separated: empty when there are none.
+    pub fn take_device_errors(&self) -> String {
+        std::mem::take(&mut *self.errors.lock().unwrap_or_else(|e| e.into_inner())).join("\n")
+    }
+
+    /// Destroys the graphics device as a driver reset would: the stage then reports it lost
+    /// ([`Stage::device_lost`]). For tests of the interface's recovery.
+    pub fn lose_device(&self) {
+        self.device.destroy();
+    }
+
+    /// Whether the last frame drew nothing because the surface had no texture to give (it was lost
+    /// or being resized and is configured again): asking again on the next animation frame works.
+    pub fn surface_pending(&self) -> bool {
+        self.surface_missed
     }
 
     /// Turns effects on or off (the editor's effects preview).
     pub fn set_effects(&mut self, on: bool) {
         self.effects = on;
+    }
+
+    /// Rotates the workspace view by `rotation` radians about the artboard's centre and mirrors it
+    /// horizontally when `flip` (the Draw view): every frame drawn from now on, edited or prepared.
+    pub fn set_view_orientation(&mut self, rotation: f64, flip: bool) {
+        self.rotation = if rotation.is_finite() { rotation } else { 0.0 };
+        self.flip = flip;
+    }
+
+    /// Lowers (`false`) or restores (`true`) the multisampling of the stage's edges: the preview's
+    /// quality ladder under load.
+    pub fn set_multisampled(&mut self, on: bool) {
+        self.renderer.set_multisampled(on);
+    }
+
+    /// The largest texture side the device allows: the surface cannot be larger.
+    pub fn max_texture(&self) -> u32 {
+        self.device.limits().max_texture_dimension_2d
     }
 
     /// The selected browser presenter uses direct Canvas drawing semantics.
@@ -155,7 +248,9 @@ impl Stage {
 
     /// Sets the drawing buffer size in device pixels.
     pub fn resize(&mut self, width: u32, height: u32) {
-        let (width, height) = (width.max(1), height.max(1));
+        // A surface larger than the device's textures cannot be configured.
+        let limit = self.device.limits().max_texture_dimension_2d;
+        let (width, height) = (width.clamp(1, limit), height.clamp(1, limit));
         if (width, height) != (self.config.width, self.config.height) {
             self.config.width = width;
             self.config.height = height;
@@ -186,7 +281,7 @@ impl Stage {
     /// even when a worker publishes between a JavaScript readiness read and draw.
     #[allow(clippy::too_many_arguments)]
     pub fn render_ticket(&mut self, generation: f64, epoch: f64, tick: f64, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool) -> Result<bool, JsError> {
-        let (Ok(generation), Ok(epoch)) = (crate::engine::record_counter(generation), crate::engine::record_counter(epoch)) else { return Ok(false); };
+        let (Some(generation), Some(epoch)) = (crate::engine::counter(generation), crate::engine::counter(epoch)) else { return Ok(false); };
         let Some(snapshot) = self.engine.prepared_frame(tick, Some((generation, epoch))) else { return Ok(false) };
         self.present_prepared(&snapshot, zoom, [pan_x, pan_y], camera, clip_to_artboard)
     }
@@ -239,6 +334,21 @@ impl Stage {
         if self.edit.camera_pending().is_some() { 2 } else { self.pictures }
     }
 
+    /// Uploads a slice of the pictures decoded since the last frame, without drawing one: the document's pictures
+    /// the frame shown does not need are taken in while the interface is idle, so decoded pixels do not wait in the
+    /// engine's memory (and the engine decodes the next ones). Answers like [`Stage::pictures_pending`] for the
+    /// document: 0 when every picture is in, 1 when some are decoded and wait for the next slice, 2 when the
+    /// rest is still being decoded.
+    pub fn upload_pictures(&mut self) -> u32 {
+        if self.lost.get().is_some() {
+            return PICTURES_COMPLETE;
+        }
+        let Some(generation) = self.engine.generation() else { return PICTURES_COMPLETE };
+        self.sync_images(&generation);
+        let (decoding, decoded) = self.engine.images_backlog();
+        if decoded > 0 { PICTURES_DECODED } else if decoding > 0 { PICTURES_DECODING } else { PICTURES_COMPLETE }
+    }
+
     /// A cold followed pose is accepted but awaits the engine worker's shared path.
     pub fn camera_pending(&self) -> bool { self.edit.camera_pending().is_some() }
 
@@ -278,7 +388,7 @@ impl Stage {
             .collect();
         // Generated effects evaluate earlier anchors for at most 6 ms a frame, as the editor does
         // (`INTERACTIVE_SAMPLING_MS`); the rest refine over the next frames (`refining`).
-        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, camera, prepare_camera: false, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
+        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, camera, prepare_camera: false, clock: Some(crate::clock), anchor_budget_ms: 6.0, live: (!self.live.is_empty()).then_some(&self.live) };
         let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else {
             if let Some(tick) = self.edit.camera_pending()
                 && !generation.prepared.doc.keyframes.is_empty()
@@ -307,23 +417,49 @@ impl Stage {
     /// Lays the sprite atlas out for `generation` and uploads a slice of the pictures decoded
     /// since (the camera monitor and thumbnails sample the same atlas).
     pub(crate) fn sync_images(&mut self, generation: &Generation) {
-        let layout = (generation.lineage, generation.assets.pages);
-        if self.atlas_of != Some(layout) {
-            // Another project, or more atlas pages than before: the texture is allocated
-            // again and every image decoded so far is uploaded again by the engine.
-            self.renderer.prepare_sprites(&generation.assets);
-            self.uploaded.clear();
-            if self.atlas_of.is_some_and(|(lineage, _)| lineage == layout.0) {
-                self.engine.redecode_images();
-            }
-            self.atlas_of = Some(layout);
-        }
+        self.sync_atlas(generation);
         let images = self.engine.take_images(IMAGE_UPLOAD_BYTES);
+        self.upload_bytes = images.iter().map(|image| image.rgba.len()).sum();
         if !images.is_empty() {
             self.renderer.upload_images(&generation.assets, images.iter().map(|image| &**image));
             for image in &images {
                 self.uploaded.record(&generation.assets, image);
             }
+        }
+    }
+
+    /// Lays the sprite atlas out for `generation`, with room for the live drawing cels' slots.
+    fn sync_atlas(&mut self, generation: &Generation) {
+        let layout = (generation.lineage, generation.assets.pages);
+        let live_pages = self.live.pages();
+        if self.atlas_of != Some(layout) {
+            // Another project, or more atlas pages than before: the texture is allocated
+            // again and every image decoded so far is uploaded again by the engine.
+            self.renderer.prepare_sprites_live(&generation.assets, live_pages);
+            self.live_pages = live_pages;
+            self.atlas_serial += 1;
+            self.uploaded.clear();
+            if self.atlas_of.is_some_and(|(lineage, _)| lineage == layout.0) {
+                self.engine.redecode_images();
+            }
+            self.atlas_of = Some(layout);
+            // The live slots lived in the texture that was replaced.
+            let uploads = self.live.uploads();
+            self.write_live(&uploads);
+        } else if live_pages > self.live_pages {
+            // More live slots than pages: the texture grows and keeps what it holds.
+            self.renderer.grow_sprites(&generation.assets, live_pages);
+            self.live_pages = live_pages;
+            self.atlas_serial += 1;
+        }
+    }
+
+    /// Writes live drawing slots into the atlas laid out for the document drawn last.
+    fn write_live(&mut self, uploads: &[styk_eval::live::Upload]) {
+        let Some((_, base)) = self.atlas_of else { return };
+        self.renderer.upload_live(base, uploads);
+        for upload in uploads {
+            self.uploaded.mark(base + upload.page, upload.x, upload.y);
         }
     }
 
@@ -341,9 +477,17 @@ impl Stage {
     }
 
     fn draw(&mut self, generation: &Arc<Generation>, list: &Arc<styk_eval::drawlist::DrawList>, camera: Option<styk_eval::doc::Camera>, zoom: f64, pan: [f64; 2], clip_to_artboard: bool) -> Result<bool, JsError> {
+        // A lost device draws nothing more (the interface makes a new stage); drawing on it would only raise errors.
+        if self.lost.get().is_some() {
+            return Ok(false);
+        }
         self.sync_images(generation);
         let doc = &generation.prepared.doc;
-        let m = styk_eval::view::camera_matrix(doc, camera.as_ref(), zoom, pan);
+        // The Draw view turns and mirrors about the artboard's centre, after the scene camera.
+        let orientation = styk_eval::view::orientation(self.rotation, self.flip, [pan[0] + doc.canvas[0] as f64 * zoom / 2.0, pan[1] + doc.canvas[1] as f64 * zoom / 2.0]);
+        let upright = styk_eval::view::camera_matrix(doc, camera.as_ref(), zoom, pan);
+        let m = orientation.map_or(upright, |o| styk_eval::view::compose(o, upright));
+        self.renderer.set_orientation(orientation);
         // The artboard is the scene rectangle under the workspace view alone: the camera moves the scene inside it.
         let (p0, p1) = (pan, [pan[0] + doc.canvas[0] as f64 * zoom, pan[1] + doc.canvas[1] as f64 * zoom]);
         let view = ViewParams {
@@ -362,9 +506,11 @@ impl Stage {
             _ => {
                 // The surface was lost or is being resized: configure it again and draw next frame.
                 self.surface.configure(&self.device, &self.config);
+                self.surface_missed = true;
                 return Ok(false);
             }
         };
+        self.surface_missed = false;
         self.renderer.set_list(list);
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("styk frame") });
         self.renderer.render(&mut encoder, &view, [self.config.width, self.config.height]);
@@ -391,14 +537,80 @@ impl Stage {
         Ok(true)
     }
 
+    /// Replaces tiles of the drawing cel `id` the interface holds live, so edit frames draw its
+    /// pixels before they are published (`styk_eval::live`). `tiles` holds records of the tile
+    /// coordinates (two little-endian `i32`) and its 64×64 straight-alpha RGBA pixels; `removed`
+    /// pairs of coordinates of tiles that are gone. `float` addresses the floating selection
+    /// instead of the cel itself. The cel is hidden until [`Stage::live_cel_show`]. Fails with
+    /// "full" when the live slots are used up (the cel is dropped).
+    pub fn live_cel_tiles(&mut self, id: &str, float: bool, tiles: &[u8], removed: &[i32]) -> Result<(), JsError> {
+        const RECORD: usize = 8 + styk_eval::live::TILE_BYTES;
+        if tiles.len() % RECORD != 0 || removed.len() % 2 != 0 {
+            return Err(js_error("a live tile list is cut short"));
+        }
+        let generation = self.engine.generation().ok_or_else(|| js_error("no document is open"))?;
+        let mut changes: Vec<((i32, i32), Option<Vec<u8>>)> = tiles
+            .chunks_exact(RECORD)
+            .map(|record| {
+                let coordinate = |at: usize| i32::from_le_bytes(record[at..at + 4].try_into().expect("four bytes"));
+                ((coordinate(0), coordinate(4)), Some(record[8..].to_vec()))
+            })
+            .collect();
+        changes.extend(removed.chunks_exact(2).map(|pair| ((pair[0], pair[1]), None)));
+        let uploads = self.live.update(id, float, changes).map_err(|_| js_error("the live drawing slots are full"))?;
+        self.sync_atlas(&generation);
+        self.write_live(&uploads);
+        Ok(())
+    }
+
+    /// Chooses what the live cel `id` shows: its own pixels in place of the published cel, and
+    /// its floating selection over them.
+    pub fn live_cel_show(&mut self, id: &str, base: bool, float: bool) {
+        self.live.show(id, base, float);
+    }
+
+    /// Sets the transform of the live cel's floating selection: `[a, b, c, d, e, f]` taking cel
+    /// pixel `(x, y)` to `(a x + c y + e, b x + d y + f)`.
+    pub fn live_cel_matrix(&mut self, id: &str, matrix: &[f64]) -> Result<(), JsError> {
+        let matrix: [f64; 6] = matrix.try_into().map_err(|_| js_error("a transform has six numbers"))?;
+        if !matrix.iter().all(|v| v.is_finite()) {
+            return Err(js_error("a transform has finite numbers"));
+        }
+        self.live.set_matrix(id, matrix);
+        Ok(())
+    }
+
+    /// Empties the live cel's floating selection and gives its slots back.
+    pub fn live_cel_clear_float(&mut self, id: &str) {
+        self.live.clear_float(id);
+    }
+
+    /// Lets go of the live cel `id`: edit frames draw its published tiles again.
+    pub fn live_cel_drop(&mut self, id: &str) {
+        self.live.drop_cel(id);
+    }
+
+    /// Lets go of every live cel (another document is open).
+    pub fn live_cel_reset(&mut self) {
+        self.live.clear();
+    }
+
+    /// The live cels held: `{cels, tiles, slots, pages}` as JSON.
+    pub fn live_cel_stats(&self) -> String {
+        let s = self.live.stats();
+        format!("{{\"cels\":{},\"tiles\":{},\"slots\":{},\"pages\":{}}}", s.cels, s.tiles, s.slots, s.pages)
+    }
+
     /// Primitive, isolation group and pass counts of the last frame, its effect layers and
     /// passes, the GPU memory of the effect slots, isolation atlases and depth buffers, and the
-    /// glyph masks kept, filled by the last frame and their memory, as JSON.
+    /// glyph masks kept, filled by the last frame and their memory, the picture bytes the last frame
+    /// uploaded, the pictures held and whether edges are multisampled, as JSON.
     pub fn stats(&self) -> String {
         let s = &self.renderer.stats;
         format!(
-            "{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{},\"effectLayers\":{},\"effectPasses\":{},\"effectBytes\":{},\"layerBytes\":{},\"depthBytes\":{},\"materialBytes\":{},\"glyphMasks\":{},\"glyphMasksFilled\":{},\"glyphBytes\":{}}}",
-            s.prims, s.groups, s.passes, s.downscaled, s.rounds, s.effect_layers, s.effect_passes, s.effect_bytes, s.layer_bytes, s.depth_bytes, s.material_bytes, s.glyph_masks, s.glyph_masks_filled, s.glyph_bytes
+            "{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{},\"effectLayers\":{},\"effectPasses\":{},\"effectBytes\":{},\"layerBytes\":{},\"depthBytes\":{},\"materialBytes\":{},\"glyphMasks\":{},\"glyphMasksFilled\":{},\"glyphBytes\":{},\"uploadBytes\":{},\"pictures\":{},\"multisampled\":{}}}",
+            s.prims, s.groups, s.passes, s.downscaled, s.rounds, s.effect_layers, s.effect_passes, s.effect_bytes, s.layer_bytes, s.depth_bytes, s.material_bytes, s.glyph_masks, s.glyph_masks_filled, s.glyph_bytes,
+            self.upload_bytes, self.uploaded.len(), self.renderer.multisampled()
         )
     }
 }

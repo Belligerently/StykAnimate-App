@@ -172,7 +172,9 @@ impl ExportRenderer {
     pub fn create_cpu(address: usize, revision: f64, width: u32, height: u32, smoothing: String, max_pixels: f64, tile: u32) -> Result<ExportRenderer, JsError> {
         let (settings, frames) = pinned(address, revision, width, height, &smoothing, max_pixels)?;
         frames.decode_images();
-        let backend = Backend::Cpu(CpuExport::new(settings, tile));
+        let mut cpu = CpuExport::new(settings, tile);
+        cpu.use_assets(frames.generation().assets.clone());
+        let backend = Backend::Cpu(cpu);
         Ok(ExportRenderer { frames, backend, backend_name: "CPU · styk-raster".into(), edit: EditScene::default(), current: None, frames_drawn: 0, last_evaluate_ms: 0.0 })
     }
 
@@ -226,6 +228,23 @@ impl ExportRenderer {
         self.current = Some((list, self.edit.camera()));
         self.last_evaluate_ms = clock() - started;
         Ok(())
+    }
+
+    /// The prepared frame as SVG: vector artwork where the frame has a vector form, else one
+    /// picture of it (styk-export `svg`). An SVG export is created with `create_cpu`; the picture
+    /// is drawn by the CPU rasterizer once every picture of the document is in.
+    pub fn svg(&mut self, title: &str) -> Result<String, JsError> {
+        let generation = self.frames.generation().clone();
+        let (list, camera) = self.current.clone().ok_or_else(|| js_error("prepare a frame before exporting it"))?;
+        let settings = *self.settings();
+        let size = [settings.width, settings.height];
+        let frame = styk_export::svg::Frame { doc: &generation.prepared.doc, assets: &generation.assets, list: &list, camera: camera.as_ref(), size, title };
+        if let Some(text) = styk_export::svg::vector(&frame) {
+            return Ok(text);
+        }
+        let Backend::Cpu(cpu) = &mut self.backend else { return Err(js_error("an SVG export is drawn by the CPU rasterizer")) };
+        let pixels = cpu.frame(&generation.prepared.doc, &list, camera.as_ref(), false).map_err(js_error)?;
+        styk_export::svg::picture(size, title, &pixels).map_err(js_error)
     }
 
     fn tile_list(&self) -> &[styk_export::Tile] {
@@ -288,7 +307,7 @@ impl ExportRenderer {
                 Ok(promise)
             }
             Backend::Cpu(cpu) => {
-                cpu.draw(&generation.prepared.doc, &list, camera.as_ref(), index as usize, slot as usize);
+                cpu.draw(&generation.prepared.doc, &list, camera.as_ref(), index as usize, slot as usize).map_err(js_error)?;
                 Ok(js_sys::Promise::resolve(&JsValue::UNDEFINED))
             }
         }

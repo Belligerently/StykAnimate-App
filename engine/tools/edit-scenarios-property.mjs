@@ -3,10 +3,11 @@
 // `cancelAnimationEdit`), keyed values (`addAnimationKeys`), the scene's colour and
 // background, a figure's outline, a polygon's opacity and effect parameters, all through
 // `_sheetPropertyEntries`. Run by engine/tools/edit-scenarios.mjs.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {open} from './fixture-kit.mjs';
 
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const scenario = (name, editor, steps, document) => writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor, steps}, null, 1) + '\n');
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';

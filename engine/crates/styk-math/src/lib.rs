@@ -1,5 +1,5 @@
 //! `Math.sin`, `Math.cos`, `Math.atan2`, `Math.hypot`, `Math.asin`, `Math.acos`, `Math.exp`,
-//! `Math.log` and `Math.log1p`
+//! `Math.log`, `Math.log1p` and `Math.pow`
 //! exactly as Node's V8 computes them.
 //!
 //! The editor stores the results of its arithmetic in documents, and the harnesses
@@ -13,12 +13,16 @@
 //! answer on every platform, natively and in WebAssembly. `asin`, `acos` and `exp` are the
 //! `libm` crate's, which agree with V8's fdlibm on every recorded input (the platform's differ
 //! on 7 %, 4 % and 10 % of them; V8 returns `Math.E` for `exp(1)`). `tests/v8.rs` checks all
-//! these functions against recorded Node results (`Math.log` in `tests/log.rs`).
+//! these functions against recorded Node results (`Math.log` in `tests/log.rs`). `Math.pow` is
+//! V8's own (`pow.rs`): Node 24 computes it with the C library's `pow` unless started with
+//! `--no-use-std-math-pow`, and the platforms' differ from each other, from the `libm` crate's
+//! and from V8's; the recorded results are V8's own.
 
 // Vendored as it is upstream.
 #[allow(clippy::all)]
 mod rem_pio2_large;
 mod log;
+mod pow;
 
 const fn word(bits: u64) -> f64 {
     f64::from_bits(bits)
@@ -319,16 +323,21 @@ pub fn acos(x: f64) -> f64 {
 /// `Math.exp(x)`: fdlibm's `__ieee754_exp`, which V8 has in `ieee754::exp` and the `libm`
 /// crate ports from FreeBSD unchanged (the platform's `f64::exp` differed from Node for 10 %
 /// of two million inputs, the `libm` crate for none), except that V8 returns `Math.E` for 1.
-///
-/// `Math.pow` has no counterpart here: Node's results agree with neither the `libm` crate
-/// (fdlibm's `pow` differed for 9 % of two million inputs) nor glibc (which rounds `x²`
-/// differently from `x * x`), so engine code that needs `Math.pow` uses `libm::pow` where
-/// a last-bit difference cannot reach a stored value or a decision (docs/engine/vfx.md).
 pub fn exp(x: f64) -> f64 {
     if x == 1.0 {
         return std::f64::consts::E;
     }
     libm::exp(x)
+}
+
+/// `Math.pow(x, y)` and `x ** y`: V8's own `ieee754::legacy::pow`, fdlibm 5.3 with V8's form of
+/// its last step. The `libm` crate's `pow` (fdlibm 5.3 as FreeBSD and musl have it) differed from
+/// it for 2.9 % of six million inputs, the platform's `f64::powf` for 6.4 %. V8 13.6 uses the C
+/// library's `pow` for `Math.pow` by default (`--use-std-math-pow`), which differs between
+/// platforms for about 0.05 % of inputs, so the recorded results come from Node run with
+/// `--no-use-std-math-pow` (engine/tools/v8-pin.mjs).
+pub fn pow(x: f64, y: f64) -> f64 {
+    pow::pow(x, y)
 }
 
 /// `Math.log(x)`: fdlibm's logarithm with V8's normalization and rounding order.

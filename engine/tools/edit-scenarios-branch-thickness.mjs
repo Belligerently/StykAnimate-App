@@ -34,11 +34,11 @@ for (const [mode, editor] of [['native', {}], ['sheet', app]]) {
     ['setLayerVisible', layer, false], ['changeBranchThickness', 4], ['setLayerVisible', layer, true], ['changeBranchThickness', -2], ['undo'], ['redo'],
   ]}, null, 1) + '\n');
 }
-{
-  const name = 'branch-thickness-origin-sheet', e = open(fixture(), app), filename = `${name}.document.json`;
+for (const [mode, editor] of [['sheet', app], ['native', {}]]) {
+  const name = `branch-thickness-origin-${mode}`, e = open(fixture(), editor), filename = `${name}.document.json`;
   e.select(1, 1); e.setOrigin(22);
   writeFileSync(new URL(filename, out), JSON.stringify(prune(e.serialize())) + '\n');
-  writeFileSync(new URL(`${name}.scenario.json`, out), JSON.stringify({name, document: filename, editor: app, steps: [
+  writeFileSync(new URL(`${name}.scenario.json`, out), JSON.stringify({name, document: filename, editor, steps: [
     ['@select', 1, 1], ['changeBranchThickness', .15], ['changeBranchThickness', -.15], ['undo'], ['redo'],
   ]}, null, 1) + '\n');
 }

@@ -9,8 +9,11 @@
  * the samples its card's backdrop is chosen from, each taken from the canvas as an ImageBitmap.
  * Where it gets none, the CPU rasterizer (styk-raster) draws the same pictures and they are put
  * on a 2D canvas, then taken the same way. Frame thumbnails the stage cannot draw are drawn here
- * on the CPU, from the document the engine holds. Requests run one at a time. `release` ends the
- * worker after freeing its device and what it holds in the engine's memory.
+ * on the CPU, from the document the engine holds. The pictures the interface needs outside the
+ * stage are drawn here too: small documents it built (`sketch`: an effect's still, a background, a
+ * rig being tested, a figure of the asset library) and poses of the open document seen through a
+ * camera of their own (`pose`: the parallax monitor). Requests run one at a time. `release` ends
+ * the worker after freeing its device and what it holds in the engine's memory.
  */
 import {initSync, Previews} from './pkg/styk_engine.js';
 import {libraryPreviewMatte, LIBRARY_MATTES} from '../library-matte.mjs';
@@ -30,11 +33,6 @@ const cancelled = new Set();
 async function start(message) {
   wasm ??= initSync({module: message.module, memory: message.memory, thread_stack_size: message.stack});
   progress ??= new Int32Array(message.memory.buffer, message.progress, 1);
-  if (!previews && message.cpu) {
-    // `?engineCpu=on`: the CPU draws, as without a GPU device.
-    gpuRefusal = 'the CPU rasterizer was asked for';
-    previews = Previews.create_cpu();
-  }
   if (!previews) {
     try {
       canvas = new OffscreenCanvas(SIZE, SIZE);
@@ -106,6 +104,13 @@ function frame({elapsed}) {
   return {...result, bitmap: picture()};
 }
 
+/** A picture of a document that is not the open one, framed by `mode` and `params` (styk_wasm::preview `Placement`). */
+function sketch({bytes, extension, tick, width, height, mode, params, background}) {
+  canvasSize(width, height);
+  const result = JSON.parse(previews.sketch(new Uint8Array(bytes), extension, tick, width, height, mode, Float64Array.from(params), background ?? NaN));
+  return {...result, bitmap: picture()};
+}
+
 /**
  * Resolves when the engine's workers finished something (a frame, a picture) since the
  * progress counter read `seen`. Read it before asking, so work finishing in between is not missed.
@@ -137,6 +142,30 @@ async function thumbnail({address, revision, tick, width, height}) {
   }
 }
 
+/**
+ * The artwork of `tick` of the open document on transparency, drawn on the CPU through `matrix`
+ * (scene units to pixels): `width × height` pixels from `(x, y)`, for the drawing workspace's fill
+ * and magic wand (engine-composite.mjs). Waits for the frame's pictures like a thumbnail does.
+ */
+async function composite({id, address, revision, tick, x, y, width, height, matrix}) {
+  previews.adopt_engine(address);
+  const started = performance.now();
+  try {
+    for (;;) {
+      if (releasing || cancelled.has(id)) throw new DOMException('The sample was superseded.', 'AbortError');
+      if (performance.now() - started > THUMBNAIL_WAIT_MS) return {refused: 'timeout'};
+      const seen = Atomics.load(progress, 0), status = previews.composite(revision, tick, x, y, width, height, Float64Array.from(matrix));
+      if (status === 2) return {refused: 'stale'};
+      if (status === 0) {
+        const pixels = new Uint8ClampedArray(width * height * 4);
+        previews.picture(pixels);
+        return {pixels: pixels.buffer, width, height};
+      }
+      await whenProgress(seen);
+    }
+  } finally { previews.forget_picture(); }
+}
+
 /** An explicit native interval, with preview onion settings, sampled only here. */
 async function inbetween({id, address, revision, index, ratio, mode, count, opacity, ahead, width, height}) {
   previews.adopt_engine(address);
@@ -146,6 +175,21 @@ async function inbetween({id, address, revision, index, ratio, mode, count, opac
     if (performance.now() - started > THUMBNAIL_WAIT_MS) return {refused: 'timeout'};
     canvasSize(width, height);
     const seen = Atomics.load(progress, 0), status = previews.inbetween(revision, index, ratio, mode, count, opacity, ahead, width, height);
+    if (status === 2) return {refused: 'stale'};
+    if (status === 0) return {bitmap: picture(), width, height};
+    await whenProgress(seen);
+  }
+}
+
+/** A pose of the open document (a keyframe record) seen through its own camera, framed by `mode` and `params`. */
+async function pose({id, address, revision, json, width, height, mode, params}) {
+  previews.adopt_engine(address);
+  const started = performance.now();
+  for (;;) {
+    if (releasing || cancelled.has(id)) throw new DOMException('The preview was superseded.', 'AbortError');
+    if (performance.now() - started > THUMBNAIL_WAIT_MS) return {refused: 'timeout'};
+    canvasSize(width, height);
+    const seen = Atomics.load(progress, 0), status = previews.pose(revision, json, width, height, mode, Float64Array.from(params));
     if (status === 2) return {refused: 'stale'};
     if (status === 0) return {bitmap: picture(), width, height};
     await whenProgress(seen);
@@ -187,7 +231,7 @@ async function operate(message) {
   if (message.operation === 'start') return start(message);
   if (!previews) {
     if (message.operation === 'monitor' && wasm) Previews.forget_monitor(message.address);
-    if (['thumbnail', 'inbetween'].includes(message.operation) && wasm) Previews.forget_engine(message.address);
+    if (['thumbnail', 'inbetween', 'pose', 'composite'].includes(message.operation) && wasm) Previews.forget_engine(message.address);
     throw new Error('The preview worker has not started.');
   }
   if (['library-begin', 'library-frame', 'library-close'].includes(message.operation) && message.session !== session) return {refused: 'stale', message: 'another library preview is open'};
@@ -198,7 +242,10 @@ async function operate(message) {
     case 'library-frame': return frame(message);
     case 'library-close': session = null; previews.library_close(); return {};
     case 'thumbnail': return thumbnail(message);
+    case 'composite': return composite(message);
     case 'inbetween': return inbetween(message);
+    case 'sketch': return sketch(message);
+    case 'pose': return pose(message);
     case 'monitor': return monitor(message);
     default: throw new Error(`Unknown preview operation ${message.operation}.`);
   }
@@ -227,7 +274,7 @@ self.addEventListener('message', ({data: message}) => {
   const run = running.then(() => {
     if (releasing) {
       // A thumbnail's engine address is consumed even when it is not drawn.
-      if (['thumbnail', 'inbetween'].includes(message.operation) && wasm) try { Previews.forget_engine(message.address); } catch { /* the module is gone */ }
+      if (['thumbnail', 'inbetween', 'pose', 'composite'].includes(message.operation) && wasm) try { Previews.forget_engine(message.address); } catch { /* the module is gone */ }
       if (message.operation === 'monitor' && wasm) try { Previews.forget_monitor(message.address); } catch { /* the module is gone */ }
       throw new DOMException('The preview worker was released.', 'AbortError');
     }
@@ -236,7 +283,7 @@ self.addEventListener('message', ({data: message}) => {
   running = run.catch(() => {});
   run.then(result => {
     cancelled.delete(message.id);
-    const transfer = result?.bitmap ? [result.bitmap] : [];
+    const transfer = result?.bitmap ? [result.bitmap] : result?.pixels ? [result.pixels] : [];
     self.postMessage({id: message.id, ok: true, ...result}, transfer);
   }, error => {
     cancelled.delete(message.id);

@@ -2,9 +2,10 @@
 // the commands styk-edit runs, on documents saved with channels as the app holds them (a
 // layer sheet whose imported keys sample `legacyAnimation`), from the channel fixtures
 // (engine/tools/channel-fixtures.mjs). Run by engine/tools/edit-scenarios.mjs.
+import {fileURLToPath} from 'node:url';
 import {writeFileSync} from 'node:fs';
 
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const fixture = name => `../../crates/styk-eval/tests/fixtures/channels/channels-${name}.sheet.json`;
 const scenario = (name, steps, document) => writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor: app, steps}, null, 1) + '\n');

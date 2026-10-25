@@ -13,6 +13,10 @@ fn clock() -> f64 {
     START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1000.0
 }
 
+/// Five figures and generated effects (particles of several shapes) over twenty-six ticks:
+/// the effects an export draws and a preview can turn off.
+const EFFECTS: &str = "engine/crates/styk-eval/tests/fixtures/generators/explosions.json";
+
 fn open(path: &str) -> Engine {
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..").join(path);
     let engine = Engine::new(clock, Budgets::for_device(None));
@@ -23,7 +27,7 @@ fn open(path: &str) -> Engine {
 
 #[test]
 fn an_export_pins_the_revision_it_started_from() {
-    let engine = open("AssetReleases/Impact-FX/Scenes/Impact-FX-Fight.styk");
+    let engine = open(EFFECTS);
     assert!(engine.export_frames(1).is_err(), "the engine holds revision 0");
     let frames = engine.export_frames(0).unwrap();
     assert_eq!(frames.ticks(), engine.generation().unwrap().playable_ticks());
@@ -31,14 +35,14 @@ fn an_export_pins_the_revision_it_started_from() {
 
 #[test]
 fn frames_prepared_ahead_are_the_frames_drawn_inline() {
-    let engine = open("AssetReleases/Impact-FX/Scenes/Impact-FX-Fight.styk");
+    let engine = open(EFFECTS);
     let frames = engine.export_frames(0).unwrap();
     // Ask for more than may wait: only AHEAD are prepared, by the engine's tasks (run here).
-    frames.prefetch(180..190);
+    frames.prefetch(14..24);
     assert_eq!(frames.waiting(), AHEAD, "frames waiting or being prepared are bounded");
     while engine.step() {}
     assert_eq!(frames.waiting(), AHEAD);
-    for tick in 180..190 {
+    for tick in 14..24 {
         let ahead = frames.take(tick).unwrap();
         let inline = engine.export_frames(0).unwrap().take(tick).unwrap();
         assert_eq!(ahead.list.prims.len(), inline.list.prims.len(), "tick {tick}");
@@ -54,15 +58,17 @@ fn frames_prepared_ahead_are_the_frames_drawn_inline() {
 
 #[test]
 fn exports_draw_figures_the_session_hides_and_effects_the_preview_turns_off() {
-    let engine = open("AssetReleases/Impact-FX/Scenes/Impact-FX-Fight.styk");
+    let engine = open(EFFECTS);
     let generation = engine.generation().unwrap();
-    let uids: Vec<u32> = generation.prepared.evaluate(185.0).objects.iter().map(|o| o.uid).collect();
-    let full = engine.export_frames(0).unwrap().take(185).unwrap().list.prims.len();
-    engine.set_hidden(&uids);
+    let uids: Vec<u32> = generation.prepared.evaluate(9.0).objects.iter().map(|o| o.uid).collect();
+    let full = engine.export_frames(0).unwrap().take(9).unwrap().list.prims.len();
     engine.set_effects(false);
-    let session = engine.frame_now(185).unwrap().list.prims.len();
+    let without_effects = engine.frame_now(9).unwrap().list.prims.len();
+    assert!(without_effects < full, "the preview's frame turns the effects off ({without_effects} against {full} records)");
+    engine.set_hidden(&uids);
+    let session = engine.frame_now(9).unwrap().list.prims.len();
     assert!(session < full, "the session's frame hides figures and effects ({session} against {full} records)");
-    assert_eq!(engine.export_frames(0).unwrap().take(185).unwrap().list.prims.len(), full, "the export does not");
+    assert_eq!(engine.export_frames(0).unwrap().take(9).unwrap().list.prims.len(), full, "the export does not");
 }
 
 #[test]

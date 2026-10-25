@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use styk_doc::json::{self, StringHook};
+use styk_doc::json::{self, Member, StringHook};
 use styk_doc::{Blob, JsonError, Nums, Value};
 
 use super::{Codec, ContainerError, HEADER, Kind, MAX_BYTES, MAX_JSON_NUMBER_BYTES, MAX_MATERIALIZED_BYTES, MAX_SKELETON_BYTES, SECTION, sha256, unpack};
@@ -47,6 +47,55 @@ pub fn decode(bytes: &[u8], kind: Kind) -> Result<Decoded, ContainerError> {
         return Err(ContainerError::MaterializedTooLarge);
     }
     Ok(Decoded { document, version: 2, skeleton_bytes })
+}
+
+/// A container that has been read, verified and scanned, with no document built from it.
+pub struct Checked {
+    /// The container's pieces. A skeleton that was not UTF-8 has had its bad bytes replaced,
+    /// as the browser's text decoder replaces them before parsing.
+    pub parts: Parts,
+    /// Where each member of a root object lies in the skeleton; `None` when the root is not an object.
+    pub members: Option<Vec<Member>>,
+    /// Whether the cheap bound of the JSON the document stands for is within the limit. When it
+    /// is not, only [`decode`] can measure the document exactly.
+    pub within_limit: bool,
+}
+
+/// Reads a container as [`decode`] does, up to building the document: the same checks, in the same order,
+/// with the same errors, on the skeleton and every marker it holds, but nothing is built. A large
+/// project costs a scan of its skeleton instead of a tree.
+pub fn check(bytes: &[u8], kind: Kind) -> Result<Checked, ContainerError> {
+    let mut parts = decode_parts(bytes, kind)?;
+    if std::str::from_utf8(&parts.skeleton).is_err() {
+        parts.skeleton = String::from_utf8_lossy(&parts.skeleton).into_owned().into_bytes();
+    }
+    if parts.version < 2 {
+        let members = json::scan(&parts.skeleton)?;
+        return Ok(Checked { parts, members, within_limit: true });
+    }
+    let mut markers = Markers::new(&parts.sections, parts.skeleton.len());
+    markers.build = false;
+    let scanned = json::scan_with(&parts.skeleton, &mut markers);
+    if let Some(error) = markers.error.take() {
+        return Err(error);
+    }
+    let within_limit = markers.materialized_upper <= MAX_MATERIALIZED_BYTES;
+    let members = scanned?;
+    Ok(Checked { parts, members, within_limit })
+}
+
+/// The value of one member found by [`check`], built as [`decode`] builds it.
+pub fn member_value(checked: &Checked, member: &Member) -> Result<Value, ContainerError> {
+    let text = &checked.parts.skeleton[member.value.clone()];
+    if checked.parts.version < 2 {
+        return Ok(json::parse(text)?);
+    }
+    let mut markers = Markers::new(&checked.parts.sections, text.len());
+    let parsed = json::parse_with(text, &mut markers);
+    if let Some(error) = markers.error.take() {
+        return Err(error);
+    }
+    Ok(parsed?)
 }
 
 /// Reads one lifted record: skeleton text whose markers name ranges of the given
@@ -251,8 +300,11 @@ fn json_length(value: &Value) -> usize {
 /// Turns marker strings into the values they stand for while the tree is built.
 struct Markers<'a> {
     sections: &'a [(u8, Vec<u8>)],
-    /// One array per distinct marker text: equal markers are the same array.
-    arrays: HashMap<String, Value>,
+    /// One array per distinct marker text (equal markers are the same array), with its length.
+    arrays: HashMap<String, (Value, usize)>,
+    /// Whether to build the arrays and payloads the markers name. A checking pass (see [`check`])
+    /// admits and validates them exactly the same way and keeps nothing.
+    build: bool,
     /// One copy of each payload range, however many markers name it.
     payloads: HashMap<(usize, usize, usize), Arc<[u8]>>,
     /// Bytes the JavaScript reader would allocate: sections, 48 per restored number,
@@ -270,6 +322,7 @@ impl<'a> Markers<'a> {
         Markers {
             sections,
             arrays: HashMap::new(),
+            build: true,
             payloads: HashMap::new(),
             allocation: sections.iter().map(|(_, bytes)| bytes.len()).sum(),
             materialized_upper: skeleton_bytes,
@@ -292,7 +345,7 @@ impl<'a> Markers<'a> {
         Ok(())
     }
 
-    fn array(&mut self, text: &str, fields: &[&str]) -> Result<Value, ContainerError> {
+    fn array(&mut self, text: &str, fields: &[&str]) -> Result<(Value, usize), ContainerError> {
         let invalid = || ContainerError::InvalidArraySection { marker: text.to_string() };
         let type_name = fields[0];
         let width = match type_name {
@@ -313,6 +366,14 @@ impl<'a> Markers<'a> {
         self.admit_allocation(count.saturating_mul(48))?;
         let data = &bytes[offset..offset + count * width];
         let non_finite = || ContainerError::NonFinite { marker: text.to_string() };
+        if !self.build {
+            let finite = match type_name {
+                "f32" => data.as_chunks::<4>().0.iter().all(|&c| f32::from_le_bytes(c).is_finite()),
+                "f64" => data.as_chunks::<8>().0.iter().all(|&c| f64::from_le_bytes(c).is_finite()),
+                _ => true,
+            };
+            return if finite { Ok((Value::Null, count)) } else { Err(non_finite()) };
+        }
         let numbers = match type_name {
             "u8" => Nums::F32(data.iter().map(|&b| b as f32).collect()),
             "u16" => Nums::F32(data.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c) as f32).collect()),
@@ -333,7 +394,7 @@ impl<'a> Markers<'a> {
                 Nums::new(&values)
             }
         };
-        Ok(if count == 0 { Value::Arr(Arc::new(Vec::new())) } else { Value::Nums(Arc::new(numbers)) })
+        Ok((if count == 0 { Value::Arr(Arc::new(Vec::new())) } else { Value::Nums(Arc::new(numbers)) }, count))
     }
 
     fn payload(&mut self, text: &str, fields: &[&str], prefix: &str) -> Result<Value, ContainerError> {
@@ -350,6 +411,9 @@ impl<'a> Markers<'a> {
         let encoded = count.div_ceil(3) * 4;
         self.admit_allocation(encoded)?;
         self.materialized_upper = self.materialized_upper.saturating_add(encoded);
+        if !self.build {
+            return Ok(Value::Null);
+        }
         let data = self.payloads.entry((section, offset, count)).or_insert_with(|| Arc::from(&bytes[offset..offset + count])).clone();
         Ok(Value::Blob(Arc::new(Blob { prefix: Arc::from(prefix), bytes: data })))
     }
@@ -381,16 +445,14 @@ impl StringHook for Markers<'_> {
                 if !well_formed {
                     return self.fail(ContainerError::MalformedMarker { marker: text.to_string() });
                 }
-                if let Some(shared) = self.arrays.get(text) {
-                    let count = shared.array_len().unwrap_or(0);
+                if let Some((shared, count)) = self.arrays.get(text) {
                     self.materialized_upper = self.materialized_upper.saturating_add(count * (MAX_JSON_NUMBER_BYTES + 1) + 2);
                     return Some(Ok(shared.clone()));
                 }
                 match self.array(text, &fields) {
-                    Ok(value) => {
-                        let count = value.array_len().unwrap_or(0);
+                    Ok((value, count)) => {
                         self.materialized_upper = self.materialized_upper.saturating_add(count * (MAX_JSON_NUMBER_BYTES + 1) + 2);
-                        self.arrays.insert(text.to_string(), value.clone());
+                        self.arrays.insert(text.to_string(), (value.clone(), count));
                         Some(Ok(value))
                     }
                     Err(error) => self.fail(error),

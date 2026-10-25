@@ -1,11 +1,12 @@
 // Sequential timed commands are recorded from the actual editor before the
 // worker-only Rust orchestration. Publication payloads come from its _record.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {documentOf, limb, open, nextKey, writeProject, writeReference} from './fixture-kit.mjs';
 import {normalizeFrame} from '../../src/pivot/structure.mjs';
-const folder = new URL('../tests/movieclip-timed-sheet-commands/', import.meta.url).pathname;
-const views = new URL('../crates/styk-eval/tests/fixtures/movieclip-timed-sheet-commands/', import.meta.url).pathname;
+const folder = fileURLToPath(new URL('../tests/movieclip-timed-sheet-commands/', import.meta.url));
+const views = fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-timed-sheet-commands/', import.meta.url));
 mkdirSync(folder, {recursive: true}); mkdirSync(views, {recursive: true});
 const app = {layerTimeline: true, propertyChannels: true};
 const json = value => JSON.stringify(value, (key, value) => key === 'runtime_segments' ? undefined : value);
@@ -30,7 +31,7 @@ const write = (name, e, steps) => {
   const document = json(e.report);
   writeFileSync(`${folder}/${name}.document.json`, document + '\n');
   writeFileSync(`${folder}/${name}.scenario.json`, JSON.stringify({name, document: `${name}.document.json`, editor: app, steps}, null, 1) + '\n');
-  execFileSync(process.execPath, [new URL('./edit-replay.mjs', import.meta.url).pathname, `${folder}/${name}.scenario.json`, `${folder}/${name}.reference.json`], {stdio: 'inherit'});
+  execFileSync(process.execPath, [fileURLToPath(new URL('./edit-replay.mjs', import.meta.url)), `${folder}/${name}.scenario.json`, `${folder}/${name}.reference.json`], {stdio: 'inherit'});
   const reference = JSON.parse(readFileSync(`${folder}/${name}.reference.json`, 'utf8'));
   const editor = open(JSON.parse(document), app), payloads = []; let step = 0;
   const record = editor._record.bind(editor);

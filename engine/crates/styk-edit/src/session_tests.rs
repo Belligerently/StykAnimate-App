@@ -1801,3 +1801,166 @@ fn movieclip_rename_marker_keeps_zero_history_noops_and_literal_quiet_admission(
         assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
     }
 }
+
+/// What a session tells the owner of its open motion-path edit while a recorded tape runs:
+/// the fixed part once, how it stands after every call, the virtual report when a move changed
+/// it, and nothing once it has ended.
+#[test]
+fn motion_path_answers_tell_the_owner_how_the_edit_stands() {
+    let (mut begun, mut moves, mut reshaped, mut ended, mut errors) = (0, 0, 0, 0, 0);
+    for name in ["motion-path-sheet", "motion-path-falloff-sheet", "motion-path-camera-sheet"] {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/edit/{name}.reference.json"));
+        let reference = parse(&std::fs::read_to_string(file).unwrap());
+        let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+        let mut session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut open = false;
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap().trim_start_matches('@');
+            let mut view = session.editor.state_value().as_obj().unwrap().clone();
+            view.set("autoKey", Value::Bool(session.editor.auto_key));
+            view.set("patch", Value::Bool(true));
+            view.set("changesOnly", Value::Bool(true));
+            let label = format!("{name} step {} ({method})", step.get("step").unwrap());
+            let answer = session.call_values(method, &Value::array(call[1..].to_vec()), &Value::object(view));
+            // A recorded error leaves the edit as it was; the owner hands it to the editor.
+            let recorded_error = step.get("error").is_some_and(|error| !error.is_null());
+            assert_eq!(answer.get("status").and_then(Value::as_str), Some(if recorded_error { "error" } else { "ok" }), "{label}");
+            errors += usize::from(recorded_error);
+            let live = answer.get("motionPath").unwrap();
+            assert_eq!(live.is_null(), answer.get("drag").unwrap().is_null(), "{label}: the edit is the gesture");
+            if live.is_null() {
+                ended += usize::from(open);
+                open = false;
+                continue;
+            }
+            let moved = live.get("moved").unwrap().truthy();
+            let range = live.get("range").unwrap().numbers().unwrap();
+            assert!(range[0] < range[1], "{label}: a window of ticks");
+            if method == "beginMotionPathEdit" || method == "setMotionPathFalloff" && live.get("target").is_some() {
+                begun += 1;
+                assert!(live.get("target").unwrap().is_object() && live.get("tick").is_some() && live.get("baseline").unwrap().array_len().is_some(), "{label}: the fixed part");
+                // Nothing has been moved yet (or the replay moved it): the virtual report is the document, or the changes.
+                assert!(live.get("report").unwrap().array_len().is_some(), "{label}: a report to begin with");
+                if live.get("falloff").is_some() {
+                    let subs = live.get("subs").unwrap().array_len().unwrap();
+                    assert!(subs > 1 && live.get("writes").unwrap().array_len().unwrap() > 1 && live.get("movedSubs").unwrap().array_len() == Some(subs), "{label}: a falloff's writes");
+                }
+                open = true;
+            } else {
+                assert!(live.get("target").is_none() && live.get("baseline").is_none(), "{label}: the fixed part is told once");
+            }
+            if method == "updateMotionPathEdit" {
+                moves += 1;
+                // A move that changed the pose tells the changes to the virtual report, as paths from the root.
+                if let Some(report) = live.get("report") {
+                    reshaped += 1;
+                    assert!(moved && report.array_len().unwrap() > 0, "{label}: changes");
+                    for op in report.elements().unwrap().iter() {
+                        assert!(["_styk", "keyframes", "figure_types"].contains(&op.get("p").unwrap().item(0).unwrap().as_str().unwrap()), "{label}: {}", json(&op));
+                    }
+                }
+            }
+        }
+    }
+    assert!(begun >= 20 && moves >= 40 && reshaped >= 30 && ended >= 20 && errors >= 1, "begun {begun}, moves {moves}, reshaped {reshaped}, ended {ended}, errors {errors}");
+}
+
+#[test]
+fn handle_gesture_answers_tell_the_owner_where_the_gesture_stands() {
+    let (mut figure, mut edit, mut options, mut turned) = (0, 0, 0, 0);
+    for name in ["figure-transform-sheet", "figure-transform-native", "handle-edit-sheet", "handle-edit-native", "handle-commands-sheet", "segment-clipboard-sheet"] {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/edit/{name}.reference.json"));
+        let reference = parse(&std::fs::read_to_string(file).unwrap());
+        let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+        let mut session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut rotation = 0.0;
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap().trim_start_matches('@');
+            let mut view = session.editor.state_value().as_obj().unwrap().clone();
+            view.set("autoKey", Value::Bool(session.editor.auto_key));
+            view.set("changesOnly", Value::Bool(true));
+            view.set("patch", Value::Bool(true));
+            let label = format!("{name} step {} ({method})", step.get("step").unwrap());
+            let answer = session.call_values(method, &Value::array(call[1..].to_vec()), &Value::object(view));
+            let live = answer.get("handleGesture").unwrap();
+            if live.is_null() {
+                rotation = 0.0;
+                continue;
+            }
+            assert!(!answer.get("drag").unwrap().is_null(), "{label}: the gesture is a drag");
+            if let Some(handle) = live.get("figureHandle") {
+                figure += 1;
+                assert_eq!(handle.get("origin").unwrap().numbers().unwrap().len(), 2, "{label}: the pivot");
+                assert!(handle.get("distance").unwrap().as_f64().unwrap() > 0.0, "{label}: the distance the scale is measured from");
+                assert!(handle.get("lastAngle").unwrap().as_f64().unwrap().abs() <= std::f64::consts::PI, "{label}: the angle the last move had");
+                assert!(handle.get("rotate").is_some() && handle.get("scale").is_some() && handle.get("uid").is_some(), "{label}: the toolbar's options");
+                let now = handle.get("rotation").unwrap().as_f64().unwrap();
+                turned += usize::from(now != rotation);
+                rotation = now;
+            }
+            if let Some(handle) = live.get("handleEdit") {
+                edit += 1;
+                assert_eq!(handle.get("point").unwrap().numbers().unwrap().len(), 2, "{label}: where the handle began");
+                assert!(handle.get("index").is_some() && handle.get("uid").is_some() && handle.get("bend").is_some(), "{label}: the handle being edited");
+            }
+            if let Some(chosen) = live.get("segmentValueOptions") {
+                options += 1;
+                assert!(chosen.is_object(), "{label}: the options the gesture began with");
+            }
+        }
+    }
+    assert!(figure >= 6 && edit >= 8 && options >= 6 && turned >= 3, "figure {figure}, edit {edit}, options {options}, turned {turned}");
+}
+
+/// What a session tells the owner of its open rig edit or camera drag while a recorded tape runs:
+/// which kind of gesture is open, and a camera drag's preview as the camera alone (the complete
+/// frame only where the answer is not compact).
+#[test]
+fn rig_and_camera_answers_tell_the_owner_which_gesture_is_open() {
+    let (mut rig, mut camera, mut previews, mut closed) = (0, 0, 0, 0);
+    for name in ["rig-drag-sheet", "rig-drag-native", "camera-commands-sheet"] {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/edit/{name}.reference.json"));
+        let reference = parse(&std::fs::read_to_string(file).unwrap());
+        let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+        for compact in [true, false] {
+            let mut session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+            for step in &steps[1..] {
+                let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                let method = call[0].as_str().unwrap().trim_start_matches('@');
+                let mut view = session.editor.state_value().as_obj().unwrap().clone();
+                view.set("autoKey", Value::Bool(session.editor.auto_key));
+                view.set("patch", Value::Bool(true));
+                view.set("changesOnly", Value::Bool(compact));
+                let label = format!("{name} step {} ({method}, compact {compact})", step.get("step").unwrap());
+                let answer = session.call_values(method, &Value::array(call[1..].to_vec()), &Value::object(view));
+                let drag = answer.get("drag").unwrap();
+                if drag.is_null() {
+                    closed += usize::from(compact);
+                    assert!(answer.get("cameraPreview").is_none() && answer.get("preview").is_none(), "{label}: no preview once the gesture ended");
+                    continue;
+                }
+                let (is_rig, is_camera) = (drag.get("rig").is_some_and(Value::truthy), drag.get("camera").is_some_and(Value::truthy));
+                // A rig edit is a plain pose gesture to the editor, with the marker; a camera drag takes no figure.
+                assert!(!(is_rig && is_camera), "{label}");
+                if is_camera {
+                    assert!(drag.get("before").unwrap().array_len() == Some(0), "{label}: a camera drag takes no figures");
+                }
+                if compact { rig += usize::from(is_rig); camera += usize::from(is_camera); }
+                if method == "updateCameraDrag" && is_camera {
+                    previews += usize::from(compact);
+                    if compact {
+                        assert!(answer.get("preview").is_none(), "{label}: the camera alone");
+                        assert!(answer.get("cameraPreview").unwrap().get("scale").is_some(), "{label}: a camera");
+                    } else {
+                        assert!(answer.get("cameraPreview").is_none() && answer.get("preview").unwrap().get("objects").is_some(), "{label}: the complete frame");
+                    }
+                } else {
+                    assert!(answer.get("cameraPreview").is_none(), "{label}: only a camera move previews");
+                }
+            }
+        }
+    }
+    assert!(rig >= 20 && camera >= 10 && previews >= 8 && closed >= 20, "rig {rig}, camera {camera}, previews {previews}, closed {closed}");
+}

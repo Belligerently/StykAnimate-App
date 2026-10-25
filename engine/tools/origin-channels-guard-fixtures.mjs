@@ -1,8 +1,9 @@
 // Future-only property targets: use the editor's actual sheet publication and known rig data.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {open} from './fixture-kit.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
 const input = JSON.parse(readFileSync(`${out}/origin-pose-support-native.document.json`, 'utf8'));
 const rig = JSON.parse(JSON.parse(readFileSync(`${out}/rig-drag-sheet.reference.json`, 'utf8')).steps[0].document);

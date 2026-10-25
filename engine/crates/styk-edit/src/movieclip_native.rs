@@ -511,18 +511,27 @@ impl Editor {
     }
 
     pub(crate) fn native_layer_pose(&mut self, layer: &str) -> Result<Value, EditError> {
+        self.ensure_counts();
+        self.native_layer_pose_counted(layer)
+    }
+
+    /// [`Self::native_layer_pose`] once the figure counts exist (`ensure_counts`). With property
+    /// channels the native clock keeps the layer's other properties (`nativeProperties`).
+    pub(crate) fn native_layer_pose_counted(&self, layer: &str) -> Result<Value, EditError> {
         let id = format!("layer:{layer}:pose");
         if let Some(own) = poses(&self.report).into_iter().find(|channel| channel.get("id").and_then(Value::as_str) == Some(id.as_str())) {
             return Ok(own);
         }
-        self.ensure_counts();
-        let empty = !self.uid_counts.as_ref().unwrap().0.keys().any(|uid| self.layer_of(*uid) == layer);
-        Ok(object(&[
+        let counts = self.uid_counts.as_ref().ok_or_else(|| EditError::Unported("a layer pose before the figure counts".into()))?;
+        let empty = !counts.0.keys().any(|uid| self.layer_of(*uid) == layer);
+        let mut channel = object(&[
             ("id", Value::str(&id)),
             ("target", object(&[("kind", Value::str("layer")), ("id", Value::str(layer))])),
             ("property", Value::str("pose")), ("source", Value::str("native")),
             ("keys", Value::array(if empty { Vec::new() } else { self.native_pose_markers()? })),
-        ]))
+        ]);
+        if self.options.property_channels { channel.make_obj().unwrap().set("nativeProperties", Value::Bool(true)); }
+        Ok(channel)
     }
 
     fn masked_native_pose(&self, selected: u32, start: f64, end: f64) -> Result<Value, EditError> {

@@ -51,6 +51,9 @@ impl ViewParams {
             background_bounds: [0.0;4],
             paint_quad0: [0.0;4],
             paint_quad1: [0.0;4],
+            orient_quad0: [0.0;4],
+            orient_quad1: [0.0;4],
+            orient_flags: [0.0;4],
         }
     }
 }

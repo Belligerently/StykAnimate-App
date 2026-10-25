@@ -3,10 +3,16 @@ import assert from 'node:assert/strict';
 import {waitForEngineProgress} from '../src/engine/engine.mjs';
 import {createStagePlayback, engineTick, engineTicket} from '../src/engine/engine-playback.mjs';
 
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+/** Waits for `condition`, polling for at most `ms`: a timer takes up to 16 ms to fire on Windows, so a fixed sleep is too short there. */
+async function until(condition, ms = 2000) {
+  for (const end = performance.now() + ms; !condition() && performance.now() < end;) await sleep(1);
+}
+
 function playbackSide({maxFrames} = {}) {
-  let current = null, generation = 7, epoch = 2;
+  let generation = 7, epoch = 2, revision = 1;
   let readinessReads = 0;
-  const requests = [], ready = new Map(), legacyCalls = [];
+  const requests = [], ready = new Map();
   const handle = {
     request_samples(playhead, samples) { requests.push({playhead, samples}); },
     try_request_samples(playhead, samples) { handle.request_samples(playhead, samples); return 2; },
@@ -16,20 +22,19 @@ function playbackSide({maxFrames} = {}) {
     frame_ticket_ready: (gen, resourceEpoch, tick) => { readinessReads++; return gen === generation && resourceEpoch === epoch && ready.has(tick); },
     frame_meta: tick => ready.has(tick) ? JSON.stringify({...ready.get(tick), generation, epoch}) : undefined,
     generation: () => generation,
+    // The revision the engine's session last published.
+    try_document_identity: () => [generation, 1, revision],
     set_hidden() {}, total_ticks: () => 9,
     try_set_hidden() { return 1; }, try_set_effects() { return 1; },
   };
-  const side = {engine: {handle, pump() {}}, eligibility: {check: () => null}, drawingUnpublished: () => false,
-    mirror: {stats: {}, async syncFrames(report, revision) { current = {report, revision}; },
-      framesCurrent: (report, revision) => current?.report === report && current?.revision === revision}};
-  const legacy = {report: null, maxFrames, load(...args) { legacyCalls.push(args); }, dispose() {}, invalidate() {}, setVfxEnabled() {}};
-  return {playback: createStagePlayback(legacy, {stage: () => ({engineSide: side})}), ready, requests, legacyCalls,
+  const side = {engine: {handle, pump() {}}};
+  return {playback: createStagePlayback({stage: () => ({engineSide: side}), maxTickets: maxFrames}), ready, requests,
     reads: () => readinessReads,
-    nextGeneration() { generation++; }, nextEpoch() { epoch++; }, handle, engine: side.engine};
+    nextGeneration() { generation++; }, nextEpoch() { epoch++; }, publish(next) { revision = next; }, handle, engine: side.engine};
 }
 
 test('fractional range requests retain Float64 samples and distinct ready packet metadata', async () => {
-  const {playback, ready, requests, legacyCalls} = playbackSide();
+  const {playback, ready, requests} = playbackSide();
   playback.load({}, {revision: 1});
   await playback.prepareRange([3, 3.5]);
   assert.equal(requests.length, 1);
@@ -48,7 +53,6 @@ test('fractional range requests retain Float64 samples and distinct ready packet
   assert.equal(engineTick(fractional.key), 3.5);
   assert.notEqual(integer.key, fractional.key);
   assert.equal(playback.cache.size, 2);
-  assert.equal(legacyCalls.length, 0);
 });
 
 test('native eviction prunes 100,000 distinct fractional metadata tickets', async () => {
@@ -129,7 +133,7 @@ test('invalid samples never create tickets or replace valid current request prio
 });
 
 test('invalidation cancels fractional requests and a replacement revision drops old generation packets', async () => {
-  const {playback, ready, requests, nextGeneration} = playbackSide();
+  const {playback, ready, requests, nextGeneration, publish} = playbackSide();
   playback.load({}, {revision: 1});
   await playback.prepareRange([3.5]);
   ready.set(3.5, {tick: 3.5});
@@ -139,7 +143,8 @@ test('invalidation cancels fractional requests and a replacement revision drops 
   assert.ok(requests.at(-1).samples instanceof Float64Array);
   assert.equal(requests.at(-1).samples.length, 0);
   playback.updateDocument({revision: 2});
-  assert.equal(playback.get(3.5), null, 'metadata stays unavailable until mirror revision is current');
+  assert.equal(playback.get(3.5), null, 'metadata stays unavailable until the engine publishes the revision');
+  publish(2);
   nextGeneration();
   await playback.prepareRange([3.5]);
   const current = playback.get(3.5);
@@ -329,7 +334,7 @@ test('one bounded continuation retries latest admission without progress and dis
   ready.set(2.5, {tick: 2.5});
   assert.equal(playback.get(2.5), null, 'unaccepted demand keeps even a previously ready native frame cold');
   busy = false;
-  await new Promise(resolve => setTimeout(resolve, 35));
+  await until(() => requests.length > 0);
   assert.deepEqual(requests.map(request => [...request.samples]), [[2.5]], 'lock release without progress retries actual latest demand without another get');
   assert.equal(maximum, 1, 'only one waiter may be active');
   assert.equal(Atomics.load(progress, 0), 0, 'a retry cannot fabricate progress');
@@ -337,7 +342,8 @@ test('one bounded continuation retries latest admission without progress and dis
   busy = true; await playback.prepareRange([1.5]);
   playback.dispose();
   busy = false;
-  await new Promise(resolve => setTimeout(resolve, 35));
+  await until(() => active === 0);
+  await sleep(50);
   assert.equal(requests.length, 1, 'a late scheduled retry cannot admit disposed playback demand');
   assert.equal(active, 0, 'disposed waiters finish at their actual bounded deadline');
 });
@@ -349,5 +355,24 @@ test('a busy scalar generation header cannot certify buffered playback', async (
   assert.equal(playback.bufferedAhead(0, 2), true);
   handle.total_ticks = () => 0;
   assert.equal(playback.bufferedAhead(0, 2), false, 'a ready sample alone cannot fill a header whose read was busy');
+  playback.dispose();
+});
+
+test('a document loaded before the stage exists is served once the stage has the engine holding its revision', async () => {
+  let stage = null;
+  const requested = [], handle = {try_request_samples: playhead => { requested.push(playhead); return 2; }, try_set_hidden: () => 1, try_set_effects: () => 1,
+    generation: () => 1, total_ticks: () => 9, frame_meta: () => undefined, frame_ticket_ready: () => false, try_document_identity: () => [1, 1, 1]};
+  const side = {engine: {handle, pump() {}}};
+  const playback = createStagePlayback({stage: () => stage});
+  const report = {};
+  playback.load(report, {revision: 1});
+  assert.equal(playback.report, report, 'the transport knows the document');
+  assert.equal(playback.get(0), null);
+  assert.equal(playback.bufferedAhead(0, 2), false);
+  await playback.prepareRange([0, 1]);
+  assert.deepEqual(requested, [], 'there is no engine to ask yet');
+  stage = {engineSide: side};
+  await playback.prepareRange([0]);
+  assert.deepEqual(requested, [0], 'the engine holds the revision the transport is at');
   playback.dispose();
 });
