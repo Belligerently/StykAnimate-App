@@ -246,14 +246,16 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     }
     return ops;
   };
-  const send = (method, args) => {
+  /** `patch`: the answer's document changes reach the read view, as a call's do (a call that retires history entries collects their pose sources). */
+  const send = (method, args, {patch = false} = {}) => {
     const viewText = JSON.stringify({...view(), patch: true});
     report.capture?.push({name: method, args: JSON.stringify(args), view: viewText});
     const text = session.call(method, JSON.stringify(args), viewText);
     report.trace?.push(`${method} ${JSON.stringify(args).slice(0, 120)} -> ${text.slice(0, 160)}`);
     const answer = JSON.parse(text);
     if (answer.status !== 'ok') throw new Error(`The engine refused the editor's records (${method}): ${answer.error ?? answer.reason}`);
-    adoptState(answer, {patch: false});
+    adoptState(answer, {patch});
+    if (patch && answer.patch?.length) take();
     // What the session changed besides the editor's records (sources it collected).
     if (Array.isArray(answer.result) && answer.result.length) {
       applying = true;
@@ -878,6 +880,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     try { result = operation(); }
     catch (error) {
       batches--;
+      // The session's abort takes back the group's entries; the pixels of its drawing commits go back with them.
+      try { drawings.abortBatch(); } catch { /* the operation's own error is the one raised */ }
       try { callSession('abortBatch', original, []); } catch { /* the operation's own error is the one raised */ }
       throw error;
     }
@@ -942,7 +946,12 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     live: () => ensure(),
     call: (name, original, args, step) => callSession(name, original, args, step),
     adjust(record, delta) {
-      if (session && document === editor.report) { flush(); send('@drawingBytes', [record, delta]); }
+      if (session && document === editor.report) { flush(); send('@drawingBytes', [record, delta], {patch: true}); check(); }
+    },
+    // The commit's pixels could not be applied: the session takes its entry back.
+    retract(record) {
+      send('@retractDrawing', [record], {patch: true});
+      check();
     },
     // Cel definitions changed in place (revision, bounds): the session's copies follow at once.
     synced(figures) { for (const figure of figures) editor._drawingPublished(figure); flush(); },

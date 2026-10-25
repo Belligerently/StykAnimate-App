@@ -13870,7 +13870,7 @@
   "errors.editor.historyChangedBeforeUndoRedoCompleted": {
     "locations": [
       "src/editor.mjs:461",
-      "src/engine/engine-owner-drawing.mjs:27"
+      "src/engine/engine-owner-drawing.mjs:29"
     ],
     "context": "const check=()=>{if(signal?.aborted||report!==this.report||revision!==this.revision||source.at(-1)!==command)throw messageError(new DOMException('', 'AbortError"
   },
@@ -14821,7 +14821,7 @@
   "errors.editorDrawing.theDrawingHistoryReferencesAMissingCel": {
     "locations": [
       "src/editor-drawing.mjs:16",
-      "src/engine/engine-owner-drawing.mjs:28"
+      "src/engine/engine-owner-drawing.mjs:30"
     ],
     "context": "if(!figure)throw messageError(new Error(''), \"errors.editorDrawing.theDrawingHistoryReferencesAMissingCel\", {});"
   },
@@ -15640,7 +15640,7 @@
   "errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip": {
     "locations": [
       "src/editor-movieclips.mjs:265",
-      "src/engine/engine-owner.mjs:799"
+      "src/engine/engine-owner.mjs:801"
     ],
     "context": "if(drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), \"errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMoviecl"
   },
@@ -16379,13 +16379,13 @@
   },
   "errors.engineOwner.invalidValue": {
     "locations": [
-      "src/engine/engine-owner.mjs:1223"
+      "src/engine/engine-owner.mjs:1232"
     ],
     "context": "if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error}"
   },
   "errors.engineOwner.notSupported": {
     "locations": [
-      "src/engine/engine-owner.mjs:1230"
+      "src/engine/engine-owner.mjs:1239"
     ],
     "context": "const error = messageError(new Error(''), 'errors.engineOwner.notSupported', {});"
   },
@@ -39108,7 +39108,7 @@
   },
   "vfxChannels.enabled": {
     "locations": [
-      "src/engine/engine-owner.mjs:1210",
+      "src/engine/engine-owner.mjs:1219",
       "src/vfx-clip-inspector.mjs:63",
       "src/vfx-localization.mjs:9",
       "src/vfx.mjs:25"

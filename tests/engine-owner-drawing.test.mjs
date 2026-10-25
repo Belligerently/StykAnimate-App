@@ -395,3 +395,109 @@ test('a stroke over a full drawing memory is refused before anything is recorded
     void resources;
   } finally { await dispose(); }
 });
+
+test('the pose sources collected when a failed disk write retires entries leave the read view too', {skip: !engineBuilt}, async () => {
+  const {editor, owner, history, disk, target, surface, dispose} = await painting({setup: editor => { editor.historyBytes = 8 * TILE_BYTES; }});
+  const gate = disk.writeGate = deferred();
+  const sources = () => Object.keys(editor.report._styk.frameSources ?? {});
+  try {
+    // The move replaces the pose the cel's first stroke made; only the history keeps that pose alive.
+    editor.commitDrawingPixels(target, [tile(0, 0, 1)], 'First stroke');
+    editor.select(target.object.unique_id);
+    editor.beginTranslationDrag('Move drawing');
+    editor.moveSelection(6, 3, {fromStart: true});
+    editor.commitDrag();
+    assert.equal(sources().length, 2);
+    // Strokes whose disk writes are pending weigh their tiles; the write fails and they weigh them for good.
+    for (let stroke = 0; stroke < 5; stroke++) {
+      const before = [...surface.store].map(t => t.pixels.slice());
+      editor.commitDrawingPixels(editor.drawingTarget(), [0, 1, 2, 3].map(tx => tile(tx, 0, stroke + 2, before[tx])));
+    }
+    const entries = owner.depths()[0];
+    disk.writeError = Error('Disk became full');
+    gate.resolve();
+    await history.pumping;
+    assert.ok(owner.depths()[0] < entries, 'the byte limit retired the oldest entries');
+    assert.equal(sources().length, 1, 'the pose only the retired entries kept alive was collected');
+    assert.equal(JSON.stringify(editor.report), owner.session().report_json(), 'the read view is the engine document');
+    // The next call finds the read view and the engine's document the same (the owner verifies it).
+    editor.renameLayer(editor.activeLayerId, 'Ink');
+  } finally { gate.resolve(); await dispose(); }
+});
+
+test('a grouped edit that commits strokes and then fails takes their pixels back with their entries', {skip: !engineBuilt}, async () => {
+  const {editor, owner, history, target, surface, dispose} = await painting();
+  try {
+    // A stroke of its own first, so the group is not the cel's creation alone.
+    editor.commitDrawingPixels(target, [tile(0, 0, 1)], 'First stroke');
+    const depths = owner.depths(), revision = editor.revision, size = surface.store.size;
+    assert.throws(() => editor.movieclipBatch('Failing group', () => {
+      editor.commitDrawingPixels(editor.drawingTarget(), [tile(1, 0, 2)], 'Second stroke');
+      editor.commitDrawingPixels(editor.drawingTarget(), [tile(2, 0, 3)], 'Third stroke');
+      assert.equal(surface.store.size, size + 2);
+      throw new Error('The group failed');
+    }), /The group failed/);
+    assert.equal(surface.store.size, size, 'the strokes of the group are not in the cel');
+    assert.deepEqual(owner.depths(), depths);
+    assert.equal(editor.revision, revision);
+    assert.equal(editor.undoLabel, 'First stroke');
+    await history.pumping;
+    await Promise.resolve();
+    assert.deepEqual([...history.records.keys()], [1], 'the aborted strokes\' records were let go');
+    // The history goes on from where it was.
+    editor.commitDrawingPixels(editor.drawingTarget(), [tile(3, 0, 4)], 'Fourth stroke');
+    assert.equal(await editor.undo(), true);
+    assert.equal(surface.store.size, size);
+    assert.equal(editor.undoLabel, 'First stroke');
+    assert.equal(JSON.stringify(editor.report), owner.session().report_json());
+  } finally { await dispose(); }
+});
+
+test('a cel created by a grouped edit that fails is gone with its pixels', {skip: !engineBuilt}, async () => {
+  const {editor, owner, resources, target, surface, dispose} = await painting();
+  try {
+    const depths = owner.depths(), cels = () => editor.report.figure_types.filter(drawingMetadata).length;
+    assert.throws(() => editor.movieclipBatch('Failing group', () => {
+      editor.commitDrawingPixels(target, [tile(0, 0, 1)], 'Brush stroke');
+      assert.equal(cels(), 1);
+      throw new Error('The group failed');
+    }), /The group failed/);
+    assert.equal(cels(), 0);
+    assert.deepEqual(owner.depths(), depths);
+    assert.equal(surface.store.size, 0, 'the stroke was taken off the surface');
+    void resources;
+  } finally { await dispose(); }
+});
+
+test('a commit whose pixels cannot be applied leaves no entry in the session and no record identity to reuse', {skip: !engineBuilt}, async () => {
+  const {editor, owner, resources, history, target, surface, dispose} = await painting();
+  try {
+    const depths = owner.depths(), revision = editor.revision, label = editor.undoLabel, cels = () => editor.report.figure_types.filter(drawingMetadata).length;
+    resources.apply = () => { throw new Error('The pixels cannot be applied'); };
+    assert.throws(() => editor.commitDrawingPixels(target, [tile(0, 0, 1)], 'Brush stroke'), /The pixels cannot be applied/);
+    delete resources.apply;
+    assert.deepEqual(owner.depths(), depths, 'the session holds no entry the history has no record for');
+    assert.equal(editor.revision, revision);
+    assert.equal(editor.undoLabel, label);
+    assert.equal(cels(), 0, 'the cel the commit would have created is not in the document');
+    assert.equal(JSON.stringify(editor.report), owner.session().report_json(), 'the read view is the engine\'s document');
+    assert.equal(history.records.size, 0);
+    // The next commit is a commit as any: its record is a new one and it undoes.
+    editor.commitDrawingPixels(target, [tile(0, 0, 2)], 'Brush stroke');
+    assert.deepEqual([...history.records.keys()], [2], 'the failed commit\'s identity is not used again');
+    assert.equal(surface.store.size, 1);
+    // A stroke on an existing cel that fails is taken back alone.
+    const after = owner.depths();
+    resources.apply = () => { throw new Error('The pixels cannot be applied'); };
+    assert.throws(() => editor.commitDrawingPixels(editor.drawingTarget(), [tile(1, 0, 3)], 'Erase stroke'), /The pixels cannot be applied/);
+    delete resources.apply;
+    assert.deepEqual(owner.depths(), after);
+    assert.equal(editor.undoLabel, 'Brush stroke');
+    editor.commitDrawingPixels(editor.drawingTarget(), [tile(1, 0, 3)], 'Erase stroke');
+    assert.deepEqual([...history.records.keys()], [2, 4]);
+    assert.equal(await editor.undo(), true);
+    assert.equal(surface.store.size, 1);
+    assert.equal(await editor.undo(), true);
+    assert.equal(surface.store.size, 0);
+  } finally { await dispose(); }
+});
