@@ -20,7 +20,7 @@ STYK stores editable sparse channels. Captured pose sources can also retain the 
 
 ## Native export
 
-[pivot-style-materialize.mjs](../src/pivot-style-materialize.mjs) creates portable native figure variants when PIV is exported. It deduplicates variants by effective native alpha bytes and retains shared asset references while preparing the export. Baked objects reference their resulting native types and no longer carry `_stykStyle`.
+The engine (`styk-edit/src/export/style.rs`, see [Exports of the document](engine/document.md#exports-of-the-document)) creates portable native figure variants when PIV is exported. It deduplicates variants by effective native alpha bytes and retains shared asset references while preparing the export. Baked objects reference their resulting native types and no longer carry `_stykStyle`.
 
 STK exports the selected instance's resolved appearance at the requested tick. Unrelated instances of the original reusable figure type remain unchanged. The native figure table limit is checked explicitly; large combinations of independently animated styles can require many native types.
 

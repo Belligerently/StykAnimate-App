@@ -7,9 +7,8 @@ import {movieclipCacheStats} from '../src/movieclip-geometry.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
 import {createObject,createFrame} from '../src/demo.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
-import {nativeFigureDocument} from '../src/native-figure.mjs';
+import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 
 const sample=(report,tick)=>{const rows=timeline(report);let i=0;while(i+1<rows.length&&rows[i+1].start<=tick)i++;return buildGeometry(report,evaluatedFrame(report,i,rows[i].count?(tick-rows[i].start)/rows[i].count:0,tick));};
 const scene=geometry=>geometry.drawables.map(s=>({type:s.type,points:s.points.map(p=>[p.x,p.y]),rgb:s.rgb,alpha:s.alpha}));
@@ -94,7 +93,7 @@ test('Simple static creation stays a working pose and Discard restores the origi
 
 test('legacy materialization matches clip geometry at every output tick',()=>{
   const editor=engineEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:2,end:21});const uid=editor.selectedUid;
-  editor._objectEdit('Scale movieclip',object=>{object.scale=1.4;object.angles[0]=.4;});const flat=materializePivotDocument(editor.report);
+  editor._objectEdit('Scale movieclip',object=>{object.scale=1.4;object.angles[0]=.4;});const flat=pivotDocument(editor.report);
   assert.ok(flat.figure_types.every(f=>!f._styk?.movieclip));
   for(let tick=2;tick<21;tick++){
     const expected=sample(editor.report,tick).drawables,actual=sample(flat,tick).drawables;
@@ -113,12 +112,12 @@ test('Bake animation produces ordinary editable poses and one reversible command
 test('mirrored movieclips and their legacy export agree',()=>{
   const editor=engineEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:0,end:8});const uid=editor.selectedUid,old=sample(editor.report,0),root=editor.geometry.objects.get(editor.selectedSlot).root;
   editor.mirrorFigure();const mirrored=coordinates(sample(editor.report,0),uid),expected=coordinates(old,uid).map(s=>({...s,points:s.points.map(([x,y])=>[2*root.x-x,y])}));close(mirrored,expected);
-  const flat=materializePivotDocument(editor.report);assert.equal(sample(flat,0).drawables.length,old.drawables.length);
+  const flat=pivotDocument(editor.report);assert.equal(sample(flat,0).drawables.length,old.drawables.length);
 });
 
 test('portable movieclip imports restart and shared editing recovery retains the root project',()=>{
   const editor=engineEditor({propertyChannels:true});editor.select(1);const f=editor.createMovieclip({start:5,end:17});
-  const portable=nativeFigureDocument(editor.report,{figureUid:editor.selectedUid,tick:5}),other=new Editor();other.seek(10);other.importFigure(portable);
+  const portable=figureDocument(editor.report,{figureUid:editor.selectedUid,tick:5}),other=new Editor();other.seek(10);other.importFigure(portable);
   assert.equal(other.object._stykMovieclip.start,10);assert.equal(other.figure._styk.movieclip.duration,12);
   const parent=editor.report;editor.enterMovieclip(f.figure_type_id);editor.select(1);editor.moveSelection(7,0);
   const recovered=editor.movieclipProjectReport();assert.equal(recovered.keyframes.length,parent.keyframes.length);assert.equal(recovered.figure_types.at(-1)._styk.movieclip.document,editor.report);

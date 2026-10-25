@@ -841,7 +841,7 @@ impl Editor {
 }
 
 /// `modernizeLegacyObjectColor(object)`: a legacy colour is absolute BGR with negative black; it becomes an opaque override.
-fn modernize_legacy_object_color(object: &mut Obj) {
+pub(crate) fn modernize_legacy_object_color(object: &mut Obj) {
     if object.get("_styk").and_then(|styk| styk.get("colorMode")).and_then(Value::as_str) == Some("segments") {
         return;
     }

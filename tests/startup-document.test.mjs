@@ -4,7 +4,7 @@ import {newOwnedEditor} from './support/owned-editor.mjs';
 import {createStartupDocument} from '../src/startup-document.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {ikChain} from '../src/ik.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-3,`${a} != ${b}`);
 const named=(editor,name)=>editor.figure.segments.find(s=>s.name===name);
@@ -118,7 +118,7 @@ test('Pivot export keeps the 2D startup artwork and ten-frame timing',()=>{
   const e=newOwnedEditor({demo:false,layerTimeline:true}).newDocument();
   select(e,'Left forearm');e.poseJoint(515,265);
   const before=e.serialize(),joints=e.geometry.objects.get(0).joints;
-  const reopened=newOwnedEditor({demo:false}).load(materializePivotDocument(e.report));
+  const reopened=newOwnedEditor({demo:false}).load(pivotDocument(e.report));
   assert.equal(reopened.totalTicks,10);assert.equal(reopened.figure.segments.length,10);
   for(const [id,p]of joints){near(reopened.geometry.objects.get(0).joints.get(id).x,p.x);near(reopened.geometry.objects.get(0).joints.get(id).y,p.y);}
   assert.deepEqual(e.serialize(),before);

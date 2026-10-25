@@ -4,10 +4,10 @@ import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
 import {animationRotation, animationOriginOffset, synchronizeAnimationOrigin} from '../src/animation-origin.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {roundTrip} from './support/codec.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 const open = ownedScope();
 const clone = structuredClone;
@@ -144,7 +144,7 @@ function roundtrip(document, format) {
 test('native PIV materializes support poses while STYK preserves editable support and exact undo', async () => {
   const editor = fixture(), reference = editor.figure._styk.animationOrigin.rotationHandleId;
   editor.select(1, editor.figure.segments.findIndex(segment => segment.segment_id === reference)); editor.deleteSingleSegment();
-  const before = editor.serialize(), styk = await roundtrip(before, 'styk'), native = await roundtrip(materializePivotDocument(before), 'piv');
+  const before = editor.serialize(), styk = await roundtrip(before, 'styk'), native = await roundtrip(pivotDocument(before), 'piv');
   assert.deepEqual(styk.figure_types[0]._styk.animationOrigin, before.figure_types[0]._styk.animationOrigin);
   assert.ok(native.figure_types.every(figure => !figure._styk?.animationOrigin));
   for (let tick = 0; tick <= 20; tick++) {equalGeometry(pose(before, tick), pose(styk, tick)); equalGeometry(pose(before, tick), pose(native, tick), .0005);}

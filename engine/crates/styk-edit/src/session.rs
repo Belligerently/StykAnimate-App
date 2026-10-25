@@ -434,12 +434,13 @@ impl Session {
     pub fn query(&mut self, kind: &str, args: &str, view: &str) -> Result<String, String> {
         let (args, view) = (styk_doc::json::parse(args.as_bytes()).map_err(|error| error.to_string())?, styk_doc::json::parse(view.as_bytes()).map_err(|error| error.to_string())?);
         let shown = match kind {
-            "timeline" | "geometry" | "previewGeometry" | "frame" | "document" | "motion" => {
+            "timeline" | "geometry" | "previewGeometry" | "figureDocument" | "frame" | "document" | "motion" => {
                 apply_playhead(&mut self.editor, &view);
                 match kind {
                     "timeline" => Ok(self.editor.interface_timeline()),
                     "geometry" => self.editor.interface_geometry(&args),
                     "previewGeometry" => self.editor.interface_preview_geometry(&args),
+                    "figureDocument" => self.editor.interface_figure_document(&args),
                     other => self.editor.interface_frame(other),
                 }
             }

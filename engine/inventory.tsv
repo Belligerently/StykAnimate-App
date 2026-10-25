@@ -73,7 +73,7 @@ src/community-library.mjs	platform	-	stays	file, storage and network services
 src/connected-timeline.mjs	engine	styk-eval	js	
 src/content-hash.mjs	engine	styk-render::images	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/demo.mjs	engine	styk-edit	js	
-src/document-export-worker.mjs	engine	styk-formats::save	partial	Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); the JS lifts the document, prepares portable figures and Pivot saves
+src/document-export-worker.mjs	engine	styk-formats::save	partial	Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); Pivot and figure files are made by the engine on this worker (styk-edit/src/export, styk_engine::document_export); the JS still prepares the .styk container
 src/document-export.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/document-normalize.mjs	engine	styk-formats::service	js	import/export transport
 src/document-save.mjs	platform	-	stays	file, storage and network services
@@ -272,7 +272,7 @@ src/native-container.mjs	engine	styk-formats::container	removed	read and wrote t
 src/container-cache.mjs	platform	styk-formats::files	stays	bounded cache of compressed blocks that outlives an export worker
 src/document-lift.mjs	engine	styk-formats::container	partial	Rust: container::lift writes the same skeleton and sections from a store document (461 corpus files, byte-identical), and container::ViewLifter hands a document to the editor in pieces; the JavaScript lift stays for saves while the editor holds the document as objects: an array's identity decides what is stored once
 src/native-file-codec.mjs	platform	styk-formats::files	stays	loads the Rust container module in a worker and moves a file to and from the interface's object model
-src/native-figure.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/native-figure.mjs	engine	styk-edit	removed	deleted: the document of a figure, a set of figures or a movieclip file is made by the engine (styk-edit/src/export/figure.rs, pose_sequences.rs) on the export worker
 src/native-files.mjs	platform	-	stays	file, storage and network services
 src/native-pose-projection.mjs	engine	styk-eval	js	
 src/native-property-curve.mjs	engine	styk-eval::channels	partial	Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor
@@ -294,9 +294,9 @@ src/onion-timeline-range.mjs	ui	-	stays
 src/paint.mjs	engine	styk-eval	partial	Rust: segment paints and gradients in draw lists; normalizePaint, segmentPaint, samplePaint, parseColor and hexColor for recolouring (styk-edit/src/recolor.rs); CSS and SVG helpers still JS
 src/parallax-draw.mjs	engine	styk-render	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/pen-input.mjs	ui	-	stays	
-src/pivot-export-materialize.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
-src/pivot-frame-draft.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
-src/pivot-style-materialize.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/pivot-export-materialize.mjs	engine	styk-edit	removed	deleted: Pivot animations are baked by the engine (styk-edit/src/export/pivot.rs) on the export worker and encoded by the codec
+src/pivot-frame-draft.mjs	engine	styk-formats::save	partial	Rust: the stored frames of a working-frame draft for exports (styk-edit/src/export/pivot.rs stored_frame_report); the JS keeps the stored-frame projection that Add, the movieclip scope and the render report read
+src/pivot-style-materialize.mjs	engine	styk-edit	removed	deleted: the figure types of animated instance styles are made by the engine (styk-edit/src/export/style.rs)
 src/pivot/background.mjs	engine	styk-eval	partial	Rust: background tween and colour key; painting still JS
 src/pivot/geometry-definition.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry-order.mjs	engine	styk-eval	js	evaluation and world geometry

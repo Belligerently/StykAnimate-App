@@ -24,6 +24,7 @@
 mod allocation;
 pub mod anchors;
 pub mod document;
+pub mod document_export;
 pub mod edit;
 pub mod export;
 mod frames;

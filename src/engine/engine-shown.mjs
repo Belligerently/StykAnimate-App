@@ -214,6 +214,15 @@ export function createShown(owner) {
       return {objects, orderedObjects, token: {}, previousToken: undefined, changedSlots: null,
         get drawables() { return flat ??= orderedObjects.flatMap(group => group.drawables); }, warnings: answer.warnings};
     },
+    /**
+     * A figure, a set of figures or a movieclip with the pose on show as a document of its own, as a library file, the rig test
+     * and the builder save it: `{figureUid | figureUids | figureTypeId, tick}`.
+     */
+    figureDocument(request) {
+      const document = read('figureDocument', request);
+      if (!document) throw Object.assign(new Error('The engine does not hold this document.'), {name: 'EngineUnavailable'});
+      return document;
+    },
     /** What the stage draws from: the session and the view it is at, or `null`. */
     source: motion => owner.source(motion),
     /**

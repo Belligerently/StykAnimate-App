@@ -37,7 +37,7 @@ Inspect these contracts and their current callers before editing. Proposed new m
 | Worker synchronization | `src/playback-patch.mjs` |
 | Memory and prepared playback | `src/playback-budget.mjs`, `src/playback-resources.mjs`, `docs/ADAPTIVE-PREVIEW.md` |
 | Persistence and recovery | `src/document-export.mjs`, `src/document-export-worker.mjs`, `src/browser-recovery.mjs`, `docs/document-exports.md`, `docs/native-file-format.md` |
-| Rendered and native export | `src/engine/engine-export.mjs`, `src/engine/engine-export-worker.mjs`, `src/pivot-export-materialize.mjs`, `engine/crates/styk-export` |
+| Rendered and native export | `src/engine/engine-export.mjs`, `src/engine/engine-export-worker.mjs`, `engine/crates/styk-edit/src/export`, `engine/crates/styk-export` |
 
 Observed constraints to preserve:
 

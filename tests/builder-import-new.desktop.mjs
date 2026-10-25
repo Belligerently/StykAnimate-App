@@ -17,7 +17,6 @@ try {
   await page.evaluate(()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();});
   await page.evaluate(async()=>{
     const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
-    const {nativeFigureDocument}=await import('/src/native-figure.mjs');
     const report=emptyDocument(),figure=report.figure_types[0];figure.name='Posed multicolour figure';
     for(const segment of figure.segments){segment.is_static=false;segment.flag_bits={is_static:false};}
     const object=createObject(figure,1,220,220,{
@@ -28,7 +27,7 @@ try {
     });
     report.keyframes=[createFrame([object,createObject(figure,2,500,220)],5)];
     styk.editor.load(report,'Builder import regression');styk.editor.select(1);styk.editor.markSaved();styk.fit();
-    window.captureFigure=uid=>structuredClone(nativeFigureDocument(styk.editor.report,{figureUid:uid,tick:styk.editor.tick,sourceFrame:styk.editor.selectionFrame}));
+    window.captureFigure=uid=>styk.editor._shown.figureDocument({figureUid:uid,tick:styk.editor.tick});
     window.originalFigures=[captureFigure(1),captureFigure(2)];
   });
   await page.locator('[data-workspace-mode="rig"]').click();

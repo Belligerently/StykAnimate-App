@@ -1,10 +1,10 @@
-/** Local regression evidence for the supplied hands pack; runs outside the UI. */
+/** Local regression evidence for the supplied hands pack; runs outside the UI, on the engine:
+ *  node --import ./tests/support/register-engine.mjs scripts/verify-figure-colors.mjs [hands-source.json] */
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {nodeCodec, exportDocument, importBytes} from '../tests/support/codec.mjs';
 import {Editor} from '../src/editor.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
-import {synchronizeExistingDerived} from '../src/document-normalize.mjs';
+import {pivotDocument} from '../tests/support/engine-export.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
 
@@ -20,7 +20,7 @@ measure('paletteReplaceMs',()=>e.replaceFigureColor('#44aacc','#778899'));
 assert.deepEqual(e.figurePalette().map(p=>[p.color,p.segments.length]),[['#778899',count-1],['#eecc11',1]]);
 const historyBytes=e._undo.reduce((sum,command)=>sum+Buffer.byteLength(JSON.stringify(command)),0);
 const saved=measure('serializeMs',()=>e.serialize());await writeFile(`${directory}/hands-edited.json`,JSON.stringify(saved));
-const materialized=measure('materializeMs',()=>materializePivotDocument(saved));synchronizeExistingDerived(materialized);
+const materialized=measure('materializeMs',()=>pivotDocument(saved));
 await writeFile(`${directory}/hands-pivot.json`,JSON.stringify(materialized));
 // Export each through the codec the app runs and reopen it, as a save and a later open would.
 for(const [format,stem,document] of [['styk','hands-edited',saved],['piv','hands-pivot',materialized]]){

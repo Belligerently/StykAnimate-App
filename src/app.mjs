@@ -246,6 +246,8 @@ async function runDocumentExport(format, consume, { recovery = false, controller
   telemetry.count(metric + '_started');
   try {
     const drawingRevision=editor.revision;await drawingBarrier(editor.report,{signal:controller.signal});if(drawingRevision!==editor.revision)throw messageError(new DOMException('', 'AbortError'), "errors.app.theDrawingChangedDuringExport", {});
+    // The engine makes Pivot and figure files from the document it holds: its session starts on the open document and takes what the editor changed.
+    if (format !== 'styk' && !editor._shown?.active) throw Object.assign(messageError(new Error(''), "errors.documentExport.theEngineCannotMakeThisFileHere", {}), {telemetryCode: 'engine_failed', telemetryStage: 'prepare'});
     const blob = await documentExporter.export(recovery ? editor.movieclipProjectReport() : editor.report, {
       format,
       name: recovery ? editor._movieclipScopes?.[0]?.parent.name ?? editor.name : editor.name,
@@ -253,6 +255,7 @@ async function runDocumentExport(format, consume, { recovery = false, controller
       figureTypeId: editor.object?.figure_type_id,
       figureUid: editor.selectedUid,
       tick: editor.tick,
+      revision: editor.revision,
       signal: controller.signal,
       getRevision: () => `${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`,
     });

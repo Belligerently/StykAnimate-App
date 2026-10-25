@@ -4,8 +4,8 @@ import {ownedEditorFor} from './support/owned-editor.mjs';
 import {BuilderSession} from '../src/builder-session.mjs';
 import {emptyDocument, createObject, createFrame, defaultFigure} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
-import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {isDrawingLayer} from '../src/drawing-model.mjs';
+import {figureDocument} from './support/engine-export.mjs';
 
 /** One scene with two figures: the bound figure has two instances, the other
  * figure is an unjoined neighbor used to prove builder edits stay scoped. */
@@ -153,15 +153,15 @@ for (const mode of ['native', 'simple', 'advanced']) test(`import-new preserves 
   const session = new BuilderSession(editor).begin();
   editor.select(1, 0); editor.updateSegment({thickness: 18});
   editor.select(1, 3); editor.deleteSingleSegment();
-  const edited = structuredClone(nativeFigureDocument(editor.report, {figureUid: 1, tick: editor.tick, sourceFrame: editor.selectionFrame}));
+  const edited = structuredClone(figureDocument(editor.report, {figureUid: 1, tick: editor.tick, sourceFrame: editor.selectionFrame}));
   const imported = session.resolve('import-new');
   const expected = edited.keyframes[0].objects[0];
   for (const field of ['angles', 'lengths', 'bends', 'len_flag', 'bend_flag', 'scale', '_stykStyle'])
     assert.deepEqual(imported[field], expected[field], field);
   assert.deepEqual(figure(editor, 1), original.figure_types[0]);
   for (const uid of [1, 2]) assert.deepEqual(
-    nativeFigureDocument(editor.report, {figureUid: uid, tick: editor.tick, sourceFrame: editor.selectionFrame}),
-    nativeFigureDocument(original, {figureUid: uid, tick: editor.tick}),
+    figureDocument(editor.report, {figureUid: uid, tick: editor.tick, sourceFrame: editor.selectionFrame}),
+    figureDocument(original, {figureUid: uid, tick: editor.tick}),
     'Original instances keep their complete appearance');
   editor.undo();
   assert.deepEqual(editor.report, original);

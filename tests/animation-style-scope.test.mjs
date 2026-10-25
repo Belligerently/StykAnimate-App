@@ -6,9 +6,9 @@ import {animationChannelId, normalizeAnimationTarget, findAnimationChannel, comp
 import {animationStyleValue, setAnimationStyle, resolveInstanceFigure} from '../src/animation-style.mjs';
 import {evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {roundTrip} from './support/codec.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 const globalTarget = {kind:'segment',uid:7,handleId:1};
 const targetA = {...globalTarget,figureTypeId:1}, targetB = {...globalTarget,figureTypeId:2};
@@ -134,7 +134,7 @@ test('direct style reads, writes and dormant composition never touch a mismatche
 });
 
 test('scoped curves materialize into actual PIV primary and gradient alpha without cross-definition leakage', async () => {
-  const report=setChannels(fixture(),curves()), original=structuredClone(report), output=materializePivotDocument(report);
+  const report=setChannels(fixture(),curves()), original=structuredClone(report), output=pivotDocument(report);
   const native=await roundTrip({document:output,format:'piv'});
   assert.equal(output._styk.animation,undefined);
   for(let tick=0;tick<11;tick++) assert.deepEqual(styleBytes(native,sample(native,tick)),styleBytes(report,sample(report,tick)),`Frame ${tick}`);

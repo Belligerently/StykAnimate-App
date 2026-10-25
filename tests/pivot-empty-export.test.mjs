@@ -4,24 +4,28 @@ import {deflateSync} from 'node:zlib';
 import {Worker} from 'node:worker_threads';
 import {once} from 'node:events';
 import {engineEditor} from './support/owned-editor.mjs';
-import {createObject,emptyDocument} from '../src/demo.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
+import {createFrame,createObject,emptyDocument} from '../src/demo.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {NATIVE_FRAME_CONTENT_TYPE,unpackNativeFrameResponse,materializeNativeFrames} from '../src/import-wire.mjs';
 import {nodeCodec, codecPort} from './support/codec.mjs';
-import {documentChunks} from '../src/document-transport.mjs';
-function working(){
-  const editor=engineEditor({demo:false}, emptyDocument()),report=editor.report;
-  report.keyframes[0].objects.push(createObject(report.figure_types[0],1,123,234));
-  report._styk.simpleFrameDraft={version:1,mode:'add',index:0,frameId:report.keyframes[0]._styk.frameId,empty:true};
-  return report;
+import {registeredEngine} from '../src/engine/engine-open.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
+/** A new animation whose only pose is the working frame of an empty Simple animation, in an editor the engine owns. */
+function workingEditor(edit=null){
+  const base=emptyDocument(),report=structuredClone(base);
+  report.keyframes=[{...createFrame([createObject(report.figure_types[0],1,123,234)]),_styk:{easing:{interpolation:'hold'}}}];
+  report.keyframes[0]._styk={...report.keyframes[0]._styk,frameId:'frame-1'};
+  report._styk.simpleFrameDraft={version:1,mode:'add',index:0,frameId:'frame-1',empty:true};
+  edit?.(report);
+  return engineEditor({demo:false}, report);
 }
 test('zero stored-frame materialization excludes the internal working pose and dormant authoring',()=>{
-  const report=working();report._styk.animation={version:1,nextKeyId:2,channels:[{id:'figure:1:x',target:{kind:'figure',uid:1},property:'x',keys:[{id:'key-1',tick:100,value:999}]}]};
-  const before=structuredClone(report),stored=storedFrameReport(report),native=materializePivotDocument(report);
+  const editor=workingEditor(report=>{report._styk.animation={version:1,nextKeyId:2,channels:[{id:'figure:1:x',target:{kind:'figure',uid:1},property:'x',keys:[{id:'key-1',tick:100,value:999}]}]};}),report=editor.report;
+  assert.ok(report._styk.animation,'the dormant authoring is in the document');
+  const before=structuredClone(report),stored=storedFrameReport(report),native=pivotDocument(editor);
   assert.deepEqual(stored.keyframes,[]);assert.equal(stored.total_output_frames,0);assert.equal(stored.duration_seconds,0);
   assert.deepEqual(native.keyframes,[]);assert.equal(native._styk.animation,undefined);assert.equal(native._styk.simpleFrameDraft,undefined);
-  assert.equal(native.figure_types,report.figure_types);assert.deepEqual(report,before);
+  assert.deepEqual(native.figure_types,report.figure_types);assert.deepEqual(report,before);
 });
 
 // The codec the app runs (in Node), with its own source cache for one test.
@@ -45,21 +49,21 @@ test('native zero-frame PIV negotiates wire format through the codec and re-expo
   assert.deepEqual(await exportBytes(server,{...result,format:'piv'}),source);
 });
 test('actual native writer saves zero stored keys while STYK preserves the editable working pose',async()=>{
-  const server=service(),report=working(),before=structuredClone(report);
-  const piv=await exportBytes(server,{document:materializePivotDocument(report),format:'piv'}),opened=await importBytes(server,piv,'empty-export.piv');
+  const server=service(),editor=workingEditor(),report=editor.report,before=structuredClone(report);
+  const piv=await exportBytes(server,{document:pivotDocument(editor),format:'piv'}),opened=await importBytes(server,piv,'empty-export.piv');
   assert.deepEqual(opened.document.keyframes,[]);assert.equal(opened.document.total_output_frames,0);
   const styk=await exportBytes(server,{document:report,format:'styk'}),saved=await importBytes(server,styk,'working.styk');
   assert.equal(saved.document.keyframes.length,1);assert.equal(saved.document.keyframes[0].objects[0].root_x,123);assert.equal(saved.document._styk.simpleFrameDraft.empty,true);
-  assert.deepEqual(materializePivotDocument(saved.document).keyframes,[]);assert.deepEqual(report,before);
+  assert.deepEqual(pivotDocument(saved.document).keyframes,[]);assert.deepEqual(report,before);
 });
 
 test('actual document export worker validates and writes zero stored PIV frames',async t=>{
-  const server=service(),link=codecPort(server),worker=new Worker(new URL('./document-export-node-worker.mjs',import.meta.url));t.after(()=>{worker.terminate();link.close();});
+  const server=service(),link=codecPort(server),worker=new Worker(new URL('./document-export-node-worker.mjs',import.meta.url),{execArgv:[]});t.after(()=>{worker.terminate();link.close();});
   assert.equal((await once(worker,'message'))[0].ready,true);let id=0;
   const send=async request=>{const pending=once(worker,'message');worker.postMessage({id:++id,...request});const result=(await pending)[0];assert.equal(result.ok,true,result.error?.message);return result;};
-  const started=once(worker,'message');worker.postMessage({id:++id,operation:'start',options:{format:'piv',name:'empty-worker',codecPort:link.port}},[link.port]);
+  const started=once(worker,'message');worker.postMessage({id:++id,operation:'start',options:{format:'piv',name:'empty-worker',engine:{join:registeredEngine().join},codecPort:link.port}},[link.port]);
   assert.equal((await started)[0].ok,true);
-  for(const chunk of documentChunks(working()))await send({operation:'chunk',chunk});
-  const result=await send({operation:'export'}),opened=await importBytes(server,Buffer.from(await result.blob.arrayBuffer()),'empty-worker.piv');
-  assert.equal(result.timings.export_keyframes,0);assert.deepEqual(opened.document.keyframes,[]);assert.equal(opened.document.total_output_frames,0);
+  const editor=workingEditor();
+  const result=await send({operation:'export',engine:{address:registeredEngine().handle.address(),revision:editor.revision},cancel:new Int32Array(new SharedArrayBuffer(4))}),opened=await importBytes(server,Buffer.from(await result.blob.arrayBuffer()),'empty-worker.piv');
+  assert.deepEqual(opened.document.keyframes,[]);assert.equal(opened.document.total_output_frames,0);
 });

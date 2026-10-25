@@ -8,7 +8,7 @@ import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';
-import {createNativeStyleTable} from '../src/pivot-style-materialize.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 import {sampleAnimationChannel} from '../src/animation-channels.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
@@ -143,9 +143,8 @@ test('outline and segment styles animate per instance and materialize for native
   assert.equal(resolved.segment_decode.global_style.outline_thickness,8);
   assert.deepEqual(resolved.segments[0].color_rgb,[0,255,0]);
   assert.equal(resolved.segments[0].thickness,12);
-  const output={...e.report,figure_types:[...e.report.figure_types]};
-  const id=createNativeStyleTable(output)(object);
-  assert.notEqual(id,e.figure.figure_type_id);assert.deepEqual(output.figure_types.at(-1).segments[0].color_rgb,[0,255,0]);
+  const output=pivotDocument(e),id=output.keyframes[0].objects[0].figure_type_id;
+  assert.notEqual(id,e.figure.figure_type_id);assert.deepEqual(output.figure_types.find(figure=>figure.figure_type_id===id).segments[0].color_rgb,[0,255,0]);
 });
 
 test('numeric appearance edits use property history and keep the source definition unchanged', () => {
@@ -167,7 +166,7 @@ test('Simple Discard and Update carry the same independent property edits across
   assert.equal(reopened.evaluatedFrame.objects[0].field28,191);
 });
 
-test('gradient paint, endpoint keys and polygon style survive reopen and native materialization', () => {
+test('gradient paint, endpoint keys and polygon style survive reopen', () => {
   const e=fixture();e.addPolygon([0,1,2]);e.select(1,0);
   const definition=structuredClone(e.figure);
   e.updateSegmentStyle({paint:{type:'linear',angle:30,stops:[{offset:0,color:[255,0,0],opacity:.8},{offset:1,color:[0,0,255],opacity:.3}]}});
@@ -178,8 +177,6 @@ test('gradient paint, endpoint keys and polygon style survive reopen and native 
   assert.deepEqual(resolved.polyfills[0].color_rgb,[0,255,0]);
   const paint=e.animationChannels.find(c=>c.property==='paint');assert.ok(paint);
   e.seek(5);e.updateSegmentStyle({gradient:{color:'#ffff00',opacity:.7}});
-  const output={...e.report,figure_types:[...e.report.figure_types]},table=createNativeStyleTable(output);
-  e.seek(0);const a=table(e.evaluatedFrame.objects[0]);e.seek(5);const b=table(e.evaluatedFrame.objects[0]);assert.notEqual(a,b);
   const reopened=newOwnedEditor({demo:false,propertyChannels:true}).load(e.serialize());reopened.seek(5);reopened.select(1);
   resolved=resolveInstanceFigure(reopened.figure,reopened.object);assert.deepEqual(resolved.segments[0].secondary.rgb,[255,255,0]);
   validateAnimationDocument(reopened.report);

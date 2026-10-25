@@ -6,10 +6,10 @@ import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
 import {figurePalette,displayedSegmentPaint} from '../src/figure-colors.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {planFigureFrameOperation} from '../src/range-figure-operations.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 const open = ownedScope();
 
@@ -147,7 +147,7 @@ test('invalid colors and locked layers leave document and history untouched',()=
 
 test('native export materializes instance colors and preserves untouched legacy figures',()=>{
   const e=fixture({version:4,raw:196});e.select(1,0);e.updateBuilderSegmentStyle({color:'#123456'});
-  const frame=e.evaluatedFrame,output=materializePivotDocument(e.serialize());
+  const frame=e.evaluatedFrame,output=pivotDocument(e.serialize());
   const before=buildGeometry(e.report,frame).drawables.map(s=>s.rgb),after=buildGeometry(output,output.keyframes[0]).drawables.map(s=>s.rgb);
   assert.deepEqual(after,before);
 });
@@ -195,7 +195,7 @@ test('recolored legacy instances retain their palette when copied across Pivot v
 test('materializing legacy layer ordering preserves held poses at every output tick',()=>{
   const e=fixture({version:4,raw:196,layerTimeline:false,propertyChannels:false}),layer=e.createLayer('Other');
   e.assignFiguresToLayer([2],layer.id);e.moveLayerTo(layer.id,0);
-  const output=materializePivotDocument(e.serialize());assert.equal(output.version,5);
+  const output=pivotDocument(e.serialize());assert.equal(output.version,5);
   const sample=(report,tick)=>{const rows=timeline(report);let index=0;while(index+1<rows.length&&rows[index+1].start<=tick)index++;return evaluatedFrame(report,index,rows[index].count?(tick-rows[index].start)/rows[index].count:0,tick);};
   for(let tick=0;tick<e.totalTicks;tick++)assert.deepEqual(sample(output,tick).objects.map(o=>[o.unique_id,o.root_x,o.root_y]),sample(e.report,tick).objects.map(o=>[o.unique_id,o.root_x,o.root_y]));
 });

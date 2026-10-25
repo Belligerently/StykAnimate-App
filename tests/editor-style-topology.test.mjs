@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 // session gap: captureFrameSource and the topology commands with property channels run in the editor, and what they leave does not match the session's document when the owner writes it back.
 
@@ -119,7 +119,7 @@ test('retargeted and split style curves survive real native PIV and STYK export/
   const editor=fixture();editor.setOrigin(600);editor.select(1,0);editor.splitSegment(.4);
   const before=editor.serialize(), expected=Array.from({length:editor.totalTicks},(_,tick)=>styledSegments(editor,tick));
   const reopened={};
-  for(const [kind,doc]of Object.entries({styk:before,piv:materializePivotDocument(before)}))reopened[kind]=await roundTrip({document:doc,format:kind});
+  for(const [kind,doc]of Object.entries({styk:before,piv:pivotDocument(before)}))reopened[kind]=await roundTrip({document:doc,format:kind});
   for(const [kind,report]of Object.entries(reopened)){
     const reopened=new Editor({demo:false}).load(report);assert.equal(reopened.totalTicks,expected.length);
     for(let tick=0;tick<expected.length;tick++){

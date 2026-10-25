@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {createDemo} from '../src/demo.mjs';
 import {Editor} from '../src/editor.mjs';
 import {engineEditor} from './support/owned-editor.mjs';
@@ -10,7 +9,8 @@ import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
 import {buildContainerV2, decodeDocument} from './support/native-files.mjs';
 import {buildContainerV1} from './support/container-v1.mjs';
-import {packPoseSequences} from '../src/pose-sequence-storage.mjs';
+import {packPoseSequences, expandPoseSequencesSteps} from '../src/pose-sequence-storage.mjs';
+import {figureDocument} from './support/engine-export.mjs';
 
 function documentRecords(document, seen = new Set(), result = []) {
   if (seen.has(document)) return result;
@@ -19,6 +19,13 @@ function documentRecords(document, seen = new Set(), result = []) {
     documentRecords(figure._styk.movieclip.document, seen, result);
   if (document._styk?.movieclipSource?.document) documentRecords(document._styk.movieclipSource.document, seen, result);
   return result;
+}
+
+/** The document as every reader sees it: the poses its channels share are expanded again. */
+function unpacked(document) {
+  const copy = structuredClone(document);
+  for (const record of documentRecords(copy)) for (const step of expandPoseSequencesSteps(record)) void step;
+  return copy;
 }
 
 function sample(report, tick) {
@@ -45,13 +52,16 @@ function movieclipFixture({nested = false} = {}) {
   if (nested) {
     editor.enterMovieclip(figure.figure_type_id); editor.select(1); editor.createMovieclip({start: 0, end: 10}); editor.leaveMovieclip();
   }
-  for (const document of documentRecords(editor.report)) {
+  // Every document of the project carries the source and unknown metadata: the engine opens the project so.
+  const saved = editor.serialize();
+  for (const document of documentRecords(saved)) {
     document._stykSource = source;
     document.futureMetadata = {_stykSource: {opaque: 'retain this unknown field'}, document: {unknown: true},
       data_url: 'data:image/png;base64,AQID', fractional: .123456789};
   }
-  editor.seek(3); editor.select(uid);
-  return {editor, uid, source, bytes};
+  const project = engineEditor({propertyChannels: true}, saved);
+  project.seek(3); project.select(uid);
+  return {editor: project, uid, source, bytes};
 }
 
 test('native figure keeps the evaluated pose, precise style and assets without the project', () => {
@@ -60,7 +70,7 @@ test('native figure keeps the evaluated pose, precise style and assets without t
   report.keyframes[0].objects[0]._stykStyle = {outlineOpacity: .123456789};
   report._stykSource = {source_base64: 'unrelated original animation'};
   const before = structuredClone(report), tick = 1;
-  const output = nativeFigureDocument(report, {figureUid: 1, tick});
+  const output = figureDocument(report, {figureUid: 1, tick});
   validateScene(output);
   assert.equal(output.figure_types.length, 1);
   assert.equal(output.keyframes.length, 1);
@@ -80,7 +90,7 @@ test('native figure keeps the evaluated pose, precise style and assets without t
 });
 
 test('missing selection fails rather than exporting a different figure', () => {
-  assert.throws(() => nativeFigureDocument(createDemo(), {figureUid: 999}), /Select a figure/);
+  assert.throws(() => figureDocument(createDemo(), {figureUid: 999}), /Select a figure/);
 });
 
 test('authored channels are captured at the selected tick without retaining the animation', () => {
@@ -90,7 +100,7 @@ test('authored channels are captured at the selected tick without retaining the 
     {target: {kind: 'figure', uid: 1}, property: 'x', tick: 12, value: 290},
   ]);
   editor.seek(6);
-  const output = nativeFigureDocument(editor.report, {figureUid: 1, tick: editor.tick});
+  const output = figureDocument(editor, {figureUid: 1, tick: editor.tick});
   assert.equal(output.keyframes[0].objects[0].root_x, editor.evaluatedFrame.objects.find(o => o.unique_id === 1).root_x);
   assert.equal(output._styk.animation, undefined);
   validateScene(output);
@@ -99,10 +109,10 @@ test('authored channels are captured at the selected tick without retaining the 
 test('portable clips remove only recognized original-source archives, including nested baselines and figure sets', async () => {
   const {editor, uid, source} = movieclipFixture({nested: true}), before = structuredClone(editor.report);
   for (const selection of [{figureUid: uid}, {figureUids: [uid, 3]}]) {
-    const output = nativeFigureDocument(editor.report, {...selection, tick: 3});
+    const output = figureDocument(editor, {...selection, tick: 3});
     validateScene(output); await buildContainerV2(output, 'stkz');   // the writer accepts only a self-contained figure
     const original = {...output, figure_types: output.figure_types.map(figure => editor.report.figure_types.find(f => f.figure_type_id === figure.figure_type_id))};
-    const expected = structuredClone(original);
+    const expected = packPoseSequences(structuredClone(original));
     for (const document of documentRecords(expected)) delete document._stykSource;
     assert.deepEqual(output, expected);
     assert.ok(documentRecords(output).length > 3, 'Nested clip and authored baseline documents must be exercised.');
@@ -113,28 +123,30 @@ test('portable clips remove only recognized original-source archives, including 
     const outputDocument = output.figure_types.find(figure => figure._styk?.movieclip)._styk.movieclip.document;
     const liveDocument = original.figure_types.find(figure => figure._styk?.movieclip)._styk.movieclip.document;
     assert.notEqual(outputDocument, liveDocument);
-    assert.equal(outputDocument.keyframes, liveDocument.keyframes, 'The export only copies known record shells.');
-    assert.equal(outputDocument.futureMetadata, liveDocument.futureMetadata);
-    for (const tick of [0, .5, 2, 3.5, 9, 12.5, 20]) assert.deepEqual(sample(output, tick), sample(original, tick));
+    assert.deepEqual(outputDocument.keyframes, liveDocument.keyframes);
+    assert.deepEqual(outputDocument.futureMetadata, liveDocument.futureMetadata);
+    const flat = unpacked(output);
+    for (const tick of [0, .5, 2, 3.5, 9, 12.5, 20]) assert.deepEqual(sample(flat, tick), sample(original, tick));
   }
   assert.deepEqual(editor.report, before);
-  assert.equal(editor.report._stykSource, source);
+  assert.deepEqual(editor.report._stykSource, source);
 });
 
 test('portable save/reopen retains authored poses, assets and independent edit/undo/redo while projects keep provenance', async () => {
   const {editor, uid, source, bytes} = movieclipFixture();
-  const portable = nativeFigureDocument(editor.report, {figureUid: uid, tick: 3}), before = structuredClone(editor.report);
-  const retained = {...portable, figure_types: [editor.figure]}, packed = packPoseSequences(portable);
+  const portable = figureDocument(editor, {figureUid: uid, tick: 3}), before = structuredClone(editor.report);
+  // The export stores the poses its channels share once.
+  const retained = {...portable, figure_types: [editor.figure]}, packed = portable;
   const baseline = packed.figure_types[0]._styk.movieclip.document._styk.movieclipSource.document;
   assert.equal(baseline._styk.animation.version, 2);
   assert.equal(baseline._styk.animation.poseSequences.length, 1);
   assert.deepEqual(baseline._styk.animation.channels.map(channel => channel.keys), [{sequence: 0}, {sequence: 0}]);
   const retainedBytes = await buildContainerV2(retained, 'stykmov'), portableBytes = await buildContainerV2(packed, 'stykmov');
   assert.ok(retainedBytes.byteLength - portableBytes.byteLength > bytes.length * .9);
-  const decoded = (await decodeDocument(portableBytes, 'stykmov')).document;
+  const decoded = (await decodeDocument(portableBytes, 'stykmov')).document, expanded = unpacked(decoded);
   const reopened = new Editor({propertyChannels: true}).load(decoded);
   for (const document of documentRecords(reopened.report)) assert.equal(document._stykSource, undefined);
-  for (let tick = 0; tick < 21; tick += .5) assert.deepEqual(sample(reopened.report, tick), sample(portable, tick));
+  for (let tick = 0; tick < 21; tick += .5) assert.deepEqual(sample(reopened.report, tick), sample(expanded, tick));
   const reopenedAssets = reopened.figure._styk.movieclip.document.figure_types.flatMap(figure => figure.image_assets);
   assert.deepEqual(reopenedAssets, [{name: 'Retained bitmap', data_base64: 'AQID',
     future: {_stykSource: 'retain this opaque asset field'}}]);
@@ -160,13 +172,14 @@ test('portable save/reopen retains authored poses, assets and independent edit/u
 
 test('legacy portable clips with retained import archives stay editable when re-exported compactly', async () => {
   const {editor, uid} = movieclipFixture();
-  const portable = nativeFigureDocument(editor.report, {figureUid: uid, tick: 3});
+  const portable = figureDocument(editor, {figureUid: uid, tick: 3});
   const legacy = {...portable, figure_types: [editor.figure]};
   for (const bytes of [await buildContainerV1(JSON.stringify(legacy), 'stykmov'), await buildContainerV2(legacy, 'stykmov')]) {
     const old = new Editor().load((await decodeDocument(bytes, 'stykmov')).document);
-    const output = nativeFigureDocument(old.report, {figureUid: old.selectedUid});
+    const output = figureDocument(old, {figureUid: old.selectedUid});
     for (const document of documentRecords(output)) assert.equal(document._stykSource, undefined);
-    for (const tick of [0, 3.5, 12, 20]) assert.deepEqual(sample(output, tick), sample(portable, tick));
+    const flat = unpacked(output), expected = unpacked(portable);
+    for (const tick of [0, 3.5, 12, 20]) assert.deepEqual(sample(flat, tick), sample(expected, tick));
     old.enterMovieclip(); old.seek(4); old.select(1); old.moveSelection(4, 1); old.undo(); old.redo(); old.leaveMovieclip();
     assert.ok(sample(old.report, 4).length);
   }

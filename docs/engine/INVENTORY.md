@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 164 KiB | 9 | 7 | 8 | 0 | 12 | 23 % | 24 % | 0 % |
-| `styk-edit` | 90 | 1229 KiB | 28 | 42 | 8 | 1 | 11 | 17 % | 66 % | 11 % |
+| `styk-edit` | 93 | 1229 KiB | 28 | 42 | 8 | 1 | 14 | 17 % | 66 % | 11 % |
 | `styk-engine` | 24 | 28 KiB | 8 | 0 | 0 | 0 | 16 | 4 % | 0 % | 4 % |
 | `styk-eval` | 80 | 657 KiB | 18 | 46 | 9 | 0 | 7 | 18 % | 72 % | 0 % |
 | `styk-export` | 14 | 63 KiB | 8 | 2 | 0 | 0 | 4 | 0 % | 10 % | 0 % |
-| `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
+| `styk-formats` | 56 | 742 KiB | 23 | 7 | 1 | 22 | 3 | 65 % | 11 % | 7 % |
 | `styk-render` | 51 | 72 KiB | 4 | 2 | 2 | 0 | 43 | 27 % | 35 % | 0 % |
-| **Total** | 356 | 3010 KiB | 103 | 106 | 28 | 23 | 96 | 29 % | 48 % | 6 % |
+| **Total** | 356 | 2984 KiB | 99 | 107 | 28 | 23 | 99 | 29 % | 49 % | 6 % |
 
 ## Engine modules
 
@@ -136,10 +136,13 @@ Engine logic: ported to Rust.
 | `src/media-authoring.mjs` | `styk-edit` | js |  |
 | `src/media-image-worker.mjs` | `styk-edit` | js |  |
 | `src/motion-path-falloff.mjs` | `styk-edit` | ported | motion-path falloff planning. Rust: falloffWeight (the sharp shape cubed as V8 does), planFalloff and normalizeFalloff (styk-edit/src/motion_path.rs), every weight checked against the editor; the app still reads its constants for the overlay |
+| `src/native-figure.mjs` | `styk-edit` | removed | deleted: the document of a figure, a set of figures or a movieclip file is made by the engine (styk-edit/src/export/figure.rs, pose_sequences.rs) on the export worker |
 | `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated, native propertyChannels:true authored-pose commands and app facade/worker adoption pending |
 | `src/native-property-ranges.mjs` | `styk-edit` | js |  |
 | `src/native-text-authoring.mjs` | `styk-edit` | js |  |
 | `src/onion-skin.mjs` | `styk-edit` | removed | deleted: the session plans the onion skins (styk-edit onion_skins.rs) and the stage draws them; the drawing cels' prefetch moved to src/drawing-cel-prefetch.mjs (19636 bytes) |
+| `src/pivot-export-materialize.mjs` | `styk-edit` | removed | deleted: Pivot animations are baked by the engine (styk-edit/src/export/pivot.rs) on the export worker and encoded by the codec |
+| `src/pivot-style-materialize.mjs` | `styk-edit` | removed | deleted: the figure types of animated instance styles are made by the engine (styk-edit/src/export/style.rs) |
 | `src/polygon-draft.mjs` | `styk-edit` | js |  |
 | `src/pose-property-split.mjs` | `styk-edit` | js |  |
 | `src/project-tabs.mjs` | `styk-edit` | js |  |
@@ -300,12 +303,9 @@ Engine logic: ported to Rust.
 | `native/piv-frame-scan.cpp` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/frames.rs scan mode (errors worded as the portable scanner)); kept only as the development test oracle (not shipped) |
 | `src/import-wire.mjs` | `styk-formats::piv` | js | native frame table materialization |
 | `src/playback-native.mjs` | `styk-formats::piv` | removed | deleted: the engine opens files into its own store; no playback worker takes a frame table |
-| `src/document-export-worker.mjs` | `styk-formats::save` | partial | Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); the JS lifts the document, prepares portable figures and Pivot saves |
+| `src/document-export-worker.mjs` | `styk-formats::save` | partial | Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); Pivot and figure files are made by the engine on this worker (styk-edit/src/export, styk_engine::document_export); the JS still prepares the .styk container |
 | `src/document-export.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
-| `src/native-figure.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
-| `src/pivot-export-materialize.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
-| `src/pivot-frame-draft.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
-| `src/pivot-style-materialize.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
+| `src/pivot-frame-draft.mjs` | `styk-formats::save` | partial | Rust: the stored frames of a working-frame draft for exports (styk-edit/src/export/pivot.rs stored_frame_report); the JS keeps the stored-frame projection that Add, the movieclip scope and the render report read |
 | `backend/browser_service.py` | `styk-formats::service` | verified | the app runs styk-piv (styk-piv service.rs); kept only as the development test oracle (not shipped) |
 | `backend/jobs.py` | `styk-formats::service` | verified | the app runs styk-piv (cancelled requests answer 499) behind the codec worker queue (src/codec-web-shell.mjs); kept only as the development test oracle (not shipped) |
 | `backend/process_metrics.py` | `styk-formats::service` | verified | measured the codec service process; the codec runs in the page now, so the app has nothing to measure; kept only as the development test oracle (not shipped) |

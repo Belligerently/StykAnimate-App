@@ -29,6 +29,7 @@ mod clipboards;
 mod figure_clipboard;
 mod figure_transform;
 mod external;
+pub mod export;
 mod figures;
 mod frame;
 mod frame_draft;

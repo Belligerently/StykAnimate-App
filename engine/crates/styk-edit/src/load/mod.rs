@@ -78,6 +78,16 @@ pub(crate) fn validate_surface(polygon: &Value, handles: &[f64]) -> Result<(), E
     figure::surface(polygon, &known)
 }
 
+/// `validateScene(report)`: the figure definitions, backgrounds and frames of a document.
+pub(crate) fn validate_scene(report: &Value) -> Result<(), EditError> {
+    scene::validate_scene(report, None)
+}
+
+/// `validateLayerState(state)`.
+pub(crate) fn validate_layer_state(state: &Value) -> Result<(), EditError> {
+    layer_state::validate(Some(state))
+}
+
 /// `validateAnimationDocument(report)`: the authored channels of `report._styk.animation`.
 pub(crate) fn validate_animation(report: &Value) -> Result<(), EditError> {
     animation::validate_document(report)

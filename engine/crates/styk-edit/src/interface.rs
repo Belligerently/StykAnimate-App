@@ -101,6 +101,28 @@ impl Editor {
         })
     }
 
+    /// A figure, a set of figures or a movieclip with the pose on show as a document of its own (`nativeFigureDocument`; a
+    /// library file, the rig test, the builder): `{figureUid | figureUids | figureTypeId, tick}`, as JSON.
+    pub(crate) fn interface_figure_document(&self, args: &Value) -> Result<String, EditError> {
+        let number = |key: &str| args.get(key).and_then(Value::as_f64);
+        let request = crate::export::FigureRequest {
+            figure_type_id: number("figureTypeId"),
+            figure_uid: number("figureUid"),
+            figure_uids: args.get("figureUids").and_then(Value::numbers).unwrap_or_default(),
+            tick: number("tick").unwrap_or(self.tick),
+        };
+        Ok(styk_doc::json::to_string(&self.native_figure(&request, Some(&self.selection_frame_record()?))?))
+    }
+
+    /// `editor.selectionFrame` as a record: on a layer sheet, or under a gesture or with saved channels the frame on show, else
+    /// the keyframe at the playhead.
+    pub(crate) fn selection_frame_record(&self) -> Result<Value, EditError> {
+        if self.authored.is_some() || self.sheet() || self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) > 0 {
+            return self.shown_frame();
+        }
+        self.report.get("keyframes").and_then(|frames| frames.item(self.frame_index)).ok_or_else(|| EditError::Unported("a playhead outside the keyframes".into()))
+    }
+
     /// `getSpatialPose(index)` (or `getSpatialMotion(index)` with `motion`) of the selected figure's bone at `index` (by default the
     /// selected joint): `{bend, turn, pitch}`, or the travel of a mechanical joint, `null` where there is no such bone.
     fn interface_spatial(&self, index: Option<Value>, motion: bool) -> Result<Option<Value>, EditError> {

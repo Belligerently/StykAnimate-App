@@ -520,7 +520,7 @@ export class UserLibrary {
       const revision=this.editor.revision;await drawingBarrier(this.editor.report);if(revision!==this.editor.revision)throw messageError(new Error(''), "errors.userLibrary.theSelectionChangedBeforeSavingToTheLibrary", {});
       const report = librarySnapshot(this.editor), format = report._styk.libraryKind === 'movieclip' ? 'stykmov' : 'stkz';
       // The preview is drawn by the engine from the saved bytes (src/library-files.mjs).
-      const exported = this.exporter.export(report, {format, figureUids:report.keyframes[0].objects.map(o => o.unique_id)});
+      const exported = this.exporter.export(this.editor.report, {format, figureUids:report.keyframes[0].objects.map(o => o.unique_id), tick:this.editor.tick, revision});
       const [thumbnail, blob] = await Promise.all([libraryPreview(exported, format), exported]);
       let name = report._styk.name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/^\.+|[. ]+$/g,'').slice(0,110).trim() || interfaceText("userLibrary.untitledAsset");
       if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(name)) name = `Asset ${name}`;

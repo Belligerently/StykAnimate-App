@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {sceneValuesAt} from '../src/editor-scene.mjs';
 import {evaluatedFrame} from '../src/pivot/geometry.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {roundTrip} from './support/codec.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 const open = ownedScope();
 
@@ -132,7 +132,7 @@ test('Scene source history survives pruning earlier commands and undo to the pre
 test('authored Scene colors and PNG backgrounds survive real native PIV export/reimport', async () => {
   const {editor} = fixture({pose: true}); editor.seek(5); editor.setSceneColor(0x804466aa);
   editor.seek(12); editor.setSceneBackground(addBackground(editor, {kind: 1, name: 'Pixel', data_url: png, mime_type: 'image/png'}).background_id);
-  const document = materializePivotDocument(editor.serialize());
+  const document = pivotDocument(editor.serialize());
   const imported = await roundTrip({document, format: 'piv'});
   assert.equal(imported.keyframes.length, document.keyframes.length);
   const background = (report, tick) => report.backgrounds.find(asset => asset.background_id === report.keyframes[tick].background_id);

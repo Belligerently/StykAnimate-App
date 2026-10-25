@@ -22,3 +22,21 @@ fn explicit_materialization_matches_editor_definitions_frames_and_paths() {
         );
     }
 }
+
+#[test]
+fn identities_above_the_allocation_bound_are_kept_and_never_collided_with() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/movieclip-materialize");
+    let mut tree = parse(&folder.join("plain.document.json"));
+    let prepared = styk_eval::prepare(styk_eval::from_value(&tree, "").unwrap());
+    let before = Materializer::new(&tree, &prepared).unwrap().identities().count();
+    // A file may carry identities up to 2^32 - 1; the editor only allocates below 2^31 - 1.
+    let mut frames = tree.get("keyframes").unwrap().elements().unwrap().iter().collect::<Vec<_>>();
+    let mut object = frames[0].get("objects").unwrap().item(0).unwrap();
+    object.make_obj().unwrap().set("unique_id", styk_doc::Value::Num(4_294_967_295.0));
+    let mut objects = frames[0].get("objects").unwrap().elements().unwrap().iter().collect::<Vec<_>>();
+    objects[0] = object;
+    frames[0].make_obj().unwrap().set("objects", styk_doc::Value::array(objects));
+    tree.make_obj().unwrap().set("keyframes", styk_doc::Value::array(frames));
+    let materializer = Materializer::new(&tree, &prepared).expect("an identity above the bound does not exhaust the allocation");
+    assert_eq!(materializer.identities().count(), before);
+}
