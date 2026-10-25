@@ -694,10 +694,17 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   /** Ends the edits the session holds before the editor runs a call of its own: they are the session's,
    * and the editor's code would not know to commit them. */
   const endSessionEdits = () => {
-    if (editor._animationEdit?.engine) editor.commitAnimationEdit();
-    if (editor._vfxClipEdit?.engine) editor.commitVfxClipEdit();
-    if (editor._drag?.engine) editor.commitDrag();
+    // The session ends them itself: one it refuses to commit is cancelled, never handed to the editor, which has no state for it.
+    const end = (commit, cancel) => { try { commit(); } catch { cancel(); } };
+    ending = true;
+    try {
+      if (editor._animationEdit?.engine) end(() => editor.commitAnimationEdit(), () => editor.cancelAnimationEdit());
+      if (editor._vfxClipEdit?.engine) end(() => editor.commitVfxClipEdit(), () => editor.cancelVfxClipEdit());
+      if (editor._drag?.engine) end(() => editor.commitDrag(), () => editor.cancelDrag());
+    } finally { ending = false; }
   };
+  /** Whether the owner is ending the session's own edits (a refusal then is not the editor's to run). */
+  let ending = false;
   /** Runs `name` in the JavaScript editor, which the session has no command for, and writes what it changed back. */
   const runInEditor = (name, original, args) => {
     // A session batch holds the entries recorded meanwhile as one; the editor's entry would be a child it cannot undo.
@@ -799,7 +806,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       // (counted in report.refused and report.editor). Only the commands that exist in the session alone are refused.
       const key = `${name}: ${answer.reason}`;
       if (answer.reason !== name) report.refused[key] = (report.refused[key] ?? 0) + 1;
-      if (!sessionOnly.has(name)) return runInEditor(name, original, args);
+      if (!sessionOnly.has(name) && !ending) return runInEditor(name, original, args);
       throw refuse(name, answer.reason);
     }
     // A committed gesture's frame stays on show, as the session keeps it (`retained`),

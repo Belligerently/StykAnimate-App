@@ -91,5 +91,6 @@ fn a_constraint_waits_for_a_foreign_gesture_and_selection_metadata() {
     assert!(editor.call("setRigBehavior", &[styk_doc::json::parse(br#"{"stretch":{"min":0}}"#).unwrap()]).is_ok());
     editor.set_selection_metadata(&styk_doc::json::parse(br#"{"segmentIds":[55,66]}"#).unwrap()).unwrap();editor.take_events();
     let before = snapshot(&mut editor);
-    assert!(matches!(editor.call("setAngleLock", &[Value::str("off")]), Err(EditError::Unported(_))));assert_eq!(snapshot(&mut editor), before);
+    // Several joints selected (segment ids) no longer send the call elsewhere: the lock is set as with one joint.
+    assert!(editor.call("setAngleLock", &[Value::str("off")]).is_ok());assert_ne!(snapshot(&mut editor), before);
 }
