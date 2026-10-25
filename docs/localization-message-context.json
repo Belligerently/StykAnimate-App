@@ -12485,6 +12485,7 @@
   "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded": {
     "locations": [
       "src/editor-frames.mjs:28",
+      "src/editor-frames.mjs:37",
       "src/editor-load.mjs:52",
       "src/editor-load.mjs:83"
     ],
@@ -13974,7 +13975,7 @@
   },
   "errors.editorAnimation.keyframeTimeMustBeAnIntegerFrom0": {
     "locations": [
-      "src/editor-animation.mjs:8"
+      "src/editor-animation.mjs:12"
     ],
     "context": "const checkTick = tick => { if (!Number.isInteger(tick) || tick < 0 || tick > MAX_TICK) throw messageError(new Error(''), \"errors.editorAnimation.keyframeTimeMu"
   },
@@ -14183,6 +14184,12 @@
       "src/editor-frame-draft.mjs:18"
     ],
     "context": "if (state.baseline?._styk?.frameId !== state.frameId) throw messageError(new Error(''), \"errors.editorFrameDraft.theWorkingFrameCheckpointHasADifferentIdentity\""
+  },
+  "errors.editorFrames.chooseAnExistingSourceFrame": {
+    "locations": [
+      "src/editor-frames.mjs:41"
+    ],
+    "context": "const frame = this.report.keyframes[index]; if (!frame) throw messageError(new Error(''), \"errors.editorFrames.chooseAnExistingSourceFrame\", {});"
   },
   "errors.editorFrames.frameSourceIdentitiesMustBeValidAndUnique": {
     "locations": [

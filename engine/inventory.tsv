@@ -122,7 +122,7 @@ src/drawing-worker-operations.mjs	engine	styk-drawing	removed	deleted: the pixel
 src/drawing-worker-preview.mjs	engine	styk-drawing	removed	deleted: the preview is a pixel-worker operation of styk-drawing (src/engine/engine-drawing-worker.mjs)
 src/drawing-worker.mjs	engine	styk-drawing	partial	Rust: the pixel worker hands its operations to styk-drawing; the worker shell is JS
 src/editable-scene-preparation.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
-src/editor-animation.mjs	engine	styk-edit	partial	Rust: every edit of the authored animation, the camera motion and the motion path, and the reads the session answers (animationValue, segmentAnimationTarget); the editor keeps the channel reads, the camera-motion clips and the motion-path gesture state the owner mirrors
+src/editor-animation.mjs	engine	styk-edit	partial	Rust: every edit of the authored animation, the camera motion and the motion path, and the reads the session answers (animationValue, segmentAnimationTarget); the editor keeps the channel reads, the camera-motion clips, the motion-path gesture state the owner mirrors and the native channel projection (nativePropertyChannel, nativePoseChannel) that the branch and builder order previews of native-property-edit.mjs still build on
 src/editor-audio.mjs	engine	styk-edit	ported	Rust: every command (styk-edit/src/audio.rs): tracks, clips, import, split, duplicate, copy, cut, paste with identities from the draws, rippleAudio and the audioRipple option on frame inserts and removals (2026-10-24); the JavaScript module remains only as the fallback for a call the session refuses
 src/editor-authored-pose.mjs	engine	styk-edit	removed	deleted: the pose gestures and whole-frame transactions are commands of the engine session (styk-edit authored.rs) (10860 bytes)
 src/editor-branch-style.mjs	engine	styk-edit	partial	Rust: the draw order's held keys after a live preview (beginBranchStyleAnimation, previewBranchStyleValues, commitBranchStyleAnimation for moveBuilderOrder and setBuilderOrder: styk-edit/src/builder.rs); branch opacity and width gestures still JS
@@ -143,7 +143,7 @@ src/editor-duplicate-drag.mjs	engine	styk-edit	removed	deleted: the duplicate dr
 src/editor-figure-transform.mjs	engine	styk-edit	removed	deleted: the figure handle transform is a session command (styk-edit/src/figure_transform.rs)
 src/editor-frame-clipboard.mjs	engine	styk-edit	removed	deleted: nothing in the interface copied or pasted keyframes on a native timeline; the clipboards are the session's (styk-edit/src/clipboards.rs, src/engine/engine-clipboards.mjs) (18950 bytes)
 src/editor-frame-draft.mjs	engine	styk-edit	js	the check of the working frame a saved document records, and the frame-draft revision the interface keys caches on; the working frame itself is the engine session's
-src/editor-frames.mjs	engine	styk-edit	js	the check of the frame identities a document stores, and getFrameById; frame edits are the engine session's
+src/editor-frames.mjs	engine	styk-edit	js	the check of the frame identities a document stores, getFrameId, getFrameById and the identity assignment the native channel projection uses; frame edits are the engine session's
 src/editor-handle-commands.mjs	engine	styk-edit	partial	Rust: the segment-value clipboard and the handle commands (styk-edit/src/handle_commands.rs). Left in JavaScript: the segmentValues read and the dialog's parseSegmentValues and formatSegmentValues
 src/editor-handle-edit.mjs	engine	styk-edit	removed	deleted: Handle Edit Mode is a session command (styk-edit/src/handle_edit.rs)
 src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget and the IK settings, also across joined figures (styk-edit/src/ik.rs, ik_settings.rs). Left in JavaScript: getIKSettings (the owner installs the session's read over it) and the helpers the pose bodies of editor.mjs and the motion-path editor still call
@@ -274,10 +274,10 @@ src/document-lift.mjs	engine	styk-formats::container	partial	Rust: container::li
 src/native-file-codec.mjs	platform	styk-formats::files	stays	loads the Rust container module in a worker and moves a file to and from the interface's object model
 src/native-figure.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/native-files.mjs	platform	-	stays	file, storage and network services
-src/native-pose-projection.mjs	engine	styk-eval	removed	deleted: only the editor's native channel projection used it (1537 bytes)
+src/native-pose-projection.mjs	engine	styk-eval	js	
 src/native-property-curve.mjs	engine	styk-eval::channels	partial	Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor
 src/native-property-edit.mjs	engine	styk-edit	partial	Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated. The module is the inspector's token over session calls (animation edits, pose and camera gestures, branch keys, the project's fields, the sheet's duration) and refuses what the session has no command for; it writes nothing into the document itself
-src/native-property-projection.mjs	engine	styk-eval	removed	deleted: only the editor's native channel projection used it (6341 bytes)
+src/native-property-projection.mjs	engine	styk-eval	partial	Rust: private native scalar adoption through same marker, Draft, Records and typed sampler; 204 exact recorded curves/200 missing first writes; authored propertyChannels:true command publication and app adoption remain guarded
 src/native-property-ranges.mjs	engine	styk-edit	removed	deleted: a pose at one value across several frames is no command of the session (the inspector's token refuses it); nothing wrote it into the document any more
 src/native-text-authoring.mjs	engine	styk-edit	js	
 src/native-video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine

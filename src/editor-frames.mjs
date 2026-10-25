@@ -33,5 +33,13 @@ export function* validateFrameIdentitySteps(report) {
 }
 
 export const editorFrameMethods = {
+  _assignFrameId(frame) {
+    if (!Number.isSafeInteger(this._nextFrameIdentity)) throw messageError(new Error(''), "errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded", {});
+    frame._styk = {...frame._styk, frameId: `frame-${this._nextFrameIdentity++}`}; return frame._styk.frameId;
+  },
+  getFrameId(index = this.frameIndex) {
+    const frame = this.report.keyframes[index]; if (!frame) throw messageError(new Error(''), "errors.editorFrames.chooseAnExistingSourceFrame", {});
+    return frame._styk?.frameId ?? this._assignFrameId(frame);
+  },
   getFrameById(id) { return getFrameById(this.report, id); },
 };

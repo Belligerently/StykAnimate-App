@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 29 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 28 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
-| `styk-edit` | 89 | 866 KiB | 23 | 23 | 2 | 0 | 41 | 44 % | 39 % | 43 % |
+| `styk-edit` | 89 | 870 KiB | 23 | 23 | 2 | 0 | 41 | 44 % | 39 % | 43 % |
 | `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
-| `styk-eval` | 80 | 687 KiB | 16 | 45 | 10 | 0 | 9 | 21 % | 71 % | 3 % |
+| `styk-eval` | 80 | 687 KiB | 17 | 46 | 10 | 0 | 7 | 20 % | 72 % | 2 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 8 | 7 | 3 | 0 | 33 | 24 % | 48 % | 12 % |
-| **Total** | 355 | 2861 KiB | 99 | 92 | 24 | 22 | 118 | 39 % | 38 % | 17 % |
+| **Total** | 355 | 2866 KiB | 100 | 93 | 24 | 22 | 116 | 39 % | 38 % | 17 % |
 
 ## Engine modules
 
@@ -76,7 +76,7 @@ Engine logic: ported to Rust.
 | `src/clipboard-worker-plan.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its worker pipeline) (7402 bytes) |
 | `src/clipboard-worker.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its worker pipeline) (8566 bytes) |
 | `src/demo.mjs` | `styk-edit` | js |  |
-| `src/editor-animation.mjs` | `styk-edit` | partial | Rust: every edit of the authored animation, the camera motion and the motion path, and the reads the session answers (animationValue, segmentAnimationTarget); the editor keeps the channel reads, the camera-motion clips and the motion-path gesture state the owner mirrors |
+| `src/editor-animation.mjs` | `styk-edit` | partial | Rust: every edit of the authored animation, the camera motion and the motion path, and the reads the session answers (animationValue, segmentAnimationTarget); the editor keeps the channel reads, the camera-motion clips, the motion-path gesture state the owner mirrors and the native channel projection (nativePropertyChannel, nativePoseChannel) that the branch and builder order previews of native-property-edit.mjs still build on |
 | `src/editor-audio.mjs` | `styk-edit` | ported | Rust: every command (styk-edit/src/audio.rs): tracks, clips, import, split, duplicate, copy, cut, paste with identities from the draws, rippleAudio and the audioRipple option on frame inserts and removals (2026-10-24); the JavaScript module remains only as the fallback for a call the session refuses |
 | `src/editor-authored-pose.mjs` | `styk-edit` | removed | deleted: the pose gestures and whole-frame transactions are commands of the engine session (styk-edit authored.rs) (10860 bytes) |
 | `src/editor-branch-style.mjs` | `styk-edit` | partial | Rust: the draw order's held keys after a live preview (beginBranchStyleAnimation, previewBranchStyleValues, commitBranchStyleAnimation for moveBuilderOrder and setBuilderOrder: styk-edit/src/builder.rs); branch opacity and width gestures still JS |
@@ -97,7 +97,7 @@ Engine logic: ported to Rust.
 | `src/editor-figure-transform.mjs` | `styk-edit` | removed | deleted: the figure handle transform is a session command (styk-edit/src/figure_transform.rs) |
 | `src/editor-frame-clipboard.mjs` | `styk-edit` | removed | deleted: nothing in the interface copied or pasted keyframes on a native timeline; the clipboards are the session's (styk-edit/src/clipboards.rs, src/engine/engine-clipboards.mjs) (18950 bytes) |
 | `src/editor-frame-draft.mjs` | `styk-edit` | js | the check of the working frame a saved document records, and the frame-draft revision the interface keys caches on; the working frame itself is the engine session's |
-| `src/editor-frames.mjs` | `styk-edit` | js | the check of the frame identities a document stores, and getFrameById; frame edits are the engine session's |
+| `src/editor-frames.mjs` | `styk-edit` | js | the check of the frame identities a document stores, getFrameId, getFrameById and the identity assignment the native channel projection uses; frame edits are the engine session's |
 | `src/editor-handle-commands.mjs` | `styk-edit` | partial | Rust: the segment-value clipboard and the handle commands (styk-edit/src/handle_commands.rs). Left in JavaScript: the segmentValues read and the dialog's parseSegmentValues and formatSegmentValues |
 | `src/editor-handle-edit.mjs` | `styk-edit` | removed | deleted: Handle Edit Mode is a session command (styk-edit/src/handle_edit.rs) |
 | `src/editor-ik.mjs` | `styk-edit` | partial | Rust: poseIKTarget and the IK settings, also across joined figures (styk-edit/src/ik.rs, ik_settings.rs). Left in JavaScript: getIKSettings (the owner installs the session's read over it) and the helpers the pose bodies of editor.mjs and the motion-path editor still call |
@@ -188,8 +188,8 @@ Engine logic: ported to Rust.
 | `src/layer-folders.mjs` | `styk-eval` | js |  |
 | `src/layer-sheet.mjs` | `styk-eval` | partial | Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS |
 | `src/layers.mjs` | `styk-eval` | partial | Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS |
-| `src/native-pose-projection.mjs` | `styk-eval` | removed | deleted: only the editor's native channel projection used it (1537 bytes) |
-| `src/native-property-projection.mjs` | `styk-eval` | removed | deleted: only the editor's native channel projection used it (6341 bytes) |
+| `src/native-pose-projection.mjs` | `styk-eval` | js |  |
+| `src/native-property-projection.mjs` | `styk-eval` | partial | Rust: private native scalar adoption through same marker, Draft, Records and typed sampler; 204 exact recorded curves/200 missing first writes; authored propertyChannels:true command publication and app adoption remain guarded |
 | `src/object-identity.mjs` | `styk-eval` | js |  |
 | `src/paint.mjs` | `styk-eval` | partial | Rust: segment paints and gradients in draw lists; normalizePaint, segmentPaint, samplePaint, parseColor and hexColor for recolouring (styk-edit/src/recolor.rs); CSS and SVG helpers still JS |
 | `src/pivot/background.mjs` | `styk-eval` | partial | Rust: background tween and colour key; painting still JS |
