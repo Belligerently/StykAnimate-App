@@ -1,6 +1,6 @@
 //! Inverse-kinematics controllers of figures joined to a figure whose definition a topology edit
-//! changes (`repairJoined` of src/ik-topology.mjs, with the temporary skeleton of
-//! `joinedIKGraph` in src/ik-joined.mjs).
+//! changes (`repairJoined`, with the temporary skeleton of
+//! `joinedIKGraph`).
 //!
 //! A chain may run through several joined figures, so a controller names its chain and its
 //! followers across the whole assembly. The assembly is compiled twice, from the definitions and

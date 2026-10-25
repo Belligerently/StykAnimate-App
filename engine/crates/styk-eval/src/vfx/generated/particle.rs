@@ -1,5 +1,5 @@
 //! One particle of a batch (`evaluateParticle`, `rampColor`, `beamTip`,
-//! `beamWidth` in src/vfx-generators.mjs; the editor's WebGPU vertex shader
+//! `beamWidth` of the recorded editor; its WebGPU vertex shader
 //! mirrors them line for line). A particle is a pure function of its draw's
 //! record, the batch table, its instance index and the tick, so seeking,
 //! playback and export draw the same particles. Arithmetic is the editor's

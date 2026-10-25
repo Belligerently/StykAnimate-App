@@ -10,4 +10,4 @@ The current editor report, history, selection and identity allocators remain int
 
 Native Pivot permits zero stored keyframes. Such imports normalize to one internal editable placeholder with `_styk.simpleFrameDraft.empty: true`. When Simple mode is enabled, `editor.timeline` is empty and `totalTicks` is zero. Stored-frame export excludes the placeholder; the first Add promotes it. Normal Simple Add drafts likewise expose the stored baseline's duration while edits continue in the working pose.
 
-Tests: `tests/editor-load.test.mjs`, `tests/animation-validation-steps.test.mjs`, and `tests/editor-frame-draft.test.mjs` cover equivalent sync/async results, single-event publication at the requested frame, cancellation and replacement races, and stored/empty timeline semantics.
+Tests: `tests/editor-load.test.mjs`, `tests/animation-validation-steps.test.mjs`, and `tests/pivot-frame-draft.test.mjs` cover equivalent sync/async results, single-event publication at the requested frame, cancellation and replacement races, and stored/empty timeline semantics.

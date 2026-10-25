@@ -384,7 +384,7 @@ pub struct Object {
     pub origin: Option<Arc<crate::origin::PoseOrigin>>,
 }
 
-/// `color_transition` of a pose (`objectColor` in src/pivot/geometry.mjs): each colour is
+/// `color_transition` of a pose (`objectColor` of the recorded editor): each colour is
 /// mixed with both overrides and taken `t` of the way from the first to the second.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ColorTransition {

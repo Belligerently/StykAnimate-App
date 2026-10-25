@@ -1,4 +1,4 @@
-//! Follow cameras (src/camera-follow.mjs): camera-motion clips that keep figures in frame.
+//! Follow cameras: camera-motion clips that keep figures in frame.
 //!
 //! Per tick, the followed figures are evaluated alone, with the figures they hang from
 //! and the camera (`followSamplingReport`), and measured (`figureBounds`): their weighted

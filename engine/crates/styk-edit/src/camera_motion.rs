@@ -1,4 +1,4 @@
-//! Camera motion clips as the timeline edits them (src/editor-camera-motion.mjs): a clip's
+//! Camera motion clips as the timeline edits them: a clip's
 //! timing, switch, parameters and followed figures, and deleting one, each validated as
 //! `validateCameraMotion` does and recorded as one `camera-motion` history entry. Adding,
 //! duplicating, pasting and randomizing give clips random identities and seeds, which a
@@ -18,7 +18,7 @@ const FOLLOW_FRAMES: f64 = 100000.0;
 /// `Object.keys(defaults)` and `Object.keys(FOLLOW_DEFAULTS)`: the parameters of each kind.
 const PRESET_KEYS: [&str; 13] = ["strength", "moveX", "moveY", "roll", "zoom", "frequency", "roughness", "direction", "recovery", "phase", "fadeIn", "fadeOut", "seed"];
 const FOLLOW_KEYS: [&str; 13] = ["strength", "followX", "followY", "offsetX", "offsetY", "lag", "deadZone", "lookAhead", "zoomFit", "padding", "maxZoom", "fadeIn", "fadeOut"];
-/// `defaults` and `FOLLOW_DEFAULTS` (src/camera-motion.mjs, src/camera-follow.mjs): a new clip's parameters.
+/// A new clip's parameters (`defaults` and `FOLLOW_DEFAULTS` of the recorded editor).
 const MOTION_DEFAULTS: &[(&str, f64)] = &[("strength", 1.0), ("moveX", 12.0), ("moveY", 12.0), ("roll", 1.0), ("zoom", 0.0), ("frequency", 8.0), ("roughness", 0.5), ("direction", 0.0), ("recovery", 5.0), ("phase", 0.0), ("fadeIn", 2.0), ("fadeOut", 4.0), ("seed", 1.0)];
 const FOLLOW_DEFAULTS: &[(&str, f64)] = &[("strength", 1.0), ("followX", 1.0), ("followY", 1.0), ("offsetX", 0.0), ("offsetY", 0.0), ("lag", 8.0), ("deadZone", 0.0), ("lookAhead", 0.0), ("zoomFit", 0.0), ("padding", 0.2), ("maxZoom", 3.0), ("fadeIn", 6.0), ("fadeOut", 6.0)];
 

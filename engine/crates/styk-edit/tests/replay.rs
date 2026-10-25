@@ -1,4 +1,4 @@
-//! Every command recording in engine/tests/edit (engine/tools/edit-replay.mjs) replays
+//! Every command recording in engine/tests/edit replays
 //! without a difference, and the scenarios of ported commands run to the end.
 
 use std::path::Path;

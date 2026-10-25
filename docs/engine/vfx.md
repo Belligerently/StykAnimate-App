@@ -1,6 +1,6 @@
 # Engine: visual effects
 
-How the Rust engine (`engine/crates/styk-eval/src/vfx/`) decides, for one tick, which effects apply to what and with which parameter values. The user-facing behaviour is in [`VFX.md`](../VFX.md), [`VFX-DESIGN.md`](../VFX-DESIGN.md) and [`VFX-GENERATORS.md`](../VFX-GENERATORS.md); the JavaScript editor is the oracle while both exist ([`RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md)). Drawing the effects is the renderer's ([Rendering](#rendering)).
+How the Rust engine (`engine/crates/styk-eval/src/vfx/`) decides, for one tick, which effects apply to what and with which parameter values. The user-facing behaviour is in [`VFX.md`](../VFX.md), [`VFX-DESIGN.md`](../VFX-DESIGN.md) and [`VFX.md`](../VFX.md); the JavaScript editor is the oracle while both exist ([`RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md)). Drawing the effects is the renderer's ([Rendering](#rendering)).
 
 ## Contract
 
@@ -12,8 +12,8 @@ How the Rust engine (`engine/crates/styk-eval/src/vfx/`) decides, for one tick, 
   - `generators`: generated effects inside their clip's range, with their parameters, opacity and start (what the editor's reference dump lists); what they draw is a separate batch ([Generated effects](#generated-effects));
   - `warnings`: connected groups nested too deep.
 - Every stack is what `activeVfx` returns, in render order: enabled filters that change their input, each an `Arc<vfx::Effect>` whose `Params` is one struct per effect type with typed fields (`f64`, `Color` for an RGB integer or a paint, an enum per option list, `bool` switches, `u32` seeds and counts). Values are those the editor hands an executor: keys sampled, poses tweened, `effectStrength` multiplied by the clip's strength and fades.
-- `vfx::padding`, `vfx::sampling_padding` and `vfx::working_slots` take such a stack (`vfxPadding`, `vfxSamplingPadding`, `vfxWorkingSlots`).
-- Saying what must be drawn: `Document::unsupported` does not name effects, since they are evaluated. A frame whose `vfx` is `Some` has effects the renderer must draw, and `vfx::document_has_vfx` (`documentHasVfx`) tells whether a document carries any at all. The engine draws every filter and every generated effect ([Rendering](#rendering)); the interface refuses no document for its effects.
+- `vfx::padding`, `vfx::sampling_padding` and `vfx::working_slots` take such a stack.
+- Saying what must be drawn: `Document::unsupported` does not name effects, since they are evaluated. A frame whose `vfx` is `Some` has effects the renderer must draw, and `vfx::document_has_vfx` tells whether a document carries any at all. The engine draws every filter and every generated effect ([Rendering](#rendering)); the interface refuses no document for its effects.
 
 ## Recorded effect editing
 
@@ -28,40 +28,40 @@ their existing UI owners.
 ## Evaluation order
 
 1. **Per-pose stacks** (`Object::vfx`, `Object::vfx_scope`, and `Keyframe::vfx` for the scene) are read with the pose. Between two keys they tween with it (`vfx::interpolate`, called from `eval::evaluate_native` for the scene and from `tween_object` for objects) at the pose tween's own progress. A layer sheet takes the scene's stack from the scene track. Property channels of effects then apply to the tweened stacks (`channels::scalar`, `applyVfxParameter`, [evaluation.md](evaluation.md#property-channels)): a `vfxStack` channel replaces a target's whole stack (an empty one removes it), a `vfx1:<type>:<id>:<param>` channel sets one parameter of the first effect in the stack with that identity and type (numbers clamped to their range, colours as keyed, discrete values held; `enabled` switches it), `vfxScope` turns a figure's scope on or off; a node channel applies only where the instance's figure type has that node. Channels apply before clips, and a document whose only effects are channels still resolves effects (`Prepared::has_vfx`).
-2. **Clips** at the tick (`renderVfxOwner`): enabled, in range, with strength; a node clip scoped to another figure type is skipped. Their filters append to the target's stacks after the per-pose ones, clips in saved order. A figure clip that includes attached parts also feeds the connected stack and turns the scope on.
+2. **Clips** at the tick: enabled, in range, with strength; a node clip scoped to another figure type is skipped. Their filters append to the target's stacks after the per-pose ones, clips in saved order. A figure clip that includes attached parts also feeds the connected stack and turns the scope on.
 3. **Movieclip containers** (`buildMovieclipGeometrySteps`): an instance's `figure` stack is the clip's own scene stack at the instance's local time (`evaluate_clip`, only when the clip document has effects), then the instance's. The clip's own objects have their stacks in the clip frame's own `FrameVfx`.
-4. **Connected groups** (`connectedVfxGeometry`): an object whose scope is on and whose connected stack is active owns a group: itself and every object joined below it, breadth first. Scopes nesting deeper than 16 leave the group out with a warning. The root's `figure` drops the effects the group applies (by identity).
+4. **Connected groups**: an object whose scope is on and whose connected stack is active owns a group: itself and every object joined below it, breadth first. Scopes nesting deeper than 16 leave the group out with a warning. The root's `figure` drops the effects the group applies (by identity).
 5. **Generated effects** (the clip loop of `collectLayers`): sampled at the tick, at most just before the clip's end, with opacity `strength × fade × effectStrength`, from `start + delay`.
 
 ## Modules
 
-| Module (`src/vfx/`) | Holds | JavaScript |
-| --- | --- | --- |
-| `mod.rs` | `Effect`, `Stack`, `Stacks`/`StackKey` (`_stykVfx`), `active`, `interpolate`, `document_has_vfx` | `activeVfx`, `interpolateVfx`, `documentHasVfx` (src/vfx.mjs) |
-| `registry.rs` | `Kind`, `Params` and one struct per type, `Spec`, option enums, `neutral`, `available` | `VFX_REGISTRY`, `neutralVfx`, `effectAvailable` |
-| `paint.rs` | `normalize`, `interpolate`, `js_round` | `vfxPaint`, `interpolateVfxColor`, `normalizePaint`, `samplePaint` |
-| `parse.rs` | saved effects, stacks and clips → typed (lenient) | `validateVfxStack`, `validateVfxOwner`, `validateVfxClips`, `vfxDescriptor` |
-| `clips.rs` | `Clip`, `Clips`, `Target`, `Channel`, `Key`, `sample_keys`, `Clip::{contains, time, fade, sample, active_at}` | `clipContains`, `clipTime`, `vfxFadeAt`, `sampleVfxKeys`, `sampleVfxClip` (interface), `vfxClipActiveAt` (deleted) |
-| `frame.rs` | `evaluate` → `FrameVfx`, `generators` | `frameWithVfxTime`, `vfxRenderFrame`, `renderVfxOwner`, `connectedVfxGeometry` (planning), `collectLayers` (clips) |
-| `frame.rs` | `composed`: the `FrameVfx` of an edit frame from the fields the editor composed | `vfxRenderFrame` (its output), `connectedVfxGeometry` |
-| `layers.rs` | `objectBounds` for effect layers: `item_extent`, `rounded` | `objectBounds`, `drawableVfxPadding` |
-| `padding.rs` | `padding`, `sampling_padding`, `working_slots` | `vfxPadding`, `vfxSamplingPadding`, `vfxWorkingSlots` |
-| `parity.rs` | comparison with `frames[].vfx` of a reference dump | — |
+| Module (`src/vfx/`) | Holds |
+| --- | --- |
+| `mod.rs` | `Effect`, `Stack`, `Stacks`/`StackKey` (`_stykVfx`), `active`, `interpolate`, `document_has_vfx` |
+| `registry.rs` | `Kind`, `Params` and one struct per type, `Spec`, option enums, `neutral`, `available` |
+| `paint.rs` | `normalize`, `interpolate`, `js_round` |
+| `parse.rs` | saved effects, stacks and clips → typed (lenient) |
+| `clips.rs` | `Clip`, `Clips`, `Target`, `Channel`, `Key`, `sample_keys`, `Clip::{contains, time, fade, sample, active_at}` |
+| `frame.rs` | `evaluate` → `FrameVfx`, `generators` |
+| `frame.rs` | `composed`: the `FrameVfx` of an edit frame from the fields the editor composed |
+| `layers.rs` | `objectBounds` for effect layers: `item_extent`, `rounded` |
+| `padding.rs` | `padding`, `sampling_padding`, `working_slots` |
+| `parity.rs` | comparison with `frames[].vfx` of a reference dump |
 
 The loader (`load.rs`) reads `_stykVfx`, `_stykVfxScope` and `_styk.vfxClips` (clips cached by record, like figures and keyframes). Generated effects are in `vfx/generated/` ([Generated effects](#generated-effects)); rendering is the renderer's and the inspector stays in the interface.
 
 ## Generated effects
 
-Particles, auras, energy beams, explosions and smoke create artwork instead of filtering it ([`VFX-GENERATORS.md`](../VFX-GENERATORS.md)). `styk_eval::vfx::generated` is the only implementation: it replaced `src/vfx-generators.mjs` and its modules (deleted) operation for operation, and its output is the editor's bit for bit (see Testing). The interface reads from it only a clip's tail and whether the clip plays (`vfxClips`, [evaluation.md](evaluation.md#the-interfaces-views)).
+Particles, auras, energy beams, explosions and smoke create artwork instead of filtering it ([`VFX.md`](../VFX.md)). `styk_eval::vfx::generated` is the only implementation; its output is the recorded editor's bit for bit (see Testing). The interface reads from it only a clip's tail and whether the clip plays (`vfxClips`, [evaluation.md](evaluation.md#the-interfaces-views)).
 
-| Module (`vfx/generated/`) | Holds | The JavaScript it replaced (deleted) |
-| --- | --- | --- |
-| `layers.rs` | the layer vocabulary: shapes, emitters, blending, rotation and size modes, `Spec` (one layer with the editor's defaults), materials, colour ramps | `vfx-generator-layers.mjs` |
-| `styles.rs` | every effect type and style compiled into layers (`compile`), `Context` | `vfx-generator-styles.mjs` |
-| `anchors.rs` | `anchor`: a target's point, bounds and outline; `Sampler`: anchors on earlier ticks; `Evaluate`, a sampler without a cache | `anchorFromGeometry`, `GeneratorAnchors` (`vfx-generator-anchors.mjs`) |
-| `batch.rs` | `build`: the frame's `Batch` (128-number layer records, the birth table, draws); `clip_tail`; `background_is_light`; `Batch::offset` | `buildGeneratorBatch`, `collectLayers`, `packBatch`, `generatorClipTail`, `backgroundIsLight`, `offsetGeneratorBatch` |
-| `particle.rs` | `evaluate`: one particle of a draw; `ramp`, `beam`, `arc_segment`, `beam_tip`, `beam_width`, `stepped_time`, the hashes and value noise | `evaluateParticle`, `rampColor`, `beamTip`, `beamWidth`, `steppedTime`, `pcg`, `hash`, `vnoise` (and the WGSL vertex shader of `vfx-generator-gpu.mjs`) |
-| `atlas.rs` | the procedural material atlas: 17 rows of eight 128-pixel cells with three reduced levels, generated on first use | `vfx-generator-atlas.mjs` |
+| Module (`vfx/generated/`) | Holds |
+| --- | --- |
+| `layers.rs` | the layer vocabulary: shapes, emitters, blending, rotation and size modes, `Spec` (one layer with the editor's defaults), materials, colour ramps |
+| `styles.rs` | every effect type and style compiled into layers (`compile`), `Context` |
+| `anchors.rs` | `anchor`: a target's point, bounds and outline; `Sampler`: anchors on earlier ticks; `Evaluate`, a sampler without a cache |
+| `batch.rs` | `build`: the frame's `Batch` (128-number layer records, the birth table, draws); `clip_tail`; `background_is_light`; `Batch::offset` |
+| `particle.rs` | `evaluate`: one particle of a draw; `ramp`, `beam`, `arc_segment`, `beam_tip`, `beam_width`, `stepped_time`, the hashes and value noise |
+| `atlas.rs` | the procedural material atlas: 17 rows of eight 128-pixel cells with three reduced levels, generated on first use |
 
 **A frame's batch** (`generated::build(prepared, frame, scene, tick, sampler, density)`): every enabled generator clip active at the frame's `_vfxTimelineTick` (from its start to its end plus `clip_tail`, the longest lifetime, jitter and trail of its layers) compiles its sampled effects into layers, then movieclip containers whose documents carry generators add theirs, evaluated at the instance's local time, in its transform and opacity, four levels deep, beside the container. Layers pack into one batch: a record per draw, a birth table (per layer, a row per tick of still-visible births: anchor, emission amount, keyed direction, speed and size; per effect, the target's outline, one per birth tick for trails) and the draws (shape, resolved blending, target, placement, material row). Trail echoes, glow halos and outlines are extra draws of the same particles. A particle is then a pure function of its record, the table, its instance index and the tick (`particle::evaluate`): nothing is simulated or kept between frames.
 
@@ -97,7 +97,7 @@ Differences, on purpose or known:
 ### JavaScript behaviours reproduced that look wrong
 
 - Node stacks and node clips saved without a figure type (`*/handle`) are never drawn: renderers look node stacks up by the object's own figure type. The inspector always scopes, so only older or hand-made data has them.
-- With Auto easing, a native pose tween interpolates effect parameters linearly while the pose follows the Auto curve (`interpolateVfx` receives the raw progress).
+- With Auto easing, a native pose tween interpolates effect parameters linearly while the pose follows the Auto curve (`vfx::interpolate` receives the raw progress).
 - `includeAttached` on a node clip is accepted and ignored.
 - The inspector's "active" (`Clip::active_at`, read through `vfxClips`) ignores fades: a clip at a fade endpoint is listed though nothing is drawn.
 - A scope on an object without any effect still counts toward the 16-level limit of nested groups.
@@ -105,7 +105,7 @@ Differences, on purpose or known:
 
 ## Rendering
 
-The engine draws every filter the way the editor's WebGPU renderer does (`rasterObject`, `filterArtworkVfx`, `withVfx` and `CameraVfx` in the JavaScript), on WebGPU, native and WebGL2 alike, and every generated effect ([Generated effects on screen](#generated-effects-on-screen)). The editor's effects preview switch reaches the engine for edit frames (`Stage::set_effects`) and prepared playback (`EngineHandle::set_effects`), which then draws without effects, generated ones included.
+The engine draws every filter the way the recorded editor's WebGPU renderer did, on WebGPU, native and WebGL2 alike, and every generated effect ([Generated effects on screen](#generated-effects-on-screen)). The editor's effects preview switch reaches the engine for edit frames (`Stage::set_effects`) and prepared playback (`EngineHandle::set_effects`), which then draws without effects, generated ones included.
 
 ### From effects to layers (`drawlist.rs`, `vfx/layers.rs`)
 
@@ -151,7 +151,7 @@ The CPU rasterizer (`styk-raster`, [rendering.md](rendering.md#cpu-styk-raster))
 ### Differences from the JavaScript, on purpose or known
 
 - The editor rasterizes every translucent figure and every entry through its raster cache at bucketed densities; the engine does so only for entries (where effect kernels depend on the density) and draws other artwork at screen density, as before. Edges differ by a pixel.
-- The editor lowers all raster densities when a scene's rasters exceed its preview budget (`previewRasterScale`); the engine does not, so effects of such scenes are sharper there.
+- The engine does not lower raster densities when a scene's rasters exceed a preview budget, so effects of such scenes are sharp.
 - A foreign object without any primitive does not split a connected run in the engine (the editor's layout lists it); such runs filter together.
 - A drawing cel inside an effect layer is sampled as the cel display samples it (one display level, bilinear); the editor paints it into the effect raster through Canvas 2D with high-quality smoothing. Thin strokes differ, and a threshold (bloom) amplifies it.
 - Effects of the editor's Canvas 2D fallback run on its WebGL 2 or CPU executor with the same kernels; on devices without WebGPU the engine draws like WebGPU devices.
@@ -267,7 +267,6 @@ The memory is bounded but the bound is large: a layer is at most 3,968 pixels on
 ### Open
 
 - Drawing cels inside effect layers are resampled bilinearly, not with Canvas 2D's high-quality smoothing (URIEL ticks 61 to 64).
-- `previewRasterScale` (the editor lowering all raster densities under memory pressure) is not followed.
 - Fixed since, not caused by effects: a still frame could lack a drawing cel until the next redraw, because the stage uploads decoded images only when it draws and nothing drew again while they decoded; the stage now draws again once the pictures a shown frame needs arrive ([rendering.md](rendering.md#in-the-app)).
 
 ## Changing it
@@ -289,7 +288,7 @@ cargo build -p styk-eval --target wasm32-unknown-unknown
 - compares geometry, then every stack effect by effect and parameter by parameter (continuous values within 1e-9 relative, colours, options, seeds, paddings and working slots exactly), connected groups and their order, generated effects and active clips;
 - checks that each fixture stops matching without its clips or without its per-pose stacks, and that tweened fixtures stop matching when keys cannot tween;
 - checks that documents without effects resolve none;
-- replays recorded inputs of `interpolateVfxColor`, `sampleVfxKeys`, `vfxPadding`, `vfxSamplingPadding`, `vfxWorkingSlots` and `neutralVfx` (`vectors.json`).
+- replays recorded inputs of the paint interpolation, key sampling, the paddings, working slots and neutral effects (`vectors.json`).
 
 Generated effects:
 

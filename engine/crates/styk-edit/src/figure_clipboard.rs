@@ -1,6 +1,6 @@
-//! The figure clipboard on a layer sheet (src/editor.mjs `copySelection`, `cutSelection`,
-//! `pasteSelection`, `duplicateSelection`; src/editor-range-commands.mjs `insertionPlan`
-//! and `insert` for a paste at the playhead, committed by `_commitSheetRange`).
+//! The figure clipboard on a layer sheet (`copySelection`, `cutSelection`,
+//! `pasteSelection`, `duplicateSelection`; `insertionPlan`
+//! and `insert` for a paste at the playhead).
 //!
 //! The clipboard belongs to the editor that copied: a session pastes only what it copied
 //! itself (the facade checks that the editor's clipboard is that object). Figures with effect

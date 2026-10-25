@@ -72,7 +72,7 @@ same evaluated values regardless of which surface authored them.
 ## Architecture and performance
 
 `animation-properties.mjs` supplies the shared channel vocabulary.
-`native-property-curve.mjs` preserves legacy curve behavior. The engine session
+The engine session
 authors the channels (`styk-edit`); the editor no longer projects or adopts native
 curves itself.
 The evaluator and style materializer compose the same per-instance values for

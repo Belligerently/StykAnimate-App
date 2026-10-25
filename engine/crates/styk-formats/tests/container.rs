@@ -1,6 +1,6 @@
 //! Container behaviour: lossless round trips, what moves into sections, limits,
 //! and rejection of damaged files. These are the assertions of the JavaScript
-//! codec's tests (tests/native-container.test.mjs at 96ebce85), against the Rust codec.
+//! codec's tests (at commit 96ebce85), against the Rust codec.
 
 use std::sync::Arc;
 

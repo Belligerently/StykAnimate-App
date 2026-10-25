@@ -101,8 +101,8 @@ keeps required sources available through undo/redo and prunes unused captures.
 
 The recorded edit tapes (`engine/tests/edit/*scene*.scenario.json`) and the session tests (`cargo test -p styk-edit`) state sparse ranges, authored inbetween edits, null/transparent colors, atomic image import, name-only history, invalid/locked/hidden edits and history sizes: a 2 MB unrelated image does not appear in color history, and renaming a 1 MB image stays small.
 
-Rendering uses the shared Scene override in Canvas, WebGPU, prepared playback and
-SVG. `tests/scene-background.browser.mjs` previously passed 35 checks with all four
+Rendering uses the shared Scene override on the engine's stage, playback and
+SVG. A browser check of the background previously passed 35 checks with all four
 paths, transparent/translucent colors, Scene/Camera visibility and retained-cache
 changes. The pixel report is in
 [`artifacts/scene-background/report.json`](../artifacts/scene-background/report.json).

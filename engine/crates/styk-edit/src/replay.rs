@@ -1,5 +1,5 @@
 //! The command-replay harness, engine side (docs/engine/editing.md): runs a reference
-//! recorded by `engine/tools/edit-replay.mjs` in an [`Editor`] and compares, after
+//! recorded from the JavaScript editor in an [`Editor`] and compares, after
 //! every step, the document's bytes, the playhead, the selection, history and the
 //! change events with what the JavaScript editor did.
 

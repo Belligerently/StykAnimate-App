@@ -30,7 +30,7 @@ use crate::{EditError, Editor};
 
 /// A drawing cel without pixels: the carrier PNG of every v2 cel (`EMPTY_PNG` of src/drawing-model.mjs).
 const EMPTY_PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=";
-/// The largest object identity the editor allocates (`MAX_ALLOCATED_UID` of src/object-identity.mjs).
+/// The largest object identity the editor allocates.
 const MAX_ALLOCATED_UID: f64 = 2147483646.0;
 
 fn invalid(key: &str) -> EditError {

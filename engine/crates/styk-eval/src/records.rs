@@ -6,9 +6,8 @@
 //! keys in the same order and every number with the same bits.
 //!
 //! This module mirrors the record-level shape of the editor's evaluation
-//! (`sampleLayerSheet` in src/layer-sheet.mjs, `evaluatedNativeFrame` and
-//! `evaluatedFrame` in src/pivot/geometry.mjs, `snapshotPoseFrame` in
-//! src/pose-snapshot.mjs): which record a pose comes from, which keys a tween writes
+//! (`sampleLayerSheet`, `evaluatedNativeFrame`, `evaluatedFrame` and
+//! `snapshotPoseFrame`): which record a pose comes from, which keys a tween writes
 //! and in which order. Every interpolated number comes from the typed evaluator
 //! ([`crate::eval`]), so there is one implementation of the arithmetic.
 //!

@@ -1,4 +1,4 @@
-//! Pose channels (`composePoseChannels` in src/animation-pose.mjs): figures, layers,
+//! Pose channels (`composePoseChannels` of the recorded editor): figures, layers,
 //! the camera and the scene take the pose their own key track samples at the tick,
 //! in place of the native evaluation's.
 //!

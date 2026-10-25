@@ -6,19 +6,18 @@
 //! on the stage's own device, library previews in the preview worker); this module holds
 //! what does not depend on the device:
 //!
-//! * [`card`]: how a frame thumbnail is framed (`src/thumbnail-worker.mjs`): the canvas
+//! * [`card`]: how a frame thumbnail is framed: the canvas
 //!   scaled to fit and centred on a light grey card, seen through the scene camera. The
 //!   frame itself is the one exports and playback draw ([`crate::export::ExportFrames`]:
 //!   effects drawn, only the document's hidden layers hidden), prepared on the engine's
 //!   workers, never on the interface thread.
 //! * [`library::LibraryPreview`]: a library file opened on its own (it is not the open
-//!   document), its frames, and the square they are fitted to on transparency
-//!   (`src/library-preview-worker.mjs`).
+//!   document), its frames, and the square they are fitted to on transparency.
 
 pub mod library;
 pub mod monitor;
 
-/// The largest thumbnail side (`src/thumbnail-worker.mjs`).
+/// The largest thumbnail side.
 pub const MAX_SIDE: u32 = 512;
 /// The card colour around the canvas (`#f5f5f5`), straight RGBA.
 pub const CARD: [f64; 4] = [245.0 / 255.0, 245.0 / 255.0, 245.0 / 255.0, 1.0];

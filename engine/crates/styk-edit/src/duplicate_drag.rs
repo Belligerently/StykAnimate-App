@@ -1,4 +1,4 @@
-//! Alt-drag duplication (src/editor-duplicate-drag.mjs): `beginDuplicateDrag` duplicates the
+//! Alt-drag duplication: `beginDuplicateDrag` duplicates the
 //! selected figures whole and starts moving the copies; the gesture's commit records the copies and
 //! the move as one history entry, its cancel takes the copies away again and leaves history alone.
 

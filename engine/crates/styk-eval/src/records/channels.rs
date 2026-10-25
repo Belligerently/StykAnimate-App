@@ -1,5 +1,5 @@
-//! Property channels on the editor's records: `composePoseChannels` (src/animation-pose.mjs),
-//! `composeAnimationChannels` and `animationPropertyValue` (src/animation-channels.mjs) on
+//! Property channels on the editor's records: `composePoseChannels`,
+//! `composeAnimationChannels` and `animationPropertyValue` on
 //! record frames, byte for byte.
 //!
 //! They run where the editor runs them: on the native timeline a layer sheet's imported keys

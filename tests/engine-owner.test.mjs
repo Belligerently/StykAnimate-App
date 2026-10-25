@@ -58,7 +58,7 @@ const decode = value => Array.isArray(value) ? value.map(decode) : value === nul
  * owner emits them once the playhead is where the call left it (so the playhead's own fields are not compared),
  * and a flag that is off is the same as one that is missing. */
 const eventText = events => JSON.stringify(events.map(event => Object.fromEntries(Object.entries(event ?? {}).filter(([key, value]) => value !== false && key !== 'tick' && key !== 'frameIndex'))));
-/** Event details as plain data, as the recording keeps them (engine/tools/edit-replay.mjs). */
+/** Event details as plain data, as the recording keeps them. */
 const plain = (value, depth = 4) => {
   if (value === null || ['number', 'string', 'boolean'].includes(typeof value)) return value;
   if (value instanceof Set) return plain([...value], depth);

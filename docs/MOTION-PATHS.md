@@ -33,7 +33,7 @@ behavior. An attached figure's origin trail still edits its parent joint.
 
 **Right-drag** a trail point to reshape the arc around it. Left-drag edits just the grabbed frame; falloff has no keyboard shortcuts. The grabbed frame lands exactly under the pointer; the target's existing keys within **±N frames** move by their falloff weight; in-betweens stay ordinary tweens. Settings › Motion paths › *Reshape arc* holds the influence (1–240 frames, default 8) and its shape: Smooth (cosine), Linear, Sharp (cubic) or Flat. Weights are 1 at the grab, positive inside the influence and 0 beyond it (`motion-path-falloff.mjs`).
 
-The edit adds only the keys it needs (`planFalloff`):
+The edit adds only the keys it needs:
 
 - the grabbed frame becomes a key if it is not one (a native tween splits there);
 - existing keys inside the influence are rewritten in place;
@@ -48,7 +48,7 @@ Each written frame is posed with the single-frame rules (`applyPathPoint`): orig
 ## Ownership and limits
 
 - `motion-path-controls.mjs` writes normalized editor preferences (`motionPathAllTargets`, `motionPathJoints`, `motionPathRange`, `motionPathLabels`, `motionPathDots`, `motionPathSpeed`, `motionPathRelative`, `motionPathFalloffRadius`, `motionPathFalloffShape`); `styles/features/view-options.css` owns its presentation.
-- `motion-path-falloff.mjs` owns falloff weights and write planning (the planning of an edit is the session's `motion_path.rs`); `editor-animation.mjs` holds what the interface reads of the open gesture (`motionPathFalloff`, `motionPathReport`).
+- `motion-path-falloff.mjs` owns the falloff weights the interface draws (the planning of an edit is the session's `motion_path.rs`); `editor-animation.mjs` holds what the interface reads of the open gesture (`motionPathFalloff`, and the open gesture's report).
 - The engine's session samples the trails and the ghost (`styk-edit/src/trails.rs`, read through `Session::query` kinds `trails` and `ghost`): the tick plan, the target's keys, the revision-aware sample cache and the geometry of the joined components. `motion-path.mjs` owns choosing targets, holding what the engine sent (`MotionTrails`), screen projection, hit testing and screen-space layout. The session's `motion_path.rs` owns editable pose semantics and history. `app.mjs` decides which trails are active and draws them in the overlay.
 - Only overlay rendering advances sampling and asks for ghosts. Pointer hover and pointer-down read the trails the last read left (`MotionTrails.peek`) and their cached screen projections; they never ask the engine and never evaluate animation. A trail is sent only when it changed since the reader's last read (each carries a version).
 - All active trails sample together in one read: every trail needing a display tick is resolved from one evaluation of that tick, and geometry is built only for the join/IK components that hold the targets. A trail sample therefore costs its own character, not the whole scene, and 48 limb-tip trails cost about the same as their figures' origins.

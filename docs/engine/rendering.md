@@ -173,7 +173,7 @@ per texture, array textures of at least two layers, [D11](decisions/0011-array-t
 
 ## Text
 
-The editor's WebGPU renderer (`src/renderer.mjs`) never draws text as vectors
+The JavaScript editor's WebGPU renderer (since deleted) never drew text as vectors
 below a raster density of 8; the engine draws it the same two ways.
 
 - **Text in an object raster.** Text is one of the things `requiresCompatibilityTexture`
@@ -836,7 +836,7 @@ export never shows a frame without one.
 | Size | The canvas scaled to the output: `scale(output / canvas)` then the scene camera (`view::tile_view`); an output of another shape stretches (`ViewParams::stretch`), as `drawExportScene` does. |
 | Smooth edges | `Edges::Smooth`: four samples a pixel, analytic shapes covered by distance; sprites to the nearest texel. |
 | No smoothing | `Edges::Crisp`: one sample a pixel at its centre, every shape fully in or out (hairlines one solid pixel), lone glyphs from their outlines, layers and drawing cels to the nearest texel; opacity kept. Crisp edges apply to every frame, including those with effects, generated effects or 3D; filtered pixels stay filtered. |
-| Smooth sprites | Drawn at twice the width and height, each 2×2 block averaged in premultiplied colour (`pixels::resolve`, the rule of `downsampleExportPixels`). |
+| Smooth sprites | Drawn at twice the width and height, each 2×2 block averaged in premultiplied colour (`pixels::resolve`). |
 | Background | The scene's, from the draw list; transparent where the scene has none. |
 | Video without alpha | Composited over black by the engine before any rounding (`matte`). |
 | Scene effects | The camera image follows the output's density (`ViewParams::camera_limit` unbounded) within the effect surface (3,968 pixels); the stage caps it at 2,048. |

@@ -73,7 +73,7 @@ pub const DEPTH_FAR: f32 = 0.9999;
 
 /// Window depth of a face corner at depth `z` (larger is nearer) in a run whose depths
 /// span `z_min`..`z_min + range`, as the editor's depth rasters compute it in single
-/// precision (`0.9995 - 0.999 * (z - zMin) / range`, src/renderer-mesh-raster.mjs).
+/// precision (`0.9995 - 0.999 * (z - zMin) / range`).
 pub fn window_depth(z: f32, z_min: f32, range: f32) -> f32 {
     0.9995 - 0.999 * (z - z_min) / range
 }
@@ -108,7 +108,7 @@ pub const K_GLYPH: u32 = 15;
 /// A [`K_TRI`] of a [`K_GLYPH`] record's glyph, drawn only where the view allows no mask:
 /// `b.z` = the bits of the record's index in [`DrawList::glyphs`].
 pub const F_GLYPH_VECTOR: u32 = 1 << 15;
-/// Particle shapes (`SHAPE` in src/vfx-generator-layers.mjs), bits 16–18 of a [`K_PARTICLE`]'s kind.
+/// Particle shapes, bits 16–18 of a [`K_PARTICLE`]'s kind.
 pub const P_DISC: u32 = 0;
 pub const P_STREAK: u32 = 1;
 pub const P_RING: u32 = 2;
@@ -252,7 +252,7 @@ pub enum LayerKind {
 }
 
 /// A glyph the editor's WebGPU renderer draws from a mask of its own
-/// (`glyphTextureDescriptor`, src/renderer-glyphs.mjs): an object holding one text
+/// (`glyphTextureDescriptor`): an object holding one text
 /// segment with one visible character, solid, without effects, outline or movieclip.
 /// The mask is the glyph's path filled on a grid in glyph space whose sides are powers
 /// of two, at least 1.25 times the view's raster density plus two texels of padding;
@@ -452,7 +452,7 @@ mod tests {
         assert_eq!(sample_paint(&paints, 0, [20.0, 0.0]), [0.0, 0.0, 1.0, 1.0]);
     }
 
-    /// `glyphTextureDescriptor` (src/renderer-glyphs.mjs) on the same three items: plain,
+    /// `glyphTextureDescriptor` on the same three items: plain,
     /// mirrored at a large scale, and reversed and mirrored by the object's flag at a
     /// quarter-octave density. Expected numbers printed by the editor's own function.
     #[test]

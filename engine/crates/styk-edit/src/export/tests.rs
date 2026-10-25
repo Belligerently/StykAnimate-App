@@ -1,6 +1,5 @@
 //! Pivot and figure exports of recorded documents (`engine/tests/edit` tapes): what they bake, what they refuse and what a
-//! figure file holds. The byte-level expectations are the JavaScript tests of the export path (`tests/pivot-export-*.test.mjs`,
-//! `tests/native-figure.test.mjs`), which run against the engine, and the exported files of the repository's documents.
+//! figure file holds. The byte-level expectations are the JavaScript tests of the export path (`tests/pivot-export-*.test.mjs`), which run against the engine, and the exported files of the repository's documents.
 
 use std::path::Path;
 use std::sync::Arc;

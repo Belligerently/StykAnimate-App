@@ -4,8 +4,8 @@
 //! receives it), the playhead, the selection, the gesture in progress and the
 //! history, and runs the editor's commands on them so that they change the same
 //! records into the same bytes, leave the same selection and emit the same change
-//! events as `src/editor.mjs`. The command-replay harness (`replay`, and
-//! `engine/tools/edit-replay.mjs` on the JavaScript side) checks that step by step.
+//! events as the JavaScript editor did. The command-replay harness (`replay`) checks that step by step
+//! against the recordings in `engine/tests/edit`.
 //!
 //! Ported so far: selecting, seeking, moving and transforming figures, posing,
 //! rotating and bending joints, and undo and redo of what those record, on native
@@ -343,7 +343,7 @@ pub struct Editor {
     gate: RefCell<Option<(Value, Option<&'static str>)>>,
 }
 
-/// What the interface reads after a call (`engine/tools/edit-replay.mjs` records the same).
+/// What the interface reads after a call (the recordings hold the same).
 #[derive(Clone, Debug, PartialEq)]
 pub struct State {
     pub tick: f64,
@@ -580,7 +580,7 @@ impl Editor {
         }
     }
 
-    /// The state as JSON, in the key order `engine/tools/edit-replay.mjs` records it.
+    /// The state as JSON, in the key order the recordings hold it.
     pub fn state_value(&self) -> Value {
         let _scope = crate::prof::scope("editor::state_value");
         let state = self.state();

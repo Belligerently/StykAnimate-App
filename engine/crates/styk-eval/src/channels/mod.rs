@@ -1,5 +1,4 @@
-//! Property channels (`_styk.animation`, src/animation-channels.mjs and
-//! src/animation-pose.mjs): sparse keyed curves laid over the native timeline.
+//! Property channels (`_styk.animation`, validated by src/animation-channels.mjs): sparse keyed curves laid over the native timeline.
 //!
 //! A channel animates one property of one target with its own keys and curves:
 //! a figure's pose, position, scale, rotation, colour, opacity, outline and depth,

@@ -1,4 +1,4 @@
-//! The editor's timeline (`editor.timeline`, `timeline(report)` in src/pivot/geometry.mjs):
+//! The editor's timeline (`editor.timeline`, `timeline(report)` in src/pivot/read-view.mjs):
 //! one row per native keyframe, cut to the layer sheet's length when there is one.
 
 use styk_doc::Value;

@@ -71,8 +71,7 @@ silently simplifying imported animation is not.
 
 - [x] F01 Open all 37 original PIV fixtures: 4 V2, 1 V3, 9 V4, and 23 V5. Keep
   the two Broly projects distinct; their equal payload lengths do not imply identity.
-  **Verified:** [renderer-corpus.mjs](../tests/renderer-corpus.mjs),
-  [37-file result](../artifacts/renderer-corpus-prepared/results.json) and
+  **Verified:** [37-file result](../artifacts/renderer-corpus-prepared/results.json) and
   [summary](../artifacts/renderer-corpus-prepared/summary.json): no failed imports,
   missing assets, browser exceptions or GPU errors. Both Broly paths are separate.
 - [ ] F02 Import STK definitions, including legacy vector figures, polygons,
@@ -204,8 +203,8 @@ migration,
   **Progress:** The [actual Akane pointer regression](../artifacts/native-handle-pointer/report.json)
   picks parent 460616/native handle 1 from a selected attached figure and changes
   only the nine-figure branch, keeping free origins fixed. Independently timed
-  layer composition has joined-ancestor/detachment regressions in
-  [animation-pose-review.test.mjs](../tests/animation-pose-review.test.mjs).
+  layer composition has joined-ancestor/detachment regressions in the engine's
+  recorded layer-composition fixtures.
   All join transitions, bent media and all-frame native render parity remain open.
 - [ ] P10 Distinguish joined-subtree scale gestures from numeric selected-figure
   scaling. A selected parent and child must never receive the same transform twice.

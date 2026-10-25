@@ -608,8 +608,8 @@ fill/selection/resample history, clipboard, both renderer paths and encoders.
 Mouse/browser checks and deterministic pressure tests do not certify physical
 pen drivers, input-to-photon latency or every GPU. Pen tilt steers tilt-mode tips; vector strokes and
 resolution-independent drawing are outside this implementation. Fill follows
-stage plus artwork bounds, independently of zoom. The `drawing-fill.mjs` worker
-kernel allocates masks only for reached tiles and the gap/expansion halo, so a
+stage plus artwork bounds, independently of zoom. The fill kernel (`styk-drawing`)
+allocates masks only for reached tiles and the gap/expansion halo, so a
 small enclosed fill is independent of distant artwork or total bounds area.
 Tolerance still compares premultiplied RGBA; gap closing and expansion retain
 four-neighbour distances across tile boundaries. Uniform tiles use a fast path.

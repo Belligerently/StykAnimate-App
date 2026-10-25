@@ -1,4 +1,4 @@
-//! `planFigureFrameOperation` (src/range-figure-operations.mjs): what one figure control
+//! `planFigureFrameOperation`: what one figure control
 //! does to one frame record, copy-on-write. Slots address joins; unique ids name the same
 //! figure across frames. Numeric scale changes the selected figures only; flips and turns
 //! take the figures joined below them too. The caller commits every planned frame together

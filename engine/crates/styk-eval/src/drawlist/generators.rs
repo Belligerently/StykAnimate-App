@@ -1,8 +1,7 @@
 //! Generated effects in the draw list (docs/engine/vfx.md, Generated effects):
 //! each draw of a frame's batch becomes [`K_PARTICLE`] and [`K_BEAM`] records,
 //! placed before or after its target's artwork in painter order as the editor's
-//! renderers place them (`generatorSchedule`, `scheduleWalker` in
-//! src/vfx-generators.mjs): behind-placed draws when the target's first entry
+//! renderers place them (`generatorSchedule`, `scheduleWalker`): behind-placed draws when the target's first entry
 //! begins, front-placed ones when the next entry begins, scene draws after the
 //! background and after everything, draws of a target not drawn at the end.
 

@@ -8,7 +8,7 @@ Two renderers cover edge pixels by different rules, and two correct 8-bit blends
 
 ## Decision
 
-The app-parity rule (applied by `scripts/engine-app-parity.mjs` while the JavaScript renderers could be compared, and by `styk raster-parity` for the CPU rasterizer) fails a step when any pixel differs by more than 32 levels together with all eight neighbours (a solid area), or when the mean difference over the stage, not counting differences of two levels or less, exceeds 0.25 levels. The raw mean is reported too. Steps compare against the WebGPU renderer in Electron (the default desktop configuration) and against the Canvas 2D fallback in headless Chromium.
+The app-parity rule (applied by the app-parity script while the JavaScript renderers could be compared, and by `styk raster-parity` for the CPU rasterizer) fails a step when any pixel differs by more than 32 levels together with all eight neighbours (a solid area), or when the mean difference over the stage, not counting differences of two levels or less, exceeds 0.25 levels. The raw mean is reported too. Steps compare against the WebGPU renderer in Electron (the default desktop configuration) and against the Canvas 2D fallback in headless Chromium.
 
 ## Evidence
 

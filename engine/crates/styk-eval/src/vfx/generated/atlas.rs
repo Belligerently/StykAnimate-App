@@ -1,4 +1,4 @@
-//! Procedural particle materials (src/vfx-generator-atlas.mjs): 17 rows of
+//! Procedural particle materials: 17 rows of
 //! eight 128-pixel cells (smoke puffs, cartoon clouds, flames, star flares,
 //! bokeh, wisps, bolts, shards, rocks, leaves, petals, snowflakes, drops,
 //! splats, comic bursts, hearts and cartoon stars), each texel a coverage and a

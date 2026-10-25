@@ -1,4 +1,4 @@
-//! Gestures on a layer sheet (src/editor-authored-pose.mjs): a gesture edits a draft
+//! Gestures on a layer sheet: a gesture edits a draft
 //! of the frame on show, never the keys it was evaluated from, and commits by
 //! capturing the draft into the tracks of the layers it changed ([`crate::sheet`]).
 

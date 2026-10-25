@@ -1,11 +1,10 @@
 //! Property edits on a layer sheet: the inspector's scrubs and keyed values
-//! (src/editor-animation.mjs: `addAnimationKeys` and the sheet branches of
+//! (`addAnimationKeys` and the sheet branches of
 //! `beginAnimationEdit`, `previewAnimationEdit`, `commitAnimationEdit`,
-//! `cancelAnimationEdit`), `_sheetPropertyEntries` (src/editor-layer-sheet.mjs), and the
-//! commands that reach it on a sheet: `setSceneColor`, `setSceneBackground`
-//! (src/editor-scene.mjs), `setBackgroundColor` (src/editor.mjs), `updateFigureStyle` and the
-//! opacity of `updatePolygon` (src/editor-builder.mjs), `setVfxParameter`
-//! (src/editor-vfx.mjs).
+//! `cancelAnimationEdit`), the sheet's property entries, and the
+//! commands that reach it on a sheet: `setSceneColor`, `setSceneBackground`,
+//! `setBackgroundColor`, `updateFigureStyle` and the
+//! opacity of `updatePolygon`, `setVfxParameter`.
 //!
 //! A property edit at a tick composes one-key channels on the frame there
 //! (`styk_eval::records::Records::compose_channels`) and writes the result as keys of the

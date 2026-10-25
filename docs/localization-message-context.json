@@ -13356,28 +13356,28 @@
   },
   "errors.drawingResources.aNewerDrawingWasRequested": {
     "locations": [
-      "src/drawing-resources.mjs:219"
+      "src/drawing-resources.mjs:218"
     ],
     "context": "if(this.decodeQueue.length>=2){const index=this.decodeQueue.findIndex(job=>!job.priority);if(index>=0)this.decodeQueue.splice(index,1)[0].reject(messageError(ne"
   },
   "errors.drawingResources.drawingChanged": {
     "locations": [
-      "src/drawing-resources.mjs:205"
+      "src/drawing-resources.mjs:204"
     ],
     "context": "if(this.disposed||e.disposed||generation!==this.generation)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingResources.drawingChanged\", {});"
   },
   "errors.drawingResources.drawingDocumentClosed": {
     "locations": [
-      "src/drawing-resources.mjs:193",
-      "src/drawing-resources.mjs:217",
-      "src/drawing-resources.mjs:349",
-      "src/drawing-resources.mjs:449"
+      "src/drawing-resources.mjs:192",
+      "src/drawing-resources.mjs:216",
+      "src/drawing-resources.mjs:348",
+      "src/drawing-resources.mjs:448"
     ],
     "context": "if(this.disposed)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingResources.drawingDocumentClosed\", {});"
   },
   "errors.drawingResources.drawingMemoryIsFullChoose1ResolutionOr": {
     "locations": [
-      "src/drawing-resources.mjs:138"
+      "src/drawing-resources.mjs:137"
     ],
     "context": "if(resident()+bytes>this.hardBudget)throw messageError(new Error(''), \"errors.drawingResources.drawingMemoryIsFullChoose1ResolutionOr\", {});"
   },
@@ -13396,8 +13396,8 @@
   },
   "errors.drawingResources.drawingPublicationCancelled": {
     "locations": [
-      "src/drawing-resources.mjs:355",
-      "src/drawing-resources.mjs:362"
+      "src/drawing-resources.mjs:354",
+      "src/drawing-resources.mjs:361"
     ],
     "context": "if(signal?.aborted)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingResources.drawingPublicationCancelled\", {});"
   },
@@ -13439,7 +13439,7 @@
   },
   "errors.drawingResources.invalidDrawingMemoryReservation": {
     "locations": [
-      "src/drawing-resources.mjs:121"
+      "src/drawing-resources.mjs:120"
     ],
     "context": "if(!Number.isFinite(bytes)||bytes<0)throw messageError(new Error(''), \"errors.drawingResources.invalidDrawingMemoryReservation\", {});"
   },
@@ -13451,7 +13451,7 @@
   },
   "errors.drawingResources.theDrawingEncoderLostItsTileCacheTry": {
     "locations": [
-      "src/drawing-resources.mjs:420"
+      "src/drawing-resources.mjs:419"
     ],
     "context": "if(result.missing?.length)throw messageError(new Error(''), \"errors.drawingResources.theDrawingEncoderLostItsTileCacheTry\", {});"
   },

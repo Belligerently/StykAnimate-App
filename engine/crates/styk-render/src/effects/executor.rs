@@ -1,6 +1,5 @@
 //! Effect executor: runs an effect stack on one layer of the isolation atlas,
-//! pass for pass as the editor's WebGPU executor does (`VfxWebGPU.run` in
-//! src/vfx-webgpu.mjs). The layer is copied into a working slot, filtered
+//! pass for pass as the editor's WebGPU executor does (`VfxWebGPU.run`). The layer is copied into a working slot, filtered
 //! through fragment passes (`passes.wgsl`) and copied back in place. What the
 //! passes are is the stack's recipe ([`super::recipe`]); this encodes it.
 //!

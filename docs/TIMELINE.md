@@ -61,7 +61,7 @@ and output-frame position.
 Native Scene, Camera, and layer pose descriptors are requested lazily only when
 their keys are needed. Merely displaying them does not author or bake animation.
 Summary diamonds refer to the exact underlying channel/key identities. A drag
-previews a snapped offset, then calls `moveAnimationKeys` once on release. First
+previews a snapped offset, then commits one key move (a session command) on release. First
 editing a native track adopts it within that same undo command. No global Pivot
 frame is moved when a single layer key is moved.
 
@@ -99,12 +99,11 @@ F7 announces which track kinds support it, without invoking a host shortcut.
 key selection and without editor mutations or selection callbacks. Pass
 `notify:true` for the same model selection behavior as clicking a row. Optional
 `onTrackSelect(descriptor)` and `onKeysChange([{channelId,keyIds}])` callbacks connect
-the host inspector. `selectedAnimationKeys` returns those exact grouped IDs.
+the host inspector with those exact grouped IDs.
 `setMode('frames')` switches to whole-document editing; `setMode('tracks')` returns
 to independent tracks. Destruction cancels pointer/paint RAFs and removes listeners.
 
-Run `node --test tests/timeline-channels.test.mjs` and
-`node tests/timeline-channels.browser.mjs`. The
+Run `node tests/timeline-channels.browser.mjs`. The
 [channel report](../artifacts/timeline-channels-verification.json) verifies native
 single-layer isolation, no mutations during drag, unchanged native frame data,
 one-command adoption undo/redo, scalar and range dragging, collision rejection,

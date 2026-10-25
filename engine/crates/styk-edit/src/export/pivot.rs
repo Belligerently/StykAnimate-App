@@ -1,4 +1,4 @@
-//! A document as native Pivot frames (src/pivot-export-materialize.mjs, pivot-frame-draft.mjs): Pivot has one shared
+//! A document as native Pivot frames (the stored-frame projection stays in src/pivot-frame-draft.mjs): Pivot has one shared
 //! exposure sequence, so the authored tracks, camera motion, parallax, styles and movieclips bake into stored frames
 //! of the document the export is made from; the document the interface edits stays as it is.
 

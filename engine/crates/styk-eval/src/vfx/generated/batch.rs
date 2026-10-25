@@ -1,5 +1,5 @@
 //! A frame's generated effects as one batch (`buildGeneratorBatch`,
-//! `collectLayers`, `packBatch` in src/vfx-generators.mjs): every layer's
+//! `collectLayers`, `packBatch`): every layer's
 //! record (128 numbers: emission, motion, colour, transform, materials) and a
 //! table of per-tick values read at each particle's birth (anchor, emission
 //! amount, keyed direction, speed and size) and of outlines. Particles are a

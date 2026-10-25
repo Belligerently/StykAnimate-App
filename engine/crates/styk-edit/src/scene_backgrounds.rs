@@ -1,4 +1,4 @@
-//! Scene backgrounds (src/editor-scene.mjs): a background brought into the document and one given
+//! Scene backgrounds: a background brought into the document and one given
 //! a name. Choosing which one a frame shows (`setSceneBackground`, `setSceneColor`) is a property
 //! edit (`property_edit.rs`).
 

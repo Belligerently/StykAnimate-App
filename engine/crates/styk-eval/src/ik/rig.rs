@@ -1,6 +1,6 @@
-//! The projection adapter between IK and rig relationships (`rigIKContext` in
-//! src/ik-rig.mjs) and the inverse of a rig joint's local space
-//! (`authoredRigTarget` in src/rig-constraints.mjs).
+//! The projection adapter between IK and rig relationships (`rigIKContext` of the recorded
+//! editor) and the inverse of a rig joint's local space
+//! (`authoredRigTarget`).
 //!
 //! A rigged bone is not drawn where its authored angle points: stretch, follow
 //! and spatial relationships derive its rendered position. The solver therefore

@@ -1,4 +1,4 @@
-//! Figure controls across frames (src/editor-range-commands.mjs `applyFigureRange` and the
+//! Figure controls across frames (`applyFigureRange` and the
 //! `*InFrames` commands): a figure operation planned on each frame of a range
 //! ([`crate::range_plan`]) and committed as one history entry, through the layer sheet's
 //! range commit (`_commitSheetRange`) or, on a native timeline, as a `figure-range` entry

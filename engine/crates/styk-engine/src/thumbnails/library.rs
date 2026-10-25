@@ -1,5 +1,5 @@
 //! Library previews: a figure, set or movieclip file of the asset library, as
-//! `src/library-preview-worker.mjs` shows it.
+//! the library's preview shows it.
 //!
 //! The file is opened here, apart from the engine's open document. Its artwork is
 //! fitted, with a tenth of margin, into a square on transparency ([`fitted`]): no

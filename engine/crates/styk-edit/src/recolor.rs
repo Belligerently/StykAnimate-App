@@ -1,7 +1,7 @@
 //! Recolouring figures (src/figure-colors.mjs `validateRecolor`, `recolorObject`, `figurePalette`,
 //! `attachedFigurePalette`; the overlays of src/animation-style.mjs `resolveInstanceFigure`; the
 //! paints of src/paint.mjs) and the commands that recolour across frames through the range
-//! operation (src/editor-colors.mjs `editFigureColors`, `setFigureColor`, `replaceFigureColor`,
+//! operation (`editFigureColors`, `setFigureColor`, `replaceFigureColor`,
 //! `resetFigureColors`; a polygon's colour from `updatePolygon`). A figure's colours become its
 //! own style overlay (`_stykStyle`); its definition stays shared.
 

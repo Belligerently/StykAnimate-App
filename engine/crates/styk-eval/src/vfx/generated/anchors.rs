@@ -1,6 +1,6 @@
 //! Where a generated effect's target is: its point, bounds and outline
-//! (`anchorFromGeometry`, src/vfx-generators.mjs), now and on earlier ticks
-//! (`GeneratorAnchors`, src/vfx-generator-anchors.mjs).
+//! (`anchorFromGeometry`), now and on earlier ticks
+//! (`GeneratorAnchors`).
 
 use std::f64::consts::PI;
 use std::sync::Arc;

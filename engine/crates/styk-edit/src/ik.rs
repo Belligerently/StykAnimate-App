@@ -1,4 +1,4 @@
-//! Inverse-kinematics controllers as editing sees them (src/ik.mjs, src/editor-ik.mjs).
+//! Inverse-kinematics controllers as editing sees them (src/ik.mjs).
 //!
 //! Ported: moving controller targets with their figure (`translateIKTargets`), dragging
 //! the end of a limb (`poseIKTarget`: a pinned target moves, an unpinned limb is solved

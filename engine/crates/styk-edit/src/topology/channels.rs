@@ -1,5 +1,5 @@
 //! Saved property channels that animate a segment whose handle a topology edit removes, replaces or
-//! restyles (`repairStyles` of src/editor-style-topology.mjs, on the channels of a layer sheet's
+//! restyles (`repairStyles`, on the channels of a layer sheet's
 //! imported animation).
 //!
 //! An animated segment stays the same physical segment: its channels follow the handle it now has,

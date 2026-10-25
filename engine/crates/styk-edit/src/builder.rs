@@ -1,5 +1,4 @@
-//! The Build Figure workspace's styles of a figure definition (src/editor-builder-branch.mjs,
-//! src/editor-builder.mjs, src/editor-builder-style.mjs): a segment's shape, colour, opacity,
+//! The Build Figure workspace's styles of a figure definition: a segment's shape, colour, opacity,
 //! thickness and construction flag, a branch's caps and circle fill, a polygon's opacity and the
 //! figure's name and outline. Definition edits are one `native-properties` history entry of the
 //! paths they change (or, for the figure's name, one `figure` entry); colours of a figure on show
@@ -271,7 +270,7 @@ pub(crate) fn branch(figure: &Value, selected: usize, whole: bool, polygons: boo
     Branch { indices, queue, polygons }
 }
 
-/// `finite(value, label, min, max)` of src/editor-builder-branch.mjs.
+/// `finite(value, label, min, max)` of the branch style commands.
 pub(crate) fn branch_finite(value: Option<&Value>, label: &str, min: f64, max: f64) -> Result<f64, EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max => Ok(*n),
@@ -279,7 +278,7 @@ pub(crate) fn branch_finite(value: Option<&Value>, label: &str, min: f64, max: f
     }
 }
 
-/// `finite(value, label, min, max)` of src/editor-builder.mjs.
+/// `finite(value, label, min, max)` of the builder commands.
 pub(crate) fn builder_finite(value: Option<&Value>, label: &str, min: f64, max: f64) -> Result<f64, EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max => Ok(*n),

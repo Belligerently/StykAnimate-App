@@ -73,19 +73,16 @@ Object sizes use local artwork units and scale with the instance. Scene sizes us
 
 ## Rendering and resource lifetime
 
-- `vfx-gpu.mjs`: one lazily created WebGL 2 filter executor per JavaScript realm, shared by portable Canvas render paths. It uses GPU textures and no CPU pixel readback. Fullscreen passes run filters in order. Shader programs compile lazily per operation (at most 28), avoiding compilation of the entire catalogue when a simple effect is first used.
+The engine runs the filters: `styk-render/src/effects/` on the GPU and `styk-raster/src/effects.rs` on the CPU, from the effect layers the draw list carries ([engine/vfx.md](engine/vfx.md#rendering)). The interface only describes them.
+
+- Fullscreen passes run the filters in order on GPU textures with no CPU pixel readback.
 - Blur uses three separable box passes per axis as a Gaussian approximation. Large radii downsample on a stable grid and upsample afterward. Outline uses separable alpha dilation; its rounded mode composes bounded 16-direction dilation passes, while legacy square outlines retain separable dilation. All color math is SDR, with premultiplied alpha at composition boundaries.
-- `vfx-canvas.mjs`: bounded owner crops, neighboring pixels for spatial filters, stable coordinates, and scene composition. `prepareSceneVfx` obtains the scene source before painting and filters it before cropping to the output. Padding contains real neighboring artwork and background pixels, rather than transparent borders added to an already clipped camera image.
-- `vfx-scene.mjs`: shared camera/tile sampling plans. Effect centers, noise, paint coordinates and scale stay anchored to the complete output. Camera previews, export tiles, thumbnail sources, and playback raster/image crops retain the required neighborhood. Background paint coordinates remain independent of expanded coverage. Tiny Gaussian blur guards cover the executors' minimum kernel even at reduced resolution.
-- `vfx-viewport.mjs`: shared-device WebGPU final composition; selection handles follow the effect result.
-- `vfx-camera-gpu.mjs`: reuses the editor's primitive buffers, textures, and device for the camera image. It restores shared uniforms after the ordered camera submission.
-- Existing artwork signatures include effects, including nested child values. Existing raster caches retain unchanged filtered artwork and invalidate changed values. Prepared workers bake object filters into their bounded compatibility packets; the scene stack remains compact packet metadata.
+- A layer filters its owner's crop plus the padding its effects need (`vfx::padding`, `vfx::sampling_padding`), so spatial filters read real neighbouring artwork and background pixels, rather than transparent borders added to an already clipped camera image. Effect centers, noise, paint coordinates and scale stay anchored to the complete output, whatever the zoom, camera preview, export tile, thumbnail or playback crop. Tiny Gaussian blur guards cover the kernels' minimum size even at reduced resolution.
+- Selection handles follow the effect result.
 
-No-effect documents do not create a VFX graphics context or offscreen filter textures and retain the vector path. Each filter surface is capped at 16,777,216 pixels and the graphics device's maximum texture size. The executor retains at most six working textures plus its output surface; these are transient working surfaces, separate from the existing raster cache budgets. It releases the graphics context after 30 seconds without filter work. Renderer destruction releases camera surfaces, textures, and scratch canvases. This is a bounded working set, not a claim that a large effect stack is free.
+A document without effects allocates no effect textures and draws through the vector path. The working textures of a filter are transient and bounded by the engine's budgets ([engine/rendering.md](engine/rendering.md), [engine/memory.md](engine/memory.md)), separate from the picture caches; partial strength keeps one extra copy of the original input only when needed. This is a bounded working set, not a claim that a large effect stack is free.
 
-Partial strength retains one additional original-input texture only when needed.
-
-Tiled export uses a small antialiasing overlap; scene preparation owns one effect halo on every edge, including the outside of the camera. Source culling and image decoding use that expanded surface. Reusable source canvases belong to the existing render-context lifetime, and surface limits are checked before allocating their pixels. No-effect scenes do not allocate an effect source. A request whose effect neighborhood exceeds the surface cap fails explicitly rather than omitting effects. WebGL 2 is required for active VFX when no shared WebGPU device is available; unavailable/lost contexts produce explicit errors. Native saving remains independent of graphics availability.
+Tiled export uses a small antialiasing overlap, and scene preparation owns one effect halo on every edge, including the outside of the camera. Source culling and image decoding use that expanded surface. No-effect scenes do not allocate an effect source. A request whose effect neighborhood exceeds the surface limits fails explicitly rather than omitting effects. Native saving remains independent of graphics availability.
 
 ## File behavior
 
@@ -93,11 +90,10 @@ Tiled export uses a small antialiasing overlap; scene preparation owns one effec
 
 ## Extension contract
 
-A new effect needs a registry schema, validation/interpolation semantics, identity/no-op behavior, conservative sampling padding, an executor kernel, and catalogue scope. Add model, worker/export parity, and representative performance checks. The registry describes saved data; rendering resources stay in render modules; UI state stays in the inspector.
+A new effect needs a registry schema, validation/interpolation semantics, identity/no-op behavior, conservative sampling padding, a GPU pass and a CPU pass in the engine, and catalogue scope. Add model, export parity, and representative performance checks. The registry describes saved data; rendering resources stay in the engine's render crates; UI state stays in the inspector.
 
 ## Verification
 
-- `node --test tests/vfx-scene.test.mjs`: stable camera/tile coordinates, sampling limits, zero-strength bypass, small blur kernels and expanded playback crops.
 - `node --test tests/vfx.test.mjs`: exposure semantics, tween/frame insertion, history, cancellation, presets, instance isolation, rig remapping, and reopening.
 - `node tests/vfx.browser.mjs`: binary native round-trip, lossy-format rejection, real slider and label drags, and tab navigation.
 - `node --test tests/vfx-strength.test.mjs`: compatible strength defaults, interpolation, zero-strength bypass, layer edits/undo/reopen, and turbulence bounds.
@@ -116,4 +112,4 @@ The stage header's Effects preview toggle (`#vfx-preview`) is a preview bypass. 
 
 `vfx-gizmos.mjs` projects the selected effect's controls into camera or owner coordinates. It supports effect centers, shadow offset, blur/RGB direction, radii, grid/cell sizes, wavelength/strength, dissolve progress, light-sweep position, and CRT curvature. Only the selected, enabled, unlocked effect receives controls; playback never evaluates editor geometry for these overlays.
 
-`tests/vfx-expansion.browser.mjs` verifies the expanded kernels, multi-stop gradients, tiled parity, search, preset application, mouse/keyboard reordering, picker commits, canvas drag/cancel, selection visibility, and bypass isolation. The dense-scene benchmark adds distortion and bloom/CRT combinations. On the measured NVIDIA Lovelace device, those combinations took approximately 4–5 ms median at 1280×720 with 1,000 figures. Splitting shader compilation reduced the tested first grading/noise render from approximately 1,194 ms to 158 ms. These are local measurements; shader initialization, large radii, gradients, and changing artwork still have costs.
+The engine's effect fixtures and render tests cover the expanded kernels, multi-stop gradients and tiled parity; the VFX browser scripts cover search, preset application, mouse/keyboard reordering, picker commits, canvas drag/cancel, selection visibility, and bypass isolation. The dense-scene benchmark adds distortion and bloom/CRT combinations. On the measured NVIDIA Lovelace device, those combinations took approximately 4–5 ms median at 1280×720 with 1,000 figures (measured on the earlier JavaScript renderer). Splitting shader compilation reduced the tested first grading/noise render from approximately 1,194 ms to 158 ms. These are local measurements; shader initialization, large radii, gradients, and changing artwork still have costs.

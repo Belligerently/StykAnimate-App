@@ -1,4 +1,4 @@
-//! A 3D rig's perspective and part proportions in the session (src/editor-spatial-shape.mjs), on the
+//! A 3D rig's perspective and part proportions in the session, on the
 //! spatial mesh document: what each call stores, what it refuses and how history takes it back.
 
 use styk_doc::Value;

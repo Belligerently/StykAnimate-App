@@ -1,6 +1,6 @@
-//! Frame evaluation: the timeline, native Pivot tweening (`evaluatedNativeFrame`
-//! in src/pivot/geometry.mjs) with its property channels ([`crate::channels`]) and the
-//! StykAnimate layer sheet (`sampleLayerSheet` in src/layer-sheet.mjs).
+//! Frame evaluation: the timeline, native Pivot tweening (`evaluatedNativeFrame`)
+//! with its property channels ([`crate::channels`]) and the
+//! StykAnimate layer sheet (`sampleLayerSheet`).
 //!
 //! Evaluation is a pure function of an immutable [`Prepared`] document and a
 //! tick, so any number of threads can evaluate different ticks concurrently.
