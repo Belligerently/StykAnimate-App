@@ -719,8 +719,13 @@ it on the editor, for every document.
   (`sessionPayload`, `styk-edit/src/args.rs`): a member that is `undefined` is `{"@undefined": true}`, a number that is not
   finite `{"@number": "NaN"}`, and the call's view says `encoded: true`. The session decodes the numbers wherever they sit, so the
   editor's own finite checks refuse them with the editor's own message, and drops the `undefined` members for every command but
-  `setRigBehavior`, where a member of a merged patch set to `undefined` removes the old one (the rig inspector takes a path's
-  pitch away that way).
+  the three whose editor body assigned a patch over a record, where a member set to `undefined` removed the old one: every member of
+  `setRigBehavior` (and the members of a merged one: the rig inspector takes a path's pitch away that way), and the fields of
+  `updateObject` and `updateSelection` (the inspector takes a figure's stacking number away with `_stykZIndex: undefined`). Those
+  decode the marker themselves; `tests/engine-owner-undefined.test.mjs` sends it to every command and checks that none stores it.
+- **Names of entries.** `setFPS`, `updateProject` and `scaleSelection` take a `{label}` option, the name the inspector gives the
+  entry (`Frame rate`, `Canvas width`, `Selection height`, ...); without one they name it themselves (`Change frame rate`,
+  `Project settings`, `Scale figures`).
 - **Bookkeeping.** Besides the calls, the owner tells the session what is not an edit (`styk-edit/src/owner.rs`): the limits of
   history and the numbering of revisions it starts from, `@markSaved`, `@touch` (the project marked changed outside a
   command: a new revision, no entry), `@publishCel(celId, definition)` (the encoded tiles, bounds and revision the interface's
@@ -792,11 +797,40 @@ made from the app:
 | combining a group with Stick Nodes shapes, 3D meshes, movieclips, drawings or origins | combineJoinedFigure | the editor's own result is not defined for them: it drops the mesh or clip, and a Stick Nodes shape names handles of the old figures (every recorded document with one fails its validation) |
 | combining in a document with saved animation channels (`authored`) | combineJoinedFigure | native timelines only: the app gives every document a layer sheet (a working frame open is the editor's error, `disconnectSegment` answers it) |
 | the keyframe commands of a native timeline, working frames | `addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`, `enableFrameDrafts` and the rest of the working frame API | native timelines only: the app gives every document a layer sheet and never starts a working frame |
-| a pose at an absolute value across several frames, and a figure's own stacking number | the inspector's token (`native-property-edit.mjs`) for `root_x`, `root_y`, `group_*`, `scale`, `rotation`, `joint_*` with more than one frame chosen, and `figure_z_order` of several figures or a movieclip | no command of the session sets a pose property to one value in every chosen frame (the relative range commands exist); a single figure's stacking number is the `zIndex` channel |
 | the definition of a figure and the fields of a frame through the inspector's token | `outline_*`, `thickness`, `segment_*` opacity and the project's `duration` on a document without property channels | native timelines only: with property channels these are keys of the figure's channels |
 
 The editor's other calls the session has no command for (`copyFigure`, `poseIKTarget`, `adoptNativePoseTrack`, the
 animation key commands of a native timeline and the like) were not called from the interface and are deleted with their bodies.
+
+### A pose at one value in several keys, and a discarded figure (2026-10-25)
+
+`setPoseProperty(key, value, indices, {label})` (`pose_value.rs`) is the inspector's "Edit together": with several keys chosen on the
+timeline, a number typed for `root_x`, `root_y`, `group_x`, `group_y`, `group_width`, `group_height`, `scale`, `rotation`, `figure_opacity`,
+`figure_z_order` or `joint_angle`, `joint_length`, `joint_bend` is set in every chosen key, each brought to the value from where it
+stands. It plans like any figure operation across frames (`range_plan.rs`, `Kind::Pose`) and commits as one entry named `{label} in N
+frames`, N the keys that changed. The token (`native-property-edit.mjs`) previews on the frame on show with the gestures of the session
+(`beginDrag`, `moveSelection`, `updateObject`, ...), cancels that gesture when the edit ends, and makes the one call; a cancelled edit
+leaves nothing. The selection's bounds (`group_*`) are the app's own (`bounds.rs`), so the number typed is the number the inspector shows. The
+stacking number of several figures or of a movieclip is `updateObject({_stykZIndex})` in a single key (zero takes it away) and the same
+command across keys; a single figure's is the `zIndex` channel.
+
+`discardNewFigure(typeId, {label})` (`figure_discard.rs`) is the builder session's repair when history eviction dropped the entries
+that created a figure: the definition leaves the library and every instance leaves every keyframe and pose source that holds one (figures
+joined to an instance stay where they were drawn), as one `figure-discard` entry whose undo brings all of it back.
+
+`bakeMovieclip()` is the owner's composition of three session calls (`movieclip_bake.rs`): `bakeMovieclipBegin` checks the clip and opens a
+job, `bakeMovieclipSample(ticks)` samples some more of its frames, and `bakeMovieclipPublish` publishes them as one `Bake animation` entry
+(`bakeMovieclipCancel` ends a job). The owner sizes each slice to about 6 ms and returns to the event loop between slices
+(`yield-task.mjs`), so the sampling never stalls the interface thread (D7); an edit between slices ends the job ("the scene changed while
+baking"). The calls of the tools and the tests (`call_movieclip_timeline_worker("bakeMovieclip")`, `Editor::call("bakeMovieclip")`) run the
+same three steps at once.
+
+Measured on three private documents with the development WebAssembly build in Node (a clip of one layer's figures, baked over the whole
+scene; the PC was busy with builds, so read the numbers as an order of magnitude): the single call took 0.8 s on 735 frames of 28 figures
+(6,854 segments), 0.56 s on 589 frames of 53 figures and 3.4 s on 1,872 frames of 202 figures, about 1 to 2 ms a frame. In slices, a slice takes
+1 to 15 ms after the first, which pays the cold evaluation of the revision (135 to 280 ms, as the first frame the stage draws after any edit
+does). Publication remains one synchronous step of 0.35 s, 0.57 s and 2.6 s on those documents: its planning is one transaction that cannot be
+resumed (making it slices means a resumable sheet planner, or a worker, which D19 removed with the worker-hosted session).
 
 ## Invariants
 

@@ -2,9 +2,9 @@ import {messageError} from './localized-error.mjs';
 /** Small native-field gestures. Authored transform channels use editor-animation.
  *
  * Every gesture here is a session call or a gesture of the session's: the animation edit of a property channel, a pose or camera
- * gesture, the keys of a branch's style, the project's fields and the sheet's duration. What this module used to write into the
- * document itself, to record it as an entry of the editor's own (the definition of a figure, a pose across several frames), is the
- * engine's alone now, and refused where the session has no command for it. */
+ * gesture (a pose at one value in several frames is the session's `setPoseProperty`), the keys of a branch's style, the project's
+ * fields and the sheet's duration. What this module used to write into the document itself, to record it as an entry of the editor's
+ * own (the definition of a figure), is the engine's alone now, and refused where the session has no command for it. */
 import { objectBounds } from "./renderer-geometry.mjs";
 import { cameraValues } from "./editor-camera.mjs";
 import { animationStyleValue, polygonIdentity, resolveInstanceFigure } from "./animation-style.mjs";
@@ -358,11 +358,10 @@ export function beginNativePropertyEdit(
     return begun(common);
   }
   if (pose) {
-    // A pose across several frames at an absolute value, and a figure's own stacking number, are not commands of the engine.
-    if (key === "figure_z_order" || frames.sheetTicks?.length > 1 || frames.length > 1) throw refused();
+    // With several frames chosen the gesture shows the frame on show, and the value is set in every chosen frame when it ends.
     if (!editor.beginDrag(common.label, { scope: key.startsWith("group_") || key === "root_x" || key === "root_y" ? "translation" : "selection" }))
       throw messageError(new Error(''), "errors.nativePropertyEdit.chooseAFigureFirst", {});
-    return begun({...common, beforeObjects: new Map(editor._drag.before.map((o) => [o.unique_id, o]))});
+    return begun(common);
   }
   // The definition of a figure and the fields of a frame are edited by the engine's commands, never in place.
   throw refused();
@@ -403,6 +402,8 @@ export function previewNativePropertyEdit(token, value) {
   else if (key === "rotation")
     editor.rotateFigure(radians(value - getNativePropertyValue(editor, key)));
   else if (key === "figure_opacity") editor.updateObject({ field28: Math.round((1 - value / 100) * 255) });
+  // A stacking number of zero is the figure without one.
+  else if (key === "figure_z_order") editor.updateObject({ _stykZIndex: value || undefined });
   else if (key === "group_width" || key === "group_height") {
     if (token.initialValue <= 0)
       throw messageError(new Error(''), "errors.nativePropertyEdit.increaseTheSelectionSizeBeforeScaling", {});
@@ -439,7 +440,8 @@ export function commitNativePropertyEdit(token) {
   if (token.sheetDuration) { token.closed = true; active.delete(editor); return editor.sheetSetDuration(token.value, token.layerId, token.tick); }
   if (token.project) {
     token.closed = true; active.delete(editor);
-    return token.key === 'fps' ? editor.setFPS(token.value) : editor.updateProject({ [token.key]: token.value });
+    const options = { label: token.label };
+    return token.key === 'fps' ? editor.setFPS(token.value, options) : editor.updateProject({ [token.key]: token.value }, options);
   }
   if (token.orderAnimation) {
     return finish(() => {
@@ -480,8 +482,15 @@ export function commitNativePropertyEdit(token) {
       return Boolean(editor.commitDrag());
     });
   }
+  if (token.pose && rangeCount > 1) {
+    // The preview was the frame on show: the value is set in every chosen frame, from where each one stands, as one entry.
+    return finish(() => {
+      editor.cancelDrag();
+      return editor.setPoseProperty(token.key, token.value, token.indices, { label: token.label }).changedFrames > 0;
+    });
+  }
   if (token.key === "group_width" || token.key === "group_height") {
-    return finish(() => { editor.cancelDrag(); return editor.scaleSelection(token.value / token.initialValue); });
+    return finish(() => { editor.cancelDrag(); return editor.scaleSelection(token.value / token.initialValue, { label: token.label }); });
   }
   return finish(() => editor.commitDrag());
 }

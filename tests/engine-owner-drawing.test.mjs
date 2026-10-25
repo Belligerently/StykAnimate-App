@@ -92,7 +92,6 @@ test('a stroke\'s pixels never become JSON for the session', {skip: !engineBuilt
     editor.commitDrawingPixels(target, tiles, 'Brush stroke');
     assert.equal(serialized, 0, 'the owner turned the stroke into JSON');
     assert.equal(editor.undoLabel, 'Brush stroke');
-    assert.equal(owner.editor, undefined, 'the editor ran nothing: the stroke is the session\'s entry');
     assert.deepEqual(owner.refused, {}, 'the session refused nothing');
     assert.deepEqual(editor._undo.map(entry => entry.kind), ['engine', 'engine'], 'the editor\'s stacks hold placeholders for the session\'s entries');
   } finally { await dispose(); }

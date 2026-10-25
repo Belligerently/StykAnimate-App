@@ -13,7 +13,7 @@ import {engineBuilt} from './support/engine-node.mjs';
 const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/branch-thickness-locked-sheet.document.json', import.meta.url), 'utf8'));
 /** What the owner makes of a call itself, besides the session's commands, and the reads the editor answers from the state the owner mirrors
  * (the session answers them too, for the replays). */
-const OWNERS_OWN = new Set(['undo', 'redo', 'movieclipBatch', 'segmentValues', 'motionPathFalloff']);
+const OWNERS_OWN = new Set(['undo', 'redo', 'movieclipBatch', 'bakeMovieclip', 'segmentValues', 'motionPathFalloff']);
 
 test('the list of session commands is the session\'s dispatch', {skip: !engineBuilt}, () => {
   const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(structuredClone(document));

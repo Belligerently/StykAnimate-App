@@ -27,6 +27,7 @@ mod combine;
 mod camera_views;
 mod clipboards;
 mod figure_clipboard;
+mod figure_discard;
 mod figure_transform;
 pub mod export;
 mod args;
@@ -51,11 +52,13 @@ mod motion_path;
 mod movieclips;
 mod origin;
 mod origin_topology;
+mod movieclip_bake;
 mod movieclip_commands;
 mod movieclip_native;
 mod onion_skins;
 mod pose;
 mod pose_choice;
+mod pose_value;
 mod palette;
 pub mod prof;
 pub mod patch;
@@ -316,6 +319,8 @@ pub struct Editor {
     pub(crate) property_edit: Option<property_edit::Edit>,
     pub(crate) native_token: Option<builder::native::Token>,
     pub(crate) native_token_serial: u64,
+    /// A movieclip being baked in slices (`movieclip_bake.rs`).
+    pub(crate) bake: Option<movieclip_bake::Job>,
     /// The document field a live preview set without recording it (`preview.rs`).
     pub(crate) preview: Option<preview::Preview>,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
@@ -446,6 +451,7 @@ impl Editor {
             property_edit: None,
             native_token: None,
             native_token_serial: 0,
+            bake: None,
             preview: None,
             events: Vec::new(),
             eval: RefCell::default(),
@@ -982,6 +988,7 @@ impl Editor {
             "randomizeCameraMotion" => self.randomize_camera_motion(&arg(0)).map(Value::Bool),
             "updateSegment" => self.update_segment(&arg(0)).map(Value::Bool),
             "updateObject" => self.update_object(&arg(0)).map(Value::Bool),
+            "discardNewFigure" => self.discard_new_figure(&arg(0), &arg(1)).map(Value::Bool),
             "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),
             "addMovieclipToNextKeyframes" if self.sheet() => self.inline_timeline(|editor, worker| editor.extend_sheet_movieclip(number(0), worker)),
             "addMovieclipToNextKeyframes" => self.extend_native_movieclip(number(0)),
@@ -990,6 +997,11 @@ impl Editor {
             "previewLayerParallax" => self.preview_layer_parallax(&arg(0), &arg(1)).map(Value::Bool),
             "cancelDocumentPreview" => Ok(Value::Bool(self.cancel_document_preview())),
             "bakeMovieclip" => self.inline_timeline(|editor, worker| editor.bake_movieclip_worker(worker)),
+            // The same bake in slices, for the interface to give the thread back between them.
+            "bakeMovieclipBegin" => self.inline_timeline(|editor, worker| editor.begin_bake(worker)),
+            "bakeMovieclipSample" => self.inline_timeline(|editor, worker| editor.sample_bake(number(0), worker)),
+            "bakeMovieclipPublish" => self.inline_timeline(|editor, worker| editor.publish_bake(worker)),
+            "bakeMovieclipCancel" => Ok(Value::Bool(self.bake.take().is_some())),
             "setFrameDuration" if self.sheet() => self.sheet_set_duration(number(0), &Value::Null, &Value::Null).map(Value::Bool),
             "setFrameDuration" => Err(EditError::Unported("setFrameDuration on a native timeline".into())),
             "addFigure" => self.add_figure((!args.is_empty()).then(|| arg(0)).as_ref()),
@@ -1082,9 +1094,9 @@ impl Editor {
             "setMovieclipPlayback" => self.set_movieclip_playback(&arg(0), &arg(1)),
             "setMovieclipDrawing" => self.set_movieclip_drawing(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "setLayerParallax" => self.set_layer_parallax(&arg(0), &arg(1), publication).map(Value::Bool),
-            "setFPS" => self.set_fps(&arg(0)).map(Value::Bool),
+            "setFPS" => self.set_fps(&arg(0), &arg(1)).map(Value::Bool),
             "setCanvasSize" => self.set_canvas_size(&arg(0), &arg(1)).map(Value::Bool),
-            "updateProject" => self.update_project(&arg(0)).map(Value::Bool),
+            "updateProject" => self.update_project(&arg(0), &arg(1)).map(Value::Bool),
             "copySelection" => {
                 let flag = |name: &str| args.first().and_then(|o| o.get(name)).is_some_and(Value::truthy);
                 self.copy_selection_of(flag("wholeFigures"), flag("inPlace"))

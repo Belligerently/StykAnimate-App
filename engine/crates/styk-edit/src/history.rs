@@ -99,6 +99,9 @@ pub enum CommandKind {
     FigureRange { changes: Vec<crate::range::FrameChange>, structural: bool, retain_geometry: bool },
     /// Paths of a figure definition before and after (`kind: 'native-properties'`, `scope: 'figure'`).
     NativeProperties { index: usize, before: crate::builder::Patch, after: crate::builder::Patch },
+    /// A figure definition taken out of the library with every instance of it in every frame that held one (`kind: 'figure-discard'`,
+    /// `figure_discard.rs`).
+    FigureDiscard { figure_index: usize, figure: Value, frames: Vec<crate::figure_discard::DiscardedFrame> },
     /// A figure definition and the poses it changed, before and after (`kind: 'topology'`).
     Topology { index: usize, before: crate::topology::Snapshot, after: crate::topology::Snapshot },
     /// A branch made a figure of its own in every pose of the figure: the part inserted in each, the definitions added
@@ -107,6 +110,11 @@ pub enum CommandKind {
     /// A drawing cel's pixels changed (`kind: 'drawing-pixels'`, `drawing_pixels.rs`): the cel and the interface's
     /// record of the change, whose before and after tiles the interface's drawing store and history hold.
     DrawingPixels { cel_id: String, record: u64 },
+}
+
+/// The name the interface gives an entry (`{label}` among a command's options), else the command's own.
+pub(crate) fn entry_label(options: &Value, default: &str) -> String {
+    options.get("label").and_then(Value::as_str).filter(|label| !label.is_empty()).unwrap_or(default).to_string()
 }
 
 /// `editor._movieclipBatch` in progress: its entries, label, the revision before it and the
@@ -370,7 +378,7 @@ impl Editor {
         fn summary(command: &Command, weight: &Weight, kinds: bool, children: bool) -> Value {
             let mut value = styk_doc::Obj::new();
             if kinds { value.set("kind", Value::str(match &command.kind {
-                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Scene { .. } => "scene", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology", CommandKind::Disconnect { .. } => "disconnect", CommandKind::DrawingPixels { .. } => "drawing-pixels",
+                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::FigureDiscard { .. } => "figure-discard", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Scene { .. } => "scene", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology", CommandKind::Disconnect { .. } => "disconnect", CommandKind::DrawingPixels { .. } => "drawing-pixels",
             })); }
             value.set("label", Value::str(&command.label)); value.set("bytes", Value::Num(weight.bytes));
             if children && let CommandKind::Batch { commands } = &command.kind { value.set("children", Value::array(commands.iter().zip(&weight.children).map(|(command, weight)| summary(command,weight,kinds,children)).collect())); }
@@ -582,6 +590,7 @@ impl Editor {
             CommandKind::FigureRange { .. } => self.apply_figure_range_command(command, direction)?,
             CommandKind::NativeProperties { .. } => self.apply_native_properties(command, direction)?,
             CommandKind::Topology { .. } => self.apply_topology(command, direction)?,
+            CommandKind::FigureDiscard { .. } => self.apply_figure_discard(command, direction)?,
             CommandKind::Disconnect { .. } => self.apply_disconnect(command, direction)?,
             CommandKind::DrawingPixels { .. } => self.apply_drawing_pixels(command, direction)?,
             CommandKind::Batch { commands } => {
