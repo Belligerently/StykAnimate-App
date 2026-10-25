@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {frameTicks, shortest, nativeTimeline} from '../src/pivot/read-view.mjs';
+import {shortest, nativeTimeline} from '../src/pivot/read-view.mjs';
 import {emptyDocument} from '../src/demo.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
+
+/** A stored keyframe's ticks: the displayed keyframe and its outgoing inbetweens (raw signed duration). */
+const frameTicks = frame => Math.max(0, Number(frame.duration_raw ?? 1));
 
 // The native-easing sampler as it was before per-object sampling: one keyframe lookup, run search, tangent array and pchip per
 // joint and channel, written out here as the reference the engine's evaluated frame must equal bit for bit.
