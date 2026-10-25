@@ -120,8 +120,9 @@ try {
   const textBefore = await value(() => structuredClone(styk.editor.figure));
   check('T shortcut creates styled multilingual text through the actual dialog', textBefore.text_assets[0].text === 'Styk in motion\nΚαλημέρα • Привет' && textBefore.text_assets[0].font_style === 3 && !!textBefore.text_assets[0].normalized_svg_path);
   check('Text dialog applies multiline layout, gradient and outline', textBefore._styk.textAuthoring.alignment === 'center' && textBefore._styk.textAuthoring.lineHeight === 1.4 && !!textBefore.segments[0].secondary && textBefore.segment_decode.global_style.outline_thickness === 1);
-  await value(() => {styk.editor.updateObject({root_x: 170, root_y: 375}); styk.editor.sheetAppendFrame();});
+  await value(() => {styk.editor.updateObject({root_x: 170, root_y: 375}); styk.actions['add-frame']();});
   await page.locator('#inspector [data-action="edit-text"]').click();
+  await page.waitForFunction(text => document.querySelector('#text-content')?.value === text, textBefore.text_assets[0].text);
   check('Editing text reopens the authored content and styles', await page.locator('#text-content').inputValue() === textBefore.text_assets[0].text && await page.locator('#text-bold').isChecked() && await page.locator('#text-italic').isChecked());
   await page.locator('#text-content').fill('Move together\nCafé • Привет');
   await page.locator('#text-size').fill('44'); await page.locator('#create-text').click();
