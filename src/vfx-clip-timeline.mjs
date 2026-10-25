@@ -3,7 +3,7 @@ import {appendLocalized, localizedAttribute} from './localization-bindings.mjs';
 
 import {t as interfaceText} from './localization.mjs';
 import {clipContains,vfxFadeAt} from './vfx-clips.mjs';
-import {VFX_REGISTRY,vfxDescriptor} from './vfx.mjs';
+import {vfxDescriptor} from './vfx.mjs';
 import {vfxVisibleKeys,vfxChannelLabel,vfxChannelMessage} from './vfx-key-channels.mjs';
 import {openVfxChannelMenu} from './vfx-key-channel-menu.mjs';
 import {clipTail} from './vfx-clip-views.mjs';

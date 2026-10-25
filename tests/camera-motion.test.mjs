@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createCameraMotion,validateCameraMotion} from '../src/camera-motion.mjs';
+import {validateCameraMotion} from '../src/camera-motion.mjs';
 import {ownedEditorSync, ownedEditorFor} from './support/owned-editor.mjs';
 import {ownerReferences} from './support/owner-references.mjs';
 import {packMotionLanes} from '../src/camera-motion-timeline.mjs';

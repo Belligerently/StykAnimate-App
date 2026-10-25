@@ -1,5 +1,5 @@
 import {messageError} from './localized-error.mjs';
-import {createVfx,validateVfxStack,validateVfxValue,vfxDescriptor,vfxOwnerKey,vfxProperty} from './vfx.mjs';
+import {createVfx,validateVfxStack,validateVfxValue,vfxDescriptor,vfxOwnerKey} from './vfx.mjs';
 import {interpolateVfxColor} from './vfx-paint.mjs';
 import {isGeneratorType} from './vfx-registry.mjs';
 import {easedProgress,validateKeyEasing} from './keyframe-easing.mjs';

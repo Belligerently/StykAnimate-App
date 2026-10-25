@@ -361,6 +361,14 @@ The editor evaluates the frame itself where the engine does not hold its documen
 `unported: …` for). A movieclip being edited is a
 document of the engine like any other: it has a session, and the frame, geometry, onion skins and trails are its.
 
+What the interface still computes in JavaScript about motion is not the frame's evaluation: validation of the stored data that open,
+save and paste run (`validateAnimationDocument`, `validateCameraMotion`, `validateVfxClips`, `validateIK`, the rig and pose-choice
+validators), reads of stored records (the channel list, a key's fields, a definition's topology: `ikChain`, `rigConstraintPlan`
+for the rig inspector), the style overlay of an instance over its definition (`resolveInstanceFigure`, applied to the engine's
+object), and drawing maths (the easing curve of `keyframe-easing-view.mjs`, the gizmos' quaternions, a clip's fade envelope).
+Everything that computes what the frame shows (a sampled channel, a pose, a camera, a solved IK chain or rig, an effect clip's
+state) is the engine's.
+
 ## The interface's views
 
 The frames around the one on show are sampled by the session too; no JavaScript evaluates a tick other than the

@@ -1,7 +1,7 @@
 /** Persistent 3D target space for native spatial IK. No render caches or second
  * pose hierarchy: the solver still writes the figure's authored angle channels. */
 import {animationRotation} from './animation-origin.mjs';
-import {quatMultiply,quatRotate,spatialPoint,spatialQuaternion,betweenVectors} from './rig-spatial.mjs';
+import {quatMultiply,quatRotate,spatialQuaternion,betweenVectors} from './rig-spatial.mjs';
 export const inverseQuaternion=q=>[-q[0],-q[1],-q[2],q[3]];
 const normalize=v=>{const n=Math.hypot(...v);return n>1e-10?v.map(x=>x/n):[0,0,1];};
 const dot=(a,b)=>a.reduce((sum,v,i)=>sum+v*b[i],0);
