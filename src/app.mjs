@@ -4435,25 +4435,20 @@ const actions = {
   "next-keyframe": () => { pause(); runTimelineHotkey(timelineUI, 'next-keyframe'); },
   "add-frame": () => addFrameKeepingDrag(() => {
     if(editor.getLayer(editor.activeLayerId)?.drawing)return editor.addDrawingFrame();
-    if(editor.report._styk?.layerSheet) {
-      if(state.settings.timelineMode !== 'simple')
-        return timelineUI.addFrameCell();
-      const result=editor.sheetDuplicateFrameAfter(['scene','camera',...editor.report._styk.layers.order]);
-      timelineUI.revealPlayhead();
-      return result;
-    }
-    return editor.addFrame();
+    if(state.settings.timelineMode !== 'simple')
+      return timelineUI.addFrameCell();
+    const result=editor.sheetDuplicateFrameAfter(['scene','camera',...editor.report._styk.layers.order]);
+    timelineUI.revealPlayhead();
+    return result;
   }),
   "extend-keyframe": () => {
     pause();finishCurrentEdit();
     if(drawingController?.active)return editor.extendDrawing(timelineUI?.ids?.length?timelineUI.ids:[editor.activeLayerId],drawingController.settings.length);
-    if(editor.report._styk?.layerSheet) return timelineUI.extendKeyframe();
-    return editor.setFrameDuration(editor.frame.duration_raw + 1);
+    return timelineUI.extendKeyframe();
   },
   "delete-frame": () => {
     pause();
-    if(editor.report._styk?.layerSheet)return state.settings.timelineMode === "simple"?timelineUI.action("delete"):timelineUI.removeFrames();
-    editor.deleteFrame();
+    return state.settings.timelineMode === "simple"?timelineUI.action("delete"):timelineUI.removeFrames();
   },
   "add-figure": () => {
     pause();
