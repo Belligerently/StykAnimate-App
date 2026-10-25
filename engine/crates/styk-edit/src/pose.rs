@@ -656,7 +656,8 @@ impl Editor {
 
     fn set_connector_position_at(&mut self, slot: usize, joint: usize, position: f64) -> Result<bool, EditError> {
         rig_finite(position, 0.0, 1.0, "Slide position")?;
-        let figure_lengths = self.frame_objects().get(slot).and_then(|o| {
+        // The figure definition of the selected figure (`editor.figure`): the frame it is read in is the one on show, not the native keyframe a sheet document leaves empty.
+        let figure_lengths = self.selection_frame()?.get(slot).and_then(|o| {
             let figures = self.report.get("figure_types").and_then(Value::elements)?;
             let figure = figures.iter().find(|f| num(f, "figure_type_id") == num(o, "figure_type_id"))?;
             Some(segments_of(&figure).iter().map(|s| s.get("length").cloned().unwrap_or(Value::Null)).collect::<Vec<_>>())
