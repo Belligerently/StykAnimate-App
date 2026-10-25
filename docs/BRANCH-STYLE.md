@@ -20,7 +20,7 @@ The separate numeric opacity fields described here are an intentional convenienc
 
 ## Implementation and verification
 
-[editor-branch-style.mjs](../src/editor-branch-style.mjs) plans targets using stable handle IDs. Beginning an authored gesture scans channels and branch membership, then copies only the affected channels and their key arrays. Each preview updates the cached branch keys. Commit restores the original animation header and calls the bulk key API once with exact targets; Cancel restores the original header directly. Generic animation commit and cancel dispatch include this batch, so Save can finalize a held drag without losing members or creating a second Undo entry.
+[editor-branch-style.mjs](../src/editor-branch-style.mjs) plans the targets of a branch edit using stable handle IDs. An authored gesture is the engine session's animation edit of those targets (`beginAnimationEdit([targets], property)`, `styk-edit/src/property_edit.rs`): each preview composes the value on every target over the frame the gesture began on, which is what the stage shows meanwhile, and the document is untouched until commit. Commit keys all targets at the playhead with exact targets as one Undo entry; Cancel drops the preview. Save during a held drag commits it first, as for every gesture.
 
 [native-property-edit.mjs](../src/native-property-edit.mjs) is the inspector's gesture over the engine's calls: a branch edit is the authored path above, and a branch of a shared definition without property channels is no command of the engine, so it is refused.
 

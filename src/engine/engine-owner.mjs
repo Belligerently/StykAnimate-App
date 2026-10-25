@@ -436,7 +436,8 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
     if (!opened) return;
     // The edit it replaces ended with the call, and its preview with it.
     if (editor._animationEdit?.engine && editor._sheetPropertyPreview) { editor._sheetPropertyPreview = null; editor._invalidate(); }
-    const {target, property, exactTarget, tick, initialValue, changed} = opened, edit = {engine: true, target, property, exactTarget, tick, initialValue, selection: editor._selectionState(), changed};
+    // An edit of several targets (a branch, a draw order) names them all (`targets`) and holds a value for each.
+    const {target, targets, property, exactTarget, tick, initialValue, changed} = opened, edit = {engine: true, target, ...(targets ? {targets} : {}), property, exactTarget, tick, initialValue, selection: editor._selectionState(), changed};
     editor._animationEdit = opened.sheet ? Object.assign(edit, {sheet: true, value: opened.value, frame: baseFrame()})
       : Object.assign(edit, {before: editor.report._styk?.animation ?? null, beforeChannel: editor.animationChannel(target, property, {exactTarget})});
   };

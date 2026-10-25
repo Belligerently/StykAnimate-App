@@ -769,6 +769,7 @@ impl Editor {
             selection: self.selection_state(),
             changed: false,
             preview: None,
+            group: None,
         });
         Ok(Value::Null) // The existing replay/facade treats the edit record as a view.
     }

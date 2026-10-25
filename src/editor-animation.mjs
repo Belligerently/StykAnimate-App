@@ -4,7 +4,6 @@ import {composeAnimationChannels,animationChannels, animationEndTick, animationC
   validateAnimationValue, animationPropertyValue, sampleAnimationChannel} from './animation-channels.mjs';
 import {buildGeometry, evaluatedFrame} from './pivot/geometry.mjs';
 import {nativeTimeline} from './pivot/read-view.mjs';
-import {previewBranchStyleAnimation,commitBranchStyleAnimation,cancelBranchStyleAnimation} from './editor-branch-style.mjs';
 
 import {keyEasing, assignKeyEasing, validateKeyEasing, inheritedKeyEasing} from './keyframe-easing.mjs';
 import {AUTHORING_PROPERTIES, isDiscreteAnimationProperty} from './animation-properties.mjs';
@@ -445,7 +444,6 @@ export const editorAnimationMethods = {
       this._sheetPropertyPreview=composeAnimationChannels({...this.report,_styk:{...this.report._styk,animation:{channels:[channel]}}},edit.frame,edit.tick,{resolveGeometry:buildGeometry});
       this._geometry=null;this._emit('edit',{live:true});return value;
     }
-    if(this._animationEdit?.branchStyle)return previewBranchStyleAnimation(this,value);
     const edit = this._animationEdit; if (!edit) throw messageError(new Error(''), "errors.editorAnimation.beginAPropertyEditBeforePreviewingIt", {});
     value = validateAnimationValue(edit.target, edit.property, value);
     // Each published preview stays immutable for evaluation, snapshots and
@@ -473,7 +471,6 @@ export const editorAnimationMethods = {
   commitAnimationEdit() {
     if(this._animationEdit?.sheet){const edit=this._animationEdit;this._animationEdit=null;this._sheetPropertyPreview=null;this._invalidate();
       if(!edit.changed)return false;this._sheetPropertyEntries([{target:edit.target,property:edit.property,tick:edit.tick,value:edit.value,exactTarget:edit.exactTarget}],`Edit ${edit.property}`);return true;}
-    if(this._animationEdit?.branchStyle)return commitBranchStyleAnimation(this);
     const edit = this._animationEdit; if (!edit) return false;
     this._animationEdit = null;
     if (!edit.changed) return false;
@@ -486,7 +483,6 @@ export const editorAnimationMethods = {
   },
   cancelAnimationEdit() {
     if(this._animationEdit?.sheet){this._animationEdit=null;this._sheetPropertyPreview=null;this._invalidate();this._emit('edit',{label:'Cancel property edit'});return true;}
-    if(this._animationEdit?.branchStyle)return cancelBranchStyleAnimation(this);
     const edit = this._animationEdit; if (!edit) return false;
     this._animationEdit = null; assignAnimation(this, edit.before);
     this._emit('edit', {animation: true, label: 'Cancel property edit'}); return true;
