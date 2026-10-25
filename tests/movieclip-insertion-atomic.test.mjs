@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 const reportJSON = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value);
 const native = ({channels = false} = {}) => {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [createFrame([createObject(figure, 1, 120, 180)], 4), createFrame([createObject(figure, 1, 150, 175)], 1)];
-  const prepared = new Editor({demo: false}).load(report); prepared.select(1);
+  const prepared = engineEditor({demo: false}, report); prepared.select(1);
   const clip = prepared.createMovieclip({uids: [1], start: 0, end: 5, replace: false});
-  const editor = new Editor({demo: false}).load(JSON.parse(reportJSON(prepared))); editor.select(1);
+  const editor = engineEditor({demo: false}, JSON.parse(reportJSON(prepared))); editor.select(1);
   if (channels) editor.addFigure(clip.figure_type_id);
   return {editor, typeId: clip.figure_type_id};
 };
@@ -38,7 +39,7 @@ for (const channels of [false, true]) for (const importing of [false, true]) {
 test('whole native and sheet insertions retain their successful behavior', () => {
   const {editor: e, typeId} = native(); e.seek(2); const inserted = e.addFigure(typeId);
   assert.equal(inserted._stykMovieclip.start, 2); assert.equal(inserted._stykMovieclip.end, 7); assert.doesNotThrow(() => reopen(e));
-  const sheet = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(JSON.parse(reportJSON(native().editor)));
+  const sheet = engineEditor({demo: false, layerTimeline: true, propertyChannels: true}, JSON.parse(reportJSON(native().editor)));
   sheet.seek(2); const presence = sheet.addFigure(typeId); assert.equal(presence._stykMovieclip.clock, 'presence'); assert.doesNotThrow(() => reopen(sheet));
 });
 

@@ -1,18 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {sampleSheet} from './helpers/sheet-samples.mjs';
 import {movieclipAsset} from '../src/movieclips.mjs';
 
-function fixture({frames=80,neighbors=1,duration=1}={}){
+/** `alone`: the editor without the engine, for the tests whose subject is the editor's own history entries. */
+function fixture({frames=80,neighbors=1,duration=1,alone=false}={}){
   const document=emptyDocument(),figure=document.figure_types[0];
   document.keyframes=Array.from({length:frames},(_,i)=>createFrame([
     createObject(figure,1,100+Math.sin(i)*20,200),
     ...Array.from({length:neighbors},(_,n)=>createObject(figure,n+2,300+n*40,200+i,{unrelatedPayload:'outside-capture'.repeat(200)})),
   ],duration));
-  return new Editor({demo:false,layerTimeline:true}).load(document);
+  return alone?new Editor({demo:false,layerTimeline:true}).load(document):engineEditor({demo:false,layerTimeline:true}, document);
 }
 const shapes=(report,tick)=>buildGeometry(report,sampleSheet(report,tick)).drawables.map(d=>({type:d.type,rgb:d.rgb,alpha:d.alpha,points:d.points.map(p=>[p.x,p.y])}));
 function close(actual,expected){
@@ -23,10 +25,11 @@ function close(actual,expected){
   });
 }
 
+// The editor alone: it reads the editor's own history entry (its commands, sizes and captured sources).
 test('range creation retains imported pose keys and history excludes unrelated layer poses',()=>{
   const sizes=[];
   for(const neighbors of [1,40]){
-    const e=fixture({neighbors}),frames=e.report.keyframes.slice(),before=e.report._styk.layerSheet;
+    const e=fixture({neighbors,alone:true}),frames=e.report.keyframes.slice(),before=e.report._styk.layerSheet;
     e.seek(31);e.select(1);const undo=e._undo.length;e.createMovieclip({start:31,end:47});
     const uid=e.selectedUid,command=e._undo.at(-1);sizes.push(command.bytes);
     assert.equal(e._undo.length,undo+1);assert.ok(command.bytes<400000,`History was ${command.bytes} bytes`);
@@ -60,8 +63,9 @@ test('conversion boundaries preserve fractional eased poses, stacking, reopen an
   e.redo();for(const tick of [0,2.5,3,12.5,23.75,24,30])close(shapes(e.report,tick),samples[tick*4]);
 });
 
+// The editor alone: it reads the editor's own history entry and the identity of its sheet and source table.
 test('definition-only range capture changes no sheet poses or sources',()=>{
-  const e=fixture(),sheet=e.report._styk.layerSheet,sources=e.report._styk.frameSources,undo=e._undo.length;
+  const e=fixture({alone:true}),sheet=e.report._styk.layerSheet,sources=e.report._styk.frameSources,undo=e._undo.length;
   e.select(1);const figure=e.createMovieclip({start:3,end:17,replace:false});
   assert.equal(movieclipAsset(figure).duration,14);assert.equal(e.report._styk.layerSheet,sheet);assert.equal(e.report._styk.frameSources,sources);
   assert.equal(e._undo.length,undo+1);assert.equal(e._undo.at(-1).commands.length,1);

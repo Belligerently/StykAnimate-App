@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
@@ -9,7 +10,8 @@ import {resolveInstanceFigure,validateAnimationStyle} from '../src/animation-sty
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 
-function fixture(options={}) {
+/** `edit(document)` changes the document before the engine opens it. */
+function fixture(options={}, edit=null) {
   const q=construction();q.add(0,0,0,'Figure rotation');
   const x=q.add(0,30,0,'Surface X'),y=q.add(0,30,Math.PI/2,'Surface Y');
   const turn=q.add(0,0,0,'Head turn'),pitch=q.add(0,0,0,'Head tilt');
@@ -19,7 +21,8 @@ function fixture(options={}) {
     indices:[0,1,2,3,4,5],materials:[0,1],colors:[[210,145,100],[60,130,190]],basis:[0,x,y]};
   const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[],_styk:{colorMode:'segments',spatialMesh:mesh}};
   const document={...emptyDocument(),figure_types:[figure],keyframes:[0,1,2].map(i=>createFrame([createObject(figure,1,100+i*10,100),createObject(figure,2,300,100)],10))};
-  const editor=new Editor({demo:false,...options}).load(document);editor.select(1);return editor;
+  edit?.(document);
+  const editor=engineEditor({demo:false,...options}, document);editor.select(1);return editor;
 }
 const colors=e=>buildGeometry(e.report,e.evaluatedFrame).objects.get(e.selectedSlot).spatialMesh.colors;
 
@@ -54,7 +57,7 @@ test('color-only mesh evaluation reuses vertex, depth, triangle and binding arra
 });
 
 test('partial figure tints are normalized once while replacing a mesh color',()=>{
-  const e=fixture({layerTimeline:false,propertyChannels:false});e.object.color_override_raw=0x80603020;
+  const e=fixture({layerTimeline:false,propertyChannels:false},document=>{document.keyframes[0].objects[0].color_override_raw=0x80603020;});
   const original=colors(e),entry=figurePalette(e.report,e.figure,e.object).find(row=>row.meshColors?.includes(0));
   e.replaceFigureColor(entry.color,'#123456',{targets:entry});
   assert.deepEqual(colors(e),[[18,52,86],original[1]]);assert.equal(e.object.color_override_raw,0);

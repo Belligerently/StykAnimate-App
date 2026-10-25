@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure,validatePlayback} from '../src/movieclips.mjs';
 import {presencePlayback,continuations} from '../src/movieclip-presence.mjs';
@@ -9,14 +10,15 @@ import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {movieclipInspector} from '../src/movieclip-ui.mjs';
 
-function fixture({duration=12,clipDuration=8,fps=24,clipFps=24,empty=false}={}){
+/** `alone`: the editor without the engine, for the tests whose subject the session does not have. */
+function fixture({duration=12,clipDuration=8,fps=24,clipFps=24,empty=false,alone=false}={}){
   const child=defaultFigure(),document={...emptyDocument(),fps:clipFps};
   document.keyframes=Array.from({length:clipDuration},(_,i)=>createFrame([createObject(child,1,200+i*9,250)]));
   const clip=movieclipFigure(2,'Walking clip',document,{duration:clipDuration,pivot:{x:200,y:250}});
   const report={...emptyDocument(),fps,figure_types:[defaultFigure(),clip]};
   const objects=()=>empty?[]:[createObject(clip,7,300,300,{_stykMovieclip:presencePlayback()})];
   report.keyframes=duration===1?[createFrame(objects())]:[createFrame(objects(),duration-1),createFrame(objects())];
-  const e=new Editor({demo:false,layerTimeline:true});e.load(report);e.select(7);return e;
+  const e=alone?new Editor({demo:false,layerTimeline:true}).load(report):engineEditor({demo:false,layerTimeline:true}, report);e.select(7);return e;
 }
 function frame(e,t){const report=e.report??e,rows=timeline(report);let i=0;while(i+1<rows.length&&rows[i+1].start<=t)i++;return evaluatedFrame(report,i,(t-rows[i].start)/(rows[i].count||1),t);}
 const phase=(e,t,uid=7)=>frame(e,t).objects.find(o=>o.unique_id===uid)?._movieclipSample??null;
@@ -140,7 +142,7 @@ test('hidden layers and opacity do not pause authored membership',()=>{
 test('portable imports use the new clock and legacy documents keep their saved clocks',()=>{
   const e=fixture(),portable=nativeFigureDocument(e.report,{figureUid:7}),target=fixture({empty:true});target.seek(4);target.importFigure(portable);
   assert.equal(target.object._stykMovieclip.clock,'presence');assert.equal(target.object._movieclipSample,0);assert.equal(target.totalTicks,12);
-  const legacy=new Editor();legacy.select(1);legacy.createMovieclip({start:3,end:12});const uid=legacy.selectedUid,before=phases(legacy,20,uid);
+  const legacy=engineEditor();legacy.select(1);legacy.createMovieclip({start:3,end:12});const uid=legacy.selectedUid,before=phases(legacy,20,uid);
   const loaded=reopen(legacy);assert.deepEqual(phases(loaded,20,uid),before);
 });
 
@@ -165,7 +167,7 @@ test('large held scenes build a sparse clock once and reuse it while seeking',()
 });
 
 test('Break Apart preserves an eased outer motion and unrelated figures on its layer',()=>{
-  const e=new Editor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:30});const uid=e.selectedUid;
+  const e=engineEditor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:30});const uid=e.selectedUid;
   e.seek(8);e.select(uid);e.moveSelection(70,20);e.seek(20);e.select(uid);e.moveSelection(-40,40);
   e.sheetSetEasing(['layer-1'],0,29,{interpolation:'auto'});
   const before=Array.from({length:e.totalTicks},(_,t)=>shape(e,t));e.seek(7);e.select(uid);e.breakApartMovieclip();
@@ -248,7 +250,8 @@ test('breaking an attached clip preserves unrelated joins and detaches its attac
 
 test('object copy/paste through five authored frames retains one clock; middle deletion pauses it',()=>{
   for(const single of [false,true]){
-    const e=fixture({duration:5,empty:true});for(let t=1;t<5;t++)e.sheetInsertKey(['layer-1'],t);
+    // session gap: copyFigure has no command in the session, and the single-figure clipboard it fills is the editor's alone.
+    const e=fixture({duration:5,empty:true,alone:single});for(let t=1;t<5;t++)e.sheetInsertKey(['layer-1'],t);
     e.seek(0);e.addFigure(2);const uid=e.selectedUid,x=e.object.root_x;single?e.copyFigure():e.copySelection();
     for(let t=1;t<5;t++){e.seek(t);single?e.pasteFigure():e.pasteSelection();assert.equal(e.selectedUid,uid);assert.equal(e.object.root_x,x);}
     assert.deepEqual(phases(e,5,uid),[0,1,2,3,4]);assert.equal(e.totalTicks,5);
@@ -337,7 +340,7 @@ test('Make unique separates only this frame, preserves its phase and joins, and 
 });
 
 test('pasting clips alongside frame-only breaks preserves unrelated curves and editable children',()=>{
-  const e=new Editor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:30});const uid=e.selectedUid;
+  const e=engineEditor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:30});const uid=e.selectedUid;
   e.seek(8);e.select(uid);e.moveSelection(70,20);e.seek(20);e.select(uid);e.moveSelection(-40,40);e.sheetSetEasing(['layer-1'],0,29,{interpolation:'auto'});
   e.seek(7);e.select(uid);e.breakApartMovieclip();const before=Array.from({length:e.totalTicks},(_,t)=>shape(e,t));
   const asset=e.createEmptyMovieclip('Other');e.seek(0);e.addFigure(asset.figure_type_id);const other=e.selectedUid;e.copySelection();
@@ -361,8 +364,9 @@ test('editing playback on the current pasted exposure works without adding timel
 });
 
 
+// The editor alone: it holds the pasted movie to share the very document object, which the session's patch does not keep.
 test('unique movieclip paste owns a definition and identity while default paste retains the clock',()=>{
-  const e=fixture();e.copySelection();const original=e.object.figure_type_id;
+  const e=fixture({alone:true});e.copySelection();const original=e.object.figure_type_id;
   const document=e.figure._styk.movieclip.document;
   e.sheetClearFrames(['layer-1'],0,11);e.seek(0);
   const before=e.serialize();e.pasteSelection({pasteMode:'unique'});

@@ -2,12 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 const document = () => JSON.parse(readFileSync(new URL('../engine/crates/styk-eval/tests/fixtures/ik/joined.json', import.meta.url), 'utf8'));
 const target = {kind: 'node', uid: 3, handleId: 33, joint: 0};
 const bytes = editor => JSON.stringify(editor.report);
 for (const mode of ['native', 'channels', 'sheet']) test(`joined pinned follower trail rotates without changing selection or publishing before commit (${mode})`, () => {
-  const editor = new Editor({demo: false, layerTimeline: mode === 'sheet', propertyChannels: mode === 'channels'}).load(document());
+  const options = {demo: false, layerTimeline: mode === 'sheet', propertyChannels: mode === 'channels'};
+  // The editor alone on a layer sheet: the test reads the working frame of the editor's own motion-path gesture, which the session's gesture does not have.
+  const editor = mode === 'sheet' ? new Editor(options).load(document()) : engineEditor(options, document());
   editor.seek(5); editor.select(3, 0);
   const saved = bytes(editor), history = editor._undo.length;
   assert.ok(editor.beginMotionPathEdit(target, 2));

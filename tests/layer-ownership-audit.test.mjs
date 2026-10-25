@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback} from '../src/movieclip-presence.mjs';
@@ -14,7 +15,7 @@ function fixture({destination='new'}={}){
   const clip=movieclipFigure(2,'Motion',source,{duration:4});
   const report=emptyDocument();report.figure_types.push(clip);
   report.keyframes=[0,10,20].map(x=>createFrame([createObject(report.figure_types[0],1,100+x,100),createObject(report.figure_types[0],2,200+x,100),createObject(clip,7,300+x,100,{_stykMovieclip:presencePlayback()})],10));
-  const e=new Editor({demo:false,layerTimeline:true}).load(report),second=e.createLayer('Second').id;
+  const e=engineEditor({demo:false,layerTimeline:true}, report),second=e.createLayer('Second').id;
   e.assignFiguresToLayer([2],second);e.sheetInsertKey(['layer-1',second],0);
   const target=e.createLayer('Destination').id;
   if(destination!=='new')e.sheetInsertKey([target],0,{blank:true});
@@ -31,10 +32,10 @@ function equivalentGeometry(actual,expected){assert.equal(actual.length,expected
 
 for(const destination of ['new','short','hold'])for(const operation of ['add-range','paste-one','paste-group','paste-foreign-clip','import'])test(`${operation} inserts into ${destination} layer without changing existing ownership or poses`,()=>{
   const {e,target,source}=fixture({destination});
-  if(operation==='paste-one'){e.select(1);e.copyFigure();}
+  if(operation==='paste-one'){e.select(1);e.copySelection();}
   if(operation==='paste-group'){e.selectMany([1,2]);e.copySelection();}
   if(operation==='paste-foreign-clip'){
-    const donor=fixture().e;donor.select(7);donor.copyFigure();e._figureClipboard=donor._figureClipboard;
+    const donor=fixture().e;donor.select(7);donor.copySelection();e._selectionClipboard=donor._selectionClipboard;
   }
   const original=samples(e,[1,2,7]);e.seek(5);e.selectSheetLayer(target);const before=e.serialize(),next=e._nextUid;
   if(operation==='add-range')e.applyFigureRange({kind:'add',typeId:1},{ticks:[5]});
@@ -107,13 +108,14 @@ test('moving figures to a layer in the background preserves the animation and su
 });
 
 for(const operation of ['add','paste','range'])test(`${operation} beyond a populated short layer leaves its expired content absent`,()=>{
-  const {e,second}=fixture();e.sheetRemoveFrames([second],2,29);e.seek(0);e.select(1);e.copyFigure();
+  const {e,second}=fixture();e.sheetRemoveFrames([second],2,29);e.seek(0);e.select(1);e.copySelection();
   const original=samples(e,[1,2,7]);e.seek(5);e.selectSheetLayer(second);const before=e.serialize();
   if(operation==='add')e.addFigure();else if(operation==='paste')e.pasteSelection();else e.applyFigureRange({kind:'add',typeId:1},{ticks:[5]});
   assert.deepEqual(samples(e,[1,2,7]),original);history(e,before);
 });
 test('deleting a layer clears assignments whose figures no longer have retained poses',()=>{
-  const {e,target}=fixture();e.report._styk.layers.assignments[123456]=target;const before=e.serialize();
+  const {e:source,target}=fixture(),document=source.serialize();document._styk.layers.assignments[123456]=target;
+  const e=engineEditor({demo:false,layerTimeline:true}, document),before=e.serialize();
   e.deleteLayer(target);validateLayerState(e.report._styk.layers);history(e,before);
 });
 
@@ -129,7 +131,7 @@ for(const childLayer of ['fallback','other'])test(`deleting a parent layer prese
     parent.angles=parent.angles.map(a=>a+index*.4);child.angles=child.angles.map(a=>a+index*.4);child.join={target_object_slot:0,target_handle_id:1};
     return createFrame([parent,child,createObject(figure,3,500+index*10,300)],10);
   });
-  const e=new Editor({demo:false,layerTimeline:true}).load(report),second=e.createLayer('Fallback').id,third=e.createLayer('Other').id;
+  const e=engineEditor({demo:false,layerTimeline:true}, report),second=e.createLayer('Fallback').id,third=e.createLayer('Other').id;
   e.assignFiguresToLayer([2],childLayer==='fallback'?second:third);e.assignFiguresToLayer([3],childLayer==='fallback'?third:second);
   const original=geometrySamples(e,[2,3]),before=e.serialize();e.deleteLayer('layer-1');
   equivalentGeometry(geometrySamples(e,[2,3]),original);history(e,before);

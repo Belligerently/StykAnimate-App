@@ -2,6 +2,7 @@ import test from 'node:test';
 import {pasteInFrames} from './support/figure-range.mjs';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {normalizeEditorSettings} from '../src/settings.mjs';
 
@@ -18,7 +19,7 @@ test(`${mode} ${range?'range':'single'} paste at ${pasteDepth} depth preserves j
     createObject(f,2,200,100,{_stykZIndex:2,join:{target_object_slot:0,target_unique_id:1,target_handle_id:1}}),
     createObject(f,3,300,100,{_stykZIndex:depth}),
   ],5));
-  const e=new Editor({demo:false,layerTimeline:mode==='sheet'}).load(report);
+  const e=engineEditor({demo:false,layerTimeline:mode==='sheet'}, report);
   if(mode==='authored')e.adoptNativePoseTrack({kind:'layer',id:'layer-1'});
   e.selectConnected(1);e.copySelection();
   const before=e.serialize(),count=e._undo.length,clipboard=structuredClone(e._selectionClipboard.objects);

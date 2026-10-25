@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {motionPathTargets, pickMotionPathPoint} from '../src/motion-path.mjs';
@@ -18,7 +19,7 @@ function fixture() {
     createFrame([createObject(figure, 1, 300, 200)], 10),
     createFrame([createObject(figure, 1, 500, 200)], 10),
   ];
-  return new Editor({demo: false}).load(report);
+  return engineEditor({demo: false}, report);
 }
 
 function ikFixture() {
@@ -34,7 +35,7 @@ function ikFixture() {
     createFrame([createObject(figure, 1, 340, 150)], 8),
     createFrame([createObject(figure, 1, 380, 150)], 8),
   ];
-  return new Editor({demo: false}).load(document);
+  return engineEditor({demo: false}, document);
 }
 
 const rootTarget = {kind: 'node', uid: 1, handleId: 0, joint: -1};
@@ -47,7 +48,9 @@ test('origin path edits carry pins at remote keys and inbetweens in every timeli
       const object = clone(report.keyframes[0].objects[0]); object.root_x += i * 40;
       object._stykIK[22].target.x += i * 40; report.keyframes[i].objects[0] = object;
     }
-    editor = new Editor({demo: false, layerTimeline: mode === 'sheet', propertyChannels: mode === 'channels'}).load(report);
+    // The editor alone on a layer sheet: the test reads the working frame of the editor's own motion-path gesture, which the session's gesture does not have.
+    const options = {demo: false, layerTimeline: mode === 'sheet', propertyChannels: mode === 'channels'};
+    editor = mode === 'sheet' ? new Editor(options).load(report) : engineEditor(options, report);
     if (mode === 'channels') editor.addAnimationKeys([{target: {kind:'figure', uid:1}, property:'x', tick:0, value:300}, {target:{kind:'figure',uid:1},property:'x',tick:8,value:340}]);
     editor.seek(8); editor.select(1);
     const history = editor._undo.length, saved = clone(editor.report);
@@ -254,6 +257,7 @@ test('authored channels write one pose key at the remote tick without touching n
   near(editor.evaluatedFrame.objects.find(o => o.unique_id === 1).root_x, 272);
 });
 
+// The editor alone: the test reads the mode of the editor's own motion-path gesture, which the session's gesture does not have.
 test('layer-sheet path edits publish one key at the remote tick', () => {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [0, 10, 20].map(x => createFrame([createObject(figure, 1, x, 200), createObject(figure, 2, 100 + x, 200)], 10));
@@ -289,7 +293,7 @@ test('joined children follow their parent through a remote root edit', () => {
     createFrame([createObject(figure, 1, 300, 200), make()], 10),
     createFrame([createObject(figure, 1, 500, 200), make()], 10),
   ];
-  const editor = new Editor({demo: false}).load(report);
+  const editor = engineEditor({demo: false}, report);
   editor.seek(0); editor.select(1);
   assert.ok(editor.beginMotionPathEdit(rootTarget, 10));
   editor.updateMotionPathEdit({x: 250, y: 260});
@@ -330,7 +334,7 @@ function joinedFixture() {
     createFrame([createObject(figure, 1, 300, 200), make()], 10),
     createFrame([createObject(figure, 1, 500, 200), make()], 10),
   ];
-  return new Editor({demo: false}).load(report);
+  return engineEditor({demo: false}, report);
 }
 
 test('a joined figure\'s origin trail edits the parent attach joint, not the component root', () => {
@@ -362,7 +366,7 @@ test('multi-target overlay lists every selected figure', () => {
     createFrame([createObject(figure, 1, 300, 200), createObject(figure, 2, 200, 300)], 10),
     createFrame([createObject(figure, 1, 500, 200), createObject(figure, 2, 400, 300)], 10),
   ];
-  const editor = new Editor({demo: false}).load(report);
+  const editor = engineEditor({demo: false}, report);
   editor.selectMany([1, 2]);
   const targets = motionPathTargets(editor);
   assert.deepEqual(targets.map(t => t.uid).sort(), [1, 2]);
@@ -400,7 +404,7 @@ function swingFixture() {
     object.angles = object.angles.map((a, j) => j ? a + Math.sin(k + j) * .6 : a);
     return object;
   }), 6));
-  return new Editor({demo: false}).load(report);
+  return engineEditor({demo: false}, report);
 }
 
 test('limb-tip targets follow every branch end and the origin of each figure', async () => {

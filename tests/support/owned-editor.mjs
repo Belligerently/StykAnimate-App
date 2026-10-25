@@ -1,15 +1,26 @@
 // An editor the engine owns, for tests (D19): its document opened on the engine, which also holds the session that edits it.
 import assert from 'node:assert/strict';
+import {afterEach} from 'node:test';
 import {Editor} from '../../src/editor.mjs';
 import {installEngineOwner} from '../../src/engine/engine-owner.mjs';
 
-/** The editor on `document` with the engine owning it (the engine must be registered: `tests/support/register-engine.mjs`).
+/** The owners made since the test began: the test's end releases them. */
+const owners = new Set();
+afterEach(() => {
+  for (const owner of owners) owner.release();
+  owners.clear();
+});
+
+/** The editor on `document` (a new one when none is given) with the engine owning it (the engine must be registered:
+ * `tests/support/register-engine.mjs`). The owner is released when the test ends.
  * `verify`: the session's document is compared with the editor's after every call.
  * `recorded`: the identities a call draws come from the test (`setDraws`), else from the editor's own random ones. */
 export function ownedEditorSync(options, document, {verify = true, recorded = true} = {}) {
-  const editor = new Editor(options).load(structuredClone(document));
+  const editor = new Editor(options);
+  if (document) editor.load(structuredClone(document));
   let pool = [];
   const owner = installEngineOwner(editor, {verify, draws: recorded ? () => pool : null});
+  owners.add(owner);
   // The session exists from the moment the document opens: the app starts it as it loads the document.
   assert.ok(owner.ready(), 'the document has its session');
   return {editor, owner, setDraws: draws => { pool = draws; }};
@@ -35,3 +46,6 @@ export function plainEditorWithDrawings(options, document, names = [undefined]) 
   editor.selectSheetLayer(layers.at(-1).id);
   return {editor, layers};
 }
+
+/** The editor the engine owns, for the tests of what an editor does with its calls: the identities a call draws are the engine's own. */
+export const engineEditor = (options, document, settings) => ownedEditorSync(options, document, {recorded: false, ...settings}).editor;

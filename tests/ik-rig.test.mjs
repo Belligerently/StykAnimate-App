@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {solveObjectIK} from '../src/ik.mjs';
 import {rigIKContext} from '../src/ik-rig.mjs';
@@ -31,7 +31,7 @@ test('native IK reaches projected two-bone targets through different, negative a
  }
 });
 test('projected IK uses ordinary controls, stops at a derived anchor, and invalidates cached rig settings',()=>{
- const {doc,a,b,driver}=fixture(.7,.8),e=new Editor({demo:false});e.load(doc);e.select(1,b-1);
+ const {doc,a,b,driver}=fixture(.7,.8),e=engineEditor({demo:false}, doc);e.select(1,b-1);
  assert.equal(e.getIKSettings().maxLength,2);e.setNodeIK({enabled:true});const before=e.serialize();
  const p=e.geometry.objects.get(0).joints.get(b);e.poseIKTarget(p.x-10,p.y+8);const target=e.geometry.objects.get(0).joints.get(b);near(target.x,p.x-10);near(target.y,p.y+8);
  e.undo();assert.deepEqual(e.serialize(),before);
@@ -46,7 +46,7 @@ test('joined projected rigs preserve source scale, local constraints and pinned 
   const child=doc.keyframes[0].objects[0];child.scale=scale;child.join={target_object_slot:1,target_unique_id:2,target_handle_id:1};
   doc.keyframes[0].objects.push(createObject(parent,2,180,220));
   doc.keyframes[0]=createFrame(doc.keyframes[0].objects);
-  const e=new Editor({demo:false});e.load(doc);e.select(1,b-1);const p=e.geometry.objects.get(0).joints.get(b);
+  const e=engineEditor({demo:false}, doc);e.select(1,b-1);const p=e.geometry.objects.get(0).joints.get(b);
   e.setNodeIK({enabled:true,chainLength:2});let at=e.geometry.objects.get(0).joints.get(b);near(at.x,p.x);near(at.y,p.y);
   e.poseIKTarget(p.x-5,p.y+8);at=e.geometry.objects.get(0).joints.get(b);near(at.x,p.x-5);near(at.y,p.y+8);
   e.select(2,-1);e.moveSelection(3,-2);at=e.geometry.objects.get(0).joints.get(b);near(at.x,p.x-5);near(at.y,p.y+8);

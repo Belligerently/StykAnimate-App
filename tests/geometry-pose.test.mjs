@@ -59,6 +59,7 @@ test('pose reuse leaves published geometry immutable',()=>{
  assert.deepEqual(previous.objects.get(0).segments.map(s=>s.end),snapshot);
 });
 
+// The editor alone: it compares the editor's geometry with the JavaScript geometry builder, which goes with the JavaScript evaluation.
 test('editor gestures keep native undo, cancellation and rest-length posing with reused skin',()=>{
  const{doc,left}=fixture(),e=new Editor({demo:false});e.load(doc);e.select(1,left.id-1);const original=e.serialize();
  e.beginDrag('Turn');for(const turn of [.2,.7,-.3]){e.setSpatialPose({turn});exact(e.report,e.evaluatedFrame,e.geometry);}e.cancelDrag();assert.deepEqual(e.serialize(),original);

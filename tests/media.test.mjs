@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createImageFigure, createImageBackground, applySpriteColorKey, mediaImageFormat, preserveMediaBackground} from '../src/media-authoring.mjs';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 
 const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=';
 
 test('sprite factory enters the actual editor, renders as media, and survives undo/redo/JSON', () => {
-  const editor = new Editor({demo: false});
+  const editor = engineEditor({demo: false});
   editor.importFigure(createImageFigure({dataUrl, width: 1, height: 1, name: 'Pixel.png'}));
   const uid = editor.selectedUid, figure = editor.figure;
   assert.equal(figure.name, 'Pixel'); assert.equal(figure.image_assets[0].data_url, dataUrl);

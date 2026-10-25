@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
-import {Editor} from '../src/editor.mjs';
-import {plainEditorWithDrawings} from './support/owned-editor.mjs';
+import {engineEditor, plainEditorWithDrawings} from './support/owned-editor.mjs';
 import english from '../src/locales/en.mjs';
 import inspectorStrings from '../src/locales/en-inspector.mjs';
 import {lintCss} from '../scripts/check-css.mjs';
@@ -280,7 +279,7 @@ test('closing a section while its rule holds also forgets that the person had op
 });
 
 test('the sections are the inspector body; the head (scope slot, quick actions) and the foot render for their own hosts', () => {
-  const editor = new Editor();
+  const editor = engineEditor();
   editor.select(1);
   const descriptor = {...figureInspector(editor), scope: {label: 'Editing frames 22–28', stop: {command: 'toggle-range-edit', tip: 'Edit only this frame'}}};
   const body = kitHTML(descriptor, {ctx: {joined: false}, memory: new SectionMemory()});
@@ -359,7 +358,7 @@ test('buttons, fields and swatches use the one tooltip, never a native title (un
   assert.match(renderButton({action: 'add', icon: 'plus', label: 'Add', tip: 'Add a key'}, {icon}), /aria-label="Add" data-tooltip="Add a key">/);
   assert.match(renderButton({action: 'join-figure', icon: 'link', label: 'Join figure', legacyTitle: true}, {icon}), /aria-label="Join figure" title="Join figure">/);
   assert.match(renderRow({kind: 'swatches', label: 'Recent', items: [{value: '#ffffff', label: 'Use #FFFFFF', tip: '#FFFFFF'}]}), /aria-label="Use #FFFFFF" data-tooltip="#FFFFFF" tabindex="0"/);
-  const every = kitHTML(figureInspector((() => { const editor = new Editor(); editor.select(1); return editor; })()), {}, {head: true, foot: true}) +
+  const every = kitHTML(figureInspector((() => { const editor = engineEditor(); editor.select(1); return editor; })()), {}, {head: true, foot: true}) +
     renderSection(ikSection({enabled: true, pinned: false, allowStretch: true, bendDirection: 0, chainLength: 1, maxLength: 2, target: {rotation: 0}}), {icon});
   assertNoTitles(every, ['join-figure']);
 });

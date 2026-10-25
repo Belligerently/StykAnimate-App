@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument, needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
@@ -11,7 +12,7 @@ function fixture() {
     ...createFrame([createObject(document.figure_types[0], 1, 40 + index * 30, 80)], duration),
     opaque: {index, exact: '01'},
   }));
-  return new Editor({demo: false, layerTimeline: true}).load(document);
+  return engineEditor({demo: false, layerTimeline: true}, document);
 }
 function sample(report, tick) {
   const rows = timeline(report); let index = 0;

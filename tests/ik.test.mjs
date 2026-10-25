@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {solveIKPoints, ikChain, validateIK} from '../src/ik.mjs';
@@ -10,7 +11,8 @@ import {getPivotHandles} from '../src/canvas-interactions.mjs';
 
 const near = (a, b, tolerance = 1e-4) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 const point = (a, b, tolerance) => { near(a.x, b.x, tolerance); near(a.y, b.y, tolerance); };
-export function fixture(options = {}) {
+/** `edit(document)` changes the document before the engine opens it. */
+export function fixture(options = {}, edit = null) {
   const document = emptyDocument(), figure = document.figure_types[0], base = figure.segments[0];
   figure.segments = [
     {...base, segment_id: 11, parent_id: 0, length: 90, angle_rad: .8, aux_code: 0, is_static: false},
@@ -22,7 +24,8 @@ export function fixture(options = {}) {
   ];
   figure.segment_count = figure.segments.length;
   document.keyframes = [createFrame([createObject(figure, 1, 300, 150)], 8)];
-  const editor = new Editor({demo: false, ...options}).load(document); editor.select(1, 1); return editor;
+  edit?.(document);
+  const editor = engineEditor({demo: false, ...options}, document); editor.select(1, 1); return editor;
 }
 const g = e => e.geometry.objects.get(0);
 const angleNear = (a,b) => near(Math.atan2(Math.sin(a-b),Math.cos(a-b)),0);
@@ -419,7 +422,7 @@ test('rig splitting preserves chain base and deleting an IK node removes its con
 });
 
 test('curved links, arbitrary segment order, and off-chain branches preserve length and local articulation', () => {
-  const e = fixture(); e.figure.segments[0].bend_rad = .3; e.figure.segments[1].bend_rad = -.2; e._invalidate();
+  const e = fixture({}, document => { document.figure_types[0].segments[0].bend_rad = .3; document.figure_types[0].segments[1].bend_rad = -.2; });
   e.setNodeIK({enabled: true}); e.poseJoint(360, 265); point(g(e).joints.get(22), {x: 360, y: 265});
   near(g(e).segments[0].length, 90); near(g(e).segments[0].bend, .3); angleNear(g(e).segments[2].angle,0);
   const report = e.serialize(), object = report.keyframes[0].objects[0], figure = report.figure_types[0];

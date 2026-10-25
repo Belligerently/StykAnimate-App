@@ -35,7 +35,8 @@ const definitionsOf = new WeakMap();
 function definitions(report) {
   const figures = report.figure_types ?? [];
   let known = definitionsOf.get(figures);
-  if (!known) { known = new Map(figures.map(figure => [Number(figure.figure_type_id), figure])); definitionsOf.set(figures, known); }
+  // A call the editor runs adds definitions to the array in place.
+  if (known?.size !== figures.length) { known = new Map(figures.map(figure => [Number(figure.figure_type_id), figure])); definitionsOf.set(figures, known); }
   return known;
 }
 

@@ -636,6 +636,12 @@ impl Editor {
                 }
             }
             let at: Vec<Value> = here.into_iter().map(Value::object).collect();
+            // The pasted poses are ones the document may hold (`validateObjectChanges`): a scale below zero is refused.
+            for object in &at {
+                if let Some((_, figure, _)) = types.iter().find(|(_, figure, _)| figure.get("figure_type_id") == object.get("figure_type_id")) {
+                    crate::load::validate_object_pose(&self.report, object, figure)?;
+                }
+            }
             let mut frame = insert(target, &at, &order)?;
             // Copies of a figure with an animation origin find their pivot again where they now stand.
             self.synchronize_origin_frame_with(&mut frame, &objects_of(target), true, &added)?;

@@ -313,3 +313,22 @@ fn native_saved_transform_channels_match_every_editor_step() {
     total += outcome.steps;
     println!("native transform channels: {total} exact steps");
 }
+
+#[test]
+fn an_edit_on_a_property_the_native_channels_do_not_hold_is_refused_before_it_begins() {
+    let target = json(r#"{"kind":"figure","uid":1}"#);
+    let mut editor = Editor::new(document("support-saved"), Options::default());
+    editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();
+    let before = (editor.report_json(), editor.state_value());
+    for property in ["zIndex", "opacity"] {
+        assert!(
+            matches!(editor.call("beginAnimationEdit", &[target.clone(), Value::str(property)]), Err(EditError::Unported(_))),
+            "{property}"
+        );
+        assert_eq!((editor.report_json(), editor.state_value()), before, "{property} left an edit open");
+    }
+    // The properties it holds begin, and end, as before.
+    editor.call("beginAnimationEdit", &[target.clone(), Value::str("x")]).unwrap();
+    editor.call("previewAnimationEdit", &[Value::Num(341.25)]).unwrap();
+    editor.call("cancelAnimationEdit", &[]).unwrap();
+}

@@ -254,3 +254,17 @@ fn copied_drawing_keys_show_cels_of_their_own() {
     assert_eq!(cels(&session).len(), 2);
     assert!(forks_of(&moved).is_empty());
 }
+
+#[test]
+fn an_imported_figure_with_a_pose_the_document_cannot_hold_is_refused() {
+    let mut session = session("sheet-layers");
+    let before = styk_doc::json::to_string(session.report());
+    let mut file = read("tests/edit/branch-thickness-origin-sheet.document.json");
+    let first = file.make_obj().unwrap().get_mut("keyframes").unwrap().make_arr().unwrap()[0].make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap()[0].make_obj().unwrap();
+    first.set("scale", Value::Num(-1.0));
+    let answer = json(&session.call("importFigure", &styk_doc::json::to_string(&Value::array(vec![file])), "null"));
+    assert_eq!(answer.get("status").and_then(Value::as_str), Some("error"), "{answer:?}");
+    assert_eq!(answer.get("error").and_then(Value::as_str), Some("errors.model.objectScaleCannotBeNegative"));
+    assert_eq!(styk_doc::json::to_string(session.report()), before, "a refused import leaves the document alone");
+    assert_eq!(entries(&mut session), 0);
+}

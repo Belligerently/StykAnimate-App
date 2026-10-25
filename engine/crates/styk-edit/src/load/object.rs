@@ -354,7 +354,7 @@ fn segment_key(key: &str) -> bool {
 }
 
 /// `validateObjectPose(report, object, figure, origin)`.
-pub(super) fn object_pose(report: &Value, object: &Value, figure: &Value) -> Result<(), EditError> {
+pub(crate) fn object_pose(report: &Value, object: &Value, figure: &Value) -> Result<(), EditError> {
     if truthy(object.get("_sticknodesShapes")) || truthy(object.get("_sticknodesSprite")) {
         sticknodes_object(object, figure)?;
     }
