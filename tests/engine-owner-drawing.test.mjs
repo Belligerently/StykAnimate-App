@@ -15,6 +15,10 @@ import {TILE_BYTES} from '../src/drawing-tiles.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
 import {plainEditorWithDrawings} from './support/owned-editor.mjs';
+import {normalized} from './support/owned-vs-plain.mjs';
+import {canonical, ownerReferences} from './support/owner-references.mjs';
+
+const refs = ownerReferences(import.meta.url);
 
 /** A drawing history whose spill files live in memory (`reads`/`writes` gate and fail them). */
 const memoryDisk = () => {
@@ -95,20 +99,25 @@ test('a stroke\'s pixels never become JSON for the session', {skip: !engineBuilt
   } finally { await dispose(); }
 });
 
-test('strokes, an erase and a fill undo and redo exactly as without the owner', {skip: !engineBuilt}, async () => {
+refs.test('strokes, an erase and a fill undo and redo exactly as without the owner', {skip: !engineBuilt}, async take => {
   const owned = await painting({historyOptions: {minRecordBytes: Infinity}});
-  const {editor: plain} = plainEditorWithDrawings({demo: false, layerTimeline: true, propertyChannels: true});
-  const history = new DrawingHistory({disk: memoryDisk(), minRecordBytes: Infinity});
-  const resources = new DrawingResources(plain.report, {history, worker: stub});
-  resources.busy = true;
+  // The editor without the owner (its references): made the first time one of them is recorded.
+  let alone = null;
+  const plainSide = async () => {
+    if (alone) return alone;
+    const {editor} = plainEditorWithDrawings({demo: false, layerTimeline: true, propertyChannels: true});
+    const history = new DrawingHistory({disk: memoryDisk(), minRecordBytes: Infinity});
+    const resources = new DrawingResources(editor.report, {history, worker: stub});
+    resources.busy = true;
+    const target = editor.prepareDrawingCel();
+    alone = {editor, resources, history, target, surface: await resources.surface(target.figure)};
+    editor.markSaved();
+    alone.events = watch(editor);
+    return alone;
+  };
   try {
-    const plainTarget = plain.prepareDrawingCel();
-    const sides = [
-      {editor: owned.editor, resources: owned.resources, target: owned.target, surface: owned.surface},
-      {editor: plain, resources, target: plainTarget, surface: await resources.surface(plainTarget.figure)},
-    ];
-    for (const {editor} of sides) editor.markSaved();
-    const events = sides.map(({editor}) => watch(editor));
+    owned.editor.markSaved();
+    const events = watch(owned.editor);
     // The same three commits on both: a brush stroke over two tiles, a fill over one of them, an erase of the other.
     const commits = [
       ['Brush stroke', () => [tile(0, 0, 10), tile(1, 0, 20)]],
@@ -123,23 +132,33 @@ test('strokes, an erase and a fill undo and redo exactly as without the owner', 
         tiles: cel?.store && [...cel.store].map(t => [t.tx, t.ty, [...t.pixels.subarray(0, 4)]]), bounds: d?.bounds ?? null, cels: editor.report.figure_types.filter(drawingMetadata).length};
     };
     for (const [index, [label, make]] of commits.entries()) {
-      for (const side of sides) side.editor.commitDrawingPixels(index ? side.editor.drawingTarget() : side.target, make(side.surface.store), label);
-      assert.deepEqual(snapshot(sides[0]), snapshot(sides[1]), `after ${label}`);
+      owned.editor.commitDrawingPixels(index ? owned.editor.drawingTarget() : owned.target, make(owned.surface.store), label);
+      const wanted = await take(`after ${label}`, async () => {
+        const side = await plainSide();
+        side.editor.commitDrawingPixels(index ? side.editor.drawingTarget() : side.target, make(side.surface.store), label);
+        return snapshot(side);
+      });
+      assert.deepEqual(canonical(snapshot(owned)), wanted, `after ${label}`);
     }
-    assert.equal(sides[0].editor.undoLabel, 'Erase stroke');
+    assert.equal(owned.editor.undoLabel, 'Erase stroke');
     const walk = async (move, steps) => {
       for (let step = 0; step < steps; step++) {
-        assert.deepEqual(await Promise.all(sides.map(({editor}) => editor[move]())), [true, true]);
-        assert.deepEqual(snapshot(sides[0]), snapshot(sides[1]), `${move} ${step + 1}`);
+        const done = await owned.editor[move]();
+        const wanted = await take(`${move} ${step + 1}`, async () => {
+          const side = await plainSide();
+          return {done: await side.editor[move](), snapshot: snapshot(side)};
+        });
+        assert.deepEqual([done, wanted.done], [true, true]);
+        assert.deepEqual(canonical(snapshot(owned)), wanted.snapshot, `${move} ${step + 1}`);
       }
     };
     await walk('undo', 3);
-    for (const {editor} of sides) assert.equal(editor.dirty, false, 'undoing every stroke returns to the saved revision');
+    assert.equal(owned.editor.dirty, false, 'undoing every stroke returns to the saved revision');
     await walk('redo', 3);
     await walk('undo', 1);
-    assert.deepEqual(events[0], events[1], 'the same drawing events reach the interface');
-    assert.ok(events[0].some(([kind, label]) => kind === 'history' && label === 'Erase stroke'));
-  } finally { owned.owner.release(); owned.resources.dispose(); resources.dispose(); await owned.history.dispose(); await history.dispose(); }
+    assert.deepEqual(canonical(events), await take('events', async () => (await plainSide()).events), 'the same drawing events reach the interface');
+    assert.ok(events.some(([kind, label]) => kind === 'history' && label === 'Erase stroke'));
+  } finally { owned.owner.release(); owned.resources.dispose(); await owned.history.dispose(); alone?.resources.dispose(); await alone?.history.dispose(); }
 });
 
 test('a created cel and its first stroke undo and redo as one entry, the pixels kept for the redo', {skip: !engineBuilt}, async () => {
@@ -278,18 +297,23 @@ test('history that leaves the limit lets go of its records and their disk files'
   } finally { await dispose(); }
 });
 
-test('the first stroke on a v1 cel migrates it: the new cel, its pixels and the stroke are one entry', {skip: !engineBuilt}, async () => {
+refs.test('the first stroke on a v1 cel migrates it: the new cel, its pixels and the stroke are one entry', {skip: !engineBuilt}, async take => {
   await nodeEngine();
   await loadDrawingEngine();
   // A document whose drawing layer holds a v1 cel (a picture the size of its crop).
-  const {editor: made} = plainEditorWithDrawings({demo: false, layerTimeline: true, propertyChannels: true});
-  const madeResources = new DrawingResources(made.report, {worker: stub});
-  madeResources.busy = true;
-  const madeTarget = made.prepareDrawingCel();
-  await madeResources.surface(madeTarget.figure);
-  made.commitDrawingPixels(madeTarget, [tile(0, 0, 1)]);
-  const document = structuredClone(made.report);
-  madeResources.dispose();
+  // (made by an editor without the owner, once: its reference)
+  const document = JSON.parse(await take('document', async () => {
+    const {editor: made} = plainEditorWithDrawings({demo: false, layerTimeline: true, propertyChannels: true});
+    const madeResources = new DrawingResources(made.report, {worker: stub});
+    madeResources.busy = true;
+    const madeTarget = made.prepareDrawingCel();
+    await madeResources.surface(madeTarget.figure);
+    made.commitDrawingPixels(madeTarget, [tile(0, 0, 1)]);
+    const text = JSON.stringify(made.report);
+    madeResources.dispose();
+    // The identity the editor drew at random is numbered, so that recording again gives the same bytes.
+    return normalized(text);
+  }));
   const legacy = document.figure_types.find(drawingMetadata), asset = legacy.image_assets[0];
   asset.data_url = await encodeDrawingPNG(new Uint8ClampedArray(96 * 64 * 4).fill(200), 96, 64);
   Object.assign(asset, {width: 96, height: 64, display_width: 96, display_height: 64});
