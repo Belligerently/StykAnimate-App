@@ -143,8 +143,8 @@ for (const name of documents) {
     }, {options: sheet, expectEntries: 2});
   });
 
-  test(`${name}: undo and redo inside a movieclip are the clip's, and leaving it keeps what is done`, async () => {
-    const {owned} = await bothWays(recordedDocument(name), async (editor, mark) => {
+  test(`${name}: undo and redo inside a movieclip are the clip's, and leaving it keeps what is done`, {skip: !engineBuilt}, async () => {
+    await bothWays(recordedDocument(name), async (editor, mark) => {
       enter(editor);
       editor.moveSelection(25, 10); mark('moved');
       editor.moveSelection(-5, 3); mark('moved again');
