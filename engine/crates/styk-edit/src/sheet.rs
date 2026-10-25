@@ -1309,7 +1309,6 @@ impl Editor {
             if let CommandKind::LayerSheet { sources, .. } = &command.kind {
                 retained.extend(sources.iter().map(|(id, _)| id.clone()));
             }
-            Editor::external_retained(command, &mut retained);
         }
         if self.generated_sources.iter().all(|id| retained.contains(id)) {
             return;

@@ -33,7 +33,7 @@ const missing = () => messageError(new Error(''), 'errors.editorDrawing.theDrawi
  * @param {object} editor the app's Editor, owned by the engine
  * @param {{
  *   live(): object|null,
- *   call(name: string, original: Function, args: Array, step: {adopted(answer: object): void}): any,
+ *   call(name: string, args: Array, step: {adopted(answer: object): void}): any,
  *   adjust(record: number, delta: number): void,
  *   retract(record: number): void,
  *   synced(figures: object[]): void,
@@ -76,9 +76,8 @@ export function createOwnedDrawings(editor, host) {
   };
 
   /** `commitDrawingPixels(target, tiles, label, prepared, {resident})`. */
-  function commitDrawingPixels(original, args) {
+  function commitDrawingPixels(args) {
     const [target, tiles, label = 'Brush stroke', prepared, {resident = false} = {}] = args;
-    if (!host.live()) return original.apply(editor, args);
     if (!tiles.length) return false;
     const store = editor.drawingResources, history = store.pixelHistory();
     const {celId, bounds: beforeBounds = null} = drawingMetadata(target.figure);
@@ -89,7 +88,7 @@ export function createOwnedDrawings(editor, host) {
     const record = history.nextId(), created = Boolean(target.created), migrated = Boolean(target.migratedFrom);
     const exposure = {id: target.id, tick: target.key.tick, keyId: target.key.id, celId, selectable: Boolean(editor.getLayer(target.id)) && !editor.isLayerFocusLocked(target.id),
       ...(created || migrated ? {figure: target.figure, object: target.object} : {}), ...(created ? {created} : {}), ...(migrated ? {migratedFrom: target.migratedFrom} : {})};
-    return host.call('commitDrawingPixels', original, [exposure, {record, bytes: history.weight(command)}, label], {
+    return host.call('commitDrawingPixels', [exposure, {record, bytes: history.weight(command)}, label], {
       adopted() {
         if (migrated) store.retarget(target.migratedFrom, target.figure);
         // Committing ends the gesture's exclusive hold on the store: publication barriers triggered by this commit's own broadcast must see the tiles.
@@ -114,13 +113,12 @@ export function createOwnedDrawings(editor, host) {
   }
 
   /** `resampleDrawing(target, {pixelsPerUnit, tiles, bounds, owned})`: the session makes the cel of the new resolution; the store gets its tiles. */
-  function resampleDrawing(original, args) {
+  function resampleDrawing(args) {
     const [target, {pixelsPerUnit, tiles, bounds, owned = false}] = args;
-    if (!host.live()) return original.apply(editor, args);
     const store = editor.drawingResources;
     // The new cel's tiles must fit before the session records it.
     store.reserve((tiles?.length ?? 0) * TILE_BYTES);
-    host.call('resampleDrawing', original, [{id: target.id, keyId: target.key.id, celId: drawingMetadata(target.figure).celId}, {pixelsPerUnit, bounds: bounds ?? null}], {
+    host.call('resampleDrawing', [{id: target.id, keyId: target.key.id, celId: drawingMetadata(target.figure).celId}, {pixelsPerUnit, bounds: bounds ?? null}], {
       adopted(answer) {
         // Install before the events: their drawing barrier encodes the resampled tiles instead of serializing an empty cel.
         const figure = figureOf(answer.result);

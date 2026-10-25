@@ -7,7 +7,7 @@ import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {emptyDocument} from '../src/demo.mjs';
 import {roundTrip} from './support/codec.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 const clone = value => structuredClone(value);
 const near = (a, b, epsilon = 0.001) => assert.ok(Math.abs(a - b) <= epsilon, `${a} != ${b}`);
@@ -15,7 +15,7 @@ const pointNear = (a, b) => { near(a.x, b.x); near(a.y, b.y); };
 /** The document is written before it opens (the engine owns the document an editor has opened): `change(document)` writes more of it;
  * `plain` leaves the editor to itself. */
 function fixture({change, plain = false} = {}) {
-  const base = ownedEditorFor({demo: false}); base.addFigure(); const root = base.selectedUid;
+  const base = plainEditorFor({demo: false}); base.addFigure(); const root = base.selectedUid;
   const child = base.duplicateFigure().unique_id; base.joinTo(root, 4);
   const grandchild = base.duplicateFigure().unique_id; base.joinTo(child, 2);
   base.select(root); base.duplicateFrame(); base.moveSelection(45, 20);
@@ -24,7 +24,7 @@ function fixture({change, plain = false} = {}) {
   document.keyframes[0].camera = {is_default: false, x: 40, y: -20, scale: 0.5, angle_rad: 0.3};
   document.keyframes[1].camera = {is_default: false, x: 100, y: 30, scale: 2, angle_rad: -0.5};
   change?.(document);
-  const editor = plain ? new Editor({demo: false}).load(document) : ownedEditorFor({demo: false}, document);
+  const editor = plain ? new Editor({demo: false}).load(document) : plainEditorFor({demo: false}, document);
   editor.select(child, 7);
   return {editor, root, child, grandchild};
 }

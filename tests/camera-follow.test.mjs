@@ -112,7 +112,7 @@ test('follow drives parallax without baking, unlike shake', () => {
 refs.test('baking follow reproduces the live camera and keeps it as travel', take => {
   // Baking is a command of the engine session: the camera it keys on every frame shows what the follow and the shake showed.
   // The document is the plain editor's (its reference): the fixture's figures walking, with a linear easing set on the layer sheet.
-  const document = JSON.parse(take('fixture', () => JSON.stringify(fixture().report)));
+  const document = JSON.parse(take('fixture'));
   const editor = ownedEditorSync({demo: false, layerTimeline: true, propertyChannels: true}, document, {recorded: false}).editor;
   editor.sheetSetEasing([editor.layerForUid(1)], 0, 60, {interpolation: 'linear'});
   follow(editor, undefined, {lag: 4});

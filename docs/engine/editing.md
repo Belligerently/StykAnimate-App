@@ -229,7 +229,7 @@ Native-timeline movieclip commands (create, empty, place, split, break apart, pl
 restart, unique, next-keyframe extension, library insertion) also run in the owner's
 interface-thread Session (D19), through the same `Editor::call` implementation: the
 editor ran them synchronously on that thread, the Session takes no lock, and a refused
-call became an external history entry instead. The Session's earlier "requires worker
+call is refused to the interface. The Session's earlier "requires worker
 preparation" refusal is gone: 67 recorded tape calls were refused, now none. Documents
 with IK controllers or a saved working frame still refuse atomically before any change.
 `tests/movieclip_session_integration.rs` replays 56 native tapes through the Session.
@@ -584,8 +584,11 @@ Decision [D19](decisions/0019-engine-owns-the-document.md). One `styk-edit` sess
 open document holds the document and its history; `src/engine/engine-owner.mjs` installs
 it on the editor, for every document.
 
-- **Calls.** Every public editor method except queries, view calls (selecting, seeking)
-  and lifecycle runs in the session. Its answer (`patch: true`) carries the document patch
+- **Calls.** The editor's calls that change the document, its history or a gesture run in the session. The list of them
+  (`SESSION_COMMANDS`, `src/engine/engine-commands.mjs`) is held to the session's own dispatch by
+  `tests/engine-owner-command-list.test.mjs`, and the owner installs each on the editor itself, so the editor's body of a
+  call is never run (a body deleted later changes nothing here). The calls that only move the view (selecting, seeking),
+  the queries and the lifecycle stay the editor's. Its answer (`patch: true`) carries the document patch
   (`styk_edit::patch`, copy-on-write identity diff), the state, the gesture and its draft,
   the retained frame and the change events. The owner applies the patch to `editor.report`
   copy-on-write (`src/engine/engine-patch.mjs`), refreshes what the editor derives from the
@@ -593,9 +596,8 @@ it on the editor, for every document.
   gesture into `_drag`/`_authoredPoseEdit` and re-emits the events.
 - **Reads.** The editor's getters for the frame on show (`evaluatedFrame`, `geometry`, `timeline`, `totalTicks`)
   and its reads `animationValue`, `vfxEffects`, `segmentAnimationTarget` and `getIKSettings` ask the session
-  (`src/engine/engine-shown.mjs`; the owner flushes the editor's pending edits first and gives the playhead, or the
-  whole view for the named reads). They are the editor's own while it runs a call of its own, and for a document the
-  session answers `unported: …` for. A movieclip being edited is a document like any other (**Movieclips**, below). A detached owner (the rig test's own
+  (`src/engine/engine-shown.mjs`; the owner gives the playhead, or the whole view for the named reads). They are the
+  editor's own for a document the session answers `unported: …` for. A movieclip being edited is a document like any other (**Movieclips**, below). A detached owner (the rig test's own
   editor) has a session that leaves the project the engine's document.
 - **Property and effect-clip edits.** `beginAnimationEdit`…`cancelAnimationEdit` and
   `beginVfxClipEdit`…`cancelVfxClipEdit` run in the session. Every answer carries `vfxEdit`
@@ -706,23 +708,34 @@ it on the editor, for every document.
   before editing it`, `{label} must be finite`), their JSON (`errorParams`; `invalid_with` in Rust: a text,
   `{"@label": text}` for a field label, `{"@motionParameter": …}`, `{"@vfxParameter": …}`). The owner raises
   the editor's own error from them. A message that needs a value the engine does not name yet says that a value is
-  not valid (`errors.engineOwner.invalidValue`). A call the session refuses (`Unported`: a document it does
-  not edit) raises `errors.engineOwner.notSupported` and never runs in the editor.
-- **What still runs in the editor.** A call the session has no command for at all (it answers `unported` with the call's own
-  name) runs in the JavaScript editor on the read view (the keyframe commands of a native timeline, inbetweens,
-  combining figures with Stick Nodes shapes); `report.editor` counts them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
-  label, weight and the pose sources they keep alive, and on undo/redo answers `external
-  history entry <id>`; the editor applies its own command and
-  the changed records are written back. A session gesture or edit still open when such a call is made is committed first.
-  Edits other modules make in place (the camera-motion and parallax previews, the inspector's native property
-  tokens) or through `editor._record` are written back the same way before the next call. An entry the editor records is always written
-  back, even when the editor's own byte limit retired older entries as it landed (a movieclip's whole document in a
-  large project outweighs it): the session retires by its own weights and the editor's stacks follow it.
+  not valid (`errors.engineOwner.invalidValue`).
+- **Refusals.** A call the session refuses for this document or selection (`Unported`), or has no command for (it answers
+  `unported` with the call's own name), raises `errors.engineOwner.notSupported` with the call's name and the reason on
+  `error.reason`, and changes nothing: the editor never runs it, and `report.refused` counts it. The keyframe commands of a
+  native timeline (`REFUSED_CALLS`: `addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`,
+  `insertInbetweenFrames` and its asynchronous form) are refused by the owner itself. The app gives every document a layer
+  sheet, so none of these is reached from it ("Refusals" below lists what is refused on a sheet). Nothing but the session's
+  answers writes to the editor's read view: code that changed a record in place would leave it apart from the session's
+  document, which the tests' `verify` mode (the session's document compared with the read view after every call) reports.
+- **Arguments.** JSON drops an object member set to `undefined` and turns `NaN` into `null`, so the owner encodes both
+  (`sessionPayload`, `styk-edit/src/args.rs`): a member that is `undefined` is `{"@undefined": true}`, a number that is not
+  finite `{"@number": "NaN"}`, and the call's view says `encoded: true`. The session decodes the numbers wherever they sit, so the
+  editor's own finite checks refuse them with the editor's own message, and drops the `undefined` members for every command but
+  `setRigBehavior`, where a member of a merged patch set to `undefined` removes the old one (the rig inspector takes a path's
+  pitch away that way).
+- **Bookkeeping.** Besides the calls, the owner tells the session what is not an edit (`styk-edit/src/owner.rs`): the limits of
+  history and the numbering of revisions it starts from, `@markSaved`, `@touch` (the project marked changed outside a
+  command: a new revision, no entry), `@publishCel(celId, definition)` (the encoded tiles, bounds and revision the interface's
+  drawing store attaches to a cel once it has published its pixels: a derived publication, the revision does not move) and the
+  weights of drawing commits (`@drawingBytes`, `@retractDrawing`).
+- **Previews.** The sliders of a camera-motion clip and of a layer's parallax show their value while they move
+  (`previewCameraMotion(id, patch)`, `previewLayerParallax(id, patch)`, `styk-edit/src/preview.rs`): the field is set in the
+  session's document without an entry, and put back by `cancelDocumentPreview()` or by the next call that is not a preview or a
+  view call, so the `setCameraMotion` or `setLayerParallax` that commits records the field as it was.
 - **History.** Undo/redo are the session's. Undo ends a gesture that is open first; redo does too for a motion-path edit,
   a rig edit or a camera drag (the session does not redo under them) and leaves any other gesture open under the entry
   it applies, as the editor does. The editor's stacks
-  mirror the session's (`depths`): its own commands for external entries, placeholders for native ones, so code
-  that reads or amends the entry on top keeps working. An entry that names pixel commits (`drawingReplay`) waits for
+  mirror the session's (`depths`) with placeholders, so code that reads the depth of the stacks keeps working. An entry that names pixel commits (`drawingReplay`) waits for
   the drawing store before the session's undo or redo runs (loading cold records, preparing large replacements) and
   applies its tiles with it; a replay that fails or is cancelled changes neither (`docs/engine/drawing.md`, "History").
 - **Start.** The session starts when the document opens, on the tree and typed views the engine
@@ -734,42 +747,43 @@ it on the editor, for every document.
 - **Legacy pose caches.** Pivot imports carry `runtime_segments` on every pose; the range
   operations materialize lengths and bends from it before dropping it, as the editor does.
 
-Checks: `tests/engine-owner.test.mjs` replays every recorded tape (503 of the 507 that the editor ran
-on its own views; the four with `@native` token steps are left out) on an owned editor, as the app has it (the document
-opened on the engine), against `engine/tests/edit/*.reference.json`, and with the legacy pose cache on every pose (where
-only the session's document is compared with the read view): the
+Checks: `tests/engine-owner.test.mjs` replays every recorded tape (511 of the 515 scenarios the editor ran on its own
+views; the four with `@native` token steps are left out, and the JavaScript editor no longer replays them) on an owned
+editor, as the app has it (the document opened on the engine), against `engine/tests/edit/*.reference.json`, and with the
+legacy pose cache on every pose (where only the session's document is compared with the read view): the
 document, selection, history labels and flags, counters, change events (without the playhead fields and the
 flags that are off), the message of every error and the probes the tapes take of the editor's own views (the
 frame on show, the motion-path display, the selection state) after every step, with the session's document
-compared to the read view after every call. Thirteen tapes end where the engine refuses what the editor did next
-(`expectedFrontiers`: a bounds callback other than the app's, native documents with property channels); none needs
-the editor to run a call. `tests/engine-owner-gestures.test.mjs` states what the interface reads of the duplicate
-drag, the tweener, grouped edits, working frames, audio and the calls that run in the editor.
+compared to the read view after every call. The editor used to run 302 steps of the tapes itself (the calls the session
+refuses on a native timeline with property channels, and what followed on its open gesture): 17 of them are refused now.
+Seven changed nothing in the recording and the tape goes on; ten end their tape (`expectedFrontiers`: a bounds callback
+other than the app's, native documents with property channels). `tests/engine-owner-gestures.test.mjs` states what the
+interface reads of the duplicate drag, the tweener, grouped edits, working frames and audio,
+`tests/engine-owner-command-list.test.mjs` holds the list of the session's commands to its dispatch, and
+`tests/engine-owner-arguments.test.mjs` the encoded arguments.
 The other owner tests that compare an owned editor with an editor alone
-(`engine-owner-{clipboard-ports,clipboards,drawing,misc,movieclip-ports,movieclip-scope,origins,refusals,topology}`,
+(`engine-owner-{clipboard-ports,clipboards,drawing,misc,movieclip-ports,movieclip-scope,origins,topology}`,
 the gesture and edit pairs of `engine-owner.test.mjs`, `engine-edit-selection-metadata`, and the documents
 `camera-follow`, `camera-motion` and `movieclip-extend` build with a plain editor) compare it with frozen
 references: `tests/fixtures/owner-references/<test file>.json`, the documents, history labels, answers, depths and
-dirty state each test compares, recorded from the plain editor by `node engine/tools/owner-reference-fixtures.mjs`
-(`tests/support/owner-references.mjs`: a test takes each reference in order with `take(label, produce)`; replaying
-returns the recorded value and never runs `produce`). They are an oracle as the tapes are: regenerate them only when
-the contract a test states changes, never to make a comparison pass. Regenerating gives the same bytes.
+dirty state each test compares, recorded from the plain editor while it still edited under the owner
+(`tests/support/owner-references.mjs`: a test takes each reference in order with `take(label)`). They are an oracle as the
+tapes are, and are not recorded again: the JavaScript editor is not the oracle any more.
 Known differences: the frame on show may lack the derived `object_count` the editor's
 caches sometimes keep, the internal `layerRevision` cache key can differ by one around
 source pruning, and the display frame of a saved origin motion on a native document differs from the editor's
 by an ulp; none is visible. A redo under an open motion-path edit, rig edit or camera drag ends the gesture first (the editor left it open). A
 message for an error whose values the engine does not name yet is the generic one.
 
-Still to come: the frame on show, handles and picking as engine queries (phase 2), the commands that still run in
-the editor ported (and their history entries with them), and saving through `styk-formats` and `styk-piv` directly.
+Still to come: the frame on show, handles and picking as engine queries (phase 2), and saving through `styk-formats` and
+`styk-piv` directly.
 
-### Refusals the editor still runs (2026-10-25)
+### Refusals (2026-10-25)
 
-A call the session refuses for a document or a selection runs in the editor (`runInEditor`), which records
-it; the owner writes it back as a session history entry (`external.rs`), so the user's edit works and undoes
-exactly. An audit of every refusal in `styk-edit` found 409 sites: 146 guard input the interface never
-sends, 214 cannot be reached from the app, and 49 could; `report.refused` counts them. Copying a selected branch,
-disconnecting a segment of an animation-origin figure, combining figures with media, a rig, surfaces, colour
+A call the session refuses for a document or a selection is refused by the owner (`errors.engineOwner.notSupported`):
+nothing runs in the editor and nothing is changed. An audit of every refusal in `styk-edit` found 409 sites: 146 guard input
+the interface never sends, 214 cannot be reached from the app, and 49 could; `report.refused` counts them. Copying a selected
+branch, disconnecting a segment of an animation-origin figure, combining figures with media, a rig, surfaces, colour
 transitions or pinned limbs, and breaking apart movieclips of 3D meshes or turning drawings are the session's now
 (`tests/engine-owner-last-refusals.test.mjs` compares each with the editor alone). What is left is rare, or cannot be
 made from the app:
@@ -779,10 +793,14 @@ made from the app:
 | an animation-origin figure with a 3D pose, a mesh, a movieclip or a drawing (`origin_component_gate`: the pivots are not read for them) | the pose, handle, rig and pose-choice calls, joins, range edits and pose-property keys whose component holds one | Set Origin refuses a figure that has rig relationships, no movieclip or drawing cel is a figure with an origin, and no recorded document holds such a pose |
 | combining a group with Stick Nodes shapes, 3D meshes, movieclips, drawings or origins | combineJoinedFigure | the editor's own result is not defined for them: it drops the mesh or clip, and a Stick Nodes shape names handles of the old figures (every recorded document with one fails its validation) |
 | combining in a document with saved animation channels (`authored`) | combineJoinedFigure | native timelines only: the app gives every document a layer sheet (a working frame open is the editor's error, `disconnectSegment` answers it) |
+| the keyframe commands of a native timeline, working frames | `addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`, `insertInbetweenFrames`, `enableFrameDrafts` and the rest of the working frame API | native timelines only: the app gives every document a layer sheet and never starts a working frame |
+| a pose at an absolute value across several frames, and a figure's own stacking number | the inspector's token (`native-property-edit.mjs`) for `root_x`, `root_y`, `group_*`, `scale`, `rotation`, `joint_*` with more than one frame chosen, and `figure_z_order` of several figures or a movieclip | no command of the session sets a pose property to one value in every chosen frame (the relative range commands exist); a single figure's stacking number is the `zIndex` channel |
+| the definition of a figure and the fields of a frame through the inspector's token | `outline_*`, `thickness`, `segment_*` opacity and the project's `duration` on a document without property channels | native timelines only: with property channels these are keys of the figure's channels |
 
-The calls that have no command in the session at all (the keyframe commands of a native timeline such as `addFrame`,
-`deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`, and `insertInbetweenFrames`, whose dialog nothing opens any more)
-are not reached by the interface on a layer sheet; they run in the editor until the editor's bodies are deleted.
+The editor's other calls the session has no command for (`copyFigure`, `poseIKTarget`, `adoptNativePoseTrack`, the
+animation key commands of a native timeline and the like) are not called from the interface; their bodies are the editor's until
+they are deleted, and the owner does not run them for a document it owns (a call of one on an owned editor changes the read view
+alone, which `verify` mode reports).
 
 ## Invariants
 

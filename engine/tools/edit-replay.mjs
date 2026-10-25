@@ -23,7 +23,6 @@ import {readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync} from 'n
 import path from 'node:path';
 import {captureEditBounds} from '../../src/engine/engine-edit-bounds.mjs';
 import {recordedBounds} from './edit-bounds-callbacks.mjs';
-import {nativePropertyReplay} from './edit-native-property.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -82,7 +81,6 @@ export function replay(scenario, base = repo) {
   // ["@batch", label, steps]: the steps inside one `movieclipBatch`, as the timeline runs
   // several commands; recorded as one step, returning the last step's result.
   let measured = null;
-  const nativeProperty = nativePropertyReplay(editor);
   const run = ([name, ...args]) => {
     if (name === '@frame') return JSON.stringify(snapshotPoseFrame(editor.evaluatedFrame));
     if (name === '@motionFrame') return JSON.stringify(snapshotPoseFrame((editor._drag?.motionPath ? editor._drag.display?.frame : null) ?? editor.evaluatedFrame));
@@ -90,7 +88,6 @@ export function replay(scenario, base = repo) {
     if (name === '@restoreSelection') return editor._restoreSelection(args[0]);
     // Read the existing camera owner, including follow travel, without view changes.
     if (name === '@cameraAtTime') return cameraAtTime(editor.report, editor.evaluatedFrame);
-    if (name.startsWith('@native')) return nativeProperty(name, args.map(decode));
     if (name === '@batch') {
       let last;
       try { return editor.movieclipBatch(args[0], () => { for (const step of args[1]) last = run(step); return last; }); }
@@ -128,6 +125,10 @@ export function replay(scenario, base = repo) {
   return {scenario: scenario.name, editor: scenario.editor ?? {}, steps};
 }
 
+/** The tapes of the native-property token (`@native…` steps): recorded before the editor's own token left the definition of a figure to the engine, so
+ * the JavaScript editor no longer replays them. They are frozen oracles of the engine's token (`styk edit-replay`). */
+const frozen = scenario => scenario.steps.some(step => String(step[0]).startsWith('@native'));
+
 const args = process.argv.slice(2);
 if (args[0] === '--all') {
   const folder = path.join(repo, 'engine/tests/edit');
@@ -135,6 +136,7 @@ if (args[0] === '--all') {
   mkdirSync(out, {recursive: true});
   for (const name of existsSync(folder) ? readdirSync(folder).filter(file => file.endsWith('.scenario.json')).sort() : []) {
     const scenario = JSON.parse(readFileSync(path.join(folder, name), 'utf8'));
+    if (frozen(scenario)) { console.log(`${scenario.name}: frozen`); continue; }
     const reference = replay(scenario, folder);
     writeFileSync(path.join(out, name.replace('.scenario.json', '.reference.json')), JSON.stringify(reference) + '\n');
     const changed = reference.steps.filter(step => step.document && step.step > 0).length, failed = reference.steps.filter(step => step.error).length;

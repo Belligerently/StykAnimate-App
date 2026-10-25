@@ -7,6 +7,7 @@ import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
 import {Editor} from '../src/editor.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {evaluateSpatial,quatMultiply,quatRotate,spatialQuaternion,spatialPoint} from '../src/rig-spatial.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 const near=(a,b,t=.002)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 export function spatialFixture(){
  const q=construction();q.add(0,0,0,'Figure rotation');
@@ -64,7 +65,7 @@ test('spatial dependencies remap, invalidate and reject invalid bindings and cyc
 });
 test('spatial posing and native IK remain reachable at front, edge-on and reversed turns',()=>{
  for(const turn of [0,Math.PI/2,Math.PI,Math.PI*1.5]){
-  const{doc,a,b}=spatialFixture(),e=newOwnedEditor({demo:false});e.load(doc);e.select(1,a.id-1);e.setSpatialPose({turn,pitch:.2});
+  const{doc,a,b}=spatialFixture(),e=newPlainEditor({demo:false});e.load(doc);e.select(1,a.id-1);e.setSpatialPose({turn,pitch:.2});
   e.select(1,b.id-1);e.setSpatialPose({bend:.5,pitch:.15});
   const p=e.geometry.objects.get(0).joints.get(b.id);e.setNodeIK({enabled:true,chainLength:2,pinned:false});
   e.poseIKTarget(p.x+15,p.y-20);let g=e.geometry.objects.get(0),point=g.joints.get(b.id);near(point.x,p.x+15,.01);near(point.y,p.y-20,.01);
@@ -83,7 +84,7 @@ test('whole-figure reflection preserves spatial projection and pose controls',()
 });
 test('a completely straight spatial limb can shorten through native IK without stretching',()=>{
  for(const turn of [0,Math.PI/2,Math.PI]){
-  const{doc,a,b}=spatialFixture(),e=newOwnedEditor({demo:false});e.load(doc);e.select(1,a.id-1);e.setSpatialPose({turn});
+  const{doc,a,b}=spatialFixture(),e=newPlainEditor({demo:false});e.load(doc);e.select(1,a.id-1);e.setSpatialPose({turn});
   e.select(1,b.id-1);e.setNodeIK({enabled:true,chainLength:2,pinned:false});e.poseIKTarget(200,330);
   const p=e.geometry.objects.get(0).joints.get(b.id);near(p.x,200,.01);near(p.y,330,.01);assert.equal(e.object.len_flag,0);
  }
@@ -91,7 +92,7 @@ test('a completely straight spatial limb can shorten through native IK without s
 
 test('spatial IK respects an explicit elbow side and uses physical reach before stretching',()=>{
  for(const direction of [-1,1]){
-  const{doc,a,b}=spatialFixture(),e=newOwnedEditor({demo:false});e.load(doc);e.select(1,a.id-1);e.setSpatialPose({pitch:1.15});
+  const{doc,a,b}=spatialFixture(),e=newPlainEditor({demo:false});e.load(doc);e.select(1,a.id-1);e.setSpatialPose({pitch:1.15});
   e.select(1,b.id-1);e.setNodeIK({enabled:true,chainLength:2,pinned:false,allowStretch:true,bendDirection:direction});e.poseIKTarget(230,330);
   const g=e.geometry.objects.get(0),m=g.joints.get(a.id),p=g.joints.get(b.id);near(p.x,230,.02);near(p.y,330,.02);
   assert.ok(((p.x-200)*(m.y-200)-(p.y-200)*(m.x-200))*direction>0);assert.equal(e.object.len_flag,0);

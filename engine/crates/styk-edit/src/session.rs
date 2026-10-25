@@ -657,6 +657,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         answer.push(("reason", Value::str(&format!("{error:?}"))));
         return Ok(response_value(answer));
     }
+    // The document the editor's read view holds is the one the call's patch is the difference from: the view's active layer
+    // (the editor sets it in place when it selects) is part of it.
+    let before = editor.report().clone();
     // Capture through the existing selected-definition reader after view sync.
     // Failure only omits the opt-in marker; dispatch keeps its original errors.
     let unique_original = if unique_requested { editor.selected_movieclip().ok().map(|(_, _, figure)| figure) } else { None };
@@ -668,6 +671,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     editor.draw_pool = view.get("drawPool") == Some(&Value::Bool(true));
     editor.drawing_forks.clear();
     editor.drawing_retired = false;
+    // What JSON cannot say (a member set to `undefined`, a non-finite number) arrives encoded (args.rs).
+    let decoded;
+    let args = if flag(view, "encoded") { decoded = crate::args::decode(args, crate::args::keeps_undefined(method)); &decoded } else { args };
     let args: Vec<Value> = args.elements().map(|e| e.iter().collect()).unwrap_or_default();
     let clipboard_requested = matches!(method, "pasteSelection" | "duplicateSelection")
         && view.get("figureClipboardPastes") == Some(&Value::Bool(true));

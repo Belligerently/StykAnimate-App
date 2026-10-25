@@ -46,7 +46,7 @@ test('rejects invalid counts and locked layers without changing the document',()
 
 refs.test('counts keys after an inbetween and preserves a pre-existing instance at its own position',take=>{
  // The document with a figure drawn at the sixth frame is the plain editor's (its reference).
- const {drawn,other}=take('drawn',()=>{const editor=new Editor({demo:false,layerTimeline:true}).load(fixtureReport());editor.seek(6);editor.addFigure(2);return {drawn:JSON.stringify(editor.serialize()),other:editor.selectedUid};});
+ const {drawn,other}=take('drawn');
  const e=fixture(JSON.parse(drawn));
  e.seek(0);e.select(7);e.addMovieclipToNextKeyframes(2);
  e.seek(3);e.select(7);e.moveSelection(25,0);e.seek(1);e.select(7);

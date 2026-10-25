@@ -1,12 +1,15 @@
 import {messageError} from './localized-error.mjs';
-/** Small native-field gestures. Authored transform channels use editor-animation. */
+/** Small native-field gestures. Authored transform channels use editor-animation.
+ *
+ * Every gesture here is a session call or a gesture of the session's: the animation edit of a property channel, a pose or camera
+ * gesture, the keys of a branch's style, the project's fields and the sheet's duration. What this module used to write into the
+ * document itself, to record it as an entry of the editor's own (the definition of a figure, a pose across several frames), is the
+ * engine's alone now, and refused where the session has no command for it. */
 import { objectBounds } from "./renderer-geometry.mjs";
 import { cameraValues } from "./editor-camera.mjs";
-import { commitNativePoseRange } from "./native-property-ranges.mjs";
-import { animationStyleValue, setAnimationStyle, polygonIdentity, resolveInstanceFigure } from "./animation-style.mjs";
-import { builderStyleProperty, previewBuilderStyleProperty, beginBuilderOrderAnimation, previewBuilderOrderAnimation } from './editor-builder-style.mjs';
-import { builderBranchStyleBinding } from './editor-builder-branch.mjs';
-import { branchOpacityPlan, branchGradientOpacityBinding, beginBranchStyleAnimation, previewBranchStyleAnimation, commitBranchStyleAnimation, cancelBranchStyleAnimation } from './editor-branch-style.mjs';
+import { animationStyleValue, polygonIdentity, resolveInstanceFigure } from "./animation-style.mjs";
+import { builderStyleProperty, beginBuilderOrderAnimation, previewBuilderOrderAnimation } from './editor-builder-style.mjs';
+import { branchOpacityPlan, beginBranchStyleAnimation, previewBranchStyleAnimation, commitBranchStyleAnimation, cancelBranchStyleAnimation } from './editor-branch-style.mjs';
 
 const active = new WeakMap();
 const poseKeys = new Set([
@@ -61,6 +64,7 @@ const names = {
   joint_length: "Joint length",
   joint_bend: "Joint bend",
   figure_z_order: "Z-index",
+  figure_opacity: "Figure opacity",
 };
 const clone = (value) =>
   value === undefined ? undefined : structuredClone(value);
@@ -84,18 +88,6 @@ function styleBinding(editor, key) {
     target: { kind: "segment", uid, handleId },
     property: key === 'thickness' ? 'thickness' : key === "segment_opacity" ? "opacity" : "gradientOpacity",
   };
-}
-function capturedStyleBinding(editor, key) {
-  // Pasted poses retain appearance after their source scalar channels are gone.
-  // Edit that local override; changing the shared type would remain invisible.
-  const binding = styleBinding(editor, key);
-  if (!binding) return null;
-  const style = editor.object._stykStyle;
-  const value =
-    binding.target.kind === "figure"
-      ? style?.outlineOpacity
-      : style?.segments?.[binding.target.handleId]?.[binding.property];
-  return Number.isFinite(value) ? binding : null;
 }
 function boundsOfSelection(editor, supplied) {
   if (supplied) return typeof supplied === "function" ? supplied() : supplied;
@@ -276,33 +268,6 @@ function rootFor(editor, scope, index) {
         ? editor.report.figure_types[index]
         : null;
 }
-function readPath(root, path) {
-  let parent = root;
-  for (const key of path.slice(0, -1)) {
-    parent = parent?.[key];
-    if (parent === undefined || parent === null)
-      return { exists: false, value: undefined };
-  }
-  return {
-    exists: Object.hasOwn(parent, path.at(-1)),
-    value: clone(parent[path.at(-1)]),
-  };
-}
-function capture(root, paths) {
-  const parents = new Map();
-  for (const path of paths)
-    for (let n = 1; n < path.length; n++) {
-      const prefix = path.slice(0, n);
-      if (!readPath(root, prefix).exists)
-        parents.set(JSON.stringify(prefix), prefix);
-    }
-  return {
-    entries: paths.map((path) => ({ path, ...readPath(root, path) })),
-    removeEmptyParents: [...parents.values()].sort(
-      (a, b) => b.length - a.length,
-    ),
-  };
-}
 function applyPatch(root, patch) {
   for (const entry of patch.entries) {
     let parent = root;
@@ -335,24 +300,7 @@ export function applyNativePropertyCommand(editor, command, direction) {
   if (!root) throw messageError(new Error(''), "errors.nativePropertyEdit.thePropertyTargetNoLongerExists", {});
   applyPatch(root, command[direction]);
 }
-function signal(
-  token,
-  live = true,
-  indices = live ? [token.frameIndex] : token.indices,
-) {
-  const { editor } = token;
-  editor._invalidate({ timing: token.timing });
-  editor._emit("edit", {
-    label: token.label,
-    live,
-    timing: token.timing,
-    definition: token.definition,
-    nativeProperty: token.key,
-    ...(!token.definition
-      ? { changedFrames: [...indices], frameIndices: [...indices] }
-      : {}),
-  });
-}
+const refused = () => messageError(new Error(''), "errors.engineOwner.notSupported", {});
 function assertCurrent(token) {
   if (!token || token.closed || active.get(token.editor) !== token)
     throw messageError(new Error(''), "errors.nativePropertyEdit.thisPropertyGestureHasEnded", {});
@@ -360,14 +308,14 @@ function assertCurrent(token) {
   if (
     editor.report !== token.report ||
     editor.frameIndex !== token.frameIndex ||
-    ((token.pose || token.definition) &&
-      (editor.selectedUid !== token.uid ||
-        editor.selectedJoint !== token.joint))
+    (token.pose && (editor.selectedUid !== token.uid || editor.selectedJoint !== token.joint))
   ) {
     cancelNativePropertyEdit(token);
     throw messageError(new Error(''), "errors.nativePropertyEdit.theSelectedPropertyChangedDuringTheGesture", {});
   }
 }
+/** The project's own fields: shown as typed, one command of the session when the edit ends. */
+const projectKeys = new Set(["fps", "canvas_width", "canvas_height"]);
 export function beginNativePropertyEdit(
   editor,
   key,
@@ -378,132 +326,65 @@ export function beginNativePropertyEdit(
   if (active.has(editor)) cancelNativePropertyEdit(active.get(editor));
   if (editor._animationEdit) editor.commitAnimationEdit();
   if (editor.dragging) editor.commitDrag();
-  if(key==='duration'&&editor.report._styk?.layerSheet){const span=editor.sheetSpan();const token={editor,key,sheetDuration:true,report:editor.report,frameIndex:editor.frameIndex,uid:editor.selectedUid,joint:editor.selectedJoint,selection:editor._selectionState(),layerId:editor.activeLayerId,tick:editor.tick,value:span.end-span.start,initialValue:span.end-span.start,closed:false};active.set(editor,token);return token;}
-  const selection = editor._selectionState(),
-    builder = builderStyleProperty(editor, key, {branch}),
-    branchPlan = branch ? branchOpacityPlan(editor, key) : null,
-    branchStyle = branch && key === 'thickness' && !branchPlan?.authored ? builderBranchStyleBinding(editor, {thickness: 0})
-      : branchPlan && !branchPlan.authored ? branchPlan.property === 'opacity'
-        ? builderBranchStyleBinding(editor, {opacity: 0}) : branchGradientOpacityBinding(editor, branchPlan) : null,
-    capturedStyle = branchPlan ? null : capturedStyleBinding(editor, key),
-    b = key.startsWith("group_")
-      ? { ...boundsOfSelection(editor, bounds) }
-      : null;
-  const token = {
-    editor,
-    key,
-    label: builder?.label ?? (branchStyle || branchPlan ? `Branch ${key === 'thickness' ? 'thickness' : branchPlan.property === 'opacity' ? 'opacity' : 'gradient opacity'}` : names[key] ?? key.replaceAll("_", " ")),
-    builder,
-    branchStyle,
-    branchPlan,
-    report: editor.report,
-    frameIndex: editor.frameIndex,
-    uid: editor.selectedUid,
-    joint: editor.selectedJoint,
-    selection,
-    pose: poseKeys.has(key) || Boolean(capturedStyle),
-    capturedStyle,
-    camera: cameraKeys.has(key),
-    sheetTicks: editor.report._styk?.layerSheet ? editor.sheetEditTimes(indices??[editor.frameIndex]) : null,
-    indices: editor._frameIndices(
-      indices?.length ? [...indices, editor.frameIndex] : [editor.frameIndex],
-    ),
-    rangeMode,
-    definition: !branchPlan?.authored && (
-      Boolean(builder) ||
-      !capturedStyle &&
-      [
-        "outline_width",
-        "outline_opacity",
-        "thickness",
-        "segment_opacity",
-        "segment_gradient_opacity",
-      ].includes(key)),
-    timing: ["fps", "duration"].includes(key),
-    value: getNativePropertyValue(editor, key, { bounds: b }),
-    bounds: b,
-    closed: false,
+  const sheet = Boolean(editor.report._styk?.layerSheet);
+  const begun = fields => {
+    const token = {
+      editor, key, report: editor.report, frameIndex: editor.frameIndex, uid: editor.selectedUid, joint: editor.selectedJoint,
+      selection: editor._selectionState(), closed: false, ...fields,
+    };
+    active.set(editor, token);
+    return token;
   };
-  if(token.sheetTicks)token.indices.sheetTicks=token.sheetTicks;
-  if (!Number.isFinite(token.value))
-    throw messageError(new Error(''), "errors.nativePropertyEdit.theSelectedPropertyHasNoFiniteValue", {});
-  token.initialValue = token.value;
-  if(builder?.animated){
-    token.definition=false;token.orderAnimation=beginBuilderOrderAnimation(editor,builder);
-    active.set(editor,token);return token;
+  if (key === 'duration' && sheet) {
+    const span = editor.sheetSpan(), value = span.end - span.start;
+    return begun({sheetDuration: true, layerId: editor.activeLayerId, tick: editor.tick, value, initialValue: value});
   }
+  if (projectKeys.has(key)) {
+    const value = getNativePropertyValue(editor, key);
+    return begun({project: true, label: names[key] ?? key, value, initialValue: value});
+  }
+  const label = names[key] ?? key.replaceAll("_", " ");
+  const builder = builderStyleProperty(editor, key, {branch});
+  const branchPlan = branch ? branchOpacityPlan(editor, key) : null;
+  const pose = poseKeys.has(key), camera = cameraKeys.has(key);
+  const value = getNativePropertyValue(editor, key, { bounds: key.startsWith("group_") ? { ...boundsOfSelection(editor, bounds) } : null });
+  if (!Number.isFinite(value))
+    throw messageError(new Error(''), "errors.nativePropertyEdit.theSelectedPropertyHasNoFiniteValue", {});
+  const sheetTicks = sheet ? editor.sheetEditTimes(indices ?? [editor.frameIndex]) : null;
+  const frames = editor._frameIndices(indices?.length ? [...indices, editor.frameIndex] : [editor.frameIndex]);
+  if (sheetTicks) frames.sheetTicks = sheetTicks;
+  const common = {label: builder?.label ?? (branchPlan ? `Branch ${key === 'thickness' ? 'thickness' : branchPlan.property === 'opacity' ? 'opacity' : 'gradient opacity'}` : label),
+    builder, branchPlan, pose, camera, sheetTicks, indices: frames, rangeMode, value, initialValue: value, bounds: null};
+  if (builder?.animated) return begun({...common, orderAnimation: beginBuilderOrderAnimation(editor, builder)});
   const scalar = editor.propertyChannels && !branchPlan ? styleBinding(editor, key) : null;
   if (scalar) {
-    token.scalar = scalar; token.factor = ['thickness','outlineWidth'].includes(scalar.property) ? 1 : 100;
     editor.beginAnimationEdit(scalar.target, scalar.property);
-    active.set(editor, token); return token;
+    return begun({...common, scalar, factor: ['thickness', 'outlineWidth'].includes(scalar.property) ? 1 : 100});
   }
-  if (token.pose && token.indices.length > 1 && editor.animationChannels.length && !editor.propertyChannels)
-    throw messageError(new Error(''), "errors.nativePropertyEdit.chooseNativeFramesToApplyAnAbsoluteValue", {});
-  if (branchPlan?.authored) {
-    token.branchAnimation = beginBranchStyleAnimation(editor, branchPlan);
-  } else if (token.camera) {
-    if (!editor.beginCameraDrag({ label: token.label }))
+  if (branchPlan?.authored) return begun({...common, branchAnimation: beginBranchStyleAnimation(editor, branchPlan)});
+  if (camera) {
+    if (!editor.beginCameraDrag({ label: common.label }))
       throw messageError(new Error(''), "errors.nativePropertyEdit.chooseACameraFrame", {});
-  } else if (token.pose) {
-    if (
-      !editor.beginDrag(token.label, {
-        scope:
-          key.startsWith("group_") || key === "root_x" || key === "root_y"
-            ? "translation"
-            : "selection",
-      })
-    )
-      throw messageError(new Error(''), "errors.nativePropertyEdit.chooseAFigureFirst", {});
-    token.beforeObjects = new Map(
-      editor._drag.before.map((o) => [o.unique_id, o]),
-    );
-    if (b)
-      token.center = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
-  } else {
-    token.scope = token.definition
-      ? "figure"
-      : key === "duration" || cameraKeys.has(key)
-        ? "frame"
-        : "report";
-    token.index = token.definition
-      ? editor.report.figure_types.indexOf(editor.figure)
-      : token.frameIndex;
-    token.paths = branchStyle ? branchStyle.paths : builder ? builder.paths : cameraKeys.has(key)
-      ? [["camera"]]
-      : ["outline_width", "outline_opacity"].includes(key)
-        ? [["segment_decode", "global_style"]]
-        : key === "thickness"
-          ? [
-              ["segments", token.joint, "thickness"],
-              ["segments", token.joint, "visible"],
-            ]
-          : key === "segment_gradient_opacity"
-            ? [["segments", token.joint, "secondary", "a"]]
-            : key === "segment_opacity"
-              ? [
-                  ["segments", token.joint, "transparency"],
-                  ["segments", token.joint, "color_alpha"],
-                ]
-              : key === "fps" && editor.report.version < 5
-                ? [["fps"], ["frame_delay_ms"]]
-                : [[key === "duration" ? "duration_raw" : key]];
-    token.before = capture(
-      rootFor(editor, token.scope, token.index),
-      token.paths,
-    );
+    return begun(common);
   }
-  active.set(editor, token);
-  return token;
+  if (pose) {
+    // A pose across several frames at an absolute value, and a figure's own stacking number, are not commands of the engine.
+    if (key === "figure_z_order" || frames.sheetTicks?.length > 1 || frames.length > 1) throw refused();
+    if (!editor.beginDrag(common.label, { scope: key.startsWith("group_") || key === "root_x" || key === "root_y" ? "translation" : "selection" }))
+      throw messageError(new Error(''), "errors.nativePropertyEdit.chooseAFigureFirst", {});
+    return begun({...common, beforeObjects: new Map(editor._drag.before.map((o) => [o.unique_id, o]))});
+  }
+  // The definition of a figure and the fields of a frame are edited by the engine's commands, never in place.
+  throw refused();
 }
 export function previewNativePropertyEdit(token, value) {
   assertCurrent(token);
   validate(token.key, value);
-  if(token.sheetDuration){token.value=value;return true;}
-  if (token.value === value && ((!token.branchStyle && !token.branchAnimation) || token.branchStyleApplied)) return false;
+  if (token.sheetDuration || token.project) { token.value = value; return true; }
+  if (token.value === value && (!token.branchAnimation || token.branchStyleApplied)) return false;
   const { editor, key } = token;
   if (token.orderAnimation) {
-    previewBuilderOrderAnimation(editor,token.builder,value);
+    previewBuilderOrderAnimation(editor, token.builder, value);
   } else if (token.scalar) {
     editor.previewAnimationEdit(value / token.factor);
   } else if (token.branchAnimation) {
@@ -522,253 +403,97 @@ export function previewNativePropertyEdit(token, value) {
       },
       { fromStart: true },
     );
-  } else if (token.pose) {
-    if (token.capturedStyle) {
-      editor._objectEdit(token.label, (object) => {
-        setAnimationStyle(
-          object,
-          token.capturedStyle.target,
-          token.capturedStyle.property,
-          value / 100,
-        );
-        delete object.runtime_segments;
-      });
-    } else if (["group_x", "group_y", "root_x", "root_y"].includes(key))
-      editor.moveSelection(
-        key.endsWith("_x") ? value - token.initialValue : 0,
-        key.endsWith("_y") ? value - token.initialValue : 0,
-        { fromStart: true },
-      );
-    else if (key === "scale") editor.updateObject({ scale: value / 100 });
-    else if (key === "rotation")
-      editor.rotateFigure(radians(value - getNativePropertyValue(editor, key)));
-    else if (key === "figure_opacity")
-      editor._objectEdit("Figure opacity", () => {
-        for (const object of editor.selectedObjects) {
-          object.field28 = Math.round((1 - value / 100) * 255);
-          delete object.runtime_segments;
-        }
-      });
-    else if (key === "figure_z_order")
-      editor._objectEdit(token.label, () => {
-        for (const object of editor.selectedObjects) {
-          if (value) object._stykZIndex = value;
-          else delete object._stykZIndex;
-          delete object.runtime_segments;
-        }
-      });
-    else if (key === "group_width" || key === "group_height") {
-      if (token.initialValue <= 0)
-        throw messageError(new Error(''), "errors.nativePropertyEdit.increaseTheSelectionSizeBeforeScaling", {});
-      const factor = value / token.initialValue;
-      for (const object of editor.frame.objects) {
-        const before = token.beforeObjects.get(object.unique_id);
-        if (!before) continue;
-        if (!object.join) {
-          object.root_x =
-            token.center.x + (before.root_x - token.center.x) * factor;
-          object.root_y =
-            token.center.y + (before.root_y - token.center.y) * factor;
-        }
-        object.scale = before.scale * factor;
-        delete object.runtime_segments;
-      }
-      editor.touch();
-    } else
-      editor.updateSegment(
-        key === "joint_angle"
-          ? { angle_rad: radians(value) }
-          : key === "joint_length"
-            ? { length: value }
-            : { bend_rad: radians(value) },
-      );
-  } else {
-    const root = rootFor(editor, token.scope, token.index);
-    if (token.branchStyle) {
-      token.branchStyle.mutate(root, token.key === 'thickness' ? {thickness: value} : {[token.branchPlan.property]: value / 100});
-      token.branchStyleApplied = true;
-    } else if (token.builder) {
-      previewBuilderStyleProperty(root, token.builder, value);
-    } else if (cameraKeys.has(key)) {
-      root.camera = {
-        x: 0,
-        y: 0,
-        scale: 1,
-        angle_rad: 0,
-        ...root.camera,
-        is_default: false,
-      };
-      root.camera[key === "camera_angle" ? "angle_rad" : key.slice(7)] =
-        key === "camera_scale"
-          ? value / 100
-          : key === "camera_angle"
-            ? radians(value)
-            : value;
-    } else if (["outline_width", "outline_opacity"].includes(key)) {
-      root.segment_decode ??= {};
-      const style = (root.segment_decode.global_style ??= {
-        u28: 0,
-        outline_thickness: 0,
-        rgb: [0, 0, 0],
-        u30: 0,
-      });
-      if (key === "outline_opacity")
-        style.u30 = Math.round((1 - value / 100) * 255);
-      else {
-        style.outline_thickness = value;
-        const data = new DataView(new ArrayBuffer(4));
-        data.setFloat32(0, value, true);
-        style.u28 = data.getUint32(0, true);
-      }
-    } else if (key === "thickness") {
-      const segment = root.segments[token.joint];
-      segment.thickness = value;
-      segment.visible = value > 0.01 || segment.primitive_code > 0;
-    } else if (key === "segment_opacity") {
-      const segment = root.segments[token.joint];
-      segment.transparency = Math.round((1 - value / 100) * 255);
-      segment.color_alpha = 1 - segment.transparency / 255;
-    } else if (key === "segment_gradient_opacity") {
-      root.segments[token.joint].secondary.a = Math.round(
-        (1 - value / 100) * 255,
-      );
-    } else {
-      root[key === "duration" ? "duration_raw" : key] = value;
-      if (key === "fps" && editor.report.version < 5)
-        root.frame_delay_ms = Math.round(1000 / value);
-    }
-    signal(token);
-  }
+  } else if (["group_x", "group_y", "root_x", "root_y"].includes(key))
+    editor.moveSelection(
+      key.endsWith("_x") ? value - token.initialValue : 0,
+      key.endsWith("_y") ? value - token.initialValue : 0,
+      { fromStart: true },
+    );
+  else if (key === "scale") editor.updateObject({ scale: value / 100 });
+  else if (key === "rotation")
+    editor.rotateFigure(radians(value - getNativePropertyValue(editor, key)));
+  else if (key === "figure_opacity") editor.updateObject({ field28: Math.round((1 - value / 100) * 255) });
+  else if (key === "group_width" || key === "group_height") {
+    if (token.initialValue <= 0)
+      throw messageError(new Error(''), "errors.nativePropertyEdit.increaseTheSelectionSizeBeforeScaling", {});
+    // The size is applied when the edit ends (a scale is relative to the figures as they are): nothing shows meanwhile.
+  } else if (key.startsWith("joint_"))
+    editor.updateSegment(
+      key === "joint_angle"
+        ? { angle_rad: radians(value) }
+        : key === "joint_length"
+          ? { length: value }
+          : { bend_rad: radians(value) },
+    );
+  else throw refused();
   token.value = value;
   return true;
 }
 export function commitNativePropertyEdit(token) {
   assertCurrent(token);
   validate(token.key, token.value);
-  if (token.value === token.initialValue && !token.branchStyle && !token.branchAnimation) {
+  if (token.value === token.initialValue && !token.branchAnimation) {
     cancelNativePropertyEdit(token);
     return false;
   }
   const { editor } = token;
-  const rangeCount=token.sheetTicks?.length??token.indices?.length;
-  const rangeTimes=()=>token.sheetTicks??token.indices.map(index=>editor.timeline[index].start);
-  if(token.sheetDuration){token.closed=true;active.delete(editor);return editor.sheetSetDuration(token.value,token.layerId,token.tick);}
-  if(token.orderAnimation){
-    try{
-      let result;
-      if(rangeCount>1){
-        const entries=rangeTimes().flatMap(tick=>token.orderAnimation.entries.map(entry=>({...entry,tick})));
-        cancelBranchStyleAnimation(editor);result=editor.addAnimationKeys(entries);
-      }else result=commitBranchStyleAnimation(editor);
-      token.closed=true;active.delete(editor);return result;
-    }catch(error){cancelNativePropertyEdit(token);throw error;}
+  const rangeCount = token.sheetTicks?.length ?? token.indices?.length;
+  const rangeTimes = () => token.sheetTicks ?? token.indices.map(index => editor.timeline[index].start);
+  const finish = run => {
+    try {
+      const result = run();
+      token.closed = true; active.delete(editor);
+      return result;
+    } catch (error) { cancelNativePropertyEdit(token); throw error; }
+  };
+  if (token.sheetDuration) { token.closed = true; active.delete(editor); return editor.sheetSetDuration(token.value, token.layerId, token.tick); }
+  if (token.project) {
+    token.closed = true; active.delete(editor);
+    return token.key === 'fps' ? editor.setFPS(token.value) : editor.updateProject({ [token.key]: token.value });
+  }
+  if (token.orderAnimation) {
+    return finish(() => {
+      if (rangeCount > 1) {
+        const entries = rangeTimes().flatMap(tick => token.orderAnimation.entries.map(entry => ({...entry, tick})));
+        cancelBranchStyleAnimation(editor);
+        return editor.addAnimationKeys(entries);
+      }
+      return commitBranchStyleAnimation(editor);
+    });
   }
   if (token.scalar) {
     let result;
-    if(rangeCount>1){editor.cancelAnimationEdit();result=editor.addAnimationKeys(rangeTimes().map(tick=>({...token.scalar,tick,value:token.value/token.factor})));}
-    else result = editor.commitAnimationEdit(); token.closed = true; active.delete(editor); return result;
+    if (rangeCount > 1) { editor.cancelAnimationEdit(); result = editor.addAnimationKeys(rangeTimes().map(tick => ({...token.scalar, tick, value: token.value / token.factor}))); }
+    else result = editor.commitAnimationEdit();
+    token.closed = true; active.delete(editor); return result;
   }
   if (token.branchAnimation) {
-    try {
-      let result;
+    return finish(() => {
       if (rangeCount > 1) {
-        const entries=rangeTimes().flatMap(tick=>token.branchPlan.entries.map(entry=>({target:entry.target,property:token.branchPlan.property,tick,value:token.value/(token.key==='thickness'?1:100)})));
-        cancelBranchStyleAnimation(editor);result=editor.addAnimationKeys(entries);
-      } else result = commitBranchStyleAnimation(editor);
-      token.closed = true; active.delete(editor); return result;
-    } catch (error) { cancelNativePropertyEdit(token); throw error; }
-  } else if (token.camera) {
-    try {
-      let result;
+        const entries = rangeTimes().flatMap(tick => token.branchPlan.entries.map(entry => ({target: entry.target, property: token.branchPlan.property, tick, value: token.value / (token.key === 'thickness' ? 1 : 100)})));
+        cancelBranchStyleAnimation(editor);
+        return editor.addAnimationKeys(entries);
+      }
+      return commitBranchStyleAnimation(editor);
+    });
+  }
+  if (token.camera) {
+    return finish(() => {
       if (rangeCount > 1) {
         editor.cancelCameraDrag();
-        const field =
-          token.key === "camera_angle" ? "angle_rad" : token.key.slice(7);
-        result = editor.setCameraValues(
-          {
-            [field]:
-              token.key === "camera_scale"
-                ? token.value / 100
-                : token.key === "camera_angle"
-                  ? radians(token.value)
-                  : token.value,
-          },
+        const field = token.key === "camera_angle" ? "angle_rad" : token.key.slice(7);
+        return Boolean(editor.setCameraValues(
+          { [field]: token.key === "camera_scale" ? token.value / 100 : token.key === "camera_angle" ? radians(token.value) : token.value },
           token.indices,
-        );
-      } else result = editor.commitDrag();
-      token.closed = true;
-      active.delete(editor);
-      return Boolean(result);
-    } catch (error) {
-      cancelNativePropertyEdit(token);
-      throw error;
-    }
-  } else if (token.pose) {
-    try {
-      const result =
-        rangeCount > 1
-          ? commitNativePoseRange(token)
-          : editor.commitDrag();
-      token.closed = true;
-      active.delete(editor);
-      return result;
-    } catch (error) {
-      cancelNativePropertyEdit(token);
-      throw error;
-    }
-  }
-  const after = capture(rootFor(editor, token.scope, token.index), token.paths);
-  if (JSON.stringify(token.before.entries) === JSON.stringify(after.entries)) {
-    cancelNativePropertyEdit(token);
-    return false;
-  }
-  if (token.key === "duration" && token.indices.length > 1) {
-    const beforeRange = token.indices.map((index) => ({
-      index,
-      patch:
-        index === token.frameIndex
-          ? token.before
-          : capture(editor.report.keyframes[index], token.paths),
-    }));
-    for (const index of token.indices)
-      editor.report.keyframes[index].duration_raw = token.value;
-    const afterRange = token.indices.map((index) => ({
-      index,
-      patch: capture(editor.report.keyframes[index], token.paths),
-    }));
-    editor._record({
-      kind: "native-properties",
-      scope: "frames-range",
-      label: `${token.label} in ${token.indices.length} frames`,
-      before: beforeRange,
-      after: afterRange,
-      beforeSelection: token.selection,
-      afterSelection: editor._selectionState(),
-      structural: false,
-      timing: true,
+        ));
+      }
+      return Boolean(editor.commitDrag());
     });
-    token.closed = true;
-    active.delete(editor);
-    signal(token, false);
-    return true;
   }
-  token.closed = true;
-  active.delete(editor);
-  editor._record({
-    kind: "native-properties",
-    scope: token.scope,
-    index: token.index,
-    label: token.label,
-    before: token.before,
-    after,
-    beforeSelection: token.selection,
-    afterSelection: editor._selectionState(),
-    structural: false,
-    timing: token.timing,
-    definition: token.definition,
-  });
-  signal(token, false);
-  return true;
+  if (token.key === "group_width" || token.key === "group_height") {
+    return finish(() => { editor.cancelDrag(); return editor.scaleSelection(token.value / token.initialValue); });
+  }
+  return finish(() => editor.commitDrag());
 }
 export function cancelNativePropertyEdit(token) {
   if (!token || token.closed) return false;
@@ -776,19 +501,13 @@ export function cancelNativePropertyEdit(token) {
   token.closed = true;
   active.delete(editor);
   if (editor.report !== token.report) return false;
-  if(token.sheetDuration)return true;
+  if (token.sheetDuration || token.project) return true;
   if (token.orderAnimation) return cancelBranchStyleAnimation(editor);
   if (token.scalar) return editor.cancelAnimationEdit();
   if (token.branchAnimation) return cancelBranchStyleAnimation(editor);
-  if (token.pose || token.camera) {
-    editor.cancelDrag();
-    editor._restoreSelection(token.selection);
-    editor._invalidate();
-  } else {
-    applyPatch(rootFor(editor, token.scope, token.index), token.before);
-    editor._restoreSelection(token.selection);
-    signal(token, false, [token.frameIndex]);
-  }
+  editor.cancelDrag();
+  editor._restoreSelection(token.selection);
+  editor._invalidate();
   return true;
 }
 export const preview = previewNativePropertyEdit;

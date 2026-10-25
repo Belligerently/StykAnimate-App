@@ -9,16 +9,18 @@ import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {planFigureFrameOperation} from '../src/range-figure-operations.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
 const open = ownedScope();
+const openPlain = plainScope();
 
-function fixture({version=5,raw=0,layerTimeline=true,propertyChannels=true,prepare=null}={}){
+function fixture({version=5,raw=0,layerTimeline=true,propertyChannels=true,prepare=null,plain=false}={}){
   const report=emptyDocument();report.version=version;report.frame_delay_ms=40;
   const figure=report.figure_types[0];figure.segments=figure.segments.slice(0,4).map((s,i)=>({...s,segment_id:i+1,parent_id:i,length:40,thickness:5,primitive_code:0,segment_type:'line',segment_kind:'line',color_rgb:i===2?[10,20,30]:[200,40,50],secondary:null,paint:undefined}));
   delete figure.segment_decode;figure.polyfills=[];
   report.keyframes=[0,1,2].map(i=>createFrame([createObject(figure,1,100+i*10,200,{color_override_raw:raw}),createObject(figure,2,250,200,{color_override_raw:raw})],10));
   prepare?.(report);
-  const e=open({demo:false,layerTimeline,propertyChannels}, report);e.select(1);return e;
+  const e=(plain?openPlain:open)({demo:false,layerTimeline,propertyChannels}, report);e.select(1);return e;
 }
 const palette=e=>e.figurePalette().map(p=>[p.color,p.segments.length]);
 const colors=e=>buildGeometry(e.report,e.evaluatedFrame).objects.get(e.selectedSlot).segments.map(s=>s.rgb);
@@ -36,7 +38,7 @@ for(const settings of [{layerTimeline:true},{layerTimeline:false,propertyChannel
     createObject(child,4,300,200),
   ],10));
   delete report._styk;
-  const e=open({demo:false,...settings}, report);e.select(1);
+  const e=(settings.layerTimeline?open:openPlain)({demo:false,...settings}, report);e.select(1);
   assert.deepEqual(palette(e),[['#0a141e',9],['#c82832',5]]);
   const entry=e.figurePalette().find(row=>row.color==='#c82832');
   assert.equal(entry.polygons.length,2);
@@ -125,7 +127,7 @@ test('opacity alone preserves palette and gradients and one action makes one und
 
 test('native and scalar-channel timelines preserve recolor semantics',()=>{
   for(const propertyChannels of [false,true]){
-    const e=fixture({version:4,raw:196,layerTimeline:false,propertyChannels});e.select(1,1);e.updateBuilderSegmentStyle({color:'#123456'});
+    const e=fixture({plain:true,version:4,raw:196,layerTimeline:false,propertyChannels});e.select(1,1);e.updateBuilderSegmentStyle({color:'#123456'});
     assert.deepEqual(colors(e)[1],[18,52,86]);assert.deepEqual(colors(e)[0],[196,0,0]);
     const reopened=new Editor({demo:false,propertyChannels}).load(e.serialize());reopened.select(1);assert.deepEqual(colors(reopened),colors(e));
     e.undo();assert.deepEqual(palette(e),[['#c40000',4]]);
@@ -153,7 +155,7 @@ test('native export materializes instance colors and preserves untouched legacy 
 
 test('legacy Simple working-copy recoloring can be discarded without changing stored frames',()=>{
   for(const layerTimeline of [false]){
-    const e=fixture({version:4,raw:196,layerTimeline});e.selectFrame(1);e.select(1);e.enableFrameDrafts({mode:'add'});
+    const e=fixture({plain:true,version:4,raw:196,layerTimeline});e.selectFrame(1);e.select(1);e.enableFrameDrafts({mode:'add'});
     const before=structuredClone(storedFrameReport(e.report));e.setFigureColor('#445566');
     assert.deepEqual(palette(e),[['#445566',4]]);assert.ok(e.frameDraft.dirty,`working-copy dirty, layerTimeline=${layerTimeline}`);
     const stored=new Editor({demo:false,layerTimeline}).load(storedFrameReport(e.report));stored.selectFrame(1);stored.select(1);assert.deepEqual(palette(stored),[['#c40000',4]]);
@@ -192,7 +194,7 @@ test('recolored legacy instances retain their palette when copied across Pivot v
 });
 
 test('materializing legacy layer ordering preserves held poses at every output tick',()=>{
-  const e=fixture({version:4,raw:196,layerTimeline:false,propertyChannels:false}),layer=e.createLayer('Other');
+  const e=fixture({plain:true,version:4,raw:196,layerTimeline:false,propertyChannels:false}),layer=e.createLayer('Other');
   e.assignFiguresToLayer([2],layer.id);e.moveLayerTo(layer.id,0);
   const output=materializePivotDocument(e.serialize());assert.equal(output.version,5);
   const sample=(report,tick)=>{const rows=timeline(report);let index=0;while(index+1<rows.length&&rows[index+1].start<=tick)index++;return evaluatedFrame(report,index,rows[index].count?(tick-rows[index].start)/rows[index].count:0,tick);};

@@ -15,7 +15,6 @@ import {TILE_BYTES} from '../src/drawing-tiles.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
 import {plainEditorWithDrawings} from './support/owned-editor.mjs';
-import {normalized} from './support/owned-vs-plain.mjs';
 import {canonical, ownerReferences} from './support/owner-references.mjs';
 
 const refs = ownerReferences(import.meta.url);
@@ -94,7 +93,7 @@ test('a stroke\'s pixels never become JSON for the session', {skip: !engineBuilt
     assert.equal(serialized, 0, 'the owner turned the stroke into JSON');
     assert.equal(editor.undoLabel, 'Brush stroke');
     assert.equal(owner.editor, undefined, 'the editor ran nothing: the stroke is the session\'s entry');
-    assert.equal(owner.fallback, 0);
+    assert.deepEqual(owner.refused, {}, 'the session refused nothing');
     assert.deepEqual(editor._undo.map(entry => entry.kind), ['engine', 'engine'], 'the editor\'s stacks hold placeholders for the session\'s entries');
   } finally { await dispose(); }
 });
@@ -133,21 +132,14 @@ refs.test('strokes, an erase and a fill undo and redo exactly as without the own
     };
     for (const [index, [label, make]] of commits.entries()) {
       owned.editor.commitDrawingPixels(index ? owned.editor.drawingTarget() : owned.target, make(owned.surface.store), label);
-      const wanted = await take(`after ${label}`, async () => {
-        const side = await plainSide();
-        side.editor.commitDrawingPixels(index ? side.editor.drawingTarget() : side.target, make(side.surface.store), label);
-        return snapshot(side);
-      });
+      const wanted = await take(`after ${label}`);
       assert.deepEqual(canonical(snapshot(owned)), wanted, `after ${label}`);
     }
     assert.equal(owned.editor.undoLabel, 'Erase stroke');
     const walk = async (move, steps) => {
       for (let step = 0; step < steps; step++) {
         const done = await owned.editor[move]();
-        const wanted = await take(`${move} ${step + 1}`, async () => {
-          const side = await plainSide();
-          return {done: await side.editor[move](), snapshot: snapshot(side)};
-        });
+        const wanted = await take(`${move} ${step + 1}`);
         assert.deepEqual([done, wanted.done], [true, true]);
         assert.deepEqual(canonical(snapshot(owned)), wanted.snapshot, `${move} ${step + 1}`);
       }
@@ -156,7 +148,7 @@ refs.test('strokes, an erase and a fill undo and redo exactly as without the own
     assert.equal(owned.editor.dirty, false, 'undoing every stroke returns to the saved revision');
     await walk('redo', 3);
     await walk('undo', 1);
-    assert.deepEqual(canonical(events), await take('events', async () => (await plainSide()).events), 'the same drawing events reach the interface');
+    assert.deepEqual(canonical(events), await take('events'), 'the same drawing events reach the interface');
     assert.ok(events.some(([kind, label]) => kind === 'history' && label === 'Erase stroke'));
   } finally { owned.owner.release(); owned.resources.dispose(); await owned.history.dispose(); alone?.resources.dispose(); await alone?.history.dispose(); }
 });
@@ -302,18 +294,7 @@ refs.test('the first stroke on a v1 cel migrates it: the new cel, its pixels and
   await loadDrawingEngine();
   // A document whose drawing layer holds a v1 cel (a picture the size of its crop).
   // (made by an editor without the owner, once: its reference)
-  const document = JSON.parse(await take('document', async () => {
-    const {editor: made} = plainEditorWithDrawings({demo: false, layerTimeline: true, propertyChannels: true});
-    const madeResources = new DrawingResources(made.report, {worker: stub});
-    madeResources.busy = true;
-    const madeTarget = made.prepareDrawingCel();
-    await madeResources.surface(madeTarget.figure);
-    made.commitDrawingPixels(madeTarget, [tile(0, 0, 1)]);
-    const text = JSON.stringify(made.report);
-    madeResources.dispose();
-    // The identity the editor drew at random is numbered, so that recording again gives the same bytes.
-    return normalized(text);
-  }));
+  const document = JSON.parse(await take('document'));
   const legacy = document.figure_types.find(drawingMetadata), asset = legacy.image_assets[0];
   asset.data_url = await encodeDrawingPNG(new Uint8ClampedArray(96 * 64 * 4).fill(200), 96, 64);
   Object.assign(asset, {width: 96, height: 64, display_width: 96, display_height: 64});
@@ -338,7 +319,7 @@ refs.test('the first stroke on a v1 cel migrates it: the new cel, its pixels and
     const original = surface.store.get(0, 0).pixels.slice();
     editor.commitDrawingPixels(target, [tile(0, 0, 9, original)], 'Fill');
     assert.equal(editor.undoLabel, 'Fill');
-    assert.equal(owner.editor, undefined);
+    assert.deepEqual(owner.refused, {}, 'the session refused nothing');
     const now = () => drawingMetadata(editor.drawingTarget().figure);
     assert.deepEqual([now().version, now().celId], [2, drawingMetadata(migrated).celId], 'the exposure shows the migrated cel');
     assert.equal(resources.entries.get(now().celId), surface, 'the pixels moved to the new cel');
@@ -369,7 +350,7 @@ test('a resample is one entry: the new cel gets the resampled tiles and the old 
     assert.notEqual(d.celId, old.celId);
     assert.equal(resources.entry(figure).store.size, 1, 'the new cel holds the resampled tiles');
     assert.equal(surface.store.size, 1, 'the old cel keeps its pixels');
-    assert.equal(owner.editor, undefined);
+    assert.deepEqual(owner.refused, {}, 'the session refused nothing');
     assert.equal(await editor.undo(), true);
     assert.equal(drawingMetadata(editor.drawingTarget().figure).celId, old.celId);
     assert.equal(editor.undoLabel, 'Brush stroke');
@@ -393,7 +374,7 @@ test('a gesture the session holds ends before a stroke is committed', {skip: !en
     assert.equal(await editor.undo(), true);
     assert.equal(editor.undoLabel, 'Move drawing', 'the drag is its own entry, before the stroke');
     assert.equal(surface.store.size, 1);
-    assert.equal(owner.editor, undefined);
+    assert.deepEqual(owner.refused, {}, 'the session refused nothing');
   } finally { await dispose(); }
 });
 

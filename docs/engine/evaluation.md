@@ -354,8 +354,8 @@ selection is the editor's to tell with a call, and the frame does not depend on 
   record, with its `tick` (and the camera-motion tick), is read against the open document with the effect clips sampled at
   the tick, as a prepared frame's are.
 
-The editor evaluates the frame itself where the engine does not hold its document: while it runs a call of its own (the
-commands the session has none for run in JavaScript and are written back afterwards). A movieclip being edited is a
+The editor evaluates the frame itself where the engine does not hold its document (a document the session answers
+`unported: …` for). A movieclip being edited is a
 document of the engine like any other: it has a session, and the frame, geometry, onion skins and trails are its.
 
 ## The interface's views

@@ -5,9 +5,9 @@ import {editorRigMethods} from '../src/editor-rig.mjs';
 import {createFrame, createObject, emptyDocument} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {roundTrip} from './support/codec.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 Object.assign(Editor.prototype, editorRigMethods);
 const near = (a, b, tolerance = 2e-4) => assert.ok(Math.abs(a - b) <= tolerance, `${a} != ${b}`);

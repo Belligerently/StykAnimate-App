@@ -4,9 +4,9 @@ import {Editor} from '../src/editor.mjs';
 import {editorHandleCommandMethods,screenVectorToWorld,formatSegmentValues,parseSegmentValues} from '../src/editor-handle-commands.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {worldToScreen} from '../src/renderer-geometry.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 Object.assign(Editor.prototype,editorHandleCommandMethods);
 const near=(a,b,tolerance=2e-4)=>assert.ok(Math.abs(a-b)<tolerance,`${a} != ${b}`);
 const pointNear=(a,b)=>{near(a.x,b.x);near(a.y,b.y);};

@@ -3475,16 +3475,9 @@
   },
   "builderSession.discardFigureEdits": {
     "locations": [
-      "src/builder-session.mjs:168"
+      "src/builder-session.mjs:166"
     ],
     "context": "editor.replaceFigureDefinition(this.typeId, clone(this.baselineFigure), {label: interfaceText(\"builderSession.discardFigureEdits\"), labelKey: \"builderSession.di"
-  },
-  "builderSession.discardNewFigure": {
-    "locations": [
-      "src/builder-session.mjs:192",
-      "src/builder-session.mjs:196"
-    ],
-    "context": "editor._record({kind: 'import', label: interfaceText(\"builderSession.discardNewFigure\"), labelKey: \"builderSession.discardNewFigure\", index: editor.frameIndex, "
   },
   "builderSurfaceUi.apply": {
     "locations": [
@@ -3678,31 +3671,31 @@
   },
   "cameraMotionUi.across": {
     "locations": [
-      "src/camera-motion-ui.mjs:54"
+      "src/camera-motion-ui.mjs:53"
     ],
     "context": "`<div class=\"ui-slider-row motion-slider-row\"><span class=\"ui-slider-label\" data-i18n=\"cameraMotionUi.direction\">Direction</span><div class=\"ui-segmented motion"
   },
   "cameraMotionUi.add": {
     "locations": [
-      "src/camera-motion-ui.mjs:73"
+      "src/camera-motion-ui.mjs:72"
     ],
     "context": "`<div class=\"motion-list-head\"><span data-i18n=\"cameraMotionUi.cameraMoves\">Camera moves</span><button type=\"button\" class=\"ui-button\" data-size=\"sm\" data-varia"
   },
   "cameraMotionUi.addACameraMove": {
     "locations": [
-      "src/camera-motion-ui.mjs:39"
+      "src/camera-motion-ui.mjs:38"
     ],
     "context": "return `<div class=\"motion-gallery${compact?' is-compact':''}\" role=\"group\" aria-label=\"Add a camera move\" data-i18n-aria-label=\"cameraMotionUi.addACameraMove\">"
   },
   "cameraMotionUi.addAMoveToTheCameraItPlays": {
     "locations": [
-      "src/camera-motion-ui.mjs:70"
+      "src/camera-motion-ui.mjs:69"
     ],
     "context": "if(!clips.length)return `<section class=\"camera-motion-panel is-empty\" aria-label=\"Camera motion\" data-i18n-aria-label=\"cameraMotionUi.cameraMotion\"><p class=\"m"
   },
   "cameraMotionUi.addTheSelectedFigures": {
     "locations": [
-      "src/camera-motion-ui.mjs:48"
+      "src/camera-motion-ui.mjs:47"
     ],
     "context": "`<button type=\"button\" class=\"ui-button motion-follow-add\" data-size=\"sm\" data-variant=\"ghost\" data-motion-action=\"follow-selected\" ${locked||!selected.length?'"
   },
@@ -3714,15 +3707,15 @@
   },
   "cameraMotionUi.allFrames": {
     "locations": [
-      "src/camera-motion-ui.mjs:84"
+      "src/camera-motion-ui.mjs:83"
     ],
     "context": "`<div class=\"motion-bake-row\"><select class=\"inline-select\" data-motion-bake-range aria-label=\"Bake range\" data-i18n-aria-label=\"cameraMotionUi.bakeRange\"><opti"
   },
   "cameraMotionUi.amount": {
     "locations": [
       "src/camera-motion-localization.mjs:7",
-      "src/camera-motion-ui.mjs:50",
-      "src/camera-motion-ui.mjs:65"
+      "src/camera-motion-ui.mjs:49",
+      "src/camera-motion-ui.mjs:64"
     ],
     "context": "strength:'cameraMotionUi.amount',moveX:'cameraMotionUi.moveX',moveY:'cameraMotionUi.moveY',roll:'cameraMotionGraph.roll',"
   },
@@ -3747,162 +3740,162 @@
   "cameraMotionUi.autoZoom": {
     "locations": [
       "src/camera-motion-localization.mjs:12",
-      "src/camera-motion-ui.mjs:56"
+      "src/camera-motion-ui.mjs:55"
     ],
     "context": "lookAhead:'cameraMotionUi.lookAhead',zoomFit:'cameraMotionUi.autoZoom',padding:'cameraMotionUi.margin',maxZoom:'cameraMotionUi.zoomLimit',"
   },
   "cameraMotionUi.background": {
     "locations": [
-      "src/camera-motion-ui.mjs:89"
+      "src/camera-motion-ui.mjs:88"
     ],
     "context": "const p=layer.parallax??{enabled:false,linked:true,x:1,y:1},presets=[messageTuple([.15,interfaceText(\"cameraMotionUi.distant\")], {1: {key: \"cameraMotionUi.dista"
   },
   "cameraMotionUi.bakeRange": {
     "locations": [
-      "src/camera-motion-ui.mjs:84"
+      "src/camera-motion-ui.mjs:83"
     ],
     "context": "`<div class=\"motion-bake-row\"><select class=\"inline-select\" data-motion-bake-range aria-label=\"Bake range\" data-i18n-aria-label=\"cameraMotionUi.bakeRange\"><opti"
   },
   "cameraMotionUi.bakeToKeys": {
     "locations": [
-      "src/camera-motion-ui.mjs:84"
+      "src/camera-motion-ui.mjs:83"
     ],
     "context": "`<div class=\"motion-bake-row\"><select class=\"inline-select\" data-motion-bake-range aria-label=\"Bake range\" data-i18n-aria-label=\"cameraMotionUi.bakeRange\"><opti"
   },
   "cameraMotionUi.baking": {
     "locations": [
-      "src/camera-motion-ui.mjs:117"
+      "src/camera-motion-ui.mjs:116"
     ],
     "context": "else if(action==='bake'){button.disabled=true;localizedText(button, \"cameraMotionUi.baking\", {});const selected=editor.getCameraMotions().find(c=>c.id===editor."
   },
   "cameraMotionUi.both": {
     "locations": [
-      "src/camera-motion-ui.mjs:54"
+      "src/camera-motion-ui.mjs:53"
     ],
     "context": "`<div class=\"ui-slider-row motion-slider-row\"><span class=\"ui-slider-label\" data-i18n=\"cameraMotionUi.direction\">Direction</span><div class=\"ui-segmented motion"
   },
   "cameraMotionUi.camera": {
     "locations": [
-      "src/camera-motion-ui.mjs:49"
+      "src/camera-motion-ui.mjs:48"
     ],
     "context": "`<div class=\"motion-group\"><div class=\"motion-group-head\"><span data-i18n=\"cameraMotionUi.camera\">Camera</span></div>`+"
   },
   "cameraMotionUi.cameraMotion": {
     "locations": [
-      "src/camera-motion-ui.mjs:70",
-      "src/camera-motion-ui.mjs:72"
+      "src/camera-motion-ui.mjs:69",
+      "src/camera-motion-ui.mjs:71"
     ],
     "context": "if(!clips.length)return `<section class=\"camera-motion-panel is-empty\" aria-label=\"Camera motion\" data-i18n-aria-label=\"cameraMotionUi.cameraMotion\"><p class=\"m"
   },
   "cameraMotionUi.cameraMoves": {
     "locations": [
-      "src/camera-motion-ui.mjs:73"
+      "src/camera-motion-ui.mjs:72"
     ],
     "context": "`<div class=\"motion-list-head\"><span data-i18n=\"cameraMotionUi.cameraMoves\">Camera moves</span><button type=\"button\" class=\"ui-button\" data-size=\"sm\" data-varia"
   },
   "cameraMotionUi.close": {
     "locations": [
-      "src/camera-motion-ui.mjs:73"
+      "src/camera-motion-ui.mjs:72"
     ],
     "context": "`<div class=\"motion-list-head\"><span data-i18n=\"cameraMotionUi.cameraMoves\">Camera moves</span><button type=\"button\" class=\"ui-button\" data-size=\"sm\" data-varia"
   },
   "cameraMotionUi.custom": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.deadZone": {
     "locations": [
       "src/camera-motion-localization.mjs:11",
-      "src/camera-motion-ui.mjs:52"
+      "src/camera-motion-ui.mjs:51"
     ],
     "context": "offsetX:'cameraMotionUi.offsetX',offsetY:'cameraMotionUi.offsetY',lag:'cameraMotionUi.smoothness',deadZone:'cameraMotionUi.deadZone',"
   },
   "cameraMotionUi.direction": {
     "locations": [
       "src/camera-motion-localization.mjs:8",
-      "src/camera-motion-ui.mjs:54"
+      "src/camera-motion-ui.mjs:53"
     ],
     "context": "zoom:'cameraMotionUi.zoom',frequency:'cameraMotionUi.speed',roughness:'cameraMotionUi.roughness',direction:'cameraMotionUi.direction',"
   },
   "cameraMotionUi.disableMove": {
     "locations": [
-      "src/camera-motion-ui.mjs:77"
+      "src/camera-motion-ui.mjs:76"
     ],
     "context": "`<button class=\"icon-button motion-enable\" data-motion-toggle=\"${esc(c.id)}\" ${messageAttributes(c.enabled?'cameraMotionUi.disableMove':'cameraMotionUi.enableMo"
   },
   "cameraMotionUi.distant": {
     "locations": [
-      "src/camera-motion-ui.mjs:89"
+      "src/camera-motion-ui.mjs:88"
     ],
     "context": "const p=layer.parallax??{enabled:false,linked:true,x:1,y:1},presets=[messageTuple([.15,interfaceText(\"cameraMotionUi.distant\")], {1: {key: \"cameraMotionUi.dista"
   },
   "cameraMotionUi.duplicate": {
     "locations": [
-      "src/camera-motion-ui.mjs:78"
+      "src/camera-motion-ui.mjs:77"
     ],
     "context": "`<section class=\"motion-card\" data-section=\"${esc(clip.id)}\" data-motion-id=\"${esc(clip.id)}\" data-kind=\"${clip.type}\"><div class=\"motion-card-heading\"><span cl"
   },
   "cameraMotionUi.easeIn": {
     "locations": [
       "src/camera-motion-localization.mjs:9",
-      "src/camera-motion-ui.mjs:81"
+      "src/camera-motion-ui.mjs:80"
     ],
     "context": "recovery:'cameraMotionUi.recovery',phase:'cameraMotionUi.phase',fadeIn:'cameraMotionUi.easeIn',fadeOut:'cameraMotionUi.easeOut',"
   },
   "cameraMotionUi.easeOut": {
     "locations": [
       "src/camera-motion-localization.mjs:9",
-      "src/camera-motion-ui.mjs:81"
+      "src/camera-motion-ui.mjs:80"
     ],
     "context": "recovery:'cameraMotionUi.recovery',phase:'cameraMotionUi.phase',fadeIn:'cameraMotionUi.easeIn',fadeOut:'cameraMotionUi.easeOut',"
   },
   "cameraMotionUi.enableMove": {
     "locations": [
-      "src/camera-motion-ui.mjs:77"
+      "src/camera-motion-ui.mjs:76"
     ],
     "context": "`<button class=\"icon-button motion-enable\" data-motion-toggle=\"${esc(c.id)}\" ${messageAttributes(c.enabled?'cameraMotionUi.disableMove':'cameraMotionUi.enableMo"
   },
   "cameraMotionUi.enableParallax": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.fineTune": {
     "locations": [
-      "src/camera-motion-ui.mjs:66"
+      "src/camera-motion-ui.mjs:65"
     ],
     "context": "(advanced.length?`<details class=\"motion-advanced\" data-section=\"motion-advanced-${esc(clip.id)}\"><summary>${icon('chevron-right')}${messageHTML(\"cameraMotionUi"
   },
   "cameraMotionUi.followDirection": {
     "locations": [
-      "src/camera-motion-ui.mjs:54"
+      "src/camera-motion-ui.mjs:53"
     ],
     "context": "`<div class=\"ui-slider-row motion-slider-row\"><span class=\"ui-slider-label\" data-i18n=\"cameraMotionUi.direction\">Direction</span><div class=\"ui-segmented motion"
   },
   "cameraMotionUi.following": {
     "locations": [
-      "src/camera-motion-ui.mjs:47"
+      "src/camera-motion-ui.mjs:46"
     ],
     "context": "return `<div class=\"motion-group\"><div class=\"motion-group-head\"><span data-i18n=\"cameraMotionUi.following\">Following</span></div><div class=\"motion-targets\">${"
   },
   "cameraMotionUi.followSelectedFigures": {
     "locations": [
-      "src/camera-motion-ui.mjs:48"
+      "src/camera-motion-ui.mjs:47"
     ],
     "context": "`<button type=\"button\" class=\"ui-button motion-follow-add\" data-size=\"sm\" data-variant=\"ghost\" data-motion-action=\"follow-selected\" ${locked||!selected.length?'"
   },
   "cameraMotionUi.foreground": {
     "locations": [
-      "src/camera-motion-ui.mjs:89"
+      "src/camera-motion-ui.mjs:88"
     ],
     "context": "const p=layer.parallax??{enabled:false,linked:true,x:1,y:1},presets=[messageTuple([.15,interfaceText(\"cameraMotionUi.distant\")], {1: {key: \"cameraMotionUi.dista"
   },
   "cameraMotionUi.framing": {
     "locations": [
-      "src/camera-motion-ui.mjs:55"
+      "src/camera-motion-ui.mjs:54"
     ],
     "context": "`<div class=\"motion-group\"><div class=\"motion-group-head\"><span data-i18n=\"cameraMotionUi.framing\">Framing</span></div>`+"
   },
@@ -3914,37 +3907,37 @@
   },
   "cameraMotionUi.howFarAutoZoomMayGoInOr": {
     "locations": [
-      "src/camera-motion-ui.mjs:57"
+      "src/camera-motion-ui.mjs:56"
     ],
     "context": "(p.zoomFit>0?slider(clip,'padding',interfaceText(\"cameraMotionUi.margin\"),40,locked,interfaceText('cameraMotionUi.spaceAroundFigures'), {label: {key: \"cameraMot"
   },
   "cameraMotionUi.howLongTheCameraTakesToCatchUp": {
     "locations": [
-      "src/camera-motion-ui.mjs:51"
+      "src/camera-motion-ui.mjs:50"
     ],
     "context": "slider(clip,'lag',interfaceText(\"cameraMotionUi.smoothness\"),30,locked,interfaceText(\"cameraMotionUi.howLongTheCameraTakesToCatchUp\"), {label: {key: \"cameraMoti"
   },
   "cameraMotionUi.howMuchThisFigurePullsTheShot": {
     "locations": [
-      "src/camera-motion-ui.mjs:45"
+      "src/camera-motion-ui.mjs:44"
     ],
     "context": "(clip.targets.length<2?'':`<input class=\"ui-slider\" type=\"range\" min=\"0\" max=\"100\" step=\"1\" value=\"${Math.round(t.weight*100)}\" style=\"--_p:${Math.round(t.weigh"
   },
   "cameraMotionUi.howStronglyTheCameraFollows": {
     "locations": [
-      "src/camera-motion-ui.mjs:50"
+      "src/camera-motion-ui.mjs:49"
     ],
     "context": "slider(clip,'strength',interfaceText(\"cameraMotionUi.amount\"),100,locked,interfaceText(\"cameraMotionUi.howStronglyTheCameraFollows\"), {label: {key: \"cameraMotio"
   },
   "cameraMotionUi.intensity": {
     "locations": [
-      "src/camera-motion-ui.mjs:63"
+      "src/camera-motion-ui.mjs:62"
     ],
     "context": "const main=type==='pulse'?[messageTuple(['zoom',interfaceText(\"cameraMotionUi.zoom\"),30], {1: {key: \"cameraMotionUi.zoom\", params: {}}})]:[messageTuple(['move',"
   },
   "cameraMotionUi.keepCurrentFraming": {
     "locations": [
-      "src/camera-motion-ui.mjs:59"
+      "src/camera-motion-ui.mjs:58"
     ],
     "context": "`<button type=\"button\" class=\"ui-button motion-keep-framing\" data-size=\"sm\" data-variant=\"ghost\" data-motion-action=\"keep-framing\" ${locked?'disabled':''} title"
   },
@@ -3956,54 +3949,54 @@
   },
   "cameraMotionUi.keepTheFigureWhereItIsInThe": {
     "locations": [
-      "src/camera-motion-ui.mjs:59"
+      "src/camera-motion-ui.mjs:58"
     ],
     "context": "`<button type=\"button\" class=\"ui-button motion-keep-framing\" data-size=\"sm\" data-variant=\"ghost\" data-motion-action=\"keep-framing\" ${locked?'disabled':''} title"
   },
   "cameraMotionUi.leadsTheShotTowardWhereTheFigureIs": {
     "locations": [
-      "src/camera-motion-ui.mjs:53"
+      "src/camera-motion-ui.mjs:52"
     ],
     "context": "slider(clip,'lookAhead',interfaceText(\"cameraMotionUi.lookAhead\"),24,locked,interfaceText(\"cameraMotionUi.leadsTheShotTowardWhereTheFigureIs\"), {label: {key: \"c"
   },
   "cameraMotionUi.length": {
     "locations": [
-      "src/camera-motion-ui.mjs:81"
+      "src/camera-motion-ui.mjs:80"
     ],
     "context": "`<div class=\"motion-group\"><div class=\"motion-group-head\"><span data-i18n=\"cameraMotionUi.timing\">Timing</span></div><div class=\"field-grid motion-timing\">${fie"
   },
   "cameraMotionUi.linkAxes": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.lookAhead": {
     "locations": [
       "src/camera-motion-localization.mjs:12",
-      "src/camera-motion-ui.mjs:53"
+      "src/camera-motion-ui.mjs:52"
     ],
     "context": "lookAhead:'cameraMotionUi.lookAhead',zoomFit:'cameraMotionUi.autoZoom',padding:'cameraMotionUi.margin',maxZoom:'cameraMotionUi.zoomLimit',"
   },
   "cameraMotionUi.margin": {
     "locations": [
       "src/camera-motion-localization.mjs:12",
-      "src/camera-motion-ui.mjs:57"
+      "src/camera-motion-ui.mjs:56"
     ],
     "context": "lookAhead:'cameraMotionUi.lookAhead',zoomFit:'cameraMotionUi.autoZoom',padding:'cameraMotionUi.margin',maxZoom:'cameraMotionUi.zoomLimit',"
   },
   "cameraMotionUi.missingFigure": {
     "locations": [
-      "src/camera-motion-ui.mjs:37",
-      "src/camera-motion-ui.mjs:43",
-      "src/camera-motion-ui.mjs:45",
-      "src/camera-motion-ui.mjs:46"
+      "src/camera-motion-ui.mjs:36",
+      "src/camera-motion-ui.mjs:42",
+      "src/camera-motion-ui.mjs:44",
+      "src/camera-motion-ui.mjs:45"
     ],
     "context": "const followSummary=(editor,clip)=>clip.targets.map(t=>figureName(editor,t.uid)??interfaceText(\"cameraMotionUi.missingFigure\")).join(', ');"
   },
   "cameraMotionUi.motionClips": {
     "locations": [
-      "src/camera-motion-ui.mjs:75"
+      "src/camera-motion-ui.mjs:74"
     ],
     "context": "`<div class=\"motion-list\" role=\"list\" aria-label=\"Motion clips\" data-i18n-aria-label=\"cameraMotionUi.motionClips\">${clips.map(c=>`<div class=\"motion-list-row ${"
   },
@@ -4021,27 +4014,27 @@
   },
   "cameraMotionUi.newVariation": {
     "locations": [
-      "src/camera-motion-ui.mjs:66"
+      "src/camera-motion-ui.mjs:65"
     ],
     "context": "(advanced.length?`<details class=\"motion-advanced\" data-section=\"motion-advanced-${esc(clip.id)}\"><summary>${icon('chevron-right')}${messageHTML(\"cameraMotionUi"
   },
   "cameraMotionUi.normal": {
     "locations": [
-      "src/camera-motion-ui.mjs:89"
+      "src/camera-motion-ui.mjs:88"
     ],
     "context": "const p=layer.parallax??{enabled:false,linked:true,x:1,y:1},presets=[messageTuple([.15,interfaceText(\"cameraMotionUi.distant\")], {1: {key: \"cameraMotionUi.dista"
   },
   "cameraMotionUi.offsetX": {
     "locations": [
       "src/camera-motion-localization.mjs:11",
-      "src/camera-motion-ui.mjs:58"
+      "src/camera-motion-ui.mjs:57"
     ],
     "context": "offsetX:'cameraMotionUi.offsetX',offsetY:'cameraMotionUi.offsetY',lag:'cameraMotionUi.smoothness',deadZone:'cameraMotionUi.deadZone',"
   },
   "cameraMotionUi.offsetY": {
     "locations": [
       "src/camera-motion-localization.mjs:11",
-      "src/camera-motion-ui.mjs:58"
+      "src/camera-motion-ui.mjs:57"
     ],
     "context": "offsetX:'cameraMotionUi.offsetX',offsetY:'cameraMotionUi.offsetY',lag:'cameraMotionUi.smoothness',deadZone:'cameraMotionUi.deadZone',"
   },
@@ -4053,43 +4046,43 @@
   },
   "cameraMotionUi.overallStrengthOfThisMove": {
     "locations": [
-      "src/camera-motion-ui.mjs:65"
+      "src/camera-motion-ui.mjs:64"
     ],
     "context": "return `<div class=\"motion-group\">${slider(clip,'strength',interfaceText(\"cameraMotionUi.amount\"),100,locked,interfaceText(\"cameraMotionUi.overallStrengthOfThis"
   },
   "cameraMotionUi.pan": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.parallax": {
     "locations": [
-      "src/camera-motion-ui.mjs:86"
+      "src/camera-motion-ui.mjs:85"
     ],
     "context": "const parallaxAxis=(axis,value,disabled)=>`<div class=\"property-row\" data-property-row=\"parallax_${axis}\"><label class=\"field\">${scrubLabel(axis.toUpperCase(),t"
   },
   "cameraMotionUi.parallax2": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.parallaxCameraPreview": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.parallaxMovement": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.parallaxPreset": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
@@ -4137,19 +4130,19 @@
   },
   "cameraMotionUi.preview": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.previewCameraPan": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.previewThisMove": {
     "locations": [
-      "src/camera-motion-ui.mjs:78"
+      "src/camera-motion-ui.mjs:77"
     ],
     "context": "`<section class=\"motion-card\" data-section=\"${esc(clip.id)}\" data-motion-id=\"${esc(clip.id)}\" data-kind=\"${clip.type}\"><div class=\"motion-card-heading\"><span cl"
   },
@@ -4161,13 +4154,13 @@
   },
   "cameraMotionUi.roomTheFigureCanMoveBeforeTheCamera": {
     "locations": [
-      "src/camera-motion-ui.mjs:52"
+      "src/camera-motion-ui.mjs:51"
     ],
     "context": "slider(clip,'deadZone',interfaceText(\"cameraMotionUi.deadZone\"),60,locked,interfaceText(\"cameraMotionUi.roomTheFigureCanMoveBeforeTheCamera\"), {label: {key: \"ca"
   },
   "cameraMotionUi.rotation": {
     "locations": [
-      "src/camera-motion-ui.mjs:63"
+      "src/camera-motion-ui.mjs:62"
     ],
     "context": "const main=type==='pulse'?[messageTuple(['zoom',interfaceText(\"cameraMotionUi.zoom\"),30], {1: {key: \"cameraMotionUi.zoom\", params: {}}})]:[messageTuple(['move',"
   },
@@ -4179,93 +4172,93 @@
   },
   "cameraMotionUi.selectFiguresOnTheCanvasToAddThem": {
     "locations": [
-      "src/camera-motion-ui.mjs:48"
+      "src/camera-motion-ui.mjs:47"
     ],
     "context": "`<button type=\"button\" class=\"ui-button motion-follow-add\" data-size=\"sm\" data-variant=\"ghost\" data-motion-action=\"follow-selected\" ${locked||!selected.length?'"
   },
   "cameraMotionUi.setReferenceFromCurrentFrame": {
     "locations": [
-      "src/camera-motion-ui.mjs:90"
+      "src/camera-motion-ui.mjs:89"
     ],
     "context": "return `<details class=\"parallax-panel inspector-section\" data-section=\"parallax\" data-parallax-layer=\"${esc(id)}\" ${p.enabled?'open':''}><summary class=\"parall"
   },
   "cameraMotionUi.settle": {
     "locations": [
-      "src/camera-motion-ui.mjs:63"
+      "src/camera-motion-ui.mjs:62"
     ],
     "context": "const main=type==='pulse'?[messageTuple(['zoom',interfaceText(\"cameraMotionUi.zoom\"),30], {1: {key: \"cameraMotionUi.zoom\", params: {}}})]:[messageTuple(['move',"
   },
   "cameraMotionUi.smoothness": {
     "locations": [
       "src/camera-motion-localization.mjs:11",
-      "src/camera-motion-ui.mjs:51"
+      "src/camera-motion-ui.mjs:50"
     ],
     "context": "offsetX:'cameraMotionUi.offsetX',offsetY:'cameraMotionUi.offsetY',lag:'cameraMotionUi.smoothness',deadZone:'cameraMotionUi.deadZone',"
   },
   "cameraMotionUi.spaceAroundFigures": {
     "locations": [
-      "src/camera-motion-ui.mjs:57"
+      "src/camera-motion-ui.mjs:56"
     ],
     "context": "(p.zoomFit>0?slider(clip,'padding',interfaceText(\"cameraMotionUi.margin\"),40,locked,interfaceText('cameraMotionUi.spaceAroundFigures'), {label: {key: \"cameraMot"
   },
   "cameraMotionUi.speed": {
     "locations": [
       "src/camera-motion-localization.mjs:8",
-      "src/camera-motion-ui.mjs:63"
+      "src/camera-motion-ui.mjs:62"
     ],
     "context": "zoom:'cameraMotionUi.zoom',frequency:'cameraMotionUi.speed',roughness:'cameraMotionUi.roughness',direction:'cameraMotionUi.direction',"
   },
   "cameraMotionUi.start": {
     "locations": [
-      "src/camera-motion-ui.mjs:81"
+      "src/camera-motion-ui.mjs:80"
     ],
     "context": "`<div class=\"motion-group\"><div class=\"motion-group-head\"><span data-i18n=\"cameraMotionUi.timing\">Timing</span></div><div class=\"field-grid motion-timing\">${fie"
   },
   "cameraMotionUi.stopFollowing": {
     "locations": [
-      "src/camera-motion-ui.mjs:46"
+      "src/camera-motion-ui.mjs:45"
     ],
     "context": "`<button type=\"button\" class=\"ui-icon-button\" data-size=\"sm\" data-follow-remove=\"${t.uid}\" aria-label=\"Stop following ${esc(name??{messageKey:'cameraMotionUi.mi"
   },
   "cameraMotionUi.stopFollowing2": {
     "locations": [
-      "src/camera-motion-ui.mjs:46"
+      "src/camera-motion-ui.mjs:45"
     ],
     "context": "`<button type=\"button\" class=\"ui-icon-button\" data-size=\"sm\" data-follow-remove=\"${t.uid}\" aria-label=\"Stop following ${esc(name??{messageKey:'cameraMotionUi.mi"
   },
   "cameraMotionUi.thisFigureIsNotInTheAnimationAny": {
     "locations": [
-      "src/camera-motion-ui.mjs:43"
+      "src/camera-motion-ui.mjs:42"
     ],
     "context": "const rows=clip.targets.map(t=>{const name=figureName(editor,t.uid);return `<div class=\"motion-target${name?'':' is-missing'}\" data-follow-uid=\"${t.uid}\"><span "
   },
   "cameraMotionUi.thisMoveSFrames": {
     "locations": [
-      "src/camera-motion-ui.mjs:84"
+      "src/camera-motion-ui.mjs:83"
     ],
     "context": "`<div class=\"motion-bake-row\"><select class=\"inline-select\" data-motion-bake-range aria-label=\"Bake range\" data-i18n-aria-label=\"cameraMotionUi.bakeRange\"><opti"
   },
   "cameraMotionUi.timing": {
     "locations": [
-      "src/camera-motion-ui.mjs:81"
+      "src/camera-motion-ui.mjs:80"
     ],
     "context": "`<div class=\"motion-group\"><div class=\"motion-group-head\"><span data-i18n=\"cameraMotionUi.timing\">Timing</span></div><div class=\"field-grid motion-timing\">${fie"
   },
   "cameraMotionUi.turnEveryMoveIntoOrdinaryCameraKeys": {
     "locations": [
-      "src/camera-motion-ui.mjs:84"
+      "src/camera-motion-ui.mjs:83"
     ],
     "context": "`<div class=\"motion-bake-row\"><select class=\"inline-select\" data-motion-bake-range aria-label=\"Bake range\" data-i18n-aria-label=\"cameraMotionUi.bakeRange\"><opti"
   },
   "cameraMotionUi.upDown": {
     "locations": [
-      "src/camera-motion-ui.mjs:54"
+      "src/camera-motion-ui.mjs:53"
     ],
     "context": "`<div class=\"ui-slider-row motion-slider-row\"><span class=\"ui-slider-label\" data-i18n=\"cameraMotionUi.direction\">Direction</span><div class=\"ui-segmented motion"
   },
   "cameraMotionUi.value": {
     "locations": [
-      "src/camera-motion-ui.mjs:31"
+      "src/camera-motion-ui.mjs:30"
     ],
     "context": "`<label class=\"motion-slider-value\"><input type=\"number\" data-motion-field=\"${key}\" min=\"${lower}\" max=\"${max*factor}\" step=\"${whole?1:'any'}\" value=\"${Number(v"
   },
@@ -4277,27 +4270,27 @@
   },
   "cameraMotionUi.weightOf": {
     "locations": [
-      "src/camera-motion-ui.mjs:45"
+      "src/camera-motion-ui.mjs:44"
     ],
     "context": "(clip.targets.length<2?'':`<input class=\"ui-slider\" type=\"range\" min=\"0\" max=\"100\" step=\"1\" value=\"${Math.round(t.weight*100)}\" style=\"--_p:${Math.round(t.weigh"
   },
   "cameraMotionUi.zoom": {
     "locations": [
       "src/camera-motion-localization.mjs:8",
-      "src/camera-motion-ui.mjs:63"
+      "src/camera-motion-ui.mjs:62"
     ],
     "context": "zoom:'cameraMotionUi.zoom',frequency:'cameraMotionUi.speed',roughness:'cameraMotionUi.roughness',direction:'cameraMotionUi.direction',"
   },
   "cameraMotionUi.zoomLimit": {
     "locations": [
       "src/camera-motion-localization.mjs:12",
-      "src/camera-motion-ui.mjs:57"
+      "src/camera-motion-ui.mjs:56"
     ],
     "context": "lookAhead:'cameraMotionUi.lookAhead',zoomFit:'cameraMotionUi.autoZoom',padding:'cameraMotionUi.margin',maxZoom:'cameraMotionUi.zoomLimit',"
   },
   "cameraMotionUi.zoomsToKeepEveryFollowedFigureInView": {
     "locations": [
-      "src/camera-motion-ui.mjs:56"
+      "src/camera-motion-ui.mjs:55"
     ],
     "context": "slider(clip,'zoomFit',interfaceText(\"cameraMotionUi.autoZoom\"),100,locked,interfaceText(\"cameraMotionUi.zoomsToKeepEveryFollowedFigureInView\"), {label: {key: \"c"
   },
@@ -7305,7 +7298,7 @@
   "common.delete": {
     "locations": [
       "desktop/main.cjs:181",
-      "src/camera-motion-ui.mjs:78",
+      "src/camera-motion-ui.mjs:77",
       "src/color-picker.mjs:157",
       "src/localization-bindings.mjs:219",
       "src/shell/layout-popover.mjs:212",
@@ -12382,7 +12375,7 @@
   },
   "errors.builderSession.theEditedFigureNoLongerExists": {
     "locations": [
-      "src/builder-session.mjs:145"
+      "src/builder-session.mjs:143"
     ],
     "context": "if (!this.figure?.segments?.length) throw messageError(new Error(''), \"errors.builderSession.theEditedFigureNoLongerExists\", {});"
   },
@@ -12502,19 +12495,19 @@
   },
   "errors.cameraMotionUi.enterAValidParallaxResponse": {
     "locations": [
-      "src/camera-motion-ui.mjs:191"
+      "src/camera-motion-ui.mjs:189"
     ],
     "context": "const key=input.dataset.parallaxField;if(!key||input.value==='custom')return;if(input.type==='number'&&(!input.value||!input.validity.valid))throw messageError("
   },
   "errors.cameraMotionUi.enterAValueWithinTheAllowedRange": {
     "locations": [
-      "src/camera-motion-ui.mjs:152"
+      "src/camera-motion-ui.mjs:151"
     ],
     "context": "patch(input){const key=input.dataset.motionField,value=input.type==='checkbox'?input.checked:Number(input.value);if(input.value===''||!input.validity.valid)thro"
   },
   "errors.cameraMotionUi.theFollowedFiguresAreNotInThisFrame": {
     "locations": [
-      "src/camera-motion-ui.mjs:113"
+      "src/camera-motion-ui.mjs:112"
     ],
     "context": "else if(action==='keep-framing'){const clip=editor.getCameraMotions().find(c=>c.id===id),offset=editor._shown?.framing(clip.targets);if(!offset)throw messageErr"
   },
@@ -14419,7 +14412,7 @@
   "errors.editorBuilderStyle.polygonOpacityMustBeFrom0To100": {
     "locations": [
       "src/editor-builder-style.mjs:119",
-      "src/native-property-edit.mjs:219"
+      "src/native-property-edit.mjs:211"
     ],
     "context": "if(value<0||value>100)throw messageError(new Error(''), \"errors.editorBuilderStyle.polygonOpacityMustBeFrom0To100\", {});"
   },
@@ -15640,7 +15633,7 @@
   "errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip": {
     "locations": [
       "src/editor-movieclips.mjs:265",
-      "src/engine/engine-owner.mjs:801"
+      "src/engine/engine-owner.mjs:558"
     ],
     "context": "if(drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), \"errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMoviecl"
   },
@@ -16379,15 +16372,17 @@
   },
   "errors.engineOwner.invalidValue": {
     "locations": [
-      "src/engine/engine-owner.mjs:1232"
+      "src/engine/engine-owner.mjs:830"
     ],
     "context": "if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error}"
   },
   "errors.engineOwner.notSupported": {
     "locations": [
-      "src/engine/engine-owner.mjs:1239"
+      "src/engine/engine-owner.mjs:8",
+      "src/engine/engine-owner.mjs:837",
+      "src/native-property-edit.mjs:303"
     ],
-    "context": "const error = messageError(new Error(''), 'errors.engineOwner.notSupported', {});"
+    "context": "* or has no command for, raises the refusal (`errors.engineOwner.notSupported`, counted in `report.refused`) and changes nothing,"
   },
   "errors.engineStage.theDrawingEngineCouldNotStart": {
     "locations": [
@@ -18439,82 +18434,69 @@
   },
   "errors.nativePropertyEdit.chooseACameraFrame": {
     "locations": [
-      "src/native-property-edit.mjs:447"
+      "src/native-property-edit.mjs:367"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.chooseACameraFrame\", {});"
   },
   "errors.nativePropertyEdit.chooseAFigureFirst": {
     "locations": [
-      "src/native-property-edit.mjs:457"
+      "src/native-property-edit.mjs:374"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.chooseAFigureFirst\", {});"
   },
-  "errors.nativePropertyEdit.chooseNativeFramesToApplyAnAbsoluteValue": {
-    "locations": [
-      "src/native-property-edit.mjs:442",
-      "src/native-property-ranges.mjs:266"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.chooseNativeFramesToApplyAnAbsoluteValue\", {});"
-  },
   "errors.nativePropertyEdit.enterAFiniteNumberWithinTheNativeRange": {
     "locations": [
-      "src/native-property-edit.mjs:217"
+      "src/native-property-edit.mjs:209"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.enterAFiniteNumberWithinTheNativeRange\", {});"
   },
   "errors.nativePropertyEdit.enterAValueFromTo": {
     "locations": [
-      "src/native-property-edit.mjs:267"
+      "src/native-property-edit.mjs:259"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.enterAValueFromTo\", {min: min, max: max});"
   },
   "errors.nativePropertyEdit.enterAWholeNumber": {
     "locations": [
-      "src/native-property-edit.mjs:265"
+      "src/native-property-edit.mjs:257"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.enterAWholeNumber\", {});"
   },
   "errors.nativePropertyEdit.increaseTheSelectionSizeBeforeScaling": {
     "locations": [
-      "src/native-property-edit.mjs:562"
+      "src/native-property-edit.mjs:418"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.increaseTheSelectionSizeBeforeScaling\", {});"
   },
   "errors.nativePropertyEdit.selectThePropertyBeforeEditingIt": {
     "locations": [
-      "src/native-property-edit.mjs:377"
+      "src/native-property-edit.mjs:325"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.selectThePropertyBeforeEditingIt\", {});"
   },
   "errors.nativePropertyEdit.thePropertyTargetNoLongerExists": {
     "locations": [
-      "src/native-property-edit.mjs:335"
+      "src/native-property-edit.mjs:300"
     ],
     "context": "if (!root) throw messageError(new Error(''), \"errors.nativePropertyEdit.thePropertyTargetNoLongerExists\", {});"
   },
   "errors.nativePropertyEdit.theSelectedPropertyChangedDuringTheGesture": {
     "locations": [
-      "src/native-property-edit.mjs:368"
+      "src/native-property-edit.mjs:314"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.theSelectedPropertyChangedDuringTheGesture\", {});"
   },
   "errors.nativePropertyEdit.theSelectedPropertyHasNoFiniteValue": {
     "locations": [
-      "src/native-property-edit.mjs:429"
+      "src/native-property-edit.mjs:352"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.theSelectedPropertyHasNoFiniteValue\", {});"
   },
   "errors.nativePropertyEdit.thisPropertyGestureHasEnded": {
     "locations": [
-      "src/native-property-edit.mjs:358"
+      "src/native-property-edit.mjs:306"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.thisPropertyGestureHasEnded\", {});"
-  },
-  "errors.nativePropertyRanges.aSelectedFrameHasAZeroSizedFigure": {
-    "locations": [
-      "src/native-property-ranges.mjs:160"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativePropertyRanges.aSelectedFrameHasAZeroSizedFigure\", {});"
   },
   "errors.nativeTextAuthoring.chooseAFontFaceToChangeBoldOr": {
     "locations": [
@@ -24973,14 +24955,14 @@
   },
   "inspectorLegacy.dragToAdjustShiftFineAltExtraFine": {
     "locations": [
-      "src/camera-motion-ui.mjs:17",
+      "src/camera-motion-ui.mjs:16",
       "src/inspector-legacy.mjs:33"
     ],
     "context": "const scrubLabel=(label,enabled=true,disabled=false,message)=>`<span ${enabled?`class=\"property-scrub\" data-property-scrub tabindex=\"${disabled?-1:0}\" role=\"but"
   },
   "inspectorLegacy.scrub": {
     "locations": [
-      "src/camera-motion-ui.mjs:17",
+      "src/camera-motion-ui.mjs:16",
       "src/inspector-legacy.mjs:33"
     ],
     "context": "const scrubLabel=(label,enabled=true,disabled=false,message)=>`<span ${enabled?`class=\"property-scrub\" data-property-scrub tabindex=\"${disabled?-1:0}\" role=\"but"
@@ -39108,7 +39090,7 @@
   },
   "vfxChannels.enabled": {
     "locations": [
-      "src/engine/engine-owner.mjs:1219",
+      "src/engine/engine-owner.mjs:817",
       "src/vfx-clip-inspector.mjs:63",
       "src/vfx-localization.mjs:9",
       "src/vfx.mjs:25"

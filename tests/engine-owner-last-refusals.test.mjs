@@ -5,11 +5,9 @@
 import '../engine/tools/v8-pin.mjs';
 import assert from 'node:assert/strict';
 import {engineBuilt} from './support/engine-node.mjs';
-import {Editor} from '../src/editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createFrame, createObject, defaultFigure, emptyDocument} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
-import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {bothWays, recordedDocument} from './support/owned-vs-plain.mjs';
 import {ownerReferences} from './support/owner-references.mjs';
 
@@ -77,14 +75,7 @@ refs.test('the effects of a copied branch go with it to its new definition', opt
 
 /** The file of two examples joined into one assembly (as a file holds it): the second hangs from `handle` of the first. */
 function assembly(take, first, second, handle) {
-  return take(`assembly ${first} ${second}`, () => {
-    const editor = new Editor({demo: false});
-    editor.load(rigExampleDocument(first));
-    const child = editor.importFigure(rigExampleDocument(second));
-    editor.select(child.unique_id);
-    editor.joinFigure(1, handle);
-    return editor.serialize();
-  });
+  return take(`assembly ${first} ${second}`);
 }
 
 refs.test('combining joined figures keeps their rig relationships', opts, async take => {
@@ -128,14 +119,7 @@ refs.test('combining joined figures draws pinned limbs as they stand and keeps c
 
 /** A document of "sprite-segment-sparse-native" with its media figure (3) joined to the end of a limb of figure 1. */
 function mediaAssembly(take, what, tune = () => {}) {
-  return take(`media assembly ${what}`, () => {
-    const source = recordedDocument('sprite-segment-sparse-native');
-    tune(source);
-    const editor = new Editor({demo: false}).load(source);
-    editor.select(3);
-    editor.joinFigure(1, 33);
-    return editor.serialize();
-  });
+  return take(`media assembly ${what}`);
 }
 
 refs.test('combining joined figures moves their images and text into the new figure', opts, async take => {

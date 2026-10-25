@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {createObject,createFrame} from '../src/demo.mjs';
-import {branchOpacityPlan} from '../src/editor-branch-style.mjs';
 import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit,cancelNativePropertyEdit} from '../src/native-property-edit.mjs';
 const reset=e=>{e._undo=[];e._redo=[];e._historySize=0;e.markSaved();};
 function fixture(){
@@ -12,34 +11,6 @@ function fixture(){
  const other=createObject(f,900,30,50,{object_slot:1});e.frame.objects.push(other);e.frame.object_draw_order.push(1);e.frame.object_draw_order_unique_ids.push(900);e.frame.duration_raw=12;e.report.keyframes.push(createFrame(e.frame.objects.map(object=>structuredClone(object))));e._invalidate({timing:true});reset(e);return e;
 }
 const target=(e,handleId)=>({kind:'segment',uid:e.selectedUid,handleId});
-test('unoverridden numeric branch opacity keeps native shared definition and enclosed polygons in one sparse undo',()=>{
- const e=fixture(),f=e.figure,before=JSON.stringify(f),frame=e.frame,objects=e.frame.objects;
- assert.equal(branchOpacityPlan(e,'segment_opacity').authored,false);
- const token=beginNativePropertyEdit(e,'segment_opacity',{branch:true});previewNativePropertyEdit(token,40);
- assert.equal(f.segments[2].transparency,153);assert.equal(f.segments[3].transparency,153);assert.equal(f.polyfills[0].alpha_raw,153);
- assert.equal(e.animationChannels.length,0);assert.equal(e.frame,frame);assert.equal(e.frame.objects,objects);
- assert.ok(commitNativePropertyEdit(token));assert.equal(e._undo.length,1);assert.equal(e._undo[0].kind,'native-properties');assert.ok(e._undo[0].bytes<4000);
- e.undo();assert.equal(JSON.stringify(e.figure),before);
-});
-test('native secondary opacity preserves every existing gradient RGB and does not invent gradients or change polygons',()=>{
- const e=fixture(),f=e.figure,colors=f.segments.map(s=>s.secondary&&[...s.secondary.rgb]),poly=JSON.stringify(f.polyfills),before=JSON.stringify(f);
- const token=beginNativePropertyEdit(e,'segment_gradient_opacity',{branch:true});previewNativePropertyEdit(token,25);
- assert.equal(f.segments[2].secondary.a,191);assert.equal(f.segments[3].secondary.a,191);
- assert.deepEqual(f.segments.map(s=>s.secondary&&s.secondary.rgb),colors);assert.equal(JSON.stringify(f.polyfills),poly);
- cancelNativePropertyEdit(token);assert.equal(JSON.stringify(f),before);assert.equal(e._undo.length,0);
-});
-test('one overridden primary target routes the whole selected branch to visible authored keys without mutating shared figures or polygons',()=>{
- const e=fixture();e.addAnimationKey(target(e,3),'opacity',0,.2);e.seek(6);reset(e);
- const before=e.report._styk.animation,beforeJSON=JSON.stringify(before),figure=e.figure,definition=JSON.stringify(figure),frames=e.report.keyframes,objects=e.frame.objects;
- const token=beginNativePropertyEdit(e,'segment_opacity',{branch:true});assert.ok(token.branchAnimation);assert.equal(token.definition,false);
- for(const value of [10,30,55,40])previewNativePropertyEdit(token,value);
- assert.equal(e.animationValue(target(e,3),'opacity'),.4);assert.equal(e.animationValue(target(e,4),'opacity'),.4);
- assert.equal(e.animationValue({kind:'segment',uid:900,handleId:3},'opacity'),1);
- assert.equal(JSON.stringify(figure),definition);assert.equal(JSON.stringify(before),beforeJSON);assert.equal(e.report.keyframes,frames);assert.equal(e.frame.objects,objects);assert.equal(e._undo.length,0);
- assert.ok(commitNativePropertyEdit(token));assert.equal(e._undo.length,1);assert.equal(e._undo[0].kind,'animation');
- assert.ok(e.animationChannel(target(e,3),'opacity').keys.some(k=>k.tick===6&&k.value===.4));
- e.undo();assert.deepEqual(e.report._styk.animation,before);e.redo();assert.equal(e.animationValue(target(e,4),'opacity'),.4);
-});
 test('captured secondary style cancels exactly and same selected value still updates heterogeneous branch children',()=>{
  const e=fixture();e.frame.objects[0]._stykStyle={segments:{3:{gradientOpacity:.25}}};e._invalidate();reset(e);
  const source=JSON.stringify(e.frame),before=e.report._styk.animation;

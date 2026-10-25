@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {builderDrawables} from '../src/editor-builder-style.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
@@ -92,7 +93,7 @@ test(`single-segment joints and joined branches move in scene order (sheet=${lay
     frame.object_draw_order_unique_ids = [...before]; frame.object_draw_order = before.map(uid => ids.indexOf(uid));
     return frame;
   });
-  const e = newOwnedEditor({demo: false, layerTimeline, propertyChannels}).load(report);
+  const e = (layerTimeline ? newOwnedEditor : newPlainEditor)({demo: false, layerTimeline, propertyChannels}).load(report);
   e.select(70, 0);
   e.orderSelection('front'); assert.deepEqual(order(e), [30, 20, 10, 50, 80, 70]);
   e.undo(); assert.deepEqual(order(e), before);

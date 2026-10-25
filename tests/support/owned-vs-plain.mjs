@@ -1,7 +1,7 @@
 // A call run on an editor the engine owns (D19) and compared with what an editor alone gave for it (the frozen references
 // of tests/support/owner-references.mjs): the documents they show after it, the history entries it left and what undo
-// and redo give back are the same, and the engine session took the call itself (nothing was refused, nothing ran in the
-// editor). The expectations of the call are the tests' own.
+// and redo give back are the same, and the engine session took the call itself (nothing was refused). The expectations of the
+// call are the tests' own.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../../src/editor.mjs';
@@ -40,8 +40,8 @@ export function differences(a, b, path = '', found = []) {
 }
 
 /**
- * @param {Function} take the test's references (`ownerReferences(...).test`): the editor alone runs only when they are recorded
- * @param {object} document the document both editors open
+ * @param {Function} take the test's references (`ownerReferences(...).test`): what an editor alone gave
+ * @param {object} document the document the owned editor opens
  * @param {(editor, mark: (name: string) => void) => unknown} act the calls to make (it may be asynchronous); `mark` records
  *   the document at that point
  * @param {object} [settings] `options`: the editor's; `expectEntries`: how many history entries the calls leave (default:
@@ -50,9 +50,9 @@ export function differences(a, b, path = '', found = []) {
  *   returned, as text), and for the owned one the `editor`
  */
 export async function bothWays(take, document, act, {options = {}, expectEntries = null, unchanged = false} = {}) {
-  const run = async owned => {
+  const run = async () => {
     const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true, ...options}).load(structuredClone(document));
-    const owner = owned ? installEngineOwner(editor) : null;
+    const owner = installEngineOwner(editor);
     try {
       const states = [], mark = name => states.push({name, document: documentText(editor), undo: editor.undoLabel, redo: editor.redoLabel, depth: editor._undo.length, dirty: editor.dirty});
       const depth = editor._undo.length;
@@ -62,14 +62,11 @@ export async function bothWays(take, document, act, {options = {}, expectEntries
       const entries = editor._undo.length - depth;
       for (let i = 0; i < entries; i++) { await editor.undo(); mark(`undo ${i + 1}`); }
       for (let i = 0; i < entries; i++) { await editor.redo(); mark(`redo ${i + 1}`); }
-      return {states, entries, result, editor, refused: owner ? Object.keys(owner.refused) : [], fallback: owner ? owner.fallback : 0};
-    } finally { owner?.release(); }
+      return {states, entries, result, editor, refused: Object.keys(owner.refused)};
+    } finally { owner.release(); }
   };
-  const plain = await take('plain', async () => {
-    const {states, entries, result} = await run(false);
-    return {states, entries, result: normalized(JSON.stringify(result) ?? '')};
-  });
-  const owned = await run(true);
+  const plain = take('plain');
+  const owned = await run();
   const ownedStates = canonical(owned.states);
   if (!unchanged) assert.ok(plain.entries >= (expectEntries ?? 1), `the call left ${plain.entries} history entries`);
   if (expectEntries !== null) assert.equal(plain.entries, expectEntries);
@@ -82,7 +79,6 @@ export async function bothWays(take, document, act, {options = {}, expectEntries
   if (unchanged) assert.equal(at('after'), at('before'), 'the call changed nothing');
   else assert.notEqual(at('after'), at('before'), 'the call changed the document');
   assert.deepEqual(owned.refused, [], 'the session refused nothing');
-  assert.equal(owned.fallback, 0, 'no call ran in the editor');
   assert.equal(normalized(JSON.stringify(owned.result) ?? ''), plain.result, 'the calls gave the same');
   return {plain, owned};
 }

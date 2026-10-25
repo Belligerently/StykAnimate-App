@@ -44,7 +44,7 @@ test('perspective and part proportions of a 3D figure run in the session and und
   assert.deepEqual(shown(editor)._stykSpatial.shape[6], {width: 2, taper: 0.5});
   editor.undo(); editor.undo();
   assert.equal(shown(editor)._stykSpatial?.camera?.strength, 0.5, 'back to the perspective the document had');
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('a scene background is imported and named in the session; each is one history entry', {skip: !engineBuilt}, async () => {
@@ -69,7 +69,7 @@ test('a scene background is imported and named in the session; each is one histo
   assert.equal(editor.evaluatedFrame.background_id, 0);
   editor.redo(); editor.redo();
   assert.equal(editor.report.backgrounds.at(-1).name, 'Sky');
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('the exposure under the playhead is set in the session', {skip: !engineBuilt}, async () => {
@@ -82,7 +82,7 @@ test('the exposure under the playhead is set in the session', {skip: !engineBuil
   assert.throws(() => editor.setFrameDuration(0), error => error.messageKey === 'errors.editorLayerSheet.exposureMustBe165535Frames');
   editor.undo();
   assert.equal(length(), first);
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('figures move to another layer and a layer is deleted in the session, with the figures\' poses', {skip: !engineBuilt}, async () => {
@@ -108,7 +108,7 @@ test('figures move to another layer and a layer is deleted in the session, with 
   cancelled.abort();
   await assert.rejects(editor.deleteLayerAsync('layer-1', {signal: cancelled.signal}), error => error.name === 'AbortError');
   assert.deepEqual(layers(), first, 'a cancelled deletion changes nothing');
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('baking camera motion keys the camera on every frame and silences the clips there', {skip: !engineBuilt}, async () => {
@@ -123,7 +123,7 @@ test('baking camera motion keys the camera on every frame and silences the clips
   editor.undo();
   assert.deepEqual(camera(), [0]);
   assert.equal(editor.getCameraMotions()[0].mutedRanges, undefined);
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('figures are pasted into the chosen frames in the session', {skip: !engineBuilt}, async () => {
@@ -138,7 +138,7 @@ test('figures are pasted into the chosen frames in the session', {skip: !engineB
   assert.throws(() => editor.pasteFiguresInFrames([1], {pasteMode: 'bogus'}), error => error.messageKey === 'errors.editorRangeCommands.chooseAValidFigurePasteMode');
   editor.undo();
   assert.equal(editor.layerForUid(4), 'layer-1', 'the identity is still the default layer\'s');
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('a copied drawing takes the pixels of the cel it copies', {skip: !engineBuilt}, async () => {
@@ -169,7 +169,7 @@ test('a copied drawing takes the pixels of the cel it copies', {skip: !engineBui
     // A blank cel has no pixels to take.
     assert.equal(editor.addDrawingFrame(layer.id, 30), true);
     assert.equal(cels().length, 2);
-    assert.equal(owner.editor, undefined, 'nothing ran in the editor, the stroke included');
+    assert.deepEqual(owner.refused, {}, 'the session refused nothing');
   } finally {
     owner.release();
     resources.dispose();
@@ -183,7 +183,7 @@ test('the drawing commands refuse what the editor refused', {skip: !engineBuilt}
   editor.setLayerVisible(layer.id, false);
   assert.throws(() => editor.nextDrawing([layer.id]), error => error.messageKey === 'errors.editorDrawing.showAndUnlockBeforeDrawing' && error.messageParams?.name === 'Drawing');
   assert.equal(editor.autoKeyDrawing(layer.id), false, 'auto key is off');
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('the paint of a segment is read and keyed in the session, whether the segment has a style override or not', {skip: !engineBuilt}, async () => {
@@ -200,5 +200,5 @@ test('the paint of a segment is read and keyed in the session, whether the segme
   editor.addAnimationKey(target, 'paint', 0, green);
   editor.seek(0);
   assert.deepEqual(editor.animationValue(target, 'paint'), green, 'the keyed paint is read once there is one');
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });

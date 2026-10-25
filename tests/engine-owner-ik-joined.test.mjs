@@ -63,7 +63,7 @@ for (const {name, uid, joint, handle, options} of documents) {
         assert.equal(text(editor), states[at], `redo gives the document after step ${at}`);
       }
       assert.deepEqual(Object.keys(owner.refused), [], 'nothing was refused');
-      assert.equal(owner.fallback, 0, 'no call ran in the editor');
+      assert.deepEqual(owner.refused, {}, 'the session refused nothing');
     } finally { owner.release(); }
   });
 }

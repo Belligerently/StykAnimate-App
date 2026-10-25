@@ -4,9 +4,9 @@ import {Editor, emptyDocument} from '../src/editor.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {frameOrder} from '../src/pivot/structure.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 const near = (a, b, tolerance = 1e-5) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 /** `plain`: the editor alone, for the tests of its own history commands, gestures made in place and caches, which the session has no counterpart for. */

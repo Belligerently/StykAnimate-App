@@ -6,6 +6,7 @@ import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {connectedVfxGeometry,connectedVfxConflict} from '../src/vfx-connected.mjs';
 import {createVfx,vfxStack,validateVfxOwner,vfxProperty} from '../src/vfx.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 function fixture(){
  const report=emptyDocument(),fig=report.figure_types[0];
  const objects=[1,2,3,4].map(id=>createObject(fig,id,120+id*20,180));
@@ -98,7 +99,7 @@ test('VFX-only paste preserves identity, interpolates values and retains authore
  const duplicate=editor.duplicateVfx(target,id);assert.notEqual(duplicate,id);
 });
 test('legacy scalar channels do not override pasted values and retain their interpolation',()=>{
- const report=fixture();report.keyframes.push(structuredClone(report.keyframes[0]));const e=newOwnedEditor({demo:false}).load(report),target={kind:'figure',uid:1};
+ const report=fixture();report.keyframes.push(structuredClone(report.keyframes[0]));const e=newPlainEditor({demo:false}).load(report),target={kind:'figure',uid:1};
  const [id]=e.addVfx(target,'glow'),property=vfxProperty('glow',id,'radius');
  e.addAnimationKeys([{target,property,tick:0,value:4,interpolation:'linear',exactTarget:true}]);
  const stack=structuredClone(e.vfxEffects(target));stack[0].params.radius=24;e.seek(10);e.pasteVfx(target,stack);

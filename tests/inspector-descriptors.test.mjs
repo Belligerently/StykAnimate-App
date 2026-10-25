@@ -29,6 +29,7 @@ import {INSPECTOR_BUDGET, MAX_TITLE_ACTIONS, ROW_KINDS, inspectorBudgetProblems,
 import {QUICK_ACTIONS, QUICK_CONTEXTS, quickDefaults} from '../src/ui/quick-actions.mjs';
 import {legacyIkControlsView, legacyInspectorView, legacyMovieclipInspector} from './fixtures/inspector-legacy.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {
   assertNoKeyState, assertNoTitles, assertNumberParity, assertOptions, assertParity, assertSwitchParity, find, nameOf, options, tag, tags,
 } from './helpers/inspector-markup.mjs';
@@ -197,7 +198,7 @@ test('figure contexts keep every control: figure, joints, ranges, builder, rig t
 });
 
 test('several figures, joined figures and movieclips keep every control', () => {
-  const editor = engineEditor();
+  const editor = plainEditorFor();
   editor.selectMany([1, 2]);
   const bounds = {minX: 10, minY: 20, maxX: 110.5, maxY: 220};
   assertNothingLost({editor, selectionCount: 2, bounds}, 'two figures');
@@ -207,7 +208,7 @@ test('several figures, joined figures and movieclips keep every control', () => 
   editor.selectMany([1, 2]);
   assertNothingLost({editor, selectionCount: 2, bounds}, 'two figures on two layers');
 
-  const joined = engineEditor();
+  const joined = plainEditorFor();
   const [child, parent] = joined.frame.objects;
   child.join = {target_object_slot: parent.object_slot, target_unique_id: parent.unique_id, target_handle_id: 3};
   joined.select(child.unique_id);
@@ -221,7 +222,7 @@ test('several figures, joined figures and movieclips keep every control', () => 
     {duration: 8, pivot: {x: 200, y: 250}});
   const report = {...emptyDocument(), fps: 24, figure_types: [defaultFigure(), clip]};
   report.keyframes = [createFrame([createObject(clip, 7, 300, 300, {_stykMovieclip: presencePlayback()})], 11), createFrame([createObject(clip, 7, 300, 300, {_stykMovieclip: presencePlayback()})])];
-  const movie = engineEditor({demo: false, layerTimeline: true}, report);
+  const movie = plainEditorFor({demo: false, layerTimeline: true}, report);
   movie.select(7);
   assertNothingLost({editor: movie}, 'a movieclip instance');
   // movieclipInspector() is the clip's own sections: everything today's had, less what moved to the header.
@@ -261,16 +262,16 @@ test('Build’s rig keeps every control while its behaviours are on, each block 
 });
 
 test('text, image, connector, two-tone and IK joints keep every control', () => {
-  const text = engineEditor({demo: false});
+  const text = plainEditorFor({demo: false});
   text.importFigure(compileTextFigure({text: 'Hello', fontSize: 42, color: [70, 40, 170]}, fonts[0]));
   assertNothingLost({editor: text}, 'text');
-  const image = engineEditor({demo: false});
+  const image = plainEditorFor({demo: false});
   image.importFigure(createImageFigure({dataUrl: PNG, width: 1, height: 1, name: 'Placed <sprite> & "co"'}));
   assertNothingLost({editor: image}, 'image');
   image.select(image.selectedUid, 0);
   assertNothingLost({editor: image}, 'an image segment');
 
-  const rig = engineEditor({demo: false}, rigExampleDocument('sliding-carriage'));
+  const rig = plainEditorFor({demo: false}, rigExampleDocument('sliding-carriage'));
   rig.select(1, 2);
   assertNothingLost({editor: rig}, 'a connector (slider)');
   assertNothingLost({editor: rig, builder: true}, 'a connector in the builder');
@@ -279,7 +280,7 @@ test('text, image, connector, two-tone and IK joints keep every control', () => 
   rig.select(1, 0);
   assertNothingLost({editor: rig}, 'an anchor segment');
 
-  const tone = engineEditor({demo: false});
+  const tone = plainEditorFor({demo: false});
   tone.addFigure();
   tone.select(tone.selectedUid, 0);
   tone.updateSegmentStyle({color: '#f8356a', opacity: 0.7, gradient: {color: '#2cd876', opacity: 0.6}});
@@ -291,7 +292,7 @@ test('text, image, connector, two-tone and IK joints keep every control', () => 
   tone.figure.segments[0].secondary = null;
   assertNothingLost({editor: tone}, 'a circle without a second colour');
 
-  const ik = engineEditor();
+  const ik = plainEditorFor();
   ik.select(1, 4);
   ik.setNodeIK({enabled: true});
   assertNothingLost({editor: ik}, 'an IK joint');
@@ -404,7 +405,7 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
 });
 
 test('text and image figures: Text and Transform lead; Arrange folds for text', () => {
-  const text = engineEditor({demo: false});
+  const text = plainEditorFor({demo: false});
   text.importFigure(compileTextFigure({text: 'Hello', fontSize: 42, color: [70, 40, 170]}, fonts[0]));
   let options = {editor: text}, descriptor = inspectorDescriptor(options), now = inspectorView(options), today = legacyInspectorView(options);
   assert.equal(descriptor.kind, 'text');
@@ -416,7 +417,7 @@ test('text and image figures: Text and Transform lead; Arrange folds for text', 
   tag(now, {'data-action': 'edit-text'});
   assertBudget(descriptor, 'text');
 
-  const image = engineEditor({demo: false});
+  const image = plainEditorFor({demo: false});
   image.importFigure(createImageFigure({dataUrl: PNG, width: 1, height: 1, name: 'Placed sprite'}));
   options = {editor: image}; descriptor = inspectorDescriptor(options); now = inspectorView(options); today = legacyInspectorView(options);
   assert.equal(descriptor.kind, 'image');
@@ -430,7 +431,7 @@ test('text and image figures: Text and Transform lead; Arrange folds for text', 
 });
 
 test('several figures: Selection (Rotate 15°, Center), Align, Appearance and Arrange; values that differ read Mixed', () => {
-  const editor = engineEditor();
+  const editor = plainEditorFor();
   editor.selectMany([1, 2]);
   const bounds = {minX: 10, minY: 20, maxX: 110.5, maxY: 220}, view = {editor, selectionCount: 2, bounds};
   const today = legacyInspectorView(view), now = inspectorView(view), descriptor = inspectorDescriptor(view);
@@ -534,7 +535,7 @@ test('connector joints: the Connector section opens with Segment │ Slider; the
 });
 
 test('second colour: a titled section whose switch sits after its title and which opens while it is on', () => {
-  const editor = engineEditor({demo: false});
+  const editor = plainEditorFor({demo: false});
   editor.addFigure();
   editor.select(editor.selectedUid, 0);
   editor.updateSegmentStyle({color: '#f8356a', opacity: 0.7, gradient: {color: '#2cd876', opacity: 0.6}});

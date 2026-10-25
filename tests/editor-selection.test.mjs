@@ -27,7 +27,7 @@ function fixture({plain = false} = {}) {
 const ids = editor => [...editor.selectedUids];
 
 test('connected selection traverses both directions by slots, preserving clipboard joins and history', () => {
-  const editor = fixture(), before = structuredClone(editor.report), geometry = editor.geometry;
+  const editor = fixture({plain: true}), before = structuredClone(editor.report), geometry = editor.geometry;
   editor.selectConnected(707);
   assert.deepEqual(ids(editor), [1011, 707]); assert.equal(editor.selectedUid, 707);
   assert.equal(editor.geometry, geometry); assert.equal(editor.canUndo, false);
@@ -136,7 +136,7 @@ test('selection changes preserve redo and invalid marquee mode leaves selection 
 });
 
 test('bring to front partitions native paint order stably without changing slots, UIDs or joins', () => {
-  const editor = fixture(); editor.selectMany([707, 40]);
+  const editor = fixture({plain: true}); editor.selectMany([707, 40]);
   const before = structuredClone(editor.frame), originalObjects = editor.frame.objects, selection = editor._selectionState();
   assert.equal(editor.bringToFront(), true);
   assert.deepEqual(frameOrder(editor.frame), [9, 1011, 500003, 707, 40]);
@@ -149,7 +149,7 @@ test('bring to front partitions native paint order stably without changing slots
 });
 
 test('send to back is a stable partition with one reversible command', () => {
-  const editor = fixture(); editor.selectMany([40, 707]); const before = structuredClone(editor.frame);
+  const editor = fixture({plain: true}); editor.selectMany([40, 707]); const before = structuredClone(editor.frame);
   assert.equal(editor.sendToBack(), true); assert.deepEqual(frameOrder(editor.frame), [707, 40, 9, 1011, 500003]);
   assert.deepEqual(editor.frame.objects, before.objects); assert.equal(editor._undo.length, 1);
   editor.undo(); assert.deepEqual(editor.frame, before); assert.equal(editor.dirty, false);
@@ -157,7 +157,7 @@ test('send to back is a stable partition with one reversible command', () => {
 });
 
 test('empty, whole-frame and already terminal layer selections do not create history', () => {
-  const editor = fixture(); editor.selectMany([]);
+  const editor = fixture({plain: true}); editor.selectMany([]);
   assert.equal(editor.bringToFront(), false); assert.equal(editor.sendToBack(), false);
   editor.selectMany(editor.frame.objects.map(object => object.unique_id));
   assert.equal(editor.bringToFront(), false); assert.equal(editor.sendToBack(), false);

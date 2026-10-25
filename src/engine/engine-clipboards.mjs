@@ -122,10 +122,6 @@ export function createClipboards(editor, layer, token) {
         entry.holder = session; entry.pending = false; entry.taken = undefined;
       }
     },
-    /** The editor ran a call that pastes: it may have changed the clipboard in place, so the session has it again before its next. */
-    edited(name) {
-      for (const kind of READS[name] ?? []) if (!KINDS[kind].lazy) mirror.get(kind).holder = null;
-    },
     /** `session` is about to be freed: what it holds of a lazy clipboard (a copied audio clip's recording) is read from it
      * now and kept, and none names it afterwards. `fetch(session, kind)` is the read `handOver` takes. */
     surrender(session, fetch) {

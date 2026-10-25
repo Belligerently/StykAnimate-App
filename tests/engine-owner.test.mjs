@@ -7,9 +7,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readdirSync, readFileSync} from 'node:fs';
-import {Editor} from '../src/editor.mjs';
 import {withDraws} from '../src/editor-draws.mjs';
 import {holdsRevision, registeredEngine} from '../src/engine/engine-open.mjs';
+import {createDrawingFigure, drawingMetadata} from '../src/drawing-model.mjs';
 import {cameraAtTime} from '../src/camera-motion.mjs';
 import {hasPinnedIK} from '../src/ik.mjs';
 import {MotionTrails} from '../src/motion-path.mjs';
@@ -105,22 +105,34 @@ const supported = scenario => scenario.steps.every(call => Array.isArray(call) &
 const sha = text => createHash('sha256').update(text).digest('hex');
 
 /** The display frame of a saved origin motion on a native document differs from the editor's by an ulp. */
-/** Where recorded tapes end because the engine refuses what they do next, by tape: a bounds callback other than the app's
- * own, which is not data the session can take (the app never passes one). Other refusals run in the editor and the
- * tapes go on to their end. */
+/** Where recorded tapes end because the engine refuses what they do next, by tape. A tape records what the JavaScript editor did at
+ * every step; the session refuses the steps of a native timeline that has property channels (the app gives every document a layer
+ * sheet) and a bounds callback other than the app's own (not data the session can take). A refused step that changed nothing in the
+ * recording is expected to change nothing here and the tape goes on; one that changed the document or the history ends it, as the
+ * editor's result is not the engine's to reproduce. */
 const expectedFrontiers = Object.fromEntries([
   'camera-center-measured-sheet: centerCamera: arguments that are not plain data',
   'camera-center-media-sheet: centerCamera: arguments that are not plain data',
   'figure-align-measured-native: alignSelection: arguments that are not plain data',
-  'figure-align-measured-sheet: alignFiguresInFrames: arguments that are not plain data',
+  'figure-align-measured-sheet: alignSelection: arguments that are not plain data',
+  'native-transform-channels-invalid-open-pose-key: addAnimationKey: invalid native key input with an open editing gesture',
+  'native-transform-channels-invalid-open-property-key: addAnimationKey: invalid native key input with an open editing gesture',
+  'native-transform-channels-layout-projection: previewAnimationEdit: unrecorded native channel authoring or projection',
+  'native-transform-channels-offsets-projection: previewAnimationEdit: unrecorded native channel authoring or projection',
+  'native-transform-channels-plain-projection: previewAnimationEdit: unrecorded native channel authoring or projection',
+  'native-transform-channels-support-projection: previewAnimationEdit: unrecorded native channel authoring or projection',
 ].map(key => [key, 1]));
+/** How many steps of the tapes the session refuses: ten end their tapes, seven changed nothing in the recording. (The editor ran 302 steps
+ * of the tapes itself before the engine owned the whole document: the ones the session refuses, and every step after the first of
+ * those that happened to be on the editor's open gesture.) */
+const EXPECTED_REFUSED_STEPS = 17;
 const floatsDiffer = new Set(['origin-motion-saved-layout-native', 'origin-motion-saved-support-native']);
 // With Pivot's cache on every pose (the recordings' poses have none: the engine's own document is checked against the
 // read view there).
 const variants = [{legacy: false}, {legacy: true}];
 for (const {legacy} of variants) test(`the engine owning the document gives what every recorded tape records${legacy ? ', with legacy pose caches' : ''}`, {skip: !engineBuilt}, async take => {
-  let tapes = 0, steps = 0, native = 0, fallback = 0;
-  const editorCalls = {}, refusedCalls = {}, frontiers = {}, unnamedErrors = {};
+  let tapes = 0, steps = 0, native = 0, refusedSteps = 0;
+  const refusedCalls = {}, frontiers = {}, unnamedErrors = {};
   const failures = [];
   for (const {where, name} of scenarios) {
     const scenario = JSON.parse(readFileSync(new URL(name, where), 'utf8'));
@@ -138,7 +150,7 @@ for (const {legacy} of variants) test(`the engine owning the document gives what
     const label = step => `${scenario.name ?? name} step ${step}`;
     const frontier = [], unnamed = [];
     // The recorded document of the step: kept as text only where it changed.
-    let recorded = reference.steps[0].document;
+    let recorded = reference.steps[0].document, previous = reference.steps[0];
     const check = (index, call, wanted) => {
       const where = `${label(index)} ${call?.[0] ?? 'start'}`;
       if (wanted.document !== undefined) recorded = wanted.document;
@@ -157,13 +169,27 @@ for (const {legacy} of variants) test(`the engine owning the document gives what
         const draws = wanted.draws ?? [];
         setDraws(draws.map(pair => [...pair]));
         events.length = 0;
+        let refused = null;
         try { ({result} = withDraws(() => run(owned, call), () => draws[drawn++]?.[1])); } catch (error) {
           // Beyond what the engine edits (a state it refuses): the recording says what the editor did there.
-          if (error.reason) { frontier.push(error.reason); break; }
-          ownedError = error.unnamed ?? error.messageKey ?? error.message;
-          ownedMessage = error.message;
-          if (error.unnamed) unnamed.push(error.unnamed);
+          if (error.reason) {
+            refusedSteps++;
+            const idle = wanted.document === undefined && JSON.stringify(wanted.state) === JSON.stringify(previous.state) && !(wanted.events ?? []).length;
+            if (!idle) { frontier.push(error.reason); break; }
+            refused = error.reason;
+          } else {
+            ownedError = error.unnamed ?? error.messageKey ?? error.message;
+            ownedMessage = error.message;
+            if (error.unnamed) unnamed.push(error.unnamed);
+          }
         }
+        if (refused) {
+          // The recording changed nothing there, and neither did the refusal.
+          check(index + 1, call, wanted);
+          previous = wanted; steps++;
+          continue;
+        }
+        previous = wanted;
         const wantedError = wanted.error ? wanted.error.key ?? wanted.error.message : undefined;
         assert.equal(ownedError, wantedError, `${label(index + 1)} ${call[0]}: error`);
         if (wanted.error && !legacy && !unnamed.length && ownedMessage !== wanted.error.message) assert.fail(`${label(index + 1)} ${call[0]}: the error says "${ownedMessage}", the recording "${wanted.error.message}"`);
@@ -189,24 +215,21 @@ for (const {legacy} of variants) test(`the engine owning the document gives what
       if (process.env.OWNER_TAPE) console.log(error.stack, JSON.stringify(owner.refused));
       failures.push(`${String(error.message).includes(scenario.name ?? name) ? '' : (scenario.name ?? name) + ': '}${String(error.message).split('\n')[0].slice(0, 420)}` + (owner.broken ? ` [session: ${owner.broken.slice(0, 300)}]` : ''));
     } finally {
-      native += owner.native; fallback += owner.fallback;
-      for (const [key, count] of Object.entries(owner.editor ?? {})) editorCalls[key] = (editorCalls[key] ?? 0) + count;
+      native += owner.native;
       for (const [key, count] of Object.entries(owner.refused ?? {})) refusedCalls[key] = (refusedCalls[key] ?? 0) + count;
       owner.release();
     }
   }
-  console.log(`# ${tapes} tapes / ${steps} steps; engine ${native}, editor ${fallback}; ${failures.length} failing`);
+  console.log(`# ${tapes} tapes / ${steps} steps; engine ${native}, refused ${refusedSteps}; ${failures.length} failing`);
   for (const failure of failures.slice(0, 40)) console.log(`#   ${failure}`);
   if (process.env.OWNER_COUNTS) {
-    console.log(`# editor calls: ${Object.entries(editorCalls).sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, v]) => `${k} ${v}`).join(', ')}`);
     console.log(`# refused: ${Object.entries(refusedCalls).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, v]) => `${k} ${v}`).join(' | ')}`);
   }
   assert.equal(failures.length, 0);
-  // Calls the session refuses run in the editor (docs/engine/editing.md, "Refusals the editor still runs"): every
-  // step above still gives what its tape records; OWNER_COUNTS=1 prints which calls they are.
-  // The tapes end where the engine refuses a state it does not edit yet (the app never opens them).
-  console.log(`# tapes ending at a refusal: ${Object.keys(frontiers).length}`); if (process.env.OWNER_FRONTIERS) console.log(JSON.stringify(Object.keys(frontiers)));
+  // Every step above gives what its tape records, or is refused (docs/engine/editing.md, "Refusals"); OWNER_COUNTS=1 prints which calls.
+  console.log(`# tapes ending at a refusal: ${Object.keys(frontiers).length}`); if (process.env.OWNER_FRONTIERS) console.log(JSON.stringify(frontiers));
   assert.deepEqual(frontiers, expectedFrontiers);
+  assert.equal(refusedSteps, EXPECTED_REFUSED_STEPS);
   // Errors whose message needs a value the engine does not name yet say only that a value is not valid.
   console.log(`# errors without their values: ${JSON.stringify(unnamedErrors, null, 1)}`);
 });
@@ -225,10 +248,10 @@ async function pair(take, name) {
   const {options, document} = recorded(name);
   const {editor: owned, owner} = await ownedEditor(options, document);
   let plain = null;
-  const reference = (label, read) => take(label, () => read(plain ??= new Editor(options).load(structuredClone(document))));
-  const both = (method, ...args) => { const result = owned[method](...args); return [result, reference(method, editor => answered(editor[method](...args)))]; };
+  const reference = (label, read) => take(label);
+  const both = (method, ...args) => { const result = owned[method](...args); return [result, reference(method)]; };
   const agree = label => {
-    const wanted = reference(`agree ${label}`, editor => ({document: json(editor.report), state: state(editor), frame: frameText(editor.evaluatedFrame)}));
+    const wanted = reference(`agree ${label}`);
     sameText(json(owned.report), wanted.document, `${label}: document`);
     same(canonical(state(owned)), wanted.state, `${label}: state`);
     sameText(frameText(owned.evaluatedFrame), wanted.frame, `${label}: frame on show`);
@@ -253,7 +276,7 @@ refs.test('a property edit runs in the session and shows on the editor as its ow
   assert.equal(answers[0].previewChanges.figures.length, 1);
   assert.ok(owned.evaluatedFrame.objects.length > 1);
   assert.equal(owned.dirty, true, 'a previewed change is unsaved');
-  assert.equal(owned._animationEdit.changed, reference('animation edit changed', editor => editor._animationEdit.changed));
+  assert.equal(owned._animationEdit.changed, reference('animation edit changed'));
   assert.equal(owned._animationEdit.value, 1.3);
   assert.ok(owned._sheetPropertyPreview, 'the preview is the frame on show');
   agree('preview');
@@ -266,7 +289,6 @@ refs.test('a property edit runs in the session and shows on the editor as its ow
   both('cancelAnimationEdit');
   assert.equal(owned._animationEdit, null);
   agree('cancel');
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
 });
 
 refs.test('an effect-clip edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async take => {
@@ -291,7 +313,6 @@ refs.test('an effect-clip edit runs in the session and shows on the editor as it
   both('undo');
   assert.equal(owned._vfxClipEdit, null);
   agree('undo');
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
 });
 
 refs.test('ending an edit that is not open does not ask the session', {skip: !engineBuilt}, async take => {
@@ -319,7 +340,7 @@ const staged = editor => {
 };
 /** The owned editor shows what the editor alone did of the open motion-path edit, and the engine samples its trail. */
 const sameLive = (owned, reference, label) => {
-  const wanted = reference(`live ${label}`, editor => ({motion: motionState(editor, json), stage: staged(editor)}));
+  const wanted = reference(`live ${label}`);
   sameText(motionState(owned, json), wanted.motion, `${label}: the edit as the interface reads it`);
   assert.deepEqual(canonical(staged(owned)), wanted.stage, `${label}: the pose the stage draws`);
   const target = owned._drag?.target;
@@ -349,7 +370,7 @@ refs.test('a motion-path edit runs in the session and shows on the editor as its
   assert.ok(answers[1].motionPath.report.length > 0 && answers[1].motionPath.report.length < 8, 'the changed tracks and sources, not the document');
   assert.notEqual(owned.motionPathReport(), owned.report);
   assert.equal(owned.motionPathReport(), owned.motionPathReport(), 'one report until the trail moves again');
-  assert.equal(owned.dirty, reference('dirty', editor => editor.dirty));
+  assert.equal(owned.dirty, reference('dirty'));
   sameLive(owned, reference, 'move');
   both('updateMotionPathEdit', {x: start.x, y: start.y});
   sameLive(owned, reference, 'back at the start');
@@ -367,8 +388,7 @@ refs.test('a motion-path edit runs in the session and shows on the editor as its
   both('cancelMotionPathEdit');
   assert.equal(owned._drag, null);
   agree('cancel');
-  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  while (reference('can undo')) { both('undo'); agree('undo'); }
 });
 
 refs.test('a motion-path edit on the playhead shows the pose under the trail to the stage', {skip: !engineBuilt}, async take => {
@@ -407,8 +427,7 @@ refs.test('a motion-path edit that reshapes the arc shows its falloff on the edi
   both('updateMotionPathEdit', {x: 262, y: 190});
   both('commitMotionPathEdit');
   agree('commit');
-  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  while (reference('can undo')) { both('undo'); agree('undo'); }
 });
 
 /** Calls of a recorded tape on the owned editor and the editor alone (its references): what each raised, and the edit as the interface reads it. */
@@ -420,7 +439,7 @@ const tapeSteps = (name, from, to, owned, reference) => {
     return null;
   };
   for (const [index, [method, ...args]] of scenario.steps.entries().filter(([index]) => index >= from && index < to)) {
-    const wanted = reference(`step ${index + 1} ${method}`, editor => failure(editor, method, args)), failed = canonical(failure(owned, method, args));
+    const wanted = reference(`step ${index + 1} ${method}`), failed = canonical(failure(owned, method, args));
     assert.equal(failed?.messageKey, wanted?.messageKey, `step ${index + 1} ${method}: error`);
     assert.deepEqual(failed?.messageParams, wanted?.messageParams, `step ${index + 1} ${method}: what the error is made of`);
     if (wanted) raised.push(index + 1);
@@ -448,11 +467,11 @@ refs.test('redo under an open motion-path edit ends the edit first, as undo does
   both('beginMotionPathEdit', head, 12);
   both('updateMotionPathEdit', {x: 300, y: 320});
   // The editor alone leaves the edit open under a redo; the engine ends it, as undo does.
-  reference('cancel the drag', editor => { editor.cancelDrag(); });
+  reference('cancel the drag');
   assert.deepEqual(both('redo'), [true, true]);
   assert.equal(owned._drag, null, 'the edit ended');
   agree('redo');
-  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
+  while (reference('can undo')) { both('undo'); agree('undo'); }
 });
 
 // Figure-handle, Handle Edit Mode and segment-value gestures run in the session; the editor shows them as its own.
@@ -462,8 +481,7 @@ const ranHere = owner => HANDLE_CALLS.filter(name => owner.editor?.[name]);
 /** The gesture as the interface reads it, and what the segment-values dialog and the stage show beside it. */
 const valueOptions = [{}, {relative: true}];
 const sameHandles = (owned, reference, label) => {
-  const wanted = reference(`handles ${label}`, editor => ({gesture: handleState(editor, json), frame: frameText(editor.evaluatedFrame),
-    values: editor.figure?.segments[editor.selectedJoint] ? valueOptions.map(options => json(editor.segmentValues(options))) : null}));
+  const wanted = reference(`handles ${label}`);
   sameText(handleState(owned, json), wanted.gesture, `${label}: the gesture as the interface reads it`);
   if (wanted.values) valueOptions.forEach((options, at) => sameText(json(owned.segmentValues(options)), wanted.values[at], `${label}: segment values ${JSON.stringify(options)}`));
   sameText(frameText(owned.evaluatedFrame), wanted.frame, `${label}: frame on show`);
@@ -507,7 +525,7 @@ refs.test('a figure-handle gesture runs in the session and shows its turns to th
   both('transformFigureHandle', 410, 260);
   assert.equal(owned._drag, null);
   agree('a single move');
-  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
+  while (reference('can undo')) { both('undo'); agree('undo'); }
   assert.deepEqual(ranHere(owner), [], 'no figure-handle call ran in the editor');
 });
 
@@ -534,7 +552,7 @@ refs.test('a Handle Edit Mode gesture runs in the session and shows the handle o
   both('cancelHandleEditDrag');
   assert.equal(owned._drag, null);
   agree('cancel');
-  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
+  while (reference('can undo')) { both('undo'); agree('undo'); }
   assert.deepEqual(ranHere(owner), [], 'no handle-edit call ran in the editor');
 });
 
@@ -562,7 +580,7 @@ refs.test('a segment-value gesture runs in the session and keeps its options and
   both('pasteSegmentValues', '12,5:3:70');
   both('pasteSegmentValues', '1:2:3');
   agree('paste');
-  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
+  while (reference('can undo')) { both('undo'); agree('undo'); }
   assert.deepEqual(ranHere(owner), [], 'no segment-value call ran in the editor');
 });
 
@@ -592,7 +610,7 @@ refs.test('a seek or an undo ends a figure-handle or handle-edit gesture, and a 
   assert.deepEqual(both('undo'), [true, true]);
   assert.equal(owned._drag, null);
   agree('undo');
-  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo all'); }
+  while (reference('can undo')) { both('undo'); agree('undo all'); }
   assert.deepEqual(ranHere(owner), []);
 });
 
@@ -606,7 +624,7 @@ for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
     both('select', 1, 1);
     both('beginRigDrag', {});
     assert.ok(owned._drag?.engine && owned.dragging, 'the session\'s gesture is on the editor');
-    assert.equal(Boolean(owned._authoredPoseEdit), reference('authored pose edit', editor => Boolean(editor._authoredPoseEdit)), 'a draft on a layer sheet, the keyframe itself on a native timeline');
+    assert.equal(Boolean(owned._authoredPoseEdit), reference('authored pose edit'), 'a draft on a layer sheet, the keyframe itself on a native timeline');
     assert.equal(owned.dirty, false);
     agree('begin');
     both('editRigJoint', 340, 300);
@@ -615,7 +633,7 @@ for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
     agree('moves');
     both('commitRigDrag');
     assert.equal(owned._drag, null);
-    assert.equal(owned.undoLabel, reference('undo label', editor => editor.undoLabel));
+    assert.equal(owned.undoLabel, reference('undo label'));
     agree('commit');
     // A rotation and a stretch, ended by the generic commit.
     both('select', 1, 0);
@@ -624,7 +642,7 @@ for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
     both('editRigJoint', 318, 250, {stretch: true, isolate: true});
     agree('rotation');
     both('commitDrag');
-    assert.equal(owned.undoLabel, reference('undo label', editor => editor.undoLabel));
+    assert.equal(owned.undoLabel, reference('undo label'));
     agree('commit by commitDrag');
     // The bend of a joint (the editor's bend reads the rig it began), and a cancel.
     both('select', 1, 4);
@@ -646,8 +664,7 @@ for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
     agree('error');
     both('cancelDrag');
     agree('cancel by cancelDrag');
-    while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
-    assert.equal(owner.fallback, 0, 'no call ran in the editor');
+    while (reference('can undo')) { both('undo'); agree('undo'); }
   });
 }
 
@@ -665,10 +682,10 @@ refs.test('a camera drag runs in the session and shows its frame on the editor',
   // The session tells the camera, not the frame.
   assert.equal(answers.length, 2);
   assert.equal(answers[1].preview, undefined);
-  assert.deepEqual(answers[1].cameraPreview, reference('camera preview', editor => editor._sheetPropertyPreview.camera));
+  assert.deepEqual(answers[1].cameraPreview, reference('camera preview'));
   assert.ok(owned._sheetPropertyPreview, 'the preview is the frame on show');
   assert.equal(previewText(owned), reference('preview', previewText));
-  assert.equal(owned.dirty, reference('dirty', editor => editor.dirty));
+  assert.equal(owned.dirty, reference('dirty'));
   agree('moves');
   both('updateCameraDrag', {angle_rad: 0.1}, {fromStart: false});
   assert.equal(previewText(owned), reference('preview', previewText));
@@ -692,12 +709,11 @@ refs.test('a camera drag runs in the session and shows its frame on the editor',
   // A move that fails ends the drag.
   both('beginCameraDrag');
   assert.throws(() => owned.updateCameraDrag({bogus: 1}));
-  assert.equal(reference('a move that fails', editor => { try { editor.updateCameraDrag({bogus: 1}); } catch { return true; } return false; }), true);
+  assert.equal(reference('a move that fails'), true);
   assert.equal(owned._drag, null);
   assert.equal(owned._sheetPropertyPreview, null);
   agree('error');
-  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  while (reference('can undo')) { both('undo'); agree('undo'); }
 });
 
 refs.test('an open camera drag is ended by the calls that end any gesture', {skip: !engineBuilt}, async take => {
@@ -707,13 +723,12 @@ refs.test('an open camera drag is ended by the calls that end any gesture', {ski
     both('updateCameraDrag', {x: 12});
     both(...end);
     assert.equal(owned._drag, null);
-    assert.equal(reference('drag', editor => editor._drag), null);
+    assert.equal(reference('drag'), null);
     assert.equal(owned._sheetPropertyPreview, null, `after ${end[0]}`);
     agree(end[0]);
     both('seek', 0);
   }
-  while (reference('can undo', editor => editor.canUndo)) { both('undo'); agree('undo'); }
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  while (reference('can undo')) { both('undo'); agree('undo'); }
 });
 
 refs.test('redo under an open camera drag or rig edit ends the gesture first, as undo does', {skip: !engineBuilt}, async take => {
@@ -753,32 +768,21 @@ test('a document marked as changed is the engine\'s at its new revision', {skip:
   owner.release();
 });
 
-test("an edit made outside the session's calls reaches the engine once the code that made it has finished", {skip: !engineBuilt}, async () => {
+test("a drawing cel the drawing store finished is the session's at once, and is no edit", {skip: !engineBuilt}, async () => {
   const document = JSON.parse(readFileSync(new URL('startup.document.json', folder), 'utf8'));
+  document.figure_types.push(createDrawingFigure({pixelsPerUnit: 1, figureTypeId: Math.max(...document.figure_types.map(figure => figure.figure_type_id)) + 1}));
   const {editor, owner} = await ownedEditor({demo: false, layerTimeline: true, propertyChannels: true}, document);
-  const opened = editor.revision;
-  // A module that moves the revision and announces the change without a command.
-  editor._revision = ++editor._revisionSerial;
-  editor._emit('edit', {label: 'Project metadata'});
-  assert.notEqual(editor.revision, opened);
-  assert.equal(holdsRevision(registeredEngine(), editor.revision), false, 'not before the code that made the edit is done');
-  await Promise.resolve();
-  assert.ok(holdsRevision(registeredEngine(), editor.revision), "and then it is the engine's");
-  owner.release();
-});
-
-test("a definition attached in place (a drawing's encoded tiles) reaches the session once the code that made it has finished", {skip: !engineBuilt}, async () => {
-  const document = JSON.parse(readFileSync(new URL('startup.document.json', folder), 'utf8'));
-  const {editor, owner} = await ownedEditor({demo: false, layerTimeline: true, propertyChannels: true}, document);
-  const figure = editor.report.figure_types[0], revision = editor.revision;
-  figure.name = 'Encoded in place';
-  // A derived publication is no edit: the revision stays, the session's copy is brought up to date.
+  const figure = editor.report.figure_types.find(drawingMetadata), cel = drawingMetadata(figure), revision = editor.revision, entries = editor._undo.length;
+  // The store attaches what it published to the cel's definition in place: a derived publication, not an edit.
+  cel.revision = 7; cel.bounds = {x: 0, y: 0, width: 64, height: 32};
+  figure.image_assets[0].styk_tiles = 'data:application/octet-stream;base64,AAAA';
   editor._drawingPublished(figure);
-  assert.ok(!owner.session().report_json().includes('Encoded in place'), 'not before the code that made it is done');
-  await Promise.resolve();
-  assert.ok(owner.session().report_json().includes('Encoded in place'), "and then it is the session's");
+  assert.ok(owner.session().report_json().includes('"revision":7'), "the session's copy is up to date");
+  assert.equal(owner.session().report_json(), JSON.stringify(editor.report), 'the same document as the read view');
   assert.equal(editor.revision, revision);
   assert.ok(holdsRevision(registeredEngine(), revision), 'at the revision the engine held');
-  assert.equal(editor.canUndo, false, 'and it is no history entry');
+  assert.equal(editor._undo.length, entries, 'and it is no history entry');
+  // A cel the document no longer has is ignored.
+  editor._drawingPublished({...figure, _styk: {...figure._styk, drawing: {...cel, celId: 'gone'}}});
   owner.release();
 });

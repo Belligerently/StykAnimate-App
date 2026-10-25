@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {frameOrder} from '../src/pivot/structure.mjs';
 import {roundTrip} from './support/codec.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 test('range join, mirror, scale, appearance and order preserve native PIV geometry over three frames', async () => {
   const editor = open({demo: false}); editor.addFigure(); const parent = editor.selectedUid;

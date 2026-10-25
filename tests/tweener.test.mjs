@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {newOwnedEditor} from './support/owned-editor.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {tweenNeighbors} from '../src/editor-tweener.mjs';
 
@@ -10,7 +10,7 @@ function fixture({hold=false, sheet=true, count=2, duration=10, prepare=null, ow
   const report=emptyDocument(),figure=report.figure_types[0];
   report.keyframes=[100,360,500].map(x=>createFrame(Array.from({length:count},(_,i)=>createObject(figure,i+1,x+i*20,200)),duration));
   prepare?.(report);
-  const e=(owned?newOwnedEditor:options=>new Editor(options))({demo:false,layerTimeline:sheet}).load(report);
+  const e=(owned?newPlainEditor:options=>new Editor(options))({demo:false,layerTimeline:sheet}).load(report);
   if(hold)e.sheetSetEasing(['layer-1'],0,duration*2,{interpolation:'constant'});
   e.seek(duration);e.select(1);return e;
 }
@@ -31,7 +31,7 @@ test('preview is reversible, drift-free, scoped, and commits one undo step',()=>
   e.beginTween();e.updateTween(.25);e.commitDrag();assert.equal(e._undo.length,undo+1);
   near(e.object.root_x,200);e.undo();assert.deepEqual(e.serialize(),before);
   e.redo();near(e.object.root_x,200);
-  const reopened=newOwnedEditor({demo:false,layerTimeline:true}).load(e.serialize());reopened.seek(10);reopened.select(1);near(reopened.object.root_x,200);
+  const reopened=newPlainEditor({demo:false,layerTimeline:true}).load(e.serialize());reopened.seek(10);reopened.select(1);near(reopened.object.root_x,200);
 });
 test('a held exposure gets a new key exactly at the playhead',()=>{
   const e=fixture({hold:true});e.seek(5);e.select(1);

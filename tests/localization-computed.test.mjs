@@ -32,6 +32,7 @@ import {renderInspector} from '../src/inspector-kit.mjs';
 import {VfxInspector} from '../src/vfx-inspector.mjs';
 import {DrawingController} from '../src/drawing-controller.mjs';
 import {exportCodecChoices,exportFormatStates,exportEncodingSummary} from '../src/export-request.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 const fixture=()=>new Editor({demo:false}).load(emptyDocument());
 const populatedFixture=()=>new Editor({demo:false}).load(createDemo());
@@ -271,7 +272,7 @@ test('fill ordering captions and fixed image shapes retain display keys while co
  }
  assert.equal(JSON.stringify(editor.serialize()),bytes);
  const {createImageFigure}=await import('../src/media-authoring.mjs');
- const image=engineEditor({demo:false});image.importFigure(createImageFigure({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=',width:1,height:1,name:'Artist image'}));image.select(image.selectedUid,0);
+ const image=plainEditorFor({demo:false});image.importFigure(createImageFigure({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=',width:1,height:1,name:'Artist image'}));image.select(image.selectedUid,0);
  const fields=walk(inspectorDescriptor({editor:image}).sections.flatMap(section=>section.rows??[]));
  const fixed=fields.flatMap(row=>row.options??[]).find(option=>option.value==='image');
  assert.equal(fixed.labelKey,'builderOutliner.image');assert.equal(image.figure.name,'Artist image');

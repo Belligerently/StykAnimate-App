@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {Editor} from '../src/editor.mjs';
-import {newOwnedEditor} from './support/owned-editor.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 import {createObject,createFrame,emptyDocument,defaultFigure} from '../src/demo.mjs';
 import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
@@ -15,7 +15,7 @@ function fixture(owned=true){
  const q=construction();q.add(0,0,0,'Figure orientation');
  const a=q.add(0,40,0,'First rotation',{control:true}),b=q.add(0,60,0,'Second rotation',{control:true});
  const c=q.add(a,30,.2,'Combined rotation',{rig:{angleLock:{mode:'parent',reference:a,restAngle:0,figureRestAngle:0,angle:.2,multiplier:1,space:'authored',secondary:{reference:b,restAngle:0,multiplier:-1}}}});
- const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},torso=defaultFigure(2),e=owned?newOwnedEditor({demo:false}):new Editor({demo:false});
+ const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},torso=defaultFigure(2),e=owned?newPlainEditor({demo:false}):new Editor({demo:false});
  e.load({...emptyDocument(),figure_types:[figure,torso],keyframes:[createFrame([createObject(figure,1,200,200),createObject(torso,2,350,350)])]});
  return{e,a,b,c,select:id=>e.select(1,id-1)};
 }

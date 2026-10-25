@@ -1,22 +1,19 @@
 // The builder and topology calls the engine session used to refuse (and the editor then ran) run in the session
 // under the owner (D19): each is run on an editor the engine owns, and must end as a plain editor did on the same repository
 // document (the frozen references of tests/support/owner-references.mjs) at every step, in the error a refused edit shows,
-// and through undo and redo. Nothing is refused and nothing runs in the editor.
+// and through undo and redo. Nothing is refused.
 import '../engine/tools/v8-pin.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {Editor} from '../src/editor.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
 import {createFrame, createObject, emptyDocument} from '../src/demo.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
 import {canonical, ownerReferences} from './support/owner-references.mjs';
-import {buildRotatingCube} from './helpers/rotating-cube.mjs';
 
 const refs = ownerReferences(import.meta.url);
 const SHEET = {demo: false, layerTimeline: true, propertyChannels: true};
-const NATIVE = {demo: false};
 const read = path => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const text = editor => JSON.stringify(editor.report);
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=';
@@ -32,11 +29,11 @@ const at = (editor, handle) => editor.select(editor.selectedUid, jointOf(editor,
 const selection = editor => JSON.stringify({uids: [...editor.selectedUids], uid: editor.selectedUid, joint: editor.selectedJoint,
   polygon: editor.selectedPolygonIndex, segments: [...editor.selectedSegmentIds], branch: editor.branchSelected});
 
-/** One run of `script` on an editor (the plain one only when its references are recorded): its document and history label after every call, what each returned or raised,
+/** One run of `script` on an owned editor: its document and history label after every call, what each returned or raised,
  * and the document after every undo and redo. */
-async function trace({options, document, owned, script}) {
-  const made = owned ? ownedEditorSync(options, document, {recorded: false}) : null;
-  const editor = made?.editor ?? new Editor(options).load(structuredClone(document));
+async function trace({options, document, script}) {
+  const made = ownedEditorSync(options, document, {recorded: false});
+  const editor = made.editor;
   try {
     const steps = [{name: 'opened', text: text(editor), undo: editor.undoLabel, selected: selection(editor)}];
     const call = (name, run) => {
@@ -48,19 +45,17 @@ async function trace({options, document, owned, script}) {
     await script(editor, call);
     while (editor.canUndo) { await editor.undo(); steps.push({name: 'undo', text: text(editor), undo: editor.undoLabel, selected: selection(editor)}); }
     while (editor.canRedo) { await editor.redo(); steps.push({name: 'redo', text: text(editor), undo: editor.undoLabel, selected: selection(editor)}); }
-    return {steps, refused: made ? {...made.owner.refused} : {}, fallback: made?.owner.fallback ?? 0};
-  } finally { made?.owner.release(); }
+    return {steps, refused: {...made.owner.refused}};
+  } finally { made.owner.release(); }
 }
 
-/** The script on an owned editor, and what a plain editor gave for it (its references): the same steps, nothing refused, nothing run in the editor
- * (but `refusing`, the refusals the test expects, and `alsoInEditor` more calls the editor runs because of them).
+/** The script on an owned editor, and what a plain editor gave for it (its references): the same steps, nothing refused.
  * Returns the steps by name for the test to say what the calls did. */
-async function same(take, options, document, script, refusing = {}, alsoInEditor = 0) {
-  const plain = {steps: await take('plain', async () => (await trace({options, document, owned: false, script})).steps)};
-  const owned = await trace({options, document, owned: true, script});
+async function same(take, options, document, script) {
+  const plain = {steps: take('plain')};
+  const owned = await trace({options, document, script});
   assert.deepEqual(canonical(owned.steps), plain.steps);
-  assert.deepEqual(owned.refused, refusing, 'the session refused what is expected');
-  assert.equal(owned.fallback, Object.values(refusing).reduce((total, count) => total + count, alsoInEditor), 'only the refused calls ran in the editor');
+  assert.deepEqual(owned.refused, {}, 'the session refused nothing');
   const named = {};
   plain.steps.forEach((step, index) => { (named[step.name] ??= []).push({...step, changed: step.text !== plain.steps[index - 1]?.text}); });
   return named;
@@ -68,7 +63,7 @@ async function same(take, options, document, script, refusing = {}, alsoInEditor
 
 /** The rotating cube, a rigged figure with connectors, stretch drivers and six faces, on the layer sheet (built by a plain editor, once: its reference). */
 async function cube(take) {
-  const built = await take('cube', () => { const builder = new Editor(NATIVE), q = buildRotatingCube(builder); return {document: JSON.stringify(builder.report), q}; });
+  const built = await take('cube');
   return {document: JSON.parse(built.document), q: built.q};
 }
 
@@ -260,15 +255,7 @@ refs.test('the controllers of figures joined to an edited figure follow its hand
 
 /** The default figure with a saved animation of one segment's opacity (the baseline an imported file brings), built by a plain editor once: its reference. */
 async function animated(take) {
-  return JSON.parse(await take('animated', () => {
-    const builder = new Editor({demo: false, propertyChannels: true}).load(walker());
-    builder.select(1, 4);
-    const target = {kind: 'segment', uid: 1, handleId: 5};
-    builder.addAnimationKey(target, 'opacity', 0, 1);
-    builder.addAnimationKey(target, 'opacity', 2, 0.25);
-    assert.equal(builder.report._styk.animation.channels.length, 1);
-    return JSON.stringify(builder.report);
-  }));
+  return JSON.parse(await take('animated'));
 }
 
 refs.test('saved channels follow the segment they animate through topology edits', {skip: !engineBuilt}, async take => {

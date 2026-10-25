@@ -1,7 +1,7 @@
 // Calls the engine session used to refuse or had no command for, which the editor ran (docs/engine/editing.md): each runs in the session now,
 // on an editor the engine owns, over a repository document that reaches the case, and compared with what a plain editor gave
 // (the frozen references of tests/support/owner-references.mjs). The documents, history labels and undo and redo agree step
-// by step, and nothing is refused or run in the editor.
+// by step, and nothing is refused.
 import '../engine/tools/v8-pin.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,22 +17,21 @@ const load = path => JSON.parse(readFileSync(new URL(path, folder), 'utf8'));
 const text = editor => JSON.stringify(editor.report);
 
 /** Runs `script(editor, note)` on one the engine owns, over `document`, and compares it with what a plain editor gave (its references);
- * `note(label, value)` records what the interface reads after a step. Returns both records and what the owner refused or ran in the editor. */
+ * `note(label, value)` records what the interface reads after a step. Returns both records and what the owner refused. */
 async function bothWays(take, document, options, script) {
-  const run = async owned => {
+  const run = async () => {
     const editor = new Editor({demo: false, ...options}).load(structuredClone(document));
-    const owner = owned ? installEngineOwner(editor, {verify: true}) : null;
+    const owner = installEngineOwner(editor, {verify: true});
     const steps = [];
     const note = (label, value) => steps.push({label, value, document: text(editor), undo: editor.undoLabel, redo: editor.redoLabel, canUndo: editor.canUndo, canRedo: editor.canRedo, dirty: editor.dirty});
     try {
       await script(editor, note);
-      return {steps, refused: owner ? {...owner.refused} : {}, fallback: owner ? owner.fallback : 0};
-    } finally { owner?.release(); }
+      return {steps, refused: {...owner.refused}};
+    } finally { owner.release(); }
   };
-  const plain = await take('plain', async () => ({steps: (await run(false)).steps})), owned = await run(true);
+  const plain = take('plain'), owned = await run();
   assert.deepEqual(canonical(owned.steps), plain.steps, 'the engine and the editor leave the same document, history and state at every step');
   assert.deepEqual(owned.refused, {}, 'nothing was refused');
-  assert.equal(owned.fallback, 0, 'no call ran in the editor');
   return {plain, owned};
 }
 
@@ -268,27 +267,9 @@ refs.test('what cannot be disconnected is refused with the editor\'s message', {
   });
 });
 
-/** A document of two joined figures (a curved bone, a fill with an opacity, a scaled and tinted child), as a file holds one: every figure in its keyframe. */
-function joinedFiguresDocument({outside = false} = {}) {
-  const editor = new Editor({demo: false});
-  editor.addFigure(); editor.markSaved();
-  const root = editor.selectedUid;
-  editor.select(root, 2); editor.updateSegment({bend_rad: 0.5});
-  editor.addPolygon([0, 7, 9], {color: '#e24491', opacity: 0.5});
-  const child = editor.duplicateFigure().unique_id; editor.updateObject({scale: 0.6, color_override_raw: 0x80224466});
-  editor.joinTo(root, 4); editor.select(root);
-  let parent = null;
-  if (outside) {
-    // The group hangs from a figure outside it.
-    parent = editor.duplicateFigure().unique_id;
-    editor.select(root); editor.joinTo(parent, 0);
-  }
-  return {document: editor.serialize(), root, child, parent};
-}
-
 refs.test('combining joined figures makes one figure that draws as they did, and undoes, like the editor does', {skip: !engineBuilt}, async take => {
   for (const outside of [false, true]) {
-    const {document, root} = await take(`document ${outside}`, () => joinedFiguresDocument({outside}));
+    const {document, root} = await take(`document ${outside}`);
     const {plain} = await bothWays(take, document, sheet, async (editor, note) => {
       editor.select(root); note('before');
       const combined = editor.combineJoinedFigure(root, {name: 'Merged rig'});
@@ -304,7 +285,7 @@ refs.test('combining joined figures makes one figure that draws as they did, and
 });
 
 refs.test('what cannot be combined is refused with the editor\'s message', {skip: !engineBuilt}, async take => {
-  const {document, root, child} = await take('document', () => joinedFiguresDocument());
+  const {document, root, child} = await take('document');
   await bothWays(take, document, sheet, async (editor, note) => {
     note('an unknown figure', attempt(() => editor.combineJoinedFigure(child + 100)));
     editor.select(root); editor.updateObject({field28: 40});

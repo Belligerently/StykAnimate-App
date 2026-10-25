@@ -469,11 +469,16 @@ pub(crate) fn validate_rig(segments: &[Value]) -> Result<(), EditError> {
     Ok(())
 }
 
-/// `{...a, ...b}` of two optional objects (anything else spreads nothing).
+/// `{...a, ...b}` of two optional objects (anything else spreads nothing). A member of `b` set to `undefined` (args.rs)
+/// takes the member of `a` away, as an absent member does once the document is serialized.
 fn merged(a: Option<&Value>, b: Option<&Value>) -> Obj {
     let mut out = a.and_then(Value::as_obj).cloned().unwrap_or_default();
     for (key, value) in b.and_then(Value::as_obj).map(|o| o.iter().collect::<Vec<_>>()).unwrap_or_default() {
-        out.set(key, value.clone());
+        if crate::args::is_undefined(value) {
+            out.remove(key);
+        } else {
+            out.set(key, crate::args::decode(value, false));
+        }
     }
     out
 }
@@ -619,7 +624,11 @@ impl Editor {
             }
         }
         if let Some(orientation) = patch.get("orientation") {
-            r.set("orientation", orientation.clone());
+            if crate::args::is_undefined(orientation) {
+                r.remove("orientation");
+            } else {
+                r.set("orientation", crate::args::decode(orientation, false));
+            }
         }
         if let Some(connector) = patch.get("connector") {
             if !r.get("connector").is_some_and(Value::truthy) {
@@ -942,4 +951,22 @@ fn animation_rotation(figure: &Value, object: &Value) -> Result<f64, EditError> 
     let first = object.get("angles").and_then(|a| a.item(0));
     let rest = figure.get("segments").and_then(|s| s.item(0)).and_then(|s| s.get("angle_rad").cloned());
     Ok(number(first) - number(rest))
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    fn parse(text: &str) -> Value { styk_doc::json::parse(text.as_bytes()).unwrap() }
+
+    #[test]
+    fn a_member_set_to_undefined_takes_the_old_one_away() {
+        let old = parse(r#"{"driver":11,"pitch":22,"keys":[[0,1,2,3]]}"#);
+        let patch = parse(r#"{"driver":12,"pitch":{"@undefined":true},"nested":{"gone":{"@undefined":true},"kept":1}}"#);
+        let merged = merged(Some(&old), Some(&patch));
+        assert!(!merged.contains("pitch"), "the pitch is removed");
+        assert_eq!(merged.get("driver").and_then(Value::as_f64), Some(12.0));
+        assert!(merged.contains("keys"), "what the patch does not name stays");
+        assert!(!merged.get("nested").unwrap().as_obj().unwrap().contains("gone"), "markers deeper in are absent members");
+    }
 }
