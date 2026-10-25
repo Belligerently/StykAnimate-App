@@ -75,24 +75,32 @@ test('a gesture rebuilds the groups of the figures it moves and keeps the others
   } finally { owner.release(); }
 });
 
-test('a movieclip edited in place is evaluated by the editor, which runs its commands', {skip: !engineBuilt}, async () => {
+test('a movieclip being edited is a document of the engine like any other: its session answers and the stage draws it', {skip: !engineBuilt}, async () => {
   const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/startup.document.json', import.meta.url), 'utf8'));
   const {editor, owner} = await ownedEditor(options, document);
+  const engine = registeredEngine();
   try {
+    const project = owner.session();
     editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
     const clip = editor.createMovieclip({start: editor.tick, end: editor.tick + 6});
     editor.enterMovieclip(clip.figure_type_id);
     assert.ok(editor._movieclipScopes.length, 'the movieclip is open for editing');
-    assert.equal(editor._shown.frame(), null, 'the session does not answer for it');
-    assert.equal(editor._shown.geometry(editor.evaluatedFrame), null);
-    assert.equal(editor._shown.source(false), null, 'the stage gets its poses from the editor');
+    assert.notEqual(owner.session(), project, 'the clip has a session of its own');
+    assert.ok(editor._shown.frame(), 'the clip\'s session answers for its frame');
+    assert.ok(editor._shown.geometry(editor.evaluatedFrame), 'and its geometry');
+    assert.equal(editor._shown.source(false)?.session, owner.session(), 'the stage draws the clip\'s session, not poses from the editor');
+    assert.ok(holdsRevision(engine, editor.revision), 'the clip is the engine\'s document');
     editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
     const before = editor.evaluatedFrame.objects[0].root_x;
     editor.moveSelection(25, 10);
     assert.equal(editor.evaluatedFrame.objects[0].root_x, before + 25, 'the frame follows the edit');
     assert.equal(editor.geometry.objects.get(0).root.x, before + 25);
+    assert.ok(holdsRevision(engine, editor.revision), 'the engine holds the clip as it is edited');
     editor.leaveMovieclip();
-    assert.ok(editor._shown.frame(), 'back in the project the session answers');
+    assert.equal(owner.session(), project, 'back in the project its session answers');
+    assert.ok(editor._shown.frame());
+    assert.equal(editor._shown.source(false)?.session, project);
+    assert.ok(holdsRevision(engine, editor.revision), 'and the engine holds the project at its revision');
   } finally { owner.release(); }
 });
 

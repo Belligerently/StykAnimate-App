@@ -551,10 +551,12 @@ export const editorMovieclipMethods={
     const serial=this._revisionSerial;
     for(const key of Object.keys(this))if(key!=='_movieclipScopes')delete this[key];
     Object.assign(this,scope.parent);this._movieclipScopes=scopes.slice(0,-1);this._revisionSerial=Math.max(this._revisionSerial,serial);
-    if(save&&changed){
-      const index=this.report.figure_types.findIndex(f=>f.figure_type_id===scope.typeId),figure=this.report.figure_types[index];
-      publishDefinition(this,{...figure,_styk:{...figure._styk,movieclip:{...movieclipAsset(figure),document,duration}}},index,'Edit movieclip');
-    }
+    if(save&&changed)this._publishMovieclipEdit(scope.typeId,document,duration);
     this._invalidate({timing:true});this._emit('document',{structural:true,timing:true,movieclipScope:true});return true;
+  },
+  /** Gives the movieclip `typeId` of this document the `document` edited inside it: one "Edit movieclip" history entry. */
+  _publishMovieclipEdit(typeId,document,duration){
+    const index=this.report.figure_types.findIndex(f=>f.figure_type_id===typeId),figure=this.report.figure_types[index];
+    publishDefinition(this,{...figure,_styk:{...figure._styk,movieclip:{...movieclipAsset(figure),document,duration}}},index,'Edit movieclip');
   },
 };
