@@ -1220,6 +1220,7 @@ await import('./origin-rig-invalid-fixtures.mjs');
 await import('./edit-scenarios-movieclips.mjs');
 await import('./edit-scenarios-movieclips-native.mjs');
 await import('./edit-scenarios-selection-metadata.mjs');
+await import('./edit-scenarios-selection-sets.mjs');
 await import('./edit-scenarios-native-transform-channels.mjs');
 
 // Remote-time motion previews and commits retain original animation pivots.
