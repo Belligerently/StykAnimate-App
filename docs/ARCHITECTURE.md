@@ -184,8 +184,9 @@ cooperative checkpoint (decode, validation, fingerprint and writer loops) and th
 its cache; elsewhere the busy codec worker is stopped. A codec failure leaves WebGPU editing,
 Undo/Redo, native project saving and local native reopening available; the next request starts
 a fresh codec. The desktop's sample list comes from the main process (`desktop/samples.cjs`).
-The Python codec (`codecs/`, `backend/`) is kept only as the codec's development test oracle;
-see [Web build](WEB.md) for the web profile's limits. On phones and
+The Python codec (`codecs/`, `backend/`) is kept only as the codec's development test oracle,
+and the app, desktop or web, contains and starts no Python (Python remains in development for
+the packaging scripts that stage the video encoder and build the Windows codec helpers); see [Web build](WEB.md) for the web profile's limits. On phones and
 tablets the same editor runs its touch interface (`src/touch/`), which re-arranges the shell and
 turns fingers into the desktop's pointer events; see [Touch interface](TOUCH.md).
 
