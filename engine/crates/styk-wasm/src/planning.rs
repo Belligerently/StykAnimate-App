@@ -1,15 +1,13 @@
-//! Small request/poll boundary for worker-owned planning (layer moves and in-betweens).
+//! Small request/poll boundary for worker-owned planning (layer moves).
 //! No document input: the engine plans against the document its mirror holds.
 use crate::engine::EngineHandle;
 use styk_doc::{Value, json};
-use styk_engine::planning::{InbetweenRequest, LayerJob, LayerRequest, PlanError, TRANSFER_BYTES};
+use styk_engine::planning::{LayerJob, LayerRequest, PlanError, TRANSFER_BYTES};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct LayerPlanJob {
     job: LayerJob,
-    /// An in-between job reports its phases by name; a layer move reports what it sampled.
-    inbetween: bool,
 }
 
 /// A planning error as the host tells them apart by name: `AbortError` for a job that was
@@ -95,40 +93,7 @@ impl EngineHandle {
         };
         self.engine
             .plan_layers(revision, request)
-            .map(|job| LayerPlanJob { job, inbetween: false })
-            .map_err(plan_error)
-    }
-
-    /// The ratio, the chosen native keys and the editor's next identity enter here, nothing
-    /// of the document (D7: hosts use real engine worker threads).
-    pub fn plan_inbetweens(&self, revision: f64, request_json: &str) -> Result<LayerPlanJob, JsValue> {
-        let revision = revision_of(revision, request_json)?;
-        let request = json::parse(request_json.as_bytes()).map_err(|error| bad_request(&error.to_string()))?;
-        let ratio = request
-            .get("ratio")
-            .and_then(Value::as_f64)
-            .ok_or_else(|| bad_request("in-between planning requires a ratio"))?;
-        let indices = request
-            .get("indices")
-            .and_then(Value::elements)
-            .ok_or_else(|| bad_request("in-between planning requires source keys"))?;
-        if indices.len() > 100_000 {
-            return Err(bad_request("in-between planning key budget exceeded"));
-        }
-        let indices = indices
-            .iter()
-            .map(|index| {
-                index
-                    .as_i64()
-                    .filter(|index| *index >= 0 && *index <= 100_000)
-                    .map(|index| index as usize)
-                    .ok_or_else(|| bad_request("invalid in-between source key"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let request = InbetweenRequest { ratio, indices, next_frame_identity: identity_of(&request)? };
-        self.engine
-            .plan_inbetweens(revision, request)
-            .map(|job| LayerPlanJob { job, inbetween: true })
+            .map(|job| LayerPlanJob { job })
             .map_err(plan_error)
     }
 }
@@ -145,9 +110,7 @@ impl LayerPlanJob {
         }
         let mut fields = Vec::new();
         if let Some(p) = result.progress {
-            fields.push(if self.inbetween {
-                format!("\"progress\":{{\"phase\":\"{}\",\"completed\":{},\"total\":{}}}", p.phase, p.completed, p.total)
-            } else if p.phase == "sampling" {
+            fields.push(if p.phase == "sampling" {
                 format!("\"progress\":{{\"phase\":\"sampling\",\"completed\":{},\"total\":{},\"sourceFrames\":{},\"objectPoses\":{},\"segmentValues\":{}}}",p.completed,p.total,p.source_frames,p.object_poses,p.segment_values)
             } else {
                 format!("\"progress\":{{\"phase\":\"planning\",\"completed\":{},\"total\":{}}}",p.completed,p.total)

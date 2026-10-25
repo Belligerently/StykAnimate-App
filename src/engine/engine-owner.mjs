@@ -82,7 +82,7 @@ const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEve
   'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
   'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'sheetSpan', 'transaction',
   'load', 'loadAsync', 'newDocument', 'detachDocument', 'discardDocument', 'resumeDocument', 'handOverDocument', 'markSaved',
-  'setInbetweenPlanner', 'enterMovieclip', 'leaveMovieclip',
+  'enterMovieclip', 'leaveMovieclip',
   'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'touch', 'sheetEditTimes', 'deleteLayerAsync', 'assignFiguresToLayerAsync', 'undo', 'redo', 'constructor']);
 
 /** The editor's reads the session answers where it holds the document (`Editor::interface_query`): the values the interface

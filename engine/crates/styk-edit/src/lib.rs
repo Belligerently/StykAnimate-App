@@ -40,7 +40,6 @@ mod ik;
 mod ik_settings;
 mod layer_membership;
 mod layers;
-pub mod inbetween_planning;
 pub mod load;
 pub mod layer_planning;
 pub mod movieclip_planning;

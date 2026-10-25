@@ -25,7 +25,7 @@ const SETTLED = 0.004;         // remaining zoom (log scale) too small to see: l
 const INPUT_IDLE_MS = 100;    // continuous input also needs a final detail paint
 
 /** Whether wheel notches glide. `setting` is Settings → Canvas → Smooth zooming;
- * Automatic glides except on the WebGL2 backend (Compatibility mode), whose slower repaints make each
+ * Automatic glides except on the WebGL2 backend (slower graphics), whose slower repaints make each
  * extra frame of a glide costly in dense scenes. */
 export function smoothWheelZoom(setting, backend) {
   if (setting === 'on') return true;

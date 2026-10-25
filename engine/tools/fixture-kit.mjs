@@ -86,10 +86,10 @@ export function prune(document) {
  * object's outline (--style); `native` evaluates it on its native timeline (--native) into
  * `<name>.native.reference.json`; `deep` loads movieclips nested deeper than a file opens (--deep).
  */
-export function writeProject(out, name, document, ticks, {vfx = false, camera = false, images = false, scene = false, style = false, native = false, deep = false, inbetween = []} = {}) {
+export function writeProject(out, name, document, ticks, {vfx = false, camera = false, images = false, scene = false, style = false, native = false, deep = false} = {}) {
   const file = `${out}/${name}.json`, reference = `${out}/${name}${native ? '.native' : ''}.reference.json`;
   writeFileSync(file, JSON.stringify(prune(document)) + '\n');
-  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : []), ...(camera ? ['--camera'] : []), ...(images ? ['--images'] : []), ...(scene ? ['--scene'] : []), ...(style ? ['--style'] : []), ...(native ? ['--native'] : []), ...(deep ? ['--deep'] : []), ...(inbetween.length ? ['--inbetween', inbetween.map(([index, ratio]) => `${index}:${ratio}`).join(',')] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
+  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : []), ...(camera ? ['--camera'] : []), ...(images ? ['--images'] : []), ...(scene ? ['--scene'] : []), ...(style ? ['--style'] : []), ...(native ? ['--native'] : []), ...(deep ? ['--deep'] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
   const dump = JSON.parse(readFileSync(reference, 'utf8'));
   delete dump.loadMs; delete dump.evalMsPerFrame;
   return {file, reference, dump};

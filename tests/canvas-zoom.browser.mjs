@@ -62,7 +62,7 @@ try {
   before = await view();
   await wheel({});
   assert.equal((await view()).scale,before.scale);
-  // Smooth zooming: Automatic glides except in Compatibility mode; On and Off override it.
+  // Smooth zooming: Automatic glides except on the WebGL2 backend; On and Off override it.
   const notch = async () => {
     // A 100 px notch, then the view one frame later: a glide has only started, a step has finished.
     const before = (await view()).scale;

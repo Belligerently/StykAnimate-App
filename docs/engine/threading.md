@@ -133,29 +133,20 @@ images methods, `frame_ready_at`, `frame_metadata`, `generation_for_frame_epoch`
 header owner; no document returns zero identity, while contention returns Busy.
 Existing integer and explicit worker preparation APIs remain available.
 
-`Engine::plan_layers(revision, LayerRequest)` and `Engine::plan_inbetweens(revision,
-InbetweenRequest)` use the existing worker task lane and return `LayerJob`: the editor's
-background planning jobs (a layer move; inserted in-betweens, `styk-edit/src/inbetween_planning.rs`),
-read-only against the document the engine holds. Polling gives bounded chunks and progress (the
-latest report only), ACK admits the next chunk, and cancellation, expiry or generation
-replacement retires the original job on workers. Native and sheet layer kernels and the
-in-between kernel share this protocol, and one job runs at a time (a second request cancels
-the first and is refused until the worker has disposed it). A publication invalidates only the
-job of the exact generation it displaced, preserving a newer job installed during the
-exchange. This adds portable Engine APIs and a dependency on `styk-edit`; browser glue stays
-in `styk-wasm` (`plan_layers`, `plan_inbetweens`; a job's errors are told apart by name:
-`AbortError` for a cancelled, replaced or timed-out job, `EngineUnported` for a plan the
-engine does not make yet, an ordinary error carrying the editor's message key for a refusal)
-and `src/engine/engine-planning.mjs`.
+`Engine::plan_layers(revision, LayerRequest)` uses the existing worker task lane and returns `LayerJob`:
+a layer move planned read-only against the document the engine holds. Polling gives bounded chunks and
+progress (the latest report only), ACK admits the next chunk, and cancellation, expiry or generation
+replacement retires the original job on workers. Native and sheet layer kernels share this protocol, and
+one job runs at a time (a second request cancels the first and is refused until the worker has disposed
+it). A publication invalidates only the job of the exact generation it displaced, preserving a newer job
+installed during the exchange. This adds portable Engine APIs and a dependency on `styk-edit`; browser glue
+stays in `styk-wasm` (`plan_layers`; a job's errors are told apart by name: `AbortError` for a cancelled,
+replaced or timed-out job, `EngineUnported` for a plan the engine does not make yet, an ordinary error
+carrying the editor's message key for a refusal).
 
-The app routes the in-between job through `createStagePlayback` (`planInsertInbetweens`): it checks that the
-engine holds the editor's revision, then plans on the engine's workers. A host without worker threads (D7), a
-document the engine refused and a plan answered `EngineUnported` (an in-between on a layer sheet, or of authored
-poses with camera-motion or effect clips) are planned on the interface thread instead, in slices of a few
-milliseconds, by the editor's own planner (`planOnInterface`), the oracle the engine's plans are recorded against
-(`engine/tests/inbetween`). Nothing in the interface opens the in-between dialog any more, so this is the only
-caller. The layer-move job (`plan_layers`) has none: the session plans and publishes a layer move itself
-(`styk-edit/src/layer_membership.rs`, docs/LAYER-MIGRATION.md).
+Nothing in the app calls `plan_layers`: the session plans and publishes a layer move itself
+(`styk-edit/src/layer_membership.rs`, docs/LAYER-MIGRATION.md), and `tests/engine-planning-wasm.test.mjs` and
+the `styk-engine` layer planning tests are its callers.
 
 Mobile pin compatibility: `Engine::stage` now returns a checked result,
 `PlanError::Unported` carries an owned `String`, and `FrameData::tick` changes from `u32`

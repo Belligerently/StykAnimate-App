@@ -36,7 +36,7 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   showUnselectedHandles: true,
   canvasGrid: false,
   canvasZoomGesture: "ctrl-scroll",
-  // Wheel zoom glides between levels. Automatic glides except in Compatibility mode (canvas-wheel-zoom.mjs).
+  // Wheel zoom glides between levels. Automatic glides except on the WebGL2 backend (canvas-wheel-zoom.mjs).
   smoothZoom: "auto",
   marqueeSelection: "origins",
   pasteDepth: "same",

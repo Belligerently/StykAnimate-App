@@ -35,6 +35,15 @@ test('recovery outcome and incident summaries retain durations without paths or 
   assert.doesNotThrow(()=>validatePerformance(meter.drain()));
 });
 
+test('long-frame scripts are attributed to the app, the stage, the editor or other by module name alone',()=>{
+  const meter=new PerformanceMeasurements({consent:{diagnostics:true}},{now:()=>0,random:()=>0});
+  const script=(url)=>({duration:10,sourceURL:url,invoker:'SECRET'});
+  meter.loaf([{startTime:0,duration:60,styleAndLayoutStart:0,scripts:[script('https://x.invalid/src/engine/engine-stage.mjs?v=1'),script('https://x.invalid/src/engine/engine-owner.mjs'),script('https://x.invalid/src/app.mjs'),script('https://x.invalid/src/renderer.mjs')]}]);
+  const bySource=Object.fromEntries(meter.data.rows.filter(row=>row.metric==='loaf_script').map(row=>[row.context.source,row.count]));
+  assert.deepEqual(bySource,{renderer:1,editor:1,app:1,other:1});
+  assert.ok(!JSON.stringify(meter.data).match(/SECRET|invalid/));
+});
+
 test('post-close memory phase stops being idle as soon as editing resumes',()=>{
   let time=0;const meter=new PerformanceMeasurements({consent:{diagnostics:true}},{now:()=>time,getContext:()=>({performance:{phase:'editing'},gauges:{gpu_memory_mb:1}})});
   meter.closedAt=0;time=16000;meter.resources();assert.equal(meter.resourcePhase,'idle');
