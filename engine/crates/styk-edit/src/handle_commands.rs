@@ -217,8 +217,15 @@ impl Editor {
         if !(handle.fract() == 0.0 && handle >= 0.0) {
             return Ok(false);
         }
-        let Some(row) = crate::timeline::rows(&self.report).get(index as usize).copied() else { return Ok(false) };
-        let neighbour = self.evaluated(row.start, true)?;
+        let rows = crate::timeline::rows(&self.report);
+        let Some(row) = rows.get(index as usize).copied() else { return Ok(false) };
+        // Without a layer sheet or saved channels a hidden (zero-length) key is read as the frame itself: it shares its tick with the key after it, which the tick would give.
+        let hidden = rows.get(index as usize + 1).is_some_and(|next| next.start == row.start);
+        let own = hidden && !self.sheet() && self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) == 0;
+        let neighbour = match own.then(|| self.report.get("keyframes").and_then(|k| k.item(index as usize))).flatten() {
+            Some(key) => key,
+            None => self.evaluated(row.start, true)?,
+        };
         let id = target.unwrap();
         let point = self.joint_in_frame(&neighbour, id, handle)?;
         let Some(point) = point else { return Ok(false) };
