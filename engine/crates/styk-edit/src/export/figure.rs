@@ -149,8 +149,8 @@ fn portable_clip_document(document: &Value) -> Value {
 /// `portableBackground(background)`.
 pub(crate) fn portable_background(background: &Value) -> Value {
     let mut next = portable_asset(background, false);
-    {
-        let object = next.make_obj().expect("an object");
+    // A background that is not an object (a document the engine would not have opened) is left as it is.
+    if let Some(object) = next.make_obj() {
         if !object.get("data_url").is_some_and(Value::truthy) && object.get("data_uri").is_some_and(Value::truthy) {
             let uri = object.get("data_uri").cloned().unwrap_or(Value::Null);
             object.set("data_url", uri);
