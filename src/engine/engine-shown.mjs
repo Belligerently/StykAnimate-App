@@ -265,6 +265,14 @@ export function createShown(owner) {
     vfxClips: (clips, tick) => read('vfxClips', {clips, tick}),
     /** The uids of the figures that the connected effects of figure `uid` filter together at the playhead (the owner first), `null` for none. */
     vfxGroup: uid => read('vfxGroup', {uid})?.members ?? null,
+    /**
+     * The rectangle the figures `uids` paint at the playhead without the reach of their effects, a movieclip instance's content
+     * included (its geometry here is its handle alone): `{x, y, width, height}`, or `null` for nothing painted or no session.
+     */
+    vfxExtent(uids) {
+      const rect = read('vfxExtent', {uids});
+      return rect && {x: rect[0], y: rect[1], width: rect[2], height: rect[3]};
+    },
     /** Forgets the geometry held (another document is open). */
     release() { held[0] = held[1] = null; },
   };

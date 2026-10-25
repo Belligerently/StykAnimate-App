@@ -609,7 +609,8 @@ the stage's frame, `drawCameraMonitor` on the stage (`Stage::render_monitor`) dr
 again through the scene camera, on the stage's device with a renderer of the monitor's own: a
 prepared playback frame from the cache, or the edit frame encoded again with the camera's parallax
 and without onion skins (kept while the frame does not change). The auxiliary worker
-draws WebGL2 monitor requests through the engine's CPU path.
+draws WebGL2 monitor requests through the engine's CPU path. A picture that arrives from the worker asks the app
+for the monitor alone to be painted again (`onMonitorPicture`), never for another scene render.
 
 Prepared playback packets bind generation, cache epoch and exact finite sample. The
 native drawing boundary refuses stale or malformed tickets and preserves the scalar

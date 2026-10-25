@@ -1050,13 +1050,19 @@ function requestOverlayRender() {
   state.dirtyOverlay = true;
   if (!raf) raf = requestAnimationFrame(loop);
 }
+/** A camera monitor picture arrived: only the monitor is painted again, not the scene. */
+function requestMonitorRender() {
+  state.dirtyMonitor = true;
+  if (!raf) raf = requestAnimationFrame(loop);
+}
 /** The frame on show; with `shot`, as the scene camera shoots it (the preview and playback always are). */
+/** The pose a motion-path edit shows at the playhead while it changes it (the engine's session builds it), else null. */
+function motionDisplay() { return editor._drag?.motionPath ? editor._drag.display : null; }
 function currentFrame({ shot = state.playing || state.previewing } = {}) {
   // Playback already evaluated this exact tick in the worker. Overlays need
   // its camera/scene metadata, not another evaluation of all figures on input.
   const packet = state.playing && state.playbackPacket;
-  const motionPath = editor._drag?.motionPath;
-  const frame = motionPath?.display?.frame ?? (packet?.tick === editor.tick ? packet.frame : editor.evaluatedFrame || editor.frame);
+  const frame = motionDisplay()?.frame ?? (packet?.tick === editor.tick ? packet.frame : editor.evaluatedFrame || editor.frame);
   const seen = shot ? shotThrough(frame) : frame;
   return editor.report._styk?.layers?.fixed?.camera?.visible === false
     ? { ...seen, camera: null }
@@ -1728,7 +1734,7 @@ function loop(now) {
       const frame = drawingPreview?.frame??currentFrame(),
         geometry =
           drawingPreview?.geometry ||
-          editor._drag?.motionPath?.display?.geometry ||
+          motionDisplay()?.geometry ||
           state.drag?.geometry ||
           keyboardHandleGesture?.geometry ||
           editor.geometry;
@@ -1739,7 +1745,7 @@ function loop(now) {
         frame,
         geometry,
         // The engine draws the frame its session shows; the interface's own frame (a drawing's first stroke) crosses as poses.
-        source: drawingPreview ? null : editor._shown?.source(Boolean(editor._drag?.motionPath?.display)) ?? null,
+        source: drawingPreview ? null : editor._shown?.source(Boolean(motionDisplay())) ?? null,
         view: state.view,
         cameraEnabled: state.playing || state.previewing,
         editorBackgroundColor: builderBackgroundColor(state.settings, state),
@@ -1779,14 +1785,8 @@ function loop(now) {
     // Final editor overlay pass: keep the actual camera above artwork and tool feedback.
     drawFinalOverlay();
     if(sampled){stages.overlay=performance.now()-stageStarted;stageStarted=performance.now();}
-    if (state.inspectorContext === 'camera') {
-      const frame = currentFrame();
-      syncCameraControls($('inspector'), frame, {activeKey:propertyControls?.activeKey,guides:state.cameraGuides});
-      drawCameraMonitor($('inspector').querySelector('[data-camera-monitor]'), {
-        onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,onRecovery:(kind,outcome)=>telemetry.performance.recovery(kind,outcome),
-        stage:state.renderer,report:editor.report,frame,
-      });
-    }
+    state.dirtyMonitor = false;
+    paintCameraMonitor();
     const elapsed = performance.now() - start;
     if(sampled)stages.camera=performance.now()-stageStarted;
     if(telemetry.isForeground)telemetry.performance.frame(elapsed,stages||{},sampled);
@@ -1811,7 +1811,7 @@ function loop(now) {
   if (state.dirtyOverlay && !scenePainted) {
     state.dirtyOverlay = false;
     if (!state.playing && !state.previewing) {
-      overlayRender(drawingController?.renderPreview?.geometry ?? editor._drag?.motionPath?.display?.geometry ??
+      overlayRender(drawingController?.renderPreview?.geometry ?? motionDisplay()?.geometry ??
         state.drag?.geometry ?? keyboardHandleGesture?.geometry ?? editor.geometry);
       drawingController?.overlayDraw(ctx);
       drawFinalOverlay();
@@ -1830,11 +1830,25 @@ function loop(now) {
       lastFpsUI = measuredAt;
     }
   }
+  if (state.dirtyMonitor) {
+    state.dirtyMonitor = false;
+    paintCameraMonitor();
+  }
   // A wheel zoom still gliding has more of the view to draw.
   if (wheelZoom.active) state.dirtyRender = true;
   // A seek/edit event can request the next frame while this callback runs.
   // Keep that request instead of starting a second animation loop.
-  if (!raf && (state.playing || state.dirtyRender || state.dirtyOverlay)) raf = requestAnimationFrame(loop);
+  if (!raf && (state.playing || state.dirtyRender || state.dirtyOverlay || state.dirtyMonitor)) raf = requestAnimationFrame(loop);
+}
+/** The camera inspector's readouts and monitor, for the frame on show. */
+function paintCameraMonitor() {
+  if (state.inspectorContext !== 'camera') return;
+  const frame = currentFrame();
+  syncCameraControls($('inspector'), frame, {activeKey:propertyControls?.activeKey,guides:state.cameraGuides});
+  drawCameraMonitor($('inspector').querySelector('[data-camera-monitor]'), {
+    onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,onRecovery:(kind,outcome)=>telemetry.performance.recovery(kind,outcome),
+    stage:state.renderer,report:editor.report,frame,
+  });
 }
 function drawFinalOverlay() {
   ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
@@ -6351,6 +6365,7 @@ function recoverCanvas(refreshGpuBudget) {
 function rendererOptions() {
   return {
     onInvalidate: requestRender,
+    onMonitorPicture: requestMonitorRender,
     // A frame the engine refused: the previous picture stays and the document's next revision is tried again.
     onError: error => { telemetry.error(error, 'renderer'); status(error, true); },
     onStatus: (message) => {

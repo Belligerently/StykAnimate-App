@@ -47,9 +47,9 @@ async function marquee(a,b,key) {
 }
 async function frames() {
   return page.evaluate(async()=>{
-    // The engine's frame at each tick (the playhead goes back to where it was).
-    const e=styk.editor,at=e.tick,sampled=[0,10,20,30].map(t=>{e.seek(t);return e.evaluatedFrame.objects.map(o=>({uid:o.unique_id,x:o.root_x,y:o.root_y,angles:o.angles,join:o.join}));});
-    e.seek(at);return sampled;
+    // The engine's frame at each tick, read on a copy of the document: seeking the page's own editor would collapse the timeline's range.
+    const {pageEditor}=await import('/tests/support/page-editor.mjs'),copy=pageEditor({demo:false}).load(styk.editor.serialize());
+    return [0,10,20,30].map(t=>{copy.seek(t);return copy.evaluatedFrame.objects.map(o=>({uid:o.unique_id,x:o.root_x,y:o.root_y,angles:o.angles,join:o.join}));});
   });
 }
 async function selectRange(mode) {
@@ -114,7 +114,8 @@ try {
   await page.keyboard.press('Control+Shift+b');await settle();
   await setup({joined:true});
   const root=await page.evaluate(()=>{const g=styk.editor.geometry.objects.get(1);return g.root;});
-  await marquee({x:root.x-15,y:root.y-15},{x:root.x+15,y:root.y+15});
+  // The drag starts off the first figure's line, which runs through the corner at (-15, -15): a press on it would select that figure.
+  await marquee({x:root.x+15,y:root.y-15},{x:root.x-15,y:root.y+15});
   check('Joined origin selection follows the evaluated attachment',JSON.stringify(await selected())==='[2]');
   await page.screenshot({path:out+'/origins-joined.png'});
   // Put a frontmost sibling exactly over the selected attachment's handle.
@@ -123,12 +124,14 @@ try {
     const e=styk.editor;e.select(2,0);
     globalThis.__joinedBefore=JSON.stringify(e.serialize());globalThis.__parentBefore=JSON.stringify(e.selectionFrame.objects[0]);
   });await settle();
-  p=await point(2,1);await page.keyboard.down('Alt');await page.mouse.move(p.x,p.y);await page.mouse.down();
+  // The attached figure's end lies below the artboard, which the fitted view leaves out of the stage: pan up to it before aiming.
+  await page.keyboard.down('Alt');await settle();await page.evaluate(()=>{styk.state.view.y-=120;});await settle();p=await point(2,1);await page.mouse.move(p.x,p.y);await page.mouse.down();
   await page.mouse.move(p.x-45,p.y+30,{steps:8});
   check('Attached Alt-drag uses its join as the fixed pivot',await page.evaluate(()=>styk.state.drag?.kind==='figure-transform'&&styk.editor.selectedUid===2&&JSON.stringify(styk.editor.selectionFrame.objects[0])===__parentBefore));
   await page.screenshot({path:out+'/joined-pivot.png'});
   await page.keyboard.press('Escape');await page.mouse.up();await page.keyboard.up('Alt');
   check('Cancelling joined transform restores document exactly',await page.evaluate(()=>JSON.stringify(styk.editor.serialize())===__joinedBefore));
+  await page.evaluate(()=>styk.fit());await settle();
   for(const mode of ['simple','advanced']) {
     await selectRange(mode);
     check(mode+' shows the selected-frame edit count',await page.locator('#range-edit .range-edit-count').textContent()==='3');
@@ -151,6 +154,8 @@ try {
     check(mode+' clears range editing after selection collapses',await page.locator('#range-edit').isDisabled()&&await page.locator('#range-edit').getAttribute('aria-pressed')==='false');
   }
   await page.setViewportSize({width:1100,height:800});await settle();await page.screenshot({path:out+'/compact.png'});
+  // Edit together shows once two frames are selected (it is collapsed while disabled), at this width too.
+  await selectRange('advanced');
   check('Compact toolbar retains accessible range control',await page.locator('#range-edit').isVisible());
   check('No browser errors',errors.length===0);
   await writeFile(out+'/report.json',JSON.stringify({checks,errors},null,2));

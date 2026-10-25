@@ -446,7 +446,7 @@ impl Session {
             }
             // What is sampled from the document besides the frame on show, at the playhead: the trails, the pose at a trail point, the
             // onion skins (as the stage takes them, `Session::onions`) and the camera.
-            "trails" | "ghost" | "onions" | "shot" | "frameCamera" | "cameraSamples" | "framing" | "vfxClips" | "vfxGroup" => {
+            "trails" | "ghost" | "onions" | "shot" | "frameCamera" | "cameraSamples" | "framing" | "vfxClips" | "vfxGroup" | "vfxExtent" => {
                 apply_playhead(&mut self.editor, &view);
                 match kind {
                     "trails" => self.editor.interface_trails(&args),
@@ -454,6 +454,7 @@ impl Session {
                     "onions" => self.editor.onion_summary(&styk_doc::json::to_string(&args)),
                     "vfxClips" => self.editor.interface_vfx_clips(&args),
                     "vfxGroup" => self.editor.interface_vfx_group(&args),
+                    "vfxExtent" => self.editor.interface_vfx_extent(&args),
                     other => self.editor.interface_camera(other, &args),
                 }
             }

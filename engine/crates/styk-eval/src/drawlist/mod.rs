@@ -942,6 +942,20 @@ pub fn artwork_bounds(assets: &Assets, scene: &Scene) -> Option<[f64; 4]> {
     Some(rounded(acc))
 }
 
+/// `objectBounds(items, {vfxBounds: false})` of what the objects at `slots` paint, the content of a movieclip instance
+/// among them (the effects gizmo measures a figure by it): every item's box grown by half its stroke, its outline and three
+/// units, without the reach of the effects. `[x, y, width, height]` in whole units; `None` when they paint nothing.
+pub fn objects_artwork_bounds(scene: &Scene, images: &impl crate::vfx::layers::ImageSizes, slots: &[u32]) -> Option<[f64; 4]> {
+    let mut acc = EMPTY;
+    let mut any = false;
+    for it in scene.items.iter().filter(|it| slots.contains(&it.slot)) {
+        let Some(extent) = item_extent(scene, images, it) else { continue };
+        extent.include(&mut acc, 0.0);
+        any = true;
+    }
+    any.then(|| rounded(acc))
+}
+
 /// Whether any effect applies to the scene's figures or its movieclip instances.
 fn has_effects(scene: &Scene) -> bool {
     scene.vfx.is_some() || scene.clip_vfx.iter().any(Option::is_some)

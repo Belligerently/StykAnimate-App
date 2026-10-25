@@ -24,7 +24,8 @@ async function setup(paths = false) {
     styk.editor.load(r);styk.editor.seek(paths?16:0);styk.editor.select(1);styk.state.tool='select';
     styk.settingsUI.commit({motionPaths:paths,motionPathRange:0,motionPathJoints:'selected',showHandles:!paths});styk.fit();
     globalThis.__ikScreen=p=>{const s=worldToScreen(p,{report:styk.editor.report,frame:styk.editor.evaluatedFrame,view:styk.state.view}),r=document.querySelector('#viewport').getBoundingClientRect();return{x:r.left+s.x,y:r.top+s.y};};
-    globalThis.__ikPose=()=>{const e=styk.editor,g=e.geometry.objects.get(0);return {joints:Object.fromEntries(g.joints),pin:g.obj._stykIK[22],history:e._undo.length,drag:styk.state.drag?.kind,tick:e.tick};};
+    // The pose on show: during a motion-path drag the stage draws the gesture's display geometry.
+    globalThis.__ikPose=()=>{const e=styk.editor,g=((e._drag?.motionPath&&e._drag.display?.geometry)||e.geometry).objects.get(0);return {joints:Object.fromEntries(g.joints),pin:g.obj._stykIK[22],history:e._undo.length,drag:styk.state.drag?.kind,tick:e.tick};};
   }, paths);
   await settle();
   if (paths) await page.waitForTimeout(250);
@@ -65,21 +66,21 @@ try {
   await page.keyboard.press('Escape');await page.mouse.up();await page.keyboard.up('Control');await page.keyboard.up('Shift');await settle();shifted(before,await snap(),0,0);
   check('Escape works with both modifiers and preserves history',(await snap()).history===before.history);
   await setup(true);
+  // The playhead stands on the dragged point's frame: the gesture shows its pose there (the frame it changes is not drawn elsewhere).
+  await page.evaluate(()=>styk.editor.seek(8));await settle();
   const remote={x:380,y:150},a=await screen(remote);
   await page.mouse.move(a.x,a.y);await page.mouse.down();before=await snap();
-  check('A remote origin path point starts a path edit',before.drag==='motion-path'&&before.tick===16);
+  check('An origin path point starts a path edit',before.drag==='motion-path'&&before.tick===8);
+  await page.evaluate(()=>{const r=styk.state.renderer,render=r.render.bind(r);globalThis.__motionSources=[];r.render=options=>{__motionSources.push(options.source?.motion);return render(options);};});
   await page.keyboard.down('Shift');const b=await screen({x:410,y:132});await page.mouse.move(b.x,b.y,{steps:5});await settle();shifted(before,await snap(),30,-18);
+  check('The stage draws the pose the path edit shows',await page.evaluate(()=>__motionSources.length>0&&__motionSources.at(-1)===true));
   await page.keyboard.up('Shift');await settle();live=await snap();
-  check('Path modifier release restores the pin without seeking',Math.abs(live.joints[22].x-before.joints[22].x)<.05&&live.tick===16);
+  check('Path modifier release restores the pin without seeking',Math.abs(live.joints[22].x-before.joints[22].x)<.05&&live.tick===8);
   await page.keyboard.down('Shift');await settle();shifted(before,await snap(),30,-18);
-  if (await page.evaluate(()=>typeof styk.editor.motionPathFalloff==='function')) {
-    await page.keyboard.down('f');await settle();shifted(before,await snap(),30,-18);
-    check('Shift combines with the motion-path falloff shortcut',await page.evaluate(()=>Boolean(styk.editor.motionPathFalloff())));
-    await page.keyboard.up('f');await settle();shifted(before,await snap(),30,-18);
-  }
+  // Falloff is the right-button path drag now: there is no held key to combine with Shift.
   await page.screenshot({path:out+'/path-drag.png'});
   await page.mouse.up();await page.keyboard.up('Shift');await settle();
-  check('Path edit commits once and preserves the playhead',(await snap()).history===before.history+1&&(await snap()).tick===16);
+  check('Path edit commits once and preserves the playhead',(await snap()).history===before.history+1&&(await snap()).tick===8);
   await page.evaluate(()=>styk.editor.seek(8));shifted(before,await snap(),30,-18);
   await page.evaluate(()=>{styk.editor.undo();styk.editor.seek(8);});shifted(before,await snap(),0,0);
   check('Undo restores the remote pose and pin',true);

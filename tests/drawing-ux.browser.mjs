@@ -106,7 +106,9 @@ try{
     check(`A creates a blank key only on the active drawing layer in ${mode}`,await page.evaluate(()=>{const e=styk.editor;return !e.drawingTarget().figure&&e.activeLayerId===activeBefore&&Object.entries(tracksBefore).every(([id,track])=>id===activeBefore||JSON.stringify(e.report._styk.layerSheet.tracks[id])===JSON.stringify(track));}));
     await page.keyboard.press('Control+z');
   }
-  await page.locator('[data-workspace-mode="animate"]').first().click();await page.locator('#viewport').focus();await page.keyboard.press('a');
+  await page.locator('[data-workspace-mode="animate"]').first().click();
+  // Animate keeps its own active layer: pick the drawing layer the loop used.
+  await page.evaluate(()=>{styk.editor.activeLayerId=activeBefore;});await page.locator('#viewport').focus();await page.keyboard.press('a');
   check('A uses drawing-layer semantics in Animate too',await page.evaluate(()=>!styk.editor.drawingTarget().figure));await page.keyboard.press('Control+z');await page.locator('[data-workspace-mode="draw"]').click();
   await page.locator('[data-timeline-mode="advanced"]').click();await page.setViewportSize({width:1024,height:768});await page.evaluate(()=>styk.fit());await page.screenshot({path:path.join(output,'workspace-compact.png')});
   check('compact quick bar keeps size and opacity visible',await page.locator('.drawing-quickbar [data-draw-slider="size"]').isVisible()&&await page.locator('.drawing-quickbar [data-draw-slider="opacity"]').isVisible());

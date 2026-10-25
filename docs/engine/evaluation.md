@@ -403,6 +403,8 @@ playhead's. `src/engine/engine-shown.mjs` asks `EditSession.query` (`Session::qu
   clips from it (`src/vfx-clip-views.mjs`). `vfxGroup` names, for a figure, the figures its connected effects filter together
   at the playhead (`FrameVfx`'s attached group, owner first, from `Prepared::frame_vfx`: the effects the stage draws, a crop's
   inherited effect clips included), or nothing when it owns no group; the effects gizmo measures them from the geometry it holds.
+  A movieclip instance's geometry is its handle alone, so `vfxExtent` gives the gizmo what the instances among some figures
+  paint, content included (`styk_eval::drawlist::objects_artwork_bounds`, `[x, y, width, height]`).
 
 The same fixtures judge them: the evaluation fixtures (`tests/fixtures/eval/follow-*`, the camera records) for the
 camera, and `styk-edit/src/views_tests.rs` and `tests/onion-skins.test.mjs`, `tests/motion-trails.test.mjs`,

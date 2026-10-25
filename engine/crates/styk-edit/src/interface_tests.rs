@@ -545,6 +545,24 @@ fn a_figure_with_connected_effects_owns_the_figures_attached_to_it() {
 }
 
 #[test]
+fn a_movieclip_instance_is_measured_by_what_it_paints_for_the_effects_gizmo() {
+    let (mut session, _) = tape("movieclip-playback-sheet");
+    // The geometry the interface holds of an instance is its handle: it paints nothing there.
+    let shown = geometry(&mut session, None);
+    let handle = group(&shown, 0).get("bounds").unwrap().numbers().unwrap();
+    assert!(handle[2] - handle[0] <= 1.0 && handle[3] - handle[1] <= 1.0, "the handle alone, {handle:?}");
+    // What it draws is measured by the engine, for the figures asked.
+    let extent = read(&mut session, "vfxExtent", r#"{"uids":[4]}"#).numbers().expect("the clip paints");
+    assert_eq!(extent, vec![146.0, 164.0, 209.0, 452.0], "the clip's figures, as x, y, width, height");
+    // Nothing known, nothing painted.
+    assert_eq!(read(&mut session, "vfxExtent", r#"{"uids":[99]}"#), Value::Null);
+    // The read changes nothing.
+    let before = json(session.editor.report());
+    read(&mut session, "vfxExtent", r#"{"uids":[4]}"#);
+    assert_eq!(before, json(session.editor.report()));
+}
+
+#[test]
 fn the_frame_carries_the_playhead_as_the_time_of_the_effect_clips_the_document_has() {
     let at = |session: &mut Session, kind: &str, tick: u32| parse(&session.query(kind, "{}", &format!(r#"{{"tick":{tick},"frameIndex":0}}"#)).unwrap());
     let tick_of = |frame: &Value| frame.get("_vfxTimelineTick").and_then(Value::as_f64);

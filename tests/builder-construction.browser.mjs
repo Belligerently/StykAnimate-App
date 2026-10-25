@@ -8,7 +8,7 @@ try {
  await p.goto(process.env.STYK_URL||'http://127.0.0.1:47841');await p.waitForFunction(()=>window.styk?.ready);
  await p.locator('[data-workspace-mode="rig"]').click();await settle();
  await p.locator('[data-tool="chain"]').click();
- const rect=await p.locator('#overlay').boundingBox();
+ let rect=await p.locator('#overlay').boundingBox();
  const initial=await p.evaluate(()=>styk.editor.figure.segments.length);
  await p.mouse.click(rect.x+120,rect.y+100);await p.mouse.click(rect.x+200,rect.y+180);await p.mouse.click(rect.x+290,rect.y+240);
  assert.equal(await p.evaluate(()=>styk.editor.figure.segments.length),initial);
@@ -20,7 +20,7 @@ try {
  await p.keyboard.press('Control+z');await settle();assert.equal(await p.evaluate(()=>styk.editor.figure.segments.length),initial);
  await p.keyboard.press('Control+Shift+z');await settle();assert.equal(await p.evaluate(()=>styk.editor.figure.segments.length),initial+2);
  await p.mouse.click(rect.x+150,rect.y+140);await p.keyboard.press('Escape');assert.equal(await p.locator('#chain-controls').isVisible(),false);
- await p.evaluate(()=>styk.workspace.dock('structure','left'));await settle();await p.locator('#builder-snap').click();assert.equal(await p.locator('#builder-snap').getAttribute('aria-pressed'),'false');await p.locator('#builder-snap').click();
+ await p.evaluate(()=>styk.workspace.dock('structure','left'));await settle();rect=await p.locator('#overlay').boundingBox();await p.locator('#builder-snap').click();assert.equal(await p.locator('#builder-snap').getAttribute('aria-pressed'),'false');await p.locator('#builder-snap').click();
  await p.locator('.builder-tree-row').first().click();await p.keyboard.down('Shift');await p.locator('.ui-quick [data-action=duplicate-segment]').click();await p.keyboard.up('Shift');
  await p.mouse.move(rect.x+380,rect.y+290);await settle();assert.equal(await p.locator('#overlay').evaluate(el=>el.style.cursor),'copy');
  await p.screenshot({path:'artifacts/builder-construction/duplicate.png'});
@@ -48,5 +48,5 @@ try {
    }return records;
   });results.push({segments,instances,data});console.log(JSON.stringify(results.at(-1)));
  }
- await writeFile('artifacts/builder-performance/browser.json',JSON.stringify({browser:await b.version(),renderer:await p.evaluate(()=>styk.state.renderer.stats.backend),results},null,2));
+ await mkdir('artifacts/builder-performance',{recursive:true});await writeFile('artifacts/builder-performance/browser.json',JSON.stringify({browser:await b.version(),renderer:await p.evaluate(()=>styk.state.renderer.stats.backend),results},null,2));
 }finally{await b.close();}

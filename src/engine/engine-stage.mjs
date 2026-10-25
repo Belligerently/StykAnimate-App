@@ -134,7 +134,7 @@ async function adapterName(stage) {
  * The stage over `canvas`, the page's scene canvas: the engine's surface for as long as the stage lives.
  * Rejects with a localized error when the engine or its graphics device cannot start.
  * @param {HTMLCanvasElement} canvas the scene canvas (a canvas keeps one context type: a stage replaced after a lost device gets a new canvas)
- * @param {object} options `onInvalidate()` asks for another frame; `onStatus(message)` reports the device being lost; `onError(error)` reports a frame the engine refused
+ * @param {object} options `onInvalidate()` asks for another frame; `onMonitorPicture()` asks for the camera monitor alone to be painted again (its picture arrived); `onStatus(message)` reports the device being lost; `onError(error)` reports a frame the engine refused
  * @param {() => Promise<object>} [load] how the engine is loaded (a test stands in its own)
  */
 export async function createStage(canvas, options = {}, load = loadEngine) {
@@ -403,7 +403,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     drawCameraMonitor(target, {width, height, zoom, panX, panY, dpr = 1}, afterSourcePaint) {
       if (!engineShown || side.failed) { side.workerMonitor?.destroy(); side.workerMonitor = null; return false; }
       if (side.engine.threaded) {
-        side.workerMonitor ??= new EngineCameraMonitor(side.stage, {invalidate: () => options.onInvalidate?.()});
+        side.workerMonitor ??= new EngineCameraMonitor(side.stage, {invalidate: () => options.onMonitorPicture?.()});
         return side.workerMonitor.draw(target, {width, height, zoom, panX, panY, dpr}, afterSourcePaint);
       }
       if (side.monitor === undefined) {
