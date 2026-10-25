@@ -26,4 +26,4 @@ The separate numeric opacity fields described here are an intentional convenienc
 
 [Branch opacity model checks](../tests/branch-opacity.test.mjs) and the [native property checks](../tests/native-property-edit.test.mjs) cover enclosed polygons, distinct endpoint RGB, authored overrides, scoped targets, one-step Undo, and exact Cancel restoration.
 
-The [actual application report](../artifacts/branch-opacity/report.json) records 13 passing checks, including exact global-curve versus composed branch selection, F12 with the current checkbox explicitly focused, both members changing through the inspector, Escape, Save during a held drag, and reopening the resulting STYK document. The [inspector screenshot](../artifacts/branch-opacity/inspector.png) was visually inspected. The separate [Builder aids report](../artifacts/builder-aids/report.json) includes actual branch width editing and one Undo.
+The [Builder aids report](../artifacts/builder-aids/report.json) includes actual branch width editing and one Undo.

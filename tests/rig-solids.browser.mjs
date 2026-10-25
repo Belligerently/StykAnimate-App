@@ -34,7 +34,7 @@ try{
   await set('[data-face-axis="2"]',4);await page.screenshot({path:`${out}/reference-joints.png`});await page.locator('#fill-reference-form [type="submit"]').click();await settle();
   for(let i=1;i<6;i++){await page.evaluate(i=>styk.editor.selectPolygon(styk.editor.selectedUid,i),i);await settle();await page.locator(`[data-polygon-side="${i}"]`).selectOption('front');await settle();assert.equal(await page.locator('#fill-reference-form').isVisible(),false,'Reuse the existing reference');}
   await page.evaluate(()=>{styk.editor.selectPolygon(styk.editor.selectedUid,0);styk.fit();});await settle();await page.screenshot({path:`${out}/builder-cube.png`});
-  await page.evaluate(()=>styk.editor.select(styk.editor.selectedUid,0));await settle();await set('#builder-joint-name','Turn');
+  await page.evaluate(()=>styk.editor.select(styk.editor.selectedUid,0));await settle();await page.locator('#inspector-name .ui-target-text').dblclick();await set('#builder-joint-name','Turn');
   await page.setViewportSize({width:1000,height:740});await page.evaluate(async()=>{const {applyEditorTheme}=await import('/src/theme.mjs');applyEditorTheme('dark');styk.editor.selectPolygon(styk.editor.selectedUid,0);styk.fit();});await settle();
   assert.equal(await page.locator('#inspector').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);await page.screenshot({path:`${out}/compact-dark-builder.png`});
   await page.locator('[data-polygon-reference="0"]').click();await settle();assert.equal(await page.locator('#dialog-content').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);await page.screenshot({path:`${out}/dark-reference.png`});

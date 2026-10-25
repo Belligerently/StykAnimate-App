@@ -10,7 +10,8 @@ page.on('pageerror', error => errors.push(error.message));
 page.setDefaultTimeout(15000);
 const toolbar = action => page.locator(["undo", "redo"].includes(action) ? `.band-history [data-action="${action}"]` : `.ui-quick [data-action="${action}"]`);
 async function ghosts(expected, name) {
-  await page.waitForFunction(expected => JSON.stringify((styk.onionSkins()?.ghosts ?? []).map(ghost => ghost.roots.filter((_, at) => at % 3 === 1))) === JSON.stringify(expected), expected);
+  await page.waitForFunction(expected => JSON.stringify((styk.onionSkins()?.ghosts ?? []).map(ghost => ghost.roots.filter((_, at) => at % 3 === 1))) === JSON.stringify(expected), expected)
+    .catch(async error => { throw new Error(`${name}: ghosts are ${JSON.stringify(await page.evaluate(() => (styk.onionSkins()?.ghosts ?? []).map(ghost => ghost.roots.filter((_, at) => at % 3 === 1))))}, tick ${await page.evaluate(() => styk.editor.tick)}, not ${JSON.stringify(expected)}`); });
   checks.push(name);
 }
 const renderedOrder = () => page.evaluate(() => styk.editor.geometry.objects.get(0).drawables.filter(d => d.seg).map(d => d.seg.segment_id));
@@ -23,7 +24,7 @@ try {
     figure.segments = [{...figure.segments[0], length: 100, thickness: 20, angle_rad: 0}]; figure.segment_count = 1;
     report.keyframes = [createFrame([createObject(figure, 1, 180, 270)], 1)];
     styk.editor.load(report); styk.editor.select(1);
-    styk.settingsUI.commit({timelineMode: 'simple', onionRangeBefore: 1, onionRangeAfter: 1, onionMode: 'keyframes', onionOpacity: .6});
+    styk.settingsUI.commit({timelineMode: 'simple', onionRangeBefore: 1, onionRangeAfter: 8, onionMode: 'keyframes', onionOpacity: .6});
     styk.state.onion = false; styk.fit();
   });
   await page.locator('#onion-button').click();

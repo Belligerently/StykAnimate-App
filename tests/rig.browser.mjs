@@ -105,8 +105,8 @@ try {
     const e = styk.editor, endpoint = e.geometry.objects.get(e.selectedSlot).segments[0].end;
     return e.report.keyframes.length === 2 && Math.hypot(endpoint.x - x, endpoint.y - y) < .2 && (e.figure.segments[0].aux_code & 1);
   }, authored.joints[11]));
-  const count = await page.evaluate(() => styk.editor.frame.objects.length);
-  await page.locator('#file-input').setInputFiles(stkPath); await page.waitForFunction(count => styk.editor.frame.objects.length === count + 1, count);
+  const count = await page.evaluate(() => styk.editor.evaluatedFrame.objects.length);
+  await page.locator('#file-input').setInputFiles(stkPath); await page.waitForFunction(count => styk.editor.evaluatedFrame.objects.length === count + 1, count);
   check('Reimported STK retains authored default lengths, angles and static flags', await page.evaluate(defaults => {
     const segments = styk.editor.figure.segments;
     return segments.length === 4 && (segments[0].aux_code & 1) && segments.every((s, i) => Math.abs(s.length - defaults[i].length) < .001 && Math.abs(s.angle_rad - defaults[i].angle) < 1e-7);

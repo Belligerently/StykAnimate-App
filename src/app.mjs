@@ -2180,7 +2180,7 @@ function polygonClick(p, event = {}) {
     if(!region)return toast(interfaceText("app.noClosedRegionHereCloseTheOutlineAt"), "app.noClosedRegionHereCloseTheOutlineAt", {});
     cancelPolygonDraft();
     const polygon=editor.addPolygon(region.ids,{color:g.segments[editor.selectedJoint]?.rgb??g.segments[0]?.rgb??[43,43,43]});
-    editor.selectPolygon(editor.selectedUid,editor.figure.polyfills.indexOf(polygon));
+    editor.selectPolygon(editor.selectedUid,editor.figure.polyfills.findIndex(item=>item.polyfill_id===polygon.polyfill_id));
     state.bucketPreview=null;status({messageKey: "app.fillAdded", messageParams: {}});return;
   }
   if (!state.polygon && builderMode?.active && !pick(p)) {
