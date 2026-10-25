@@ -221,16 +221,6 @@ impl Editor {
         self.selection_metadata.polygon.is_some() || self.selection_metadata.segments.as_ref().is_some_and(|selection| selection.ids.len() > 1) || self.branch_selected()
     }
 
-    /// What the selected fill, joints and branch change in a call: of the editor's commands only a few read
-    /// them (the style, order, flip, delete and stretch commands of a branch or several joints, ported with
-    /// them). Copying a selected branch extracts it as a new figure definition, which the session does not
-    /// do yet.
-    pub(crate) fn selection_metadata_gate(&self, method: &str) -> Result<(), EditError> {
-        if self.branch_selected() && matches!(method, "copySelection" | "cutSelection" | "duplicateSelection") {
-            return Err(EditError::Unported(format!("{method} of a selected branch")));
-        }
-        Ok(())
-    }
     /// `select(uid, joint, {toggle, add})`.
     pub(crate) fn select(&mut self, uid: Option<u32>, joint: i64, toggle: bool, add: bool) -> Result<Value, EditError> {
         if self.branch_selected() && uid == self.selection.uid && joint == self.selection.joint && !toggle && !add {

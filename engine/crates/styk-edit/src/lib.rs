@@ -803,7 +803,6 @@ impl Editor {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
         // A JSON argument that is not a number is NaN to the finite checks, as `Number.isFinite` sees it.
         let number = |i: usize| arg(i).as_f64().unwrap_or(f64::NAN);
-        self.selection_metadata_gate(method)?;
         self.native_transform_gate(method, args, projected_native)?;
         if let Some(reason) = self.unported_document() {
             // A document with animation origins runs every command: the ones that pose figures synchronize the pivots.
@@ -1076,10 +1075,10 @@ impl Editor {
             "setFPS" => self.set_fps(&arg(0)).map(Value::Bool),
             "setCanvasSize" => self.set_canvas_size(&arg(0), &arg(1)).map(Value::Bool),
             "updateProject" => self.update_project(&arg(0)).map(Value::Bool),
-            "copySelection" => match args.first().and_then(|o| o.get("wholeFigures")).is_some_and(Value::truthy) {
-                false => self.copy_selection(args.first().and_then(|o| o.get("inPlace")).is_some_and(Value::truthy)),
-                true => Err(EditError::Unported("copying whole figures of a branch selection".into())),
-            },
+            "copySelection" => {
+                let flag = |name: &str| args.first().and_then(|o| o.get(name)).is_some_and(Value::truthy);
+                self.copy_selection_of(flag("wholeFigures"), flag("inPlace"))
+            }
             "cutSelection" => self.cut_selection(),
             "pasteSelection" => self.paste_selection(&arg(0)),
             "importFigure" => self.import_figure(&arg(0), &arg(1)),

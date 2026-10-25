@@ -485,8 +485,9 @@ document difference the harness can see):
   joints chosen over (with a branch, everything below them and the figures joined there), `orderSelection` moves a
   branch in the figure's own drawing order, `deleteSelection` deletes the branch as segments (`deleteSegment`, whose
   list of handles the app sends as a `Set`, serialized as a list). A fill is read by no command: the app passes its
-  index. Copying a selected branch (`copyBranchSelection`) is not done by the session yet and stays in the editor
-  (the table below); the owner then leaves the next paste to the editor too, since the session holds no figures to paste. A command that makes a figure the whole selection (`duplicateFigure`, drawing a figure) drops
+  index. Copying a selected branch (`copySelection`, `cutSelection`, `duplicateSelection`) extracts it as a definition of its own,
+  with the posed angles, bends and lengths of its segments (`figure_clipboard.rs`, as `copyBranchSelection` does); the
+  limb controllers of joints it does not hold are left out of the copy. A command that makes a figure the whole selection (`duplicateFigure`, drawing a figure) drops
   all three; one that selects figures (`addFigure`, a paste) drops the branch only, as `_selectIds` does.
 - **Records the editor changes in place** (a topology edit rewrites the figure and every
   pose of it, drawing edits name their figures): the owner sees changes by identity, so the
@@ -689,8 +690,8 @@ it on the editor, for every document.
   foreign)`, `null` empties it), as a clipboard copied in another document when its document is not the one on show. The
   same hand-over moves a clipboard between the sessions of the projects open in the tabs. The drawing pixels the Draw
   tool copies (`_drawingPixelClipboard`) are the interface's alone and never reach the session; an audio clip's
-  recording is not mirrored (the field marks that a clip was copied). The copy a refused call
-  makes in the editor (a selected branch) fills the mirror through its fields and reaches the session the same way.
+  recording is not mirrored (the field marks that a clip was copied). The copy a call the editor
+  runs makes fills the mirror through its fields and reaches the session the same way.
 - **Errors.** A session error carries its message key and, when the message names values (`Unlock {name}
   before editing it`, `{label} must be finite`), their JSON (`errorParams`; `invalid_with` in Rust: a text,
   `{"@label": text}` for a field label, `{"@motionParameter": …}`, `{"@vfxParameter": …}`). The owner raises
@@ -755,7 +756,6 @@ sends, 214 cannot be reached from the app, and these can (each runs in the edito
 | --- | --- | --- |
 | an animation-origin figure with a 3D pose, a mesh, a movieclip or a drawing (`origin_component_gate`: the pivots are not read for them) | the pose, handle, rig and pose-choice calls, joins, range edits and pose-property keys whose component holds one | medium |
 | a movieclip with meshes, a drawing rotation or a 3D pose (`styk_eval::materialize`: spatial movieclip materialization) | breakApartMovieclip (also the worker-only bakeMovieclip) | large |
-| copying a selected branch (`copyBranchSelection`: the branch extracted as a definition of its own, with the posed lengths and bends of its segments) | copySelection, cutSelection, duplicateSelection while a branch is selected | medium |
 | combining figures with media, a rig, Stick Nodes shapes, surfaces, colour transitions, pinned limbs, 3D meshes, movieclips or origins, or in a document with saved animation channels | combineJoinedFigure | large |
 | disconnecting a segment of an animation-origin figure, or with saved working frames (`simpleFrameDraft`) | disconnectSegment | medium |
 

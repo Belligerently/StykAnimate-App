@@ -14,6 +14,7 @@ use styk_doc::{Obj, Value};
 
 use crate::frame::objects_of;
 use crate::record::{num, uid};
+use crate::sheet::items;
 use crate::{EditError, Editor};
 
 /// `editor._selectionClipboard`, as far as pasting it in the same document reads it.
@@ -83,6 +84,21 @@ fn is_drawing(figure: &Value) -> bool {
 
 fn invalid(key: &str) -> EditError {
     EditError::Invalid(key.into())
+}
+
+/// `Number(text)` of a handle written in a key.
+fn js_number(text: &str) -> f64 {
+    let text = text.trim();
+    if text.is_empty() { 0.0 } else { text.parse().unwrap_or(f64::NAN) }
+}
+
+/// How a segment is drawn in the frame on show (`geometry.segments[i]`): its angle, bend and scaled length, and its start.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PosedSegment {
+    pub angle: f64,
+    pub bend: f64,
+    pub length: f64,
+    pub start: [f64; 2],
 }
 
 /// `snapshotPoseObject(object)`: the pose without its evaluation caches.
@@ -232,14 +248,170 @@ impl Editor {
         Ok(Value::Num(count as f64))
     }
 
+    /// `copySelection({wholeFigures, inPlace})`: with a branch selected, the branch alone (unless `whole_figures`).
+    pub(crate) fn copy_selection_of(&mut self, whole_figures: bool, in_place: bool) -> Result<Value, EditError> {
+        if !whole_figures && self.branch_selected() {
+            return self.copy_branch_selection();
+        }
+        self.copy_selection(in_place)
+    }
+
     /// `cutSelection()`: copied, then deleted; pasting puts it back where it was.
     pub(crate) fn cut_selection(&mut self) -> Result<Value, EditError> {
-        let count = self.copy_selection(true)?;
+        let count = self.copy_selection_of(false, true)?;
         if count.as_f64() == Some(0.0) {
             return Ok(Value::Num(0.0));
         }
+        if let Some(clipboard) = self.figure_clipboard.as_mut() {
+            clipboard.offset = 0.0;
+        }
         self.delete_selection()?;
         Ok(count)
+    }
+
+    /// `copyBranchSelection()`: the selected branch extracted as a figure definition of its own (the posed angles, bends and
+    /// lengths of its segments, the fills and effects that belong to it), with the figures joined below it, in the clipboard.
+    fn copy_branch_selection(&mut self) -> Result<Value, EditError> {
+        let zero = Ok(Value::Num(0.0));
+        let Some((slot, object)) = self.object()? else { return zero };
+        let figure = self.figure_value(&object);
+        let segments = items(figure.get("segments"));
+        let joint = self.selection.joint;
+        let Some(segment) = usize::try_from(joint).ok().and_then(|joint| segments.get(joint)) else { return zero };
+        if figure.path(&["_styk", "spatialMesh"]).is_some_and(Value::truthy) {
+            return Err(invalid("errors.editorSelection.copyTheWholeFigureToIncludeIts3d"));
+        }
+        let indices = crate::builder::branch(&figure, joint as usize, true, false).indices;
+        let handles: Vec<f64> = indices.iter().filter_map(|&i| num(&segments[i], "segment_id")).collect();
+        let boundary = segment.get("parent_id").cloned().unwrap_or(Value::Null);
+        let posed = self.posed_segments(slot)?;
+        let definitions = items(self.report.get("figure_types"));
+        let type_id = definitions.iter().filter_map(|f| num(f, "figure_type_id")).fold(0.0f64, f64::max) + 1.0;
+        // `geometry.obj.scale ? posed.length / scale : segment.length`: a pose with no scale keeps the definition's lengths.
+        let scale = object.get("scale").and_then(Value::as_f64).filter(|scale| *scale != 0.0 && !scale.is_nan());
+        let name = figure.get("name").filter(|n| n.truthy()).and_then(Value::as_str).unwrap_or("Figure").to_string();
+
+        let mut branch = figure.as_obj().cloned().unwrap_or_default();
+        branch.set("figure_type_id", Value::Num(type_id));
+        branch.set("name", Value::str(&format!("{name} branch")));
+        let taken: Vec<Value> = indices
+            .iter()
+            .map(|&i| {
+                let mut copy = segments[i].as_obj().cloned().unwrap_or_default();
+                if copy.get("parent_id") == Some(&boundary) {
+                    copy.set("parent_id", Value::Num(0.0));
+                }
+                if let Some(Some(pose)) = posed.get(i) {
+                    copy.set("angle_rad", Value::Num(pose.angle));
+                    copy.set("bend_rad", Value::Num(pose.bend));
+                    if let Some(scale) = scale {
+                        copy.set("length", Value::Num(pose.length / scale));
+                    }
+                }
+                Value::object(copy)
+            })
+            .collect();
+        branch.set("segment_count", Value::Num(taken.len() as f64));
+        branch.set("segments", Value::array(taken));
+        branch.remove("segment_z_raw");
+        branch.remove("poly_z_raw");
+        let inside = |id: f64| handles.contains(&id);
+        let is_boundary = |id: &Value| id == &boundary;
+        let mut fills = Vec::new();
+        for polygon in items(figure.get("polyfills")) {
+            let ids = items(polygon.get("segment_ids"));
+            if !ids.iter().all(|id| id.as_f64().is_some_and(inside) || is_boundary(id)) {
+                continue;
+            }
+            let remap = |id: &Value| if is_boundary(id) { Value::Num(0.0) } else { id.clone() };
+            let mut fill = polygon.as_obj().cloned().unwrap_or_default();
+            let moved: Vec<Value> = ids.iter().map(remap).collect();
+            fill.set("segment_ids", Value::array(moved.clone()));
+            if let Some(surface) = fill.get("_stykSurface").filter(|s| s.truthy()).and_then(Value::as_obj).cloned() {
+                let basis = items(surface.get("basis"));
+                if basis.iter().any(|id| !id.as_f64().is_some_and(inside) && !is_boundary(id)) {
+                    return Err(invalid("errors.editorSelection.copyTheWholeFigureToIncludeItsFace"));
+                }
+                let mut next = surface.clone();
+                next.set("basis", Value::array(basis.iter().map(remap).collect()));
+                if surface.get("depth").is_some_and(Value::truthy) {
+                    next.set("depth", Value::array(items(surface.get("depth")).iter().map(remap).collect()));
+                }
+                fill.set("_stykSurface", Value::object(next));
+            }
+            fill.set("segment_ids_raw", Value::array(moved));
+            fills.push(Value::object(fill));
+        }
+        branch.set("polyfills", Value::array(fills));
+        if let Some(mut styk) = branch.get("_styk").and_then(Value::as_obj).cloned() {
+            styk.remove("animationOrigin");
+            branch.set("_styk", Value::object(styk));
+        }
+        let branch_start = posed.get(joint as usize).and_then(Option::as_ref).map_or([f64::NAN; 2], |pose| pose.start);
+        let angles: Vec<f64> = items(branch.get("segments")).iter().map(|s| num(s, "angle_rad").unwrap_or(f64::NAN)).collect();
+
+        // The ordinary copy of the joined figures, then the selected one replaced by the branch and a fresh definition.
+        let count = self.copy_selection(false)?;
+        let selected = self.selection.uid;
+        let Some(clipboard) = self.figure_clipboard.as_mut() else { return Ok(count) };
+        let source_type = num(&object, "figure_type_id").unwrap_or(f64::NAN);
+        if let Some(copy) = clipboard.objects.iter_mut().find(|o| uid(o) == selected).and_then(Value::make_obj) {
+            if let Some(stacks) = copy.get("_stykVfx").filter(|v| v.truthy()).and_then(Value::as_obj).cloned() {
+                let mut next = Obj::new();
+                for (key, stack) in stacks.iter() {
+                    if &**key == "figure" {
+                        next.set(key, stack.clone());
+                    } else {
+                        // `const [scope, handle] = key.split('/')`.
+                        let mut parts = key.split('/');
+                        let (scope, handle) = (parts.next().unwrap_or(""), parts.next());
+                        if let Some(handle) = handle.filter(|handle| inside(js_number(handle))) && (scope == "*" || js_number(scope) == source_type) {
+                            next.set(&format!("{type_id}/{handle}"), stack.clone());
+                        }
+                    }
+                }
+                copy.set("_stykVfx", Value::object(next));
+            }
+            copy.set("figure_type_id", Value::Num(type_id));
+            copy.set("join", Value::Null);
+            copy.set("root_x", Value::Num(branch_start[0]));
+            copy.set("root_y", Value::Num(branch_start[1]));
+            copy.set("angles", Value::nums(&angles));
+            copy.set("len_flag", Value::Num(0.0));
+            copy.set("lengths", Value::array(Vec::new()));
+            copy.set("bend_flag", Value::Num(0.0));
+            copy.set("bends", Value::array(Vec::new()));
+            copy.remove("_stykAnimationOrigin");
+            // A limb controller of a joint the branch does not hold has nothing to drive (the editor refused to paste such a copy).
+            if let Some(controllers) = copy.get("_stykIK").and_then(Value::as_obj).cloned()
+                && controllers.keys().any(|key| !inside(js_number(key)))
+            {
+                let mut kept = Obj::new();
+                for (key, controller) in controllers.iter().filter(|(key, _)| inside(js_number(key))) {
+                    kept.set(key, controller.clone());
+                }
+                if kept.is_empty() { copy.remove("_stykIK"); } else { copy.set("_stykIK", Value::object(kept)); }
+            }
+        }
+        clipboard.figures.push(Value::object(branch));
+        let objects = &clipboard.objects;
+        clipboard.figures.retain(|figure| objects.iter().any(|o| num(o, "figure_type_id") == num(figure, "figure_type_id")));
+        clipboard.fresh_types = vec![type_id];
+        Ok(count)
+    }
+
+    /// What each segment of the object at `slot` is drawn with (`geometry.objects.get(slot).segments`): by index, its
+    /// angle, bend and scaled length after inverse kinematics and the rig, and where it starts. `None` for one not built.
+    pub(crate) fn posed_segments(&self, slot: usize) -> Result<Vec<Option<PosedSegment>>, EditError> {
+        let (prepared, frame) = self.evaluate_frame()?;
+        let scene = styk_eval::geometry::build_shapes(&prepared.doc, &frame, Some(&[slot]));
+        let mut posed = vec![None; scene.objects.get(slot).map_or(0, |g| g.ends.len())];
+        for item in scene.measured.iter().filter(|item| item.slot as usize == slot && !matches!(item.kind, styk_eval::geometry::ItemKind::Poly | styk_eval::geometry::ItemKind::Mesh)) {
+            if let Some(place) = posed.get_mut(item.index as usize) {
+                *place = Some(PosedSegment { angle: item.angle, bend: item.bend, length: item.length, start: item.start });
+            }
+        }
+        Ok(posed)
     }
 
     /// `pasteSelection({newIdentities, pasteMode, pasteDepth, offset})`: the clipboard's
@@ -268,12 +440,10 @@ impl Editor {
     }
 
     pub(crate) fn duplicate_selection_pastes(&mut self, options: &Value, mut pastes: Option<&mut Option<Value>>) -> Result<Value, EditError> {
-        if options.get("wholeFigures").is_some_and(Value::truthy) {
-            return Err(EditError::Unported("duplicating whole figures of a branch selection".into()));
-        }
+        let whole_figures = options.get("wholeFigures").is_some_and(Value::truthy);
         let kept = self.figure_clipboard.clone();
         let result = (|| {
-            if self.copy_selection(false)?.as_f64() == Some(0.0) {
+            if self.copy_selection_of(whole_figures, false)?.as_f64() == Some(0.0) {
                 if let Some(pastes) = pastes.as_deref_mut() { *pastes = Some(Value::Null); }
                 return Ok(Value::array(Vec::new()));
             }
