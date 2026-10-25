@@ -29,7 +29,6 @@ export const editorMovieclipMethods={
   leaveMovieclip({save=true}={}){
     const scopes=this._movieclipScopes;if(!scopes?.length)return false;
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
-    if(save&&this._frameDraftEnabled)this.disableFrameDrafts();
     if(save&&drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), "errors.editorMovieclips.finishDrawingPublicationBeforeLeavingThisMovieclip", {});
     const changed=this.revision!==this._savedRevision;
     const scope=scopes.at(-1),document=save?storedFrameReport(this.report,{validate:false}):null;
