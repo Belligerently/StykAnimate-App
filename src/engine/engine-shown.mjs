@@ -25,6 +25,8 @@ const pointList = flat => {
   for (let i = 0; i < points.length; i++) points[i] = {x: flat[2 * i], y: flat[2 * i + 1]};
   return points;
 };
+/** The point before perspective at place `index` of the flat triples the session sent, or `undefined`. */
+const rawAt = (triples, index) => triples && triples[3 * index] !== null ? [triples[3 * index], triples[3 * index + 1], triples[3 * index + 2]] : undefined;
 /** A number the session wrote as `null` (not finite) is NaN. */
 const real = value => value ?? NaN;
 
@@ -69,8 +71,13 @@ function hydrate(raw, slot, frame, report, defs) {
   if (!obj || !fig) return null;
   const root = point(raw.root);
   const joints = new Map([[0, root]]);
-  const {ends} = raw;
-  for (let i = 0; i < fig.segments.length && 2 * i < ends.length; i++) if (ends[2 * i] !== null) joints.set(Number(fig.segments[i].segment_id), {x: ends[2 * i], y: ends[2 * i + 1]});
+  const {ends, raws, startRaws} = raw;
+  for (let i = 0; i < fig.segments.length && 2 * i < ends.length; i++) {
+    if (ends[2 * i] === null) continue;
+    const joint = {x: ends[2 * i], y: ends[2 * i + 1]}, rawPoint = rawAt(raws, i);
+    if (rawPoint) joint.rawPoint = rawPoint;
+    joints.set(Number(fig.segments[i].segment_id), joint);
+  }
   if (isMovieclip(fig)) {
     // A movieclip instance is its handle: forty units from the root along its angle (what it draws is the engine's).
     const [row] = raw.segs, end = joints.get(Number(fig.segments[0].segment_id));
@@ -85,7 +92,13 @@ function hydrate(raw, slot, frame, report, defs) {
     const index = row[0], flags = row[11], seg = fig.segments[index];
     let at = 12;
     // A segment starts where its parent ends, unless it says otherwise.
-    const start = flags & START ? {x: row[at++], y: row[at++]} : joints.get(Number(seg.parent_id)) ?? root;
+    let start = flags & START ? {x: row[at++], y: row[at++]} : joints.get(Number(seg.parent_id)) ?? root;
+    // A 3D bone's start before perspective: its own, unless it is its parent's joint as it stands.
+    const startRaw = rawAt(startRaws, index);
+    if (startRaw) {
+      if (flags & START) start.rawPoint = startRaw;
+      else if (start.rawPoint?.some((value, axis) => value !== startRaw[axis]) ?? true) start = {x: start.x, y: start.y, rawPoint: startRaw};
+    }
     const joint = joints.get(Number(seg.segment_id));
     const end = flags & END ? {x: row[at++], y: row[at++]} : joint;
     const points = flags & POINTS ? pointList(row[at++]) : [start, end];
