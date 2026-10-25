@@ -82,3 +82,24 @@ test('a branch edit with two keys chosen sets both, and the playhead moving ends
   assert.throws(() => previewNativePropertyEdit(token, 10), error => error.messageKey === 'errors.editorBranchStyle.theBranchEditTargetChanged');
   assert.equal(editor._animationEdit, null, 'the gesture ended with nothing written');
 });
+
+test('a branch edit whose playhead moves before it ends is keyed at the tick it began on', {skip: !engineBuilt}, () => {
+  const editor = fixture();
+  editor.seek(3);
+  const token = beginNativePropertyEdit(editor, 'segment_opacity', {branch: true});
+  previewNativePropertyEdit(token, 55);
+  editor.seek(5);
+  assert.throws(() => previewNativePropertyEdit(token, 40), /./, 'a preview after the playhead moved is refused');
+  const quiet = beginNativePropertyEdit(editor, 'segment_opacity', {branch: true});
+  editor.seek(4);
+  assert.equal(commitNativePropertyEdit(quiet), false, 'an edit that previewed nothing ends quietly');
+  editor.seek(3);
+  const again = beginNativePropertyEdit(editor, 'segment_opacity', {branch: true});
+  previewNativePropertyEdit(again, 55);
+  editor.seek(5);
+  assert.ok(commitNativePropertyEdit(again), 'the value typed is kept');
+  assert.equal(editor.undoLabel !== null, true);
+  assert.equal(value(editor, segment(1, 3), 'opacity', 3), .55, 'at the tick the edit began on');
+  editor.undo();
+  assert.notEqual(value(editor, segment(1, 3), 'opacity', 3), .55);
+});

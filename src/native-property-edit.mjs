@@ -292,7 +292,7 @@ export function applyNativePropertyCommand(editor, command, direction) {
   applyPatch(root, command[direction]);
 }
 const refused = () => messageError(new Error(''), "errors.engineOwner.notSupported", {});
-function assertCurrent(token) {
+function assertCurrent(token, {preview = false} = {}) {
   if (!token || token.closed || active.get(token.editor) !== token)
     throw messageError(new Error(''), "errors.nativePropertyEdit.thisPropertyGestureHasEnded", {});
   const editor = token.editor;
@@ -304,8 +304,8 @@ function assertCurrent(token) {
     cancelNativePropertyEdit(token);
     throw messageError(new Error(''), "errors.nativePropertyEdit.theSelectedPropertyChangedDuringTheGesture", {});
   }
-  // A branch or a draw order is keyed at the playhead where it began.
-  if ((token.branchAnimation || token.orderAnimation) && editor.tick !== token.tick) {
+  // A branch or a draw order previews the frame it began on, and is keyed at the tick it began on when it ends.
+  if (preview && (token.branchAnimation || token.orderAnimation) && editor.tick !== token.tick) {
     cancelNativePropertyEdit(token);
     throw messageError(new Error(''), "errors.editorBranchStyle.theBranchEditTargetChanged", {});
   }
@@ -383,7 +383,7 @@ export function beginNativePropertyEdit(
   throw refused();
 }
 export function previewNativePropertyEdit(token, value) {
-  assertCurrent(token);
+  assertCurrent(token, {preview: true});
   validate(token.key, value);
   if (token.sheetDuration || token.project) { token.value = value; return true; }
   if (token.value === value && (!token.branchAnimation || token.branchAnimation.applied)) return false;
