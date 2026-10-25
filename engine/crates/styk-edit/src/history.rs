@@ -513,6 +513,26 @@ impl Editor {
         found
     }
 
+    /// The commands the grouped edit in progress holds, oldest first.
+    pub(crate) fn batch_commands(&self) -> impl Iterator<Item = &Command> {
+        self.batch.iter().flat_map(|batch| batch.commands.iter().map(|entry| &entry.command))
+    }
+
+    /// The pixel commit of `record`, when it is the entry recorded last (in the open grouped edit, else in the history), is taken back as an
+    /// undo takes it, but its entry is not kept for a redo. Whether it was.
+    pub(crate) fn retract_pixels_entry(&mut self, record: u64) -> Result<bool, EditError> {
+        let holds = |entry: &Entry| crate::drawing_pixels::holds_record(&entry.command, record);
+        let batched = self.batch.is_some();
+        let last = match &self.batch { Some(batch) => batch.commands.last(), None => self.undo.last() };
+        if !last.is_some_and(holds) { return Ok(false) }
+        let Some(entry) = (match self.batch.as_mut() { Some(batch) => batch.commands.pop(), None => Arc::make_mut(&mut self.undo).pop() }) else { return Ok(false) };
+        self.apply(&entry.command, Direction::Before)?;
+        if !batched { self.history_size -= entry.weight.bytes; }
+        self.drawing_retired = true;
+        if self.sheet() { self.prune_frame_sources(); }
+        Ok(true)
+    }
+
     /// An external entry was applied by the JavaScript editor: it moves to the other
     /// stack, and the revision is the one it restores.
     pub(crate) fn move_history_entry(&mut self, redo: bool) {

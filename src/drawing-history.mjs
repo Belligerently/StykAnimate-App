@@ -159,6 +159,8 @@ export class DrawingHistory {
     record.command.tiles=null;this.records.delete(record.id);this.diskBytes-=record.diskBytes??0;
     if(record.diskBytes||record.writing)this.disk.request('remove',{record:record.id}).catch(()=>{});
   }
+  /** A session entry named record `id` but the commit failed before the record was made: the identity is not handed out again. */
+  skip(id){this.next=Math.max(this.next,id);}
   get stats(){return {residentBytes:this.residentBytes,diskBytes:this.diskBytes,records:this.records.size,pending:this.queue.length+(this.pumping?1:0),enabled:this.enabled};}
   dispose(){
     if(this.closing)return this.closing;

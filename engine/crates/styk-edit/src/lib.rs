@@ -787,6 +787,7 @@ impl Editor {
             "@historyLimits" => return self.configure_history(args),
             "@markSaved" => return self.mark_saved(),
             "@drawingBytes" => return self.set_pixels_bytes(args),
+            "@retractDrawing" => return self.retract_pixels(args),
             "@setClipboard" => return self.set_clipboard(args),
             "@revisions" => return self.set_revisions(args),
             // A grouped edit (`movieclipBatch`) is bookkeeping around the edits it holds: no document gate applies.

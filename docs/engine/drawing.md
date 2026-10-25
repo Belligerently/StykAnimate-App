@@ -59,7 +59,14 @@ weight the interface measured. `src/engine/engine-owner-drawing.mjs` is the inte
   cel's definition and key into the layer sheet in the same entry; the call carries the cel's figure and object, not
   its pixels), then the tiles apply to the store, the history tracks the record, and the cel's definition (revision,
   bounds) is written back to the session, all before the call's events reach the interface. A commit the session
-  refuses leaves no record; the pixels stay with the caller.
+  refuses leaves no record; the pixels stay with the caller. A commit whose tiles the store cannot apply after the
+  session recorded the entry is taken back (`@retractDrawing`: the entry, with the cel it created, leaves the history
+  as the last entry; the redo branch its recording dropped stays dropped) and the record's identity is not used
+  again, so no entry names a record the history never made. The session records the entry as the last step of the
+  call for the same reason.
+* **Grouped edits** (`movieclipBatch`): the commits of a group are entries of the group. When the group fails the
+  interface first takes their tiles back, last commit first (`drawingBatch` names them), then the session aborts the
+  group and reverts its document and history.
 * **Undo and redo**: the session names the pixel commits of the entry on top (`drawingReplay`: cel and record, in the
   order it applies them). The interface pins and loads those records (a cold record comes from the disk), prepares large
   replacements in the pixel worker, checks nothing changed meanwhile (document, revision, cancellation), and only then
@@ -68,7 +75,8 @@ weight the interface measured. `src/engine/engine-owner-drawing.mjs` is the inte
   its pixels in the store for the redo.
 * **Weights**: a record whose tiles reach the disk weighs only its metadata; one whose write failed or whose tiles came
   back weighs its pixels again. Either change reaches the session (`@drawingBytes`), which holds the history to its
-  byte limit.
+  byte limit; the entries it retires and the pose sources only they kept alive are collected in the session and in the
+  interface's read view alike (the answer's document changes are adopted as a call's).
 * **Retention**: when a call retires an entry that referred to drawings (the limit, a new edit after undos, an aborted
   group) the answer says `drawingRetired`, and the store lets go of the records and cels no entry refers to any more
   (`drawingRefs`: disk files, tiles, cel entries).

@@ -69,6 +69,7 @@ impl Editor {
         Some(match name {
             "getIKSettings" => self.get_ik_settings().map(Some),
             "drawingReplay" => Ok(Some(self.drawing_replay(arg(0).is_some_and(|redo| redo.truthy())))),
+            "drawingBatch" => Ok(Some(self.drawing_batch())),
             "drawingRefs" => Ok(Some(self.drawing_refs())),
             // A clipboard the session holds, as the interface hands it to another session (`@setClipboard`).
             "clipboard" => Ok(arg(0).and_then(|kind| kind.as_str().and_then(|kind| self.clipboard_wire(kind)))),
