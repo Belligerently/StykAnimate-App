@@ -118,7 +118,7 @@ this policy beside the same captured `MonitorFrame`; it does not rebuild a snaps
 Final main acceptance additionally passes the real dense single-child movieclip and
 the serialized child-Blur/outer-Tint fixture (mean 0.0682 and 0.001352 respectively,
 zero solids). Shared-type validation passes 632 native tests and 31 focused JavaScript
-tests; both new editor-built fixtures regenerate byte for byte. Eligibility and plan
+tests; both new editor-built fixtures matched when recorded. Eligibility and plan
 regressions expose the relevant actual source mutations. The shipping engine is
 9,584 KiB (`79ce084e8d9d`); no cost comparison is certified by these loaded runs.
 
@@ -478,8 +478,8 @@ Two conditions of a document the gate used to count:
   refused (the stage then keeps its previous picture and reports the refusal, as for any document the engine refuses). A file
   opens eight levels (`validateMovieclipGraph`), so only nested editing in a session builds
   deeper documents: `deep-seventeen` and `deep-twenty-four`
-  (`engine/tools/document-fixtures.mjs`: each clip made, placed and entered in turn, the figure
-  at the bottom animated through every level; `reference.mjs --deep` loads them without the file
+  (recorded fixtures, frozen: each clip made, placed and entered in turn, the figure
+  at the bottom animated through every level, loaded without the file
   check) match the editor primitive by primitive at five ticks, and changing the pose at the
   bottom of the chain breaks the comparison (`styk-eval/tests/document.rs`). The gate counted
   from zero, so 17 levels passed it and 18 did not.

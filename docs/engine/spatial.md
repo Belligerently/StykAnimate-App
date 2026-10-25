@@ -5,8 +5,9 @@ How the Rust engine evaluates and draws StykAnimate's 3D: spatial poses
 (`_stykSurface`), figure meshes (`_styk.spatialMesh`) and attached movieclip
 meshes (`spatialMeshes`). The user-facing behaviour is in
 [`SPATIAL-MESHES.md`](../SPATIAL-MESHES.md) and [`RIG-CONSTRAINTS.md`](../RIG-CONSTRAINTS.md);
-the JavaScript editor is the oracle while both exist
-([`RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md)): `src/spatial-projection.mjs`,
+the recorded fixtures were made from the JavaScript editor and are frozen
+([README](README.md#fixtures), [`RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md)). The port follows
+`src/spatial-projection.mjs`,
 `src/rig-spatial.mjs`, `src/pivot/surfaces.mjs`, `src/spatial-mesh.mjs`,
 `src/movieclip-mesh.mjs`, the polygon and mesh steps of `buildGeometrySteps`
 (`src/pivot/geometry.mjs`), and for drawing `src/surface-raster.mjs`,
@@ -148,7 +149,7 @@ from a GPU, whose own vertex arithmetic decides them.
 
 ## Parity
 
-**Geometry** (`styk compare` against `engine/tools/reference.mjs`, which now dumps each
+**Geometry** (`styk compare` against the editor's dump, recorded once by a tool that is deleted, which dumped each
 evaluated mesh once per tick and every surface's depths; the comparison checks faces
 and palette entries exactly, vertices within `parity::TOLERANCE`, depths relative to
 their size, colours, bounds and depth ranges):
@@ -159,7 +160,7 @@ their size, colours, bounds and depth ranges):
 | All 183 `.stkz` figures and `.stykmov` clips of `AssetReleases/` | 183 | 4,627 | 7,608 | 0 |
 | `15-Guns-Pivot-3D.styk` (every tick) | 6 | 169 | 1,958 | 0 |
 
-**Fixtures** (`engine/tools/spatial-fixtures.mjs`, `tests/spatial.rs`): 14 projects built
+**Fixtures** (`tests/spatial.rs`, frozen): 14 projects built
 with the editor's commands (meshes authored as the asset builders author them and
 converted by the editor's own converter): native skin surfaces, surfaces under
 perspective and clipped at the near plane, the Box solid's one-sided faces, skinned
@@ -286,23 +287,18 @@ of it the multisampled depth buffer of the layer pages); none without 3D.
 
 - **A new mesh or surface field**: read it in `spatial.rs` (`MeshPlan::compile`,
   `ClipMesh::parse`, `parse_surface`, `parse_pose`), evaluate it where the editor does,
-  add a fixture to `spatial-fixtures.mjs` that fails without it and a dependency check
-  in `tests/spatial.rs`.
-- **A change to the editor's 3D arithmetic**: change the JavaScript first, regenerate
-  the fixtures (`node engine/tools/spatial-fixtures.mjs`, `records-fixtures.mjs`), then
-  make the engine match. Keep `styk-math` in the spatial path.
+  add a Rust test in `tests/spatial.rs` that states the expected result and fails without it.
+- **A change to the 3D arithmetic**: the recorded fixtures are frozen ([README](README.md#fixtures));
+  state the new result in a Rust test and keep `styk-math` in the spatial path.
 - **Depth drawing**: the format is `styk-draw`'s (`K_DEPTH_RESET`, `F_DEPTH`,
   `window_depth`); GPU and CPU must keep passing the shared depth scene.
 
 ## Testing
 
 ```sh
-node engine/tools/spatial-fixtures.mjs        # tests/fixtures/spatial/ (byte-stable)
-node engine/tools/records-fixtures.mjs        # tests/fixtures/records/, spatial fixtures included
 cd engine && cargo test -p styk-eval --test spatial --test records
 cargo test -p styk-render -p styk-raster --test depth
 cargo build --release -p styk-cli
-node tools/reference.mjs <file.styk> /tmp/ref.json --every 1 && target/release/styk compare <file.styk> /tmp/ref.json
 target/release/styk render <file> <tick> gpu.png && target/release/styk raster <file> <tick> cpu.png && target/release/styk diff gpu.png cpu.png diff.png
-npm run engine:parity -- --corpus             # adds the catalogue's 3D scenes, every tick
+npm run engine:parity                         # the fixtures, the containers and the other suites
 ```

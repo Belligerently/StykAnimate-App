@@ -23,13 +23,14 @@ and after), and emit change events the interface listens to.
 - In the app the engine owns the open document (Phase 3 below,
   [D15](decisions/0015-commands-record-for-record.md) and [D19](decisions/0019-engine-owns-the-document.md)):
   ported commands run in its session, and the editor shows what the session answers.
-- Every port is checked by the **command-replay harness**: a scenario (a
-  document, editor options, a list of `[method, ...arguments]` steps including
-  undo and redo) runs in the JavaScript editor, which records the document
-  bytes, selection and events after every step; `styk edit-replay` runs the same
-  steps in `styk-edit` and compares. Scenarios come from the existing editor
-  tests, from fixtures built with `engine/tools/fixture-kit.mjs`, and from
-  recorded sessions.
+- Every port is checked by the **command-replay harness**: a tape (a document,
+  editor options, a list of `[method, ...arguments]` steps including undo and redo,
+  `engine/tests/edit/*.scenario.json`) and the reference the JavaScript editor recorded
+  for it (`*.reference.json`: the document bytes, selection and events after every
+  step); `styk edit-replay` runs the same steps in `styk-edit` and compares. The tapes
+  and their references are frozen: nothing re-records them from the JavaScript
+  ([README](README.md#fixtures)), and a new or changed command gets a Rust test that
+  states its expected result.
 - Order: what the app runs. The app constructs the editor with `propertyChannels` and
   `layerTimeline` (`src/app.mjs`), and `load` gives every document a layer sheet
   (`initializeLayerSheet`). Every gesture in the app therefore takes the authored path
@@ -481,8 +482,7 @@ document difference the harness can see):
   (a limitation, for every command the session runs).
 - **Frame ranges**: on a layer sheet the app passes a timeline range as an array carrying the
   chosen ticks (`rangeFrames()`, `sheetTicks`), which JSON drops; the facade sends such arrays
-  as `{"@array": [...], "sheetTicks": [...]}`, and recorded steps may spell them the same way
-  (`engine/tools/edit-replay.mjs`). Found while porting the range commands: owned
+  as `{"@array": [...], "sheetTicks": [...]}`, and recorded steps may spell them the same way. Found while porting the range commands: owned
   `setSceneColor` with a timeline range selected had keyed the playhead only.
 - **A selected fill, several selected segments, a selected branch** (`_polygonSelection`, `_segmentSelection`,
   `_branchSelection`; `selectPolygon`, `toggleSegment`, `selectBranch`): the session keeps them with the
@@ -520,8 +520,8 @@ document difference the harness can see):
 
 ## Values the editor draws at random (D18)
 
-Commands that draw identities or seeds draw them through `src/editor-draws.mjs`. The recorder
-(`engine/tools/edit-replay.mjs`) draws a fixed sequence (identities `d0d0d0d0-0000-4000-8000-…`)
+Commands that draw identities or seeds draw them through `src/editor-draws.mjs`. The tapes' recorder
+(deleted with the JavaScript editor's recording) drew a fixed sequence (identities `d0d0d0d0-0000-4000-8000-…`)
 and stores each step's draws as `draws: [[kind, value], …]`; the replay hands them to the
 engine before the step (`Editor::set_draws`), and a port takes them in order and by kind
 (`draw_uuid`, `draw_seed`, `draw_random`), answering `Unported` when it would draw what it was
@@ -564,9 +564,9 @@ n·π/2 up to 64 and its neighbours, special values) it returned V8's bits every
 
 `Math.pow` and `**` are `styk_math::pow`, V8's own fdlibm-based `pow`. Node 24 computes
 them with the platform's by default (Windows and Linux differ for 0.05 % of inputs), so
-every tool that records the editor imports `engine/tools/v8-pin.mjs` first, which starts
-V8's own (`--no-use-std-math-pow`) and fails if Node does not run it. A tool that runs
-the editor must import it before anything else, and so must a child process it starts.
+every JavaScript test that loads the editor imports `engine/tools/v8-pin.mjs` first, which starts
+V8's own (`--no-use-std-math-pow`) and fails if Node does not run it. It must come before anything
+else, and so must it in a child process the test starts.
 
 ## Phase 2: queries from the engine
 
@@ -830,13 +830,13 @@ the shared VFX owner remapper. Schema evidence covers five accepted and 26 rejec
 editor loads; 57 command refusals are atomic and three source mutants are caught.
 These tapes compare existing history flags/labels/undo-redo and shown frames at
 every step, without claiming full enumerable command carriers or new full returns.
-The 37 derived record groups cover 357 exact ticks; all 186 affected JSON regenerate
-twice byte-stable. No public crate API, app adoption or class gate changes.
+The 37 derived record groups cover 357 exact ticks; all 186 affected JSON were
+recorded twice byte-stable. No public crate API, app adoption or class gate changes.
 
 Inspector `animationValue` reads accept finite fractional playhead ticks and use
 the existing shown-frame/channel sampler, including exact target scope. Stored key
 times and property-edit begins still require whole ticks. The affected 93 command
-recordings regenerate unchanged and match all 12,050 steps. Native scalar-channel
+recordings matched all 12,050 steps when recorded. Native scalar-channel
 authoring, canonical worker readiness and document-class adoption remain separate
 prerequisites.
 

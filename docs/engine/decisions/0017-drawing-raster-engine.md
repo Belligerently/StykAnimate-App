@@ -48,7 +48,7 @@ and how JavaScript reaches it.
 
 ## Evidence
 
-`engine/tools/drawing-fixtures.mjs` records 60 strokes (41,146 dabs in 498 worker batches:
+The recorded fixtures hold 60 strokes (41,146 dabs in 498 worker batches:
 every preset with pen pressure and tilt, over artwork and on blank cels, every blend mode, alpha lock, dense, soft and polygon
 selections, smudge, custom pressure curves, both stabilizers, tapers, mirrors, scatter and
 jitter, coordinates 6.4 million pixels out), fills, the magic wand, masks, filters, selection

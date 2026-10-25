@@ -1,8 +1,7 @@
 //! Inverse kinematics against the JavaScript editor.
 //!
 //! Every fixture in `tests/fixtures/ik/` is a small project and the editor's
-//! own evaluation of it (`node engine/tools/ik-fixtures.mjs` regenerates
-//! them). The engine must draw the same joints and primitives, within the
+//! own evaluation of it (frozen recordings). The engine must draw the same joints and primitives, within the
 //! tolerance `styk compare` uses, and the solver functions must return what
 //! the JavaScript returns for the recorded inputs, bit for bit.
 
@@ -67,7 +66,7 @@ const NESTED: [&str; 1] = ["movieclip"];
 #[test]
 fn every_fixture_evaluates_like_the_editor() {
     let names = fixtures();
-    assert!(names.len() >= 20, "fixtures are missing: run node engine/tools/ik-fixtures.mjs");
+    assert!(names.len() >= 20, "fixtures are missing: the IK fixtures are frozen recordings (restore them from version control)");
     for name in &names {
         let document = open(name);
         assert!(document.unsupported.is_empty(), "{name}: not evaluated: {:?}", document.unsupported);

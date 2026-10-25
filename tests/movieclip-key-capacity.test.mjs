@@ -1,7 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {spawnSync} from 'node:child_process';
-import {documentOf,limb,open,nextKey} from '../engine/tools/fixture-kit.mjs';
+import '../engine/tools/v8-pin.mjs';
+import {Editor} from '../src/editor.mjs';
+import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
+// Figures of a thigh, a shin and a foot, as a native document.
+function documentOf(figures,place){
+ const document=emptyDocument(),template=document.figure_types[0],base=template.segments[0];
+ document.figure_types=figures.map((segments,i)=>({...structuredClone(template),figure_type_id:i+1,name:`Figure ${i+1}`,
+  segments:segments.map(([segment_id,parent_id,length,angle_rad])=>({...base,segment_id,parent_id,length,angle_rad,thickness:6,aux_code:0,is_static:false,flag_bits:undefined})),segment_count:segments.length}));
+ document.keyframes=[createFrame(document.figure_types.map((figure,i)=>createObject(figure,i+1,...place(i))),1)];
+ return document;
+}
+const limb=()=>[[11,0,90,.8],[22,11,90,2],[33,22,35,0]];
+const open=document=>new Editor({demo:false}).load(document);
+// A second native keyframe after the current one, `ticks` long on the first.
+function nextKey(e,ticks){
+ if(e.report._styk?.layerSheet)e.sheetSetDuration(ticks);else e.setFramesDuration([e.frameIndex],ticks);
+ e.duplicateFrame();e.selectFrame(e.report.keyframes.length-1);return e;
+}
 const MAX=Number.MAX_SAFE_INTEGER;
 const plain=report=>JSON.stringify(report,(key,value)=>key==='runtime_segments'?undefined:value);
 function prepared(){
