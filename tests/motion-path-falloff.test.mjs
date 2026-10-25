@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
 import {falloffWeight, planFalloff, normalizeFalloff} from '../src/motion-path-falloff.mjs';
@@ -19,7 +19,7 @@ function report() {
 }
 const modes = {
   native: () => new Editor({demo: false}).load(report()),
-  channels: () => { const editor = engineEditor({demo: false}, report()); editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'}); return editor; },
+  channels: () => { const editor = plainEditorFor({demo: false}, report()); editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'}); return editor; },
   sheet: () => new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(report()),
 };
 function rootAt(source, tick) {

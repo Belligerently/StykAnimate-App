@@ -7,8 +7,6 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditor} from './support/owned-editor.mjs';
-import {Editor} from '../src/editor.mjs';
-import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 
 const folder = new URL('../engine/tests/edit/', import.meta.url);
 /** An owned editor on the first document of a recorded tape. */
@@ -41,7 +39,7 @@ test('a duplicate drag runs in the session: the copies and their move are one un
   assert.equal(editor.canUndo, false, 'one undo took the copy and its move');
   editor.redo();
   assert.equal(figures(editor), before + 1);
-  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('cancelling a duplicate drag takes the copies away and leaves history alone', {skip: !engineBuilt}, async () => {
@@ -57,7 +55,7 @@ test('cancelling a duplicate drag takes the copies away and leaves history alone
   // With nothing selected there is nothing to duplicate.
   editor.select(null, -1);
   assert.equal(editor.beginDuplicateDrag(), false);
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 const rootOf = (editor, uid) => { const object = editor.evaluatedFrame.objects.find(item => item.unique_id === uid); return [object.root_x, object.root_y]; };
@@ -82,7 +80,7 @@ test('a duplicate drag begun over another commits the first and shows the figure
   assert.equal(editor._undo.length, 2);
   editor.undo();
   near(rootOf(editor, child), [x + 35, y + 12], 'one undo takes the second copies only');
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('redo under an open duplicate drag leaves the gesture open under the entry it applies', {skip: !engineBuilt}, async () => {
@@ -98,7 +96,7 @@ test('redo under an open duplicate drag leaves the gesture open under the entry 
   assert.equal(editor._drag, null);
   assert.equal(editor.undoLabel, 'Duplicate figures');
   assert.equal(editor._undo.length, 2, 'the redone move and the duplicate are two entries');
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('a duplicate drag copies the effect clips of the figures with new identities, in the same entry', {skip: !engineBuilt}, async () => {
@@ -123,7 +121,7 @@ test('a duplicate drag copies the effect clips of the figures with new identitie
   assert.deepEqual(clips().map(clip => clip.id), before.map(clip => clip.id), 'one undo took the figure and its effects');
   editor.redo();
   assert.equal(clips().filter(clip => clip.target.uid === copy).length, copied.length);
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 /** The tape's document with a figure keyed in different poses at ticks 4 and 6, the playhead between them. */
@@ -159,7 +157,7 @@ test('the tweener runs in the session: the draft follows the amount and the comm
   assert.ok(keys.includes(5), `the playhead is keyed: ${keys}`);
   editor.undo();
   assert.ok(!editor.report._styk.layerSheet.tracks['layer-1'].keys.some(key => key.tick === 5));
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('the tweener refuses what the editor refuses and keeps its gesture open for a bad amount', {skip: !engineBuilt}, async () => {
@@ -201,7 +199,7 @@ test('the tweener runs on a document with animation origins and keeps the pivot 
   // A playhead outside the keys raises the tweener's own message, as on any document.
   editor.seek(0);
   assert.throws(() => editor.beginTween(), error => error.messageKey === 'errors.editorTweener.placeThePlayheadBetweenTwoKeysOnEvery');
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('the tweener pushes a 3D figure past the pose it began with', {skip: !engineBuilt}, async () => {
@@ -223,7 +221,7 @@ test('the tweener pushes a 3D figure past the pose it began with', {skip: !engin
   near([shown().root_x, shown().root_y], [x, y], 'amount 0 is the pose it began with');
   assert.ok(Math.abs(shown()._stykSpatial.camera.strength - 0.65) < 1e-9);
   assert.equal(editor.cancelDrag(), true);
-  assert.equal(owner.fallback, 0, 'no call ran in the editor: the perspective settings and the tween ran in the session');
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('movieclipBatch groups what its operation does into one entry and undoes all of it when it fails', {skip: !engineBuilt}, async () => {
@@ -244,10 +242,10 @@ test('movieclipBatch groups what its operation does into one entry and undoes al
   // An edit the engine refuses inside the batch ends it the same way.
   assert.throws(() => editor.movieclipBatch('Refused', () => { editor.setCameraValues({x: 9}); editor.setCameraValues({x: 'a'}); }), error => error.messageKey === 'errors.editorCamera.mustBeFinite');
   assert.equal(camera(), original);
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
-test('working frames: the interface can end them and ask for a preview; the editor starts one the engine refuses', {skip: !engineBuilt}, async () => {
+test('working frames: the interface can end them and ask for a preview; starting one is refused', {skip: !engineBuilt}, async () => {
   const {editor, owner} = await owned('rig-drag-sheet');
   const events = [];
   editor.addEventListener('change', event => events.push(event.detail.kind));
@@ -255,13 +253,9 @@ test('working frames: the interface can end them and ask for a preview; the edit
   assert.ok(events.includes('frame-draft'), 'the timeline hears that working frames ended');
   assert.equal(editor.endFrameDraftPreview(), false);
   assert.equal(editor.beginFrameDraftPreview(), false);
-  editor.enableFrameDrafts();
-  assert.equal(editor._frameDraftEnabled, true, 'the editor runs the refused call');
+  assert.throws(() => editor.enableFrameDrafts(), error => error.messageKey === 'errors.engineOwner.notSupported');
+  assert.ok(!editor._frameDraftEnabled, 'the editor ran nothing');
   assert.ok(owner.refused['enableFrameDrafts: working frames are not edited by the engine'] >= 1);
-  const fallbacks = owner.fallback;
-  editor.disableFrameDrafts();
-  assert.equal(owner.fallback, fallbacks + 1, 'while working frames are on, their calls stay with the editor');
-  assert.equal(editor._frameDraftEnabled, false);
 });
 
 test('an open gesture is committed by disableFrameDrafts, as the timeline mounting would end it', {skip: !engineBuilt}, async () => {
@@ -294,7 +288,7 @@ test('the audio clip commands run in the session with identities from the editor
   for (let steps = 0; editor.canUndo && steps < 20; steps++) editor.undo();
   assert.equal(tracks().length, count);
   assert.equal(tracks()[0].clips.length, 2);
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
 test('the audio follows frames inserted on every layer when the ripple option is on', {skip: !engineBuilt}, async () => {
@@ -310,31 +304,6 @@ test('the audio follows frames inserted on every layer when the ripple option is
   assert.equal(editor.undoLabel, 'Insert scene frames with audio');
   editor.undo();
   assert.equal(start('clip-2'), 2, 'one undo took both back');
-  assert.equal(owner.fallback, 0);
+  assert.deepEqual(owner.refused, {}, 'the session refused nothing');
 });
 
-
-test('a call the session has no command for runs in the editor and is written back as one history entry', {skip: !engineBuilt}, async () => {
-  // The session has a command for every call the editor makes now; a method of the test's own stands in for one it lacks.
-  const scenario = JSON.parse(readFileSync(new URL('add-figure-layers-sheet.scenario.json', folder), 'utf8'));
-  class Probe extends Editor { renameLayerTheEditorsWay(id, name) { return this.renameLayer(id, name); } }
-  const editor = new Probe({demo: false, ...scenario.editor}).load(JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8')));
-  const owner = installEngineOwner(editor, {verify: true});
-  assert.ok(owner.ready());
-  const name = () => editor.getLayer('layer-1').name;
-  const before = name();
-  assert.equal(editor.renameLayerTheEditorsWay('layer-1', 'Renamed'), true);
-  assert.equal(name(), 'Renamed');
-  assert.deepEqual(owner.editor, {renameLayerTheEditorsWay: 1}, 'the census names what ran in the editor');
-  assert.equal(editor.undoLabel, 'Rename layer');
-  // The session keeps the entry: undo and redo go through it, and a call the session runs follows.
-  editor.undo();
-  assert.equal(name(), before);
-  editor.redo();
-  assert.equal(name(), 'Renamed');
-  editor.undo();
-  editor.select(1, -1);
-  editor.moveSelection(5, 5);
-  assert.equal(editor.canUndo, true);
-  assert.equal(owner.refused && Object.keys(owner.refused).length, 0);
-});

@@ -7,8 +7,8 @@ import {validateScene} from '../src/pivot/model.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {pickFigureFill} from '../src/builder-fill.mjs';
 import {surfaceOrder,surfaceDepthValues,surfaceHandles,remapSurface,validateSurface} from '../src/pivot/surfaces.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
-const fixture=()=>{const e=ownedEditorFor({demo:false});return {e,q:buildRotatingCube(e)};};
+import {plainEditorFor} from './support/plain-editor.mjs';
+const fixture=()=>{const e=plainEditorFor({demo:false});return {e,q:buildRotatingCube(e)};};
 const select=(e,id)=>e.select(e.selectedUid,e.figure.segments.findIndex(s=>s.segment_id===id));
 const visible=e=>e.geometry.objects.get(e.selectedSlot).polys.filter(p=>!p.culled).map(p=>p.index);
 const area=points=>Math.abs(points.reduce((a,p,i)=>{const q=points[(i+1)%points.length];return a+p.x*q.y-p.y*q.x;},0)/2);
@@ -60,7 +60,7 @@ test('cube preserves facing through mirrors, native saves, asynchronous evaluati
 });
 
 test('one-sided fills also work on ordinary figures with no rig constraints',()=>{
-  const e=ownedEditorFor({demo:false});const x=e.addSegment({length:40,angle:0}).segment_id,y=e.addSegment({parentId:0,length:40,angle:Math.PI/2}).segment_id;
+  const e=plainEditorFor({demo:false});const x=e.addSegment({length:40,angle:0}).segment_id,y=e.addSegment({parentId:0,length:40,angle:Math.PI/2}).segment_id;
   e.addPolygon([0,x,y]);e.updatePolygon(0,{surface:{basis:[0,x,y],side:'front'}});assert.deepEqual(visible(e),[0]);
   e.updatePolygon(0,{surface:{basis:[0,x,y],side:'back'}});assert.deepEqual(visible(e),[]);assert.throws(()=>materializePivotDocument(e.serialize()),/one-sided fills/);
   assert.throws(()=>materializePivotDocument({figure_types:[{segments:[],_styk:{movieclip:{document:e.serialize()}}}]}),/one-sided fills/);
@@ -98,7 +98,7 @@ test('depth references support normal authoring, undo, deletion protection and n
 });
 
 test('intersection depth preserves each corner through transforms and native authoring',async()=>{
-  const e=ownedEditorFor({demo:false});
+  const e=plainEditorFor({demo:false});
   const x=e.addSegment({parentId:0,length:40,angle:0}).segment_id,y=e.addSegment({parentId:0,length:40,angle:Math.PI/2}).segment_id;
   const z=e.addSegment({parentId:0,length:80,angle:0}).segment_id;
   e.addPolygon([0,x,y]);const surface={basis:[0,x,y],depth:[z,0,x],depthTest:true,side:'front'};

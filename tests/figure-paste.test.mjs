@@ -15,7 +15,7 @@ function fixture(mode='native', {frames=4, parts=4, definitions=1, plain=false}=
   for(let i=1;i<definitions;i++)report.figure_types.push({...structuredClone(figure),figure_type_id:i+1});
   report.keyframes=Array.from({length:frames},(_,i)=>createFrame(Array.from({length:parts},(_,slot)=>
     createObject(figure,slot+1,100+i*10,200,{join:slot?{target_object_slot:slot-1,target_handle_id:1,target_unique_id:slot}:null})),5));
-  const editor=plain?new Editor({demo:false,layerTimeline:mode==='sheet'}).load(report):open({demo:false,layerTimeline:mode==='sheet'}, report);
+  const editor=plain||mode!=='sheet'?new Editor({demo:false,layerTimeline:mode==='sheet'}).load(report):open({demo:false,layerTimeline:mode==='sheet'}, report);
   if(mode==='authored')editor.adoptNativePoseTrack({kind:'layer',id:'layer-1'});
   editor.selectConnected(1);return editor;
 }

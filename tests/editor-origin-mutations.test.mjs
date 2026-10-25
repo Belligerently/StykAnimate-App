@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 function fixture(){
   const report=emptyDocument(),figure=report.figure_types[0];

@@ -7,7 +7,7 @@ import '../engine/tools/v8-pin.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {Editor, emptyDocument} from '../src/editor.mjs';
+import {emptyDocument} from '../src/editor.mjs';
 import {clipboardSnapshot, restoreClipboard, pasteSheetClipboard} from '../src/shared-clipboard.mjs';
 import {createClipboards} from '../src/engine/engine-clipboards.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
@@ -20,25 +20,23 @@ const refs = ownerReferences(import.meta.url);
 const options = {demo: false, layerTimeline: true, propertyChannels: true};
 /** An editor the engine owns (the identities a call draws are the editor's own random ones). */
 const owned = document => ownedEditorSync(options, document, {recorded: false});
-const plain = document => ({editor: new Editor(options).load(structuredClone(document)), owner: null});
 /** What another window reads back from the system's clipboard. */
 const wire = packet => JSON.parse(JSON.stringify(packet));
 const withBackgrounds = () => JSON.parse(readFileSync(new URL('../engine/crates/styk-eval/tests/fixtures/channels/channels-pose.sheet.json', import.meta.url), 'utf8'));
 
-/** The same steps on an owned editor and on one alone (its references): what they show after it, that the session took every call. */
+/** The steps on owned editors and what an editor alone showed for them (its references): that the session took every call. */
 async function bothWays(take, documents, steps) {
-  const run = async ownedRun => {
-    const made = documents.map(document => (ownedRun ? owned : plain)(document));
+  const run = async () => {
+    const made = documents.map(document => owned(document));
     try {
       const shown = await steps(...made.map(({editor}) => editor));
-      return {...shown, fallback: made.reduce((total, {owner}) => total + (owner?.fallback ?? 0), 0), refused: made.flatMap(({owner}) => Object.keys(owner?.refused ?? {}))};
-    } finally { for (const {owner} of made) owner?.release(); }
+      return {...shown, refused: made.flatMap(({owner}) => Object.keys(owner.refused))};
+    } finally { for (const {owner} of made) owner.release(); }
   };
-  const alone = await take('alone', async () => { const {fallback, refused, ...shown} = await run(false); return shown; });
-  const engine = await run(true);
+  const alone = take('alone');
+  const engine = await run();
   assert.deepEqual(engine.refused, [], 'the session refused nothing');
-  assert.equal(engine.fallback, 0, 'no call ran in the editor');
-  const {fallback, refused, ...shown} = engine;
+  const {refused, ...shown} = engine;
   assert.deepEqual(canonical(shown), alone);
   return {alone, engine};
 }
@@ -59,7 +57,7 @@ test('copying frames fills the clipboard the filmstrip, the timeline and the sha
     // A cut leaves the same clipboard and the frames gone.
     editor.sheetCopyFrames(['layer-1', 'layer-2'], 0, 5);
     assert.deepEqual(editor._sheetClipboard.rows.map(row => row.id), ['layer-1', 'layer-2']);
-    assert.equal(owner.fallback, 0);
+    assert.deepEqual(owner.refused, {}, 'the session refused nothing');
   } finally { owner.release(); }
 });
 
@@ -230,7 +228,7 @@ test('what the interface empties is not pasted, and what it restores replaces wh
     editor.pasteSelection();
     assert.equal(editor.undoLabel, 'Paste figures');
     assert.ok(editor.report.figure_types.some(figure => figure._styk?.movieclip), 'it pasted the restored clipboard');
-    assert.equal(owner.fallback, 0);
+    assert.deepEqual(owner.refused, {}, 'the session refused nothing');
   } finally { owner.release(); }
 });
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {animationChannelId,sampleAnimationChannel} from '../src/animation-channels.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 const target={kind:'figure',uid:1},id=animationChannelId(target,'x');
 function fixture({owned=true}={}){
@@ -12,7 +12,7 @@ function fixture({owned=true}={}){
     {id:'key-1',tick:0,value:200,interpolation:'linear',passthrough:true},
     {id:'key-2',tick:5,value:300,interpolation:'hold',passthrough:true},
     {id:'key-3',tick:10,value:400,interpolation:'hold'}]}]};
-  return owned?ownedEditorFor({demo:false}, report):new Editor({demo:false}).load(report);
+  return owned?plainEditorFor({demo:false}, report):new Editor({demo:false}).load(report);
 }
 
 test('explicit value replacement activates passthrough keys while preserving neighboring intervals and undo',()=>{

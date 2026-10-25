@@ -6,18 +6,18 @@ import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
 import {exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 Object.assign(Editor.prototype, editorBuilderMethods);
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
 /** An editor on a figure of its own, the engine owning it (`plain`: the editor alone). The document is written before it opens:
  * `sparse` multiplies the figure's handle ids by 11, `change(document, figure, uid)` writes more of it. */
 const blank = ({sparse = false, change, plain = false} = {}) => {
-  const base = ownedEditorFor({demo: false}); base.addFigure();
+  const base = plainEditorFor({demo: false}); base.addFigure();
   const uid = base.selectedUid, document = structuredClone(base.report), figure = document.figure_types.find(f => f.figure_type_id === base.figure.figure_type_id);
   if (sparse) for (const segment of figure.segments) { segment.segment_id *= 11; segment.parent_id *= 11; }
   change?.(document, figure, uid);
-  const editor = plain ? new Editor({demo: false}).load(document) : ownedEditorFor({demo: false}, document);
+  const editor = plain ? new Editor({demo: false}).load(document) : plainEditorFor({demo: false}, document);
   editor.select(uid);
   return editor;
 };
@@ -54,7 +54,7 @@ test('polygon edits and deletion are undoable and reject invalid geometry atomic
 });
 
 test('figure styles edit only their reusable definition across every animation keyframe', () => {
-  const editor = ownedEditorFor(), frames = editor.report.keyframes;
+  const editor = plainEditorFor(), frames = editor.report.keyframes;
   const poses = structuredClone(frames), old = structuredClone(editor.figure);
   editor.updateFigureStyle({name: 'Ink walker', outlineWidth: 2.5, outlineColor: '#ff8000', outlineOpacity: 0.8});
   assert.equal(editor.figure.name, 'Ink walker'); assert.equal(editor.report.keyframes, frames); assert.deepEqual(frames, poses);
@@ -112,7 +112,7 @@ test('duplicating a sparse branch preserves posed lengths, bends, internal fills
 });
 
 test('branch copies retain one embedded media table and cannot orphan assets by shape conversion', () => {
-  const editor = ownedEditorFor({demo: false});
+  const editor = plainEditorFor({demo: false});
   const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=';
   editor.importFigure(createImageFigure({dataUrl, width: 1, height: 1, name: 'Pixel'}));
   editor.select(editor.selectedUid, 0); editor.duplicateSegmentBranch();

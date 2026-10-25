@@ -3,12 +3,11 @@ import {tupleMessages, messageTuple, messageAttributes, messageHTML, localizedTe
 import {messageError} from './localized-error.mjs';
 import {t as interfaceText} from './localization.mjs';
 
-import {CAMERA_MOTION_TYPES,MOTION_PARAMETERS,isWholeMotionParameter,validateCameraMotion} from './camera-motion.mjs';
+import {CAMERA_MOTION_TYPES,MOTION_PARAMETERS,isWholeMotionParameter} from './camera-motion.mjs';
 import {motionTypeMessages,motionParameterMessages,motionDescriptionMessages} from './camera-motion-localization.mjs';
 import {CameraMotionGraph,motionGraphView} from './camera-motion-graph.mjs';
 import {cameraMonitorVisible} from './camera-monitor.mjs';
 import {placement} from './engine/engine-pictures.mjs';
-import {validateParallax} from './layer-parallax.mjs';
 import {icon} from './icons.mjs';
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const symbols={follow:'person',shake:'activity',handheld:'camera',wobble:'rotate',impact:'center',pulse:'zoom-in'};
@@ -135,7 +134,7 @@ export class CameraMotionControls {
    * this owner retains only the small motion/layer transaction. */
   beginProperty(input){
     const parallax=input.hasAttribute('data-parallax-field'),id=input.closest(parallax?'[data-parallax-layer]':'[data-motion-id]').dataset[parallax?'parallaxLayer':'motionId'];
-    return this.active={input,id,kind:parallax?'parallax':'motion',before:parallax?this.editor.report._styk.layers.byId[id]:this.editor.report._styk.cameraMotion,token:this.editor._documentToken,initial:String(this.propertyValue(input))};
+    return this.active={input,id,kind:parallax?'parallax':'motion',token:this.editor._documentToken,initial:String(this.propertyValue(input))};
   }
   previewProperty(edit,value){if(this.active!==edit||edit.token!==this.editor._documentToken)return;edit.input.value=String(value);if(edit.kind==='parallax')this.previewParallax(edit.input);else this.preview(edit.input);}
   commitProperty(edit,value){if(this.active!==edit||edit.token!==this.editor._documentToken)return;edit.input.value=String(value);this.commit(edit.input);}
@@ -164,29 +163,28 @@ export class CameraMotionControls {
   weights(input){const card=input.closest('[data-motion-id]'),clip=this.editor.getCameraMotions().find(c=>c.id===card.dataset.motionId),uid=Number(input.dataset.followWeight),weight=Number(input.value)/100;input.style.setProperty('--_p',`${input.value}%`);return {id:clip.id,targets:clip.targets.map(t=>t.uid===uid?{...t,weight}:t)};}
   previewWeight(input){this.run(()=>{
     const editor=this.editor,{id,targets}=this.weights(input);if(!this.active)this.beforeEdit?.();
-    this.active??={input,id,before:editor.report._styk.cameraMotion,token:editor._documentToken,initial:input.defaultValue};
-    const clips=this.active.before.clips.map(c=>c.id===id?{...c,targets}:c);validateCameraMotion({version:1,clips});editor.report._styk.cameraMotion={version:1,clips};editor._invalidate({retainGeometry:true});editor._emit('edit',{live:true,camera:true,cameraMotion:true});
+    this.active??={input,id,token:editor._documentToken,initial:input.defaultValue};
+    editor.previewCameraMotion(id,{targets});
   });}
   commitWeight(input){this.run(()=>{if(!this.active)this.beforeEdit?.();const {id,targets}=this.weights(input);this.cancel();this.editor.setCameraMotion(id,{targets});this.onRender?.();});}
   preview(input){this.run(()=>{
     const id=input.closest('[data-motion-id]').dataset.motionId,patch=this.patch(input),editor=this.editor;
     this.mirror(input);
     if(!this.active)this.beforeEdit?.();
-    this.active??={input,id,before:editor.report._styk.cameraMotion,token:editor._documentToken,initial:input.defaultValue};
-    const clips=this.active.before.clips.map(c=>c.id===id?{...c,...patch,params:{...c.params,...patch.params}}:c);
-    validateCameraMotion({version:1,clips});editor.report._styk.cameraMotion={version:1,clips};editor._invalidate({retainGeometry:true});editor._emit('edit',{live:true,camera:true,cameraMotion:true});
+    this.active??={input,id,token:editor._documentToken,initial:input.defaultValue};
+    editor.previewCameraMotion(id,patch);
   });}
   previewParallax(input){this.run(()=>{
     if(!input.value||!input.validity.valid)return;
-    const id=input.closest('[data-parallax-layer]').dataset.parallaxLayer,editor=this.editor,layer=editor.report._styk.layers.byId[id],key=input.dataset.parallaxField,value=Number(input.value)/100;
-    if(layer.locked)return;
+    const id=input.closest('[data-parallax-layer]').dataset.parallaxLayer,editor=this.editor,key=input.dataset.parallaxField,value=Number(input.value)/100;
+    if(editor.getLayer(id).locked)return;
     if(!this.active)this.beforeEdit?.();
-    this.active??={kind:'parallax',input,id,before:layer,token:editor._documentToken,initial:input.defaultValue};
-    const c=editor.evaluatedFrame.camera??{},p={enabled:false,linked:true,x:1,y:1,reference:{x:c.x??0,y:c.y??0},...this.active.before.parallax};
-    if(key==='movement'||p.linked){p.x=p.y=value;}else p[key]=value;
-    validateParallax(p);editor.report._styk.layers.byId[id]={...layer,parallax:p};editor._layerChanged();editor._invalidate({retainGeometry:true});editor._emit('edit',{live:true,parallax:true,layers:true});this.sync();
+    this.active??={kind:'parallax',input,id,token:editor._documentToken,initial:input.defaultValue};
+    editor.previewLayerParallax(id,key==='movement'?{x:value,y:value}:{[key]:value});
+    this.sync();
   });}
-  cancel(){const edit=this.active;if(!edit)return;this.active=null;if(edit.token!==this.editor._documentToken)return;if(edit.kind==='parallax'){this.editor.report._styk.layers.byId[edit.id]=edit.before;this.editor._layerChanged();}else this.editor.report._styk.cameraMotion=edit.before;this.editor._invalidate({timing:true,retainGeometry:true});this.editor._emit('edit',{live:true,camera:true});}
+  /** Puts back what a preview showed (the engine's session holds it, unrecorded: `preview.rs`). */
+  cancel(){const edit=this.active;if(!edit)return;this.active=null;if(edit.token!==this.editor._documentToken)return;this.editor.cancelDocumentPreview();}
   commit(input){this.run(()=>{if(!this.active)this.beforeEdit?.();const id=input.closest('[data-motion-id]')?.dataset.motionId;this.cancel();if(id)this.editor.setCameraMotion(id,this.patch(input));else{
     const key=input.dataset.parallaxField;if(!key||input.value==='custom')return;if(input.type==='number'&&(!input.value||!input.validity.valid))throw messageError(new Error(''), "errors.cameraMotionUi.enterAValidParallaxResponse", {});const value=input.type==='checkbox'?input.checked:key==='preset'?Number(input.value):Number(input.value)/100;
     this.editor.setLayerParallax(input.closest('[data-parallax-layer]').dataset.parallaxLayer,key==='preset'?{x:value,y:value,linked:true,enabled:true}:key==='movement'?{x:value,y:value}:{[key]:value});

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {sampleSheet} from './helpers/sheet-samples.mjs';
@@ -14,7 +14,7 @@ function fixture({frames=80,neighbors=1,duration=1,alone=false}={}){
     createObject(figure,1,100+Math.sin(i)*20,200),
     ...Array.from({length:neighbors},(_,n)=>createObject(figure,n+2,300+n*40,200+i,{unrelatedPayload:'outside-capture'.repeat(200)})),
   ],duration));
-  return alone?new Editor({demo:false,layerTimeline:true}).load(document):engineEditor({demo:false,layerTimeline:true}, document);
+  return alone?new Editor({demo:false,layerTimeline:true}).load(document):plainEditorFor({demo:false,layerTimeline:true}, document);
 }
 const shapes=(report,tick)=>buildGeometry(report,sampleSheet(report,tick)).drawables.map(d=>({type:d.type,rgb:d.rgb,alpha:d.alpha,points:d.points.map(p=>[p.x,p.y])}));
 function close(actual,expected){

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument, needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
@@ -21,7 +21,7 @@ function fixture(edit = null) {
     return {...createFrame([parent, other, child], 4), opaque_native: {token: index}};
   });
   edit?.(report);
-  const editor = engineEditor({demo: false}, report), layer = editor.createLayer('Second');
+  const editor = plainEditorFor({demo: false}, report), layer = editor.createLayer('Second');
   editor.assignFiguresToLayer([2], layer.id); editor.moveLayerTo(layer.id, 0);
   return editor;
 }
@@ -55,12 +55,12 @@ test('untouched native documents retain the exact original export path and refer
   const native = emptyDocument();
   // Native exposures have no authored per-frame easing metadata.
   native.keyframes = [createFrame([createObject(native.figure_types[0], 1, 40, 200)], 4)];
-  const report = engineEditor({demo: false}, native).report;
+  const report = plainEditorFor({demo: false}, native).report;
   assert.equal(needsPivotMaterialization(report), false); assert.equal(materializePivotDocument(report), report);
 });
 
 test('new documents retain authored Hold easing through native export materialization', () => {
-  const editor = engineEditor({demo: false}); editor.addFigure(); const report = editor.report;
+  const editor = plainEditorFor({demo: false}); editor.addFigure(); const report = editor.report;
   const before = structuredClone(report);
   assert.equal(needsPivotMaterialization(report), true);
   const output = materializePivotDocument(report);
@@ -130,7 +130,7 @@ test('authored legacy export migrates real held poses and preserves new hidden e
   {skip: missingFixture('../Pivot Animator v5/Animations/Legacy/walking.piv')}, async () => {
   const sourcePath = fileURLToPath(new URL('../../Pivot Animator v5/Animations/Legacy/walking.piv', import.meta.url));
   const decoded = (await importBytes(readFileSync(sourcePath), path.basename(sourcePath))).document;
-  const editor = engineEditor({demo: false}, decoded); assert.ok(editor.report.version < 5);
+  const editor = plainEditorFor({demo: false}, decoded); assert.ok(editor.report.version < 5);
   const camera = {kind: 'camera'}, key = editor.addAnimationKey(camera, 'pose', 2, {frameId: editor.getFrameId(0)});
   editor.setAnimationKey(editor.animationChannel(camera, 'pose').id, key.id, {hidden: true});
   editor.addAnimationKeys([{target: camera, property: 'x', tick: 0, value: 0}, {target: camera, property: 'x', tick: 6, value: 30},

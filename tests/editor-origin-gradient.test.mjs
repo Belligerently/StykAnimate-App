@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {animationChannelId} from '../src/animation-channels.mjs';
 import {reverseGradientEndpoints} from '../src/editor-style-topology.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 const clone=value=>structuredClone(value),target=handleId=>({kind:'segment',uid:1,handleId});
 function fixture({single=false}={}){
   const report=emptyDocument(),figure=report.figure_types[0],base=figure.segments[0];

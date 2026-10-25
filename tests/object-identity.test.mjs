@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {MAX_ALLOCATED_UID, nextUidAfter} from '../src/object-identity.mjs';
 
 const editorWith = (...uids) => {
   const document = emptyDocument(), figure = document.figure_types[0];
   document.keyframes = [createFrame(uids.map((uid, index) => createObject(figure, uid, 90 + index * 20, 120)), 3)];
-  return engineEditor({demo: false}, document);
+  return plainEditorFor({demo: false}, document);
 };
 const uidsOf = editor => editor.report.keyframes[editor.frameIndex].objects.map(object => object.unique_id).sort((a, b) => a - b);
 

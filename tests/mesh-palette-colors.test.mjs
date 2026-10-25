@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
@@ -22,7 +22,7 @@ function fixture(options={}, edit=null) {
   const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[],_styk:{colorMode:'segments',spatialMesh:mesh}};
   const document={...emptyDocument(),figure_types:[figure],keyframes:[0,1,2].map(i=>createFrame([createObject(figure,1,100+i*10,100),createObject(figure,2,300,100)],10))};
   edit?.(document);
-  const editor=engineEditor({demo:false,...options}, document);editor.select(1);return editor;
+  const editor=plainEditorFor({demo:false,...options}, document);editor.select(1);return editor;
 }
 const colors=e=>buildGeometry(e.report,e.evaluatedFrame).objects.get(e.selectedSlot).spatialMesh.colors;
 

@@ -32,8 +32,7 @@ fixtures**, and the engine is checked against them as they are:
 
 - the command tapes and their references (`engine/tests/edit/*.scenario.json` and `*.reference.json`: the state,
   the document and the events after every step) and the other recordings under `engine/tests/`;
-- the evaluation fixtures (`engine/crates/*/tests/fixtures/**`) and the JavaScript tests' fixtures (`tests/fixtures/**`),
-  among them the owner tests' references (`tests/fixtures/owner-references/`);
+- the evaluation fixtures (`engine/crates/*/tests/fixtures/**`) and the JavaScript tests' fixtures (`tests/fixtures/**`);
 - the Pivot codec's recorded answers (`styk-piv`); the Python codec stays the development oracle of the Pivot
   format ([formats-piv.md](formats-piv.md)).
 
@@ -46,7 +45,7 @@ result; a fixture is edited only when the contract it states changes, never to m
 for `styk-math`, which must stay V8-exact, [D16](decisions/0016-v8-exact-math.md)) and `v8-pin.mjs` (pins Node's
 `Math.pow` for the JavaScript tests that load the engine), `container-fixtures.mjs` and `container-parity.mjs` (the
 native container files, written and checked through the app's own save path), `piv/` (the Python codec's recorder)
-and the helpers of the owner tests (`edit-bounds-callbacks.mjs`, `owner-reference-fixtures.mjs`).
+and `edit-bounds-callbacks.mjs` (the app's bounds callback, which the owner tests import).
 
 For `figures`, `movieclips` and `channels`, default editing requires exact behavior,
 a matching checkpoint and actual core adoption. Full paired cost may be at most 5%

@@ -1,6 +1,6 @@
 // Commands on a document with animation origins run in the engine session (docs/engine/editing.md): they leave the
 // document, the history labels and what undo and redo give back exactly as the editor alone gave (the frozen references of
-// tests/support/owner-references.mjs), and the session refuses none of them. Each case runs the same calls on an editor the
+// tests/support/owner-references.mjs), and the session refuses none of them. Each case runs the calls on an editor the
 // engine owns and compares them with what an editor it does not own gave.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,9 +18,9 @@ const fixture = name => JSON.parse(readFileSync(new URL(`${name}.document.json`,
 const text = (editor, digits) => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : digits && typeof value === 'number' ? Number(value.toPrecision(digits)) : value);
 
 /** Each step is `[method, ...arguments]` or a function of the editor; the editor's answer and the document after it are kept. */
-async function trace(document, steps, owned, digits) {
+async function trace(document, steps, digits) {
   const editor = new Editor(OPTIONS).load(structuredClone(document));
-  const owner = owned ? installEngineOwner(editor) : null;
+  const owner = installEngineOwner(editor);
   try {
     const kept = [text(editor, digits)];
     const settle = async (label, answer) => {
@@ -36,15 +36,15 @@ async function trace(document, steps, owned, digits) {
     const depth = [];
     while (editor.canUndo) { depth.push(editor.undoLabel); await settle('undo', () => editor.undo()); }
     for (let step = depth.length; step > 0; step--) await settle('redo', () => editor.redo());
-    return {kept, refused: owner ? Object.keys(owner.refused) : [], depth: depth.length};
-  } finally { owner?.release(); }
+    return {kept, refused: Object.keys(owner.refused), depth: depth.length};
+  } finally { owner.release(); }
 }
 
 /** The steps give the same document, answers and history in the owned editor as the references of an editor alone, and the session takes every call.
  * `digits`: numbers are compared to that many digits, where an IK solution may differ in its last bits between the two solvers. */
 async function agree(take, document, steps, {digits} = {}) {
-  const alone = await take('alone', async () => { const {kept, depth} = await trace(document, steps, false, digits); return {kept, depth}; });
-  const owned = await trace(document, steps, true, digits), ownedKept = canonical(owned.kept);
+  const alone = take('alone');
+  const owned = await trace(document, steps, digits), ownedKept = canonical(owned.kept);
   assert.equal(ownedKept.length, alone.kept.length);
   alone.kept.forEach((entry, at) => assert.deepEqual(ownedKept[at], entry, `step ${at} (${entry.label ?? 'start'})`));
   assert.deepEqual(owned.refused, [], 'the session refused a call');

@@ -27,15 +27,11 @@ refs.test('a call made with optional selection open runs in the session and keep
   editor._restoreSelection({...editor._selectionState(), polygonSelection: polygon});
   const {owner, views} = owned(editor);
   // What the editor alone gives for the same call: its answer and its document.
-  const alone = take('alone', () => {
-    const plain = new Editor({demo: false}).load(structuredClone(input));plain.select(1, -1);
-    plain._restoreSelection({...plain._selectionState(), polygonSelection: polygon});
-    return {moved: plain.moveSelection(2, 1), report: JSON.stringify(plain.report)};
-  });
+  const alone = take('alone');
   assert.equal(alone.moved, true);
   assert.equal(editor.moveSelection(2, 1), true, 'the session answers as the editor would alone');assert.deepEqual(editor._selectionState().polygonSelection, polygon);
   assert.deepEqual(metadata(views[0]), {polygonSelection: polygon}, 'the view carries the selection metadata');
-  assert.equal(owner.native, 1, 'the call ran in the session');assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  assert.equal(owner.native, 1, 'the call ran in the session');assert.deepEqual(owner.refused, {}, 'the session refused nothing');
   assert.deepEqual(owner.refused, {});
   assert.equal(JSON.stringify(editor.report), alone.report, 'the same document as the editor alone');
   owner.release();

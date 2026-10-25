@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {frameOrder, setOrder} from '../src/pivot/structure.mjs';
 import {roundTrip} from './support/codec.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 test('nested joined movement and posing roundtrip through native PIV with canonical origins and sparse handles', async () => {
   const editor = open({demo: false}); editor.addFigure(); const root = editor.selectedUid;

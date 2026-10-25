@@ -4,10 +4,10 @@ import {Editor} from '../src/editor.mjs';
 import {buildGeometry, mixColor} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {roundTrip} from './support/codec.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 const near = (a, b, epsilon = 1e-4) => assert.ok(Math.abs(a - b) <= epsilon, `${a} != ${b}`);
-const blank = ({plain = false} = {}) => { const editor = plain ? new Editor({demo: false}) : ownedEditorFor({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
+const blank = ({plain = false} = {}) => { const editor = plain ? new Editor({demo: false}) : plainEditorFor({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
 function compareGeometry(before, after) {
   assert.equal(after.drawables.length, before.drawables.length);
   for (let i = 0; i < before.drawables.length; i++) {

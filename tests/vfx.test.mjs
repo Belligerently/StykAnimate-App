@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {createVfx,vfxStack,vfxProperty,validateVfxStack,validateVfxValue,interpolateVfx,resolvedVfx,VFX_REGISTRY} from '../src/vfx.mjs';
 import {VFX_PRESETS} from '../src/vfx-presets.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateAnimationDocument,sampleAnimationChannel} from '../src/animation-channels.mjs';
 import {remapVfxOwner} from '../src/vfx.mjs';
-function fixture(sheet=false){const report=emptyDocument(),fig=report.figure_types[0];report.keyframes=[0,1,2].map(()=>createFrame([createObject(fig,1,120,180),createObject(fig,2,280,180)],10));const editor=newOwnedEditor({demo:false,layerTimeline:sheet}).load(report);return editor;}
+function fixture(sheet=false){const report=emptyDocument(),fig=report.figure_types[0];report.keyframes=[0,1,2].map(()=>createFrame([createObject(fig,1,120,180),createObject(fig,2,280,180)],10));const editor=(sheet?newOwnedEditor:newPlainEditor)({demo:false,layerTimeline:sheet}).load(report);return editor;}
 const target={kind:'figure',uid:1};
 /** Keys the stack with `effect` added at the playhead: what `changeVfxStack(target,stack=>stack.push(effect))` does, with the stack as data. */
 const pushVfx=(e,effect)=>e.addAnimationKey(target,'vfxStack',e.tick,validateVfxStack([...e.vfxEffects(target),effect]),{exactTarget:true});

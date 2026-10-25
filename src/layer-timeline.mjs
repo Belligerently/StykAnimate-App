@@ -21,7 +21,6 @@ import {motionRows,paintMotionRow,paintMotionRibbon,MOTION_COLORS,cameraMotionTi
 import {attachTimelineHotkeys} from './timeline-hotkeys.mjs';
 import {pasteSheetClipboard} from './shared-clipboard.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
-import {initializeLayerSheet} from './editor-layer-sheet.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {icon} from './icons.mjs';
 import {showTimelineMenu, timelineLayerMenuGroups} from './timeline-menu.mjs';
@@ -47,7 +46,6 @@ export class Timeline{
     this.editor=editor;this.container=container;Object.assign(this,options);this.events=new AbortController();this.labels=[];this.pxPerTick=this._touch()?TOUCH_ZOOM.initial:14;this.labelWidth=220;
     this.ownsLayerView=!options.layerView;this.layerView??=new TimelineLayerView(editor);
     this.selectedLayers=new Set([editor.activeLayerId]);this.start=this.end=Math.max(0,Math.floor(editor.tick));this.selectedTrackId=editor.activeLayerId;
-    if(!editor.report._styk.layerSheet){initializeLayerSheet(editor.report);editor._invalidate({timing:true});}
     attachTimelineHotkeys(this);
     this.root=element('div',container,'layer-timeline');this.dirty=true;
     // The touch interface's timeline (docs/TOUCH.md): finger-tall rows, a centred playhead, the header's action bar.
@@ -133,7 +131,6 @@ export class Timeline{
   get loopRange(){return this.end>this.start?{start:this.start,end:this.end+1}:null;}
   _reindex(){
     this.focusedLayerIds=this.editor.getLayerFocus()?.ids??null;
-    if(!this.editor.report._styk.layerSheet){initializeLayerSheet(this.editor.report);this.editor._invalidate({timing:true});}
     this.motionState=this.editor.report._styk.cameraMotion;
     this.collapsedFolders??=new Set();
     this.tracks=organizeTimelineRows([this.editor.getLayer('camera'),...(this.cameraMotionsCollapsed?[]:motionRows(this.editor)),this.editor.getLayer('scene'),...layerFolderRows(this.editor.layers.filter(l=>l.kind==='layer').reverse(),this.editor.report._styk.layers,this.layerQuery||this.focusedLayerIds?new Set():this.collapsedFolders)],this.layerQuery,this.focusedLayerIds);

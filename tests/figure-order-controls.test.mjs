@@ -4,9 +4,9 @@ import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {planFigureFrameOperation as plan} from '../src/range-figure-operations.mjs';
 import {applyLayerOrder} from '../src/layers.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 function fixture(propertyChannels = true) {
   const report = emptyDocument();

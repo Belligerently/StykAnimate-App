@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
-| `styk-edit` | 90 | 1227 KiB | 28 | 42 | 8 | 1 | 11 | 17 % | 66 % | 11 % |
+| `styk-edit` | 90 | 1205 KiB | 27 | 42 | 8 | 1 | 12 | 17 % | 67 % | 11 % |
 | `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
 | `styk-eval` | 80 | 688 KiB | 18 | 46 | 9 | 0 | 7 | 18 % | 72 % | 1 % |
 | `styk-export` | 14 | 75 KiB | 8 | 2 | 0 | 0 | 4 | 16 % | 8 % | 16 % |
 | `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 7 | 6 | 3 | 0 | 35 | 30 % | 43 % | 18 % |
-| **Total** | 356 | 3222 KiB | 105 | 110 | 29 | 23 | 89 | 29 % | 48 % | 8 % |
+| **Total** | 356 | 3200 KiB | 104 | 110 | 29 | 23 | 90 | 30 % | 48 % | 8 % |
 
 ## Engine modules
 
@@ -136,8 +136,8 @@ Engine logic: ported to Rust.
 | `src/media-authoring.mjs` | `styk-edit` | js |  |
 | `src/media-image-worker.mjs` | `styk-edit` | js |  |
 | `src/motion-path-falloff.mjs` | `styk-edit` | ported | motion-path falloff planning. Rust: falloffWeight (the sharp shape cubed as V8 does), planFalloff and normalizeFalloff (styk-edit/src/motion_path.rs), every weight checked against the editor; the app still reads its constants for the overlay |
-| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated, native propertyChannels:true authored-pose commands and app facade/worker adoption pending |
-| `src/native-property-ranges.mjs` | `styk-edit` | js |  |
+| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated. The module is the inspector's token over session calls (animation edits, pose and camera gestures, branch keys, the project's fields, the sheet's duration) and refuses what the session has no command for; it writes nothing into the document itself |
+| `src/native-property-ranges.mjs` | `styk-edit` | removed | deleted: a pose at one value across several frames is no command of the session (the inspector's token refuses it); nothing wrote it into the document any more |
 | `src/native-text-authoring.mjs` | `styk-edit` | js |  |
 | `src/onion-skin.mjs` | `styk-edit` | removed | deleted: the session plans the onion skins (styk-edit onion_skins.rs) and the stage draws them; the drawing cels' prefetch moved to src/drawing-cel-prefetch.mjs (19636 bytes) |
 | `src/polygon-draft.mjs` | `styk-edit` | js |  |

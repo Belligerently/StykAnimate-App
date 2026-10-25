@@ -182,28 +182,6 @@ test('what the session says it does not evaluate yet is evaluated by the editor;
   } finally { owner.release(); }
 });
 
-test('a read made while the editor\'s edits are being written to the session is the editor\'s own', {skip: !engineBuilt}, async () => {
-  const {editor, owner} = await poses();
-  try {
-    editor.seek(11);
-    editor.select(4, -1);
-    // A selected polygon is checked against the figure on show whenever the view is taken.
-    editor._polygonSelection = {uid: 4, typeId: editor.object.figure_type_id, index: 0};
-    // An edit made in place and announced, not yet written to the session: the read writes it first, and the view the
-    // write takes reads the frame on show in turn, which must not write it again.
-    editor.report._styk.name = 'Renamed in place';
-    editor._emit('edit', {label: 'Project metadata'});
-    editor._invalidate();
-    const calls = [];
-    const session = owner.session(), call = session.call.bind(session);
-    session.call = (...parts) => { calls.push(parts[0]); return call(...parts); };
-    assert.ok(editor.evaluatedFrame.objects.length > 0);
-    session.call = call;
-    assert.deepEqual(calls, ['@sync'], 'written once');
-    assert.equal(JSON.parse(owner.session().report_json())._styk.name, 'Renamed in place');
-  } finally { owner.release(); }
-});
-
 test('a motion-path edit shows the pose it makes at the playhead, and its geometry, while the playhead is in the ticks it changes', {skip: !engineBuilt}, async () => {
   const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/motion-path.document.json', import.meta.url), 'utf8'));
   const {editor, owner} = await ownedEditor(options, document);

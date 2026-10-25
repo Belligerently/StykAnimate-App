@@ -5,7 +5,6 @@ import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {animationRotation,synchronizeAnimationOrigin} from '../src/animation-origin.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
-import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit} from '../src/native-property-edit.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
 
 const open = ownedScope();
@@ -164,22 +163,8 @@ test('branch rotation changes each attached child ghost once while the selected 
   near(animationRotation(editor.figure,editor.frame.objects[0]),initialRotation[0]);checkCow(editor,before);checkUndo(editor,before);
 });
 
-test('native absolute rotation ranges carry support by each frame’s own live-angle delta',()=>{
-  const editor=fixture({plain:true}), // session gap: a range rotation by native property edit is made in place in the editor and does not match the session's document
-  before=record(editor),definition=editor.figure,middle=editor.report.keyframes[1],value=43;
-  const token=beginNativePropertyEdit(editor,'rotation',{indices:[0,2]});
-  previewNativePropertyEdit(token,25);previewNativePropertyEdit(token,value);commitNativePropertyEdit(token);
-  for(const index of [0,2]) {
-    const old=before.document.keyframes[index].objects[0],actual=editor.report.keyframes[index].objects[0];
-    const delta=value*Math.PI/180-(old.angles[0]-definition.segments[0].angle_rad);
-    near(actual.angles[0]-definition.segments[0].angle_rad,value*Math.PI/180);
-    checkGhosts(ghosts(actual),ghosts(old),pose=>rotated(pose,delta));closePoints(points(editor,index),points(editor,index,{evaluated:false}));
-  }
-  assert.equal(editor.report.keyframes[1],middle);checkCow(editor,before,[0,2]);checkUndo(editor,before);
-});
-
 test('camera baking rotates retained support and preserves projected joined geometry over a native range',()=>{
-  const editor=fixture({joined:true});
+  const editor=fixture({plain: true, joined:true});
   for(const index of [0,2])editor.report.keyframes[index].camera={is_default:false,x:40-index*25,y:15+index*10,scale:.8+index*.3,angle_rad:.4-index*.1};
   editor._invalidate();const before=record(editor),middle=editor.report.keyframes[1],expected=[0,2].map(index=>points(editor,index,{projected:true}));
   assert.equal(editor.applyCameraToFigures([0,2]),2);

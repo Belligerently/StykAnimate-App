@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {newOwnedEditor} from './support/owned-editor.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 import {builderFixture} from '../scripts/builder-benchmark-fixture.mjs';
 
 /** `prepare(report)` changes the document before it opens. */
@@ -15,7 +15,7 @@ function fixture(propertyChannels = false, prepare = null) {
   report.keyframes.push(structuredClone(report.keyframes[0]));
   report.keyframes[1].objects[0].angles = figure.segments.map(segment => segment.angle_rad + .2);
   prepare?.(report);
-  const editor = newOwnedEditor({propertyChannels}); editor.load(report); editor.select(1, 1);
+  const editor = newPlainEditor({propertyChannels}); editor.load(report); editor.select(1, 1);
   return editor;
 }
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);

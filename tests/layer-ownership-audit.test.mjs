@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {engineEditor} from './support/owned-editor.mjs';
+/** The frames of the layer sheet at these ticks, as the timeline chooses them. */
+const sheetRange=(e,ticks)=>Object.assign([e.frameIndex],{sheetTicks:ticks});
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback} from '../src/movieclip-presence.mjs';
@@ -38,7 +40,7 @@ for(const destination of ['new','short','hold'])for(const operation of ['add-ran
     const donor=fixture().e;donor.select(7);donor.copySelection();e._selectionClipboard=donor._selectionClipboard;
   }
   const original=samples(e,[1,2,7]);e.seek(5);e.selectSheetLayer(target);const before=e.serialize(),next=e._nextUid;
-  if(operation==='add-range')e.applyFigureRange({kind:'add',typeId:1},{ticks:[5]});
+  if(operation==='add-range')e.addFigureInFrames(1,sheetRange(e,[5]));
   else if(operation==='import')e.importFigure(source);
   else e.pasteSelection();
   e.seek(5);const added=e.evaluatedFrame.objects.filter(o=>o.unique_id>=next);assert.equal(added.length,operation==='paste-group'?2:1);
@@ -47,7 +49,7 @@ for(const destination of ['new','short','hold'])for(const operation of ['add-ran
 });
 for(const target of ['scene','camera'])test(`range insertions while ${target} is active use a user layer`,()=>{
   const {e}=fixture();e.seek(5);e.setActiveLayer(target);const before=e.serialize();
-  const {insertedUids}=e.applyFigureRange({kind:'add',typeId:1},{ticks:[5]});e.seek(5);
+  const {insertedUids}=e.addFigureInFrames(1,sheetRange(e,[5]));e.seek(5);
   assert.equal(e.layerForUid(insertedUids[0]),e.report._styk.layers.defaultLayerId);assert.ok(e.evaluatedFrame.objects.some(o=>o.unique_id===insertedUids[0]));history(e,before);
 });
 test('moving a patched movieclip preserves every pose and source phase',()=>{
@@ -110,7 +112,7 @@ test('moving figures to a layer in the background preserves the animation and su
 for(const operation of ['add','paste','range'])test(`${operation} beyond a populated short layer leaves its expired content absent`,()=>{
   const {e,second}=fixture();e.sheetRemoveFrames([second],2,29);e.seek(0);e.select(1);e.copySelection();
   const original=samples(e,[1,2,7]);e.seek(5);e.selectSheetLayer(second);const before=e.serialize();
-  if(operation==='add')e.addFigure();else if(operation==='paste')e.pasteSelection();else e.applyFigureRange({kind:'add',typeId:1},{ticks:[5]});
+  if(operation==='add')e.addFigure();else if(operation==='paste')e.pasteSelection();else e.addFigureInFrames(1,sheetRange(e,[5]));
   assert.deepEqual(samples(e,[1,2,7]),original);history(e,before);
 });
 test('deleting a layer clears assignments whose figures no longer have retained poses',()=>{
@@ -146,7 +148,7 @@ test('deleting layers preserves remaining movieclip patches and continuation pha
 for(const operation of ['range','group-paste','import','move','delete'])test(`locked layers reject ${operation} atomically`,()=>{
   const {e,target,source}=fixture();e.selectMany([1,2]);e.copySelection();e.selectSheetLayer(target);e.setLayerLocked(target,true);
   const before=e.serialize(),undo=e._undo.length;
-  const execute=()=>{if(operation==='range')e.applyFigureRange({kind:'add',typeId:1},{ticks:[5]});else if(operation==='group-paste')e.pasteSelection();else if(operation==='import')e.importFigure(source);else if(operation==='move')e.assignFiguresToLayer([1],target);else e.deleteLayer(target);};
+  const execute=()=>{if(operation==='range')e.addFigureInFrames(1,sheetRange(e,[5]));else if(operation==='group-paste')e.pasteSelection();else if(operation==='import')e.importFigure(source);else if(operation==='move')e.assignFiguresToLayer([1],target);else e.deleteLayer(target);};
   assert.throws(execute,/Unlock/);assert.deepEqual(e.serialize(),before);assert.equal(e._undo.length,undo);
 });
 

@@ -12,6 +12,7 @@ import {documentChunks,applyDocumentChunk} from '../src/document-transport.mjs';
 import {ImportClient} from '../src/import-client.mjs';
 import {openDocument} from '../src/sticknodes/decoder/project.mjs';
 import {gzipSync} from 'node:zlib';
+import {newPlainEditor} from './support/plain-editor.mjs';
 
 export function syntheticNodes(){
  const i=n=>{const b=Buffer.alloc(4);b.writeInt32BE(n);return b;},f=n=>{const b=Buffer.alloc(4);b.writeFloatBE(n);return b;},color=Buffer.from([255,40,90,220]);
@@ -25,7 +26,7 @@ test('raw Stick Nodes import produces editable native handles with absolute Y-do
  const object=doc.keyframes[0].objects[0],joint=geometry(doc).objects.get(0).joints.get(1);
  assert.ok(Math.abs(joint.x-(960+80*Math.cos(Math.PI/6)))<.001);assert.equal(joint.y,500);
  assert.equal(object.angles[0],-Math.PI/6);assert.deepEqual(doc.figure_types[0]._styk.sticknodes.nodeIds,[7]);
- const editor=newOwnedEditor();editor.importFigure(doc);const before=editor.object.root_x;editor.moveSelection(12,0);assert.equal(editor.object.root_x,before+12);editor.undo();assert.equal(editor.object.root_x,before);editor.redo();assert.equal(editor.object.root_x,before+12);
+ const editor=newPlainEditor();editor.importFigure(doc);const before=editor.object.root_x;editor.moveSelection(12,0);assert.equal(editor.object.root_x,before+12);editor.undo();assert.equal(editor.object.root_x,before);editor.redo();assert.equal(editor.object.root_x,before+12);
 });
 test('invalid and cancelled imports reject before changing an editor',async()=>{
  await assert.rejects(importStickNodes(syntheticNodes().subarray(0,30),{filename:'broken.nodes'}));

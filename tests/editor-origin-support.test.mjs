@@ -6,9 +6,9 @@ import {animationRotation, animationOriginOffset, synchronizeAnimationOrigin} fr
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {roundTrip} from './support/codec.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 const clone = structuredClone;
 function fixture({authored = true, easing = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0], base = figure.segments[0];

@@ -7,13 +7,13 @@ import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {buildGeometry,buildGeometrySteps,evaluatedFrame,evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
 import {projectNativePropertyChannel} from '../src/native-property-projection.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 function fixture(frames=12,parts=8) {
   const report=emptyDocument(),figure=report.figure_types[0];
   report.keyframes=Array.from({length:frames},(_,i)=>createFrame(Array.from({length:parts},(_,slot)=>
     createObject(figure,slot+1,i*2+slot*10,100,{join:slot===1?{target_object_slot:0,target_handle_id:1}:null})),3));
-  return ownedEditorFor({demo:false,propertyChannels:true}, report);
+  return plainEditorFor({demo:false,propertyChannels:true}, report);
 }
 const complete = iterator => {let result;do{result=iterator.next();}while(!result.done);return result.value;};
 
@@ -96,7 +96,7 @@ test('dense single figures yield inside geometry without changing output',()=>{
 });
 
 test('Simple pose undo identifies its changed native frame',()=>{
-  const e=ownedEditorFor({demo:false}, fixture().report);e.enableFrameDrafts({mode:'update'});e.select(1);
+  const e=plainEditorFor({demo:false}, fixture().report);e.enableFrameDrafts({mode:'update'});e.select(1);
   const events=[];e.addEventListener('change',event=>{if(event.detail.kind==='history')events.push(event.detail);});
   e.beginDrag();e.moveSelection(10,2);e.commitDrag();e.undo();
   assert.deepEqual(events.at(-1).frameIndices,[0]);

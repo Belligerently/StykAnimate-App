@@ -7,7 +7,7 @@ import {evaluatedNativeFrame,buildGeometry} from '../src/pivot/geometry.mjs';
 import {documentChunks,applyDocumentChunk} from '../src/document-transport.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
 import {connectedTimelineGroups} from './helpers/legacy-connected-timeline.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 function fixture({frames=30,parts=24,plain=false}={}) {
   const report=emptyDocument(),figure=report.figure_types[0];
@@ -16,7 +16,7 @@ function fixture({frames=30,parts=24,plain=false}={}) {
     if(slot)object.join={target_object_slot:slot-1,target_unique_id:slot,target_handle_id:1};
     return object;
   }),3));
-  const editor=plain?new Editor({demo:false,propertyChannels:true}).load(report):ownedEditorFor({demo:false,propertyChannels:true}, report);editor.select(1);return editor;
+  const editor=plain?new Editor({demo:false,propertyChannels:true}).load(report):plainEditorFor({demo:false,propertyChannels:true}, report);editor.select(1);return editor;
 }
 function move(e){e.beginTranslationDrag();e.moveSelection(20,5);e.commitDrag();}
 

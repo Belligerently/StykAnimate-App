@@ -2,7 +2,7 @@
 
 `src/editor-range-commands.mjs` provides atomic range commands. Operations identify figures by native `unique_id`, so a missing figure in an individual frame is skipped. All targets are planned and validated before the first mutation. One Undo restores the complete operation.
 
-This follows Pivot's eligible multi-frame figure controls and proportional group scaling. Numeric positions are handled separately by `native-property-edit.mjs`; per-segment values are not range controls. References: [Figure controls](https://pivotanimator.net/help5-2/figure_controls.htm), [Value input](https://pivotanimator.net/help5-2/value_input.htm).
+This follows Pivot's eligible multi-frame figure controls and proportional group scaling. Numeric positions are handled separately by `native-property-edit.mjs`, which applies a pose value to one frame; at one value across several frames it is refused (the relative range commands above exist). Per-segment values are not range controls. References: [Figure controls](https://pivotanimator.net/help5-2/figure_controls.htm), [Value input](https://pivotanimator.net/help5-2/value_input.htm).
 
 ## Public API
 
