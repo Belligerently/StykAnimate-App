@@ -2,10 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor, emptyDocument} from '../src/editor.mjs';
 import {applyLayerOrder, layerVisible, layerLocked, validateLayerState} from '../src/layers.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const userIds = editor => editor.layers.filter(layer => !layer.permanent).map(layer => layer.id);
 const setOf = values => new Set(values);
-const blank = () => { const editor = new Editor({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
+/** `plain`: the editor alone, for the tests of its own caches and history commands, which the session has no counterpart for. */
+const blank = ({plain = false} = {}) => { const editor = plain ? new Editor({demo: false}) : open({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
 
 test('capturing existing authored figures preserves layer hierarchy caches while maintaining source retention counts', () => {
   const editor = blank(), uid = editor.selectedUid; editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'});
@@ -19,7 +23,8 @@ test('capturing existing authored figures preserves layer hierarchy caches while
 });
 
 test('pose snapshots omit runtime caches before cloning and retain independent unknown fields', () => {
-  const editor = blank(), frame = editor.evaluatedFrame, object = frame.objects[0];
+  const editor = blank({plain: true}), // editor internals: the pose snapshot of the editor's own frame
+    frame = editor.evaluatedFrame, object = frame.objects[0];
   object.extra_native_fields = {values: [4, 8]};
   Object.defineProperty(object, 'runtime_segments', {enumerable: true, configurable: true, get() { throw new Error('Transient cache should never be visited'); }});
   const id = editor.captureFrameSource(frame), source = editor.getFrameById(id);
@@ -29,7 +34,7 @@ test('pose snapshots omit runtime caches before cloning and retain independent u
 });
 
 test('authored pose commit retains exact displayed geometry during notification and releases it on later edits', () => {
-  const editor = blank(); editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'}); editor.geometry;
+  const editor = blank({plain: true}); editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'}); editor.geometry; // editor internals: the geometry the editor retains across a commit
   editor.beginTranslationDrag(); editor.moveSelection(12, -3); const preview = editor.geometry;
   let notified;
   editor.addEventListener('change', event => { if (event.detail.animation && !editor.dragging) notified = editor.geometry; });
@@ -46,7 +51,7 @@ test('authored pose commit retains exact displayed geometry during notification 
 });
 
 test('native imports start with one user layer containing all project figure identities', () => {
-  const editor = new Editor();
+  const editor = open();
   assert.deepEqual(editor.layers.map(({id, kind, permanent}) => ({id, kind, permanent})), [
     {id: 'scene', kind: 'scene', permanent: true}, {id: 'camera', kind: 'camera', permanent: true},
     {id: 'layer-1', kind: 'layer', permanent: false},
@@ -60,7 +65,7 @@ test('native imports start with one user layer containing all project figure ide
 });
 
 test('user layer creation, rename, reorder and deletion form reversible sparse history', () => {
-  const editor = new Editor(), before = editor.serialize();
+  const editor = new Editor(), before = editor.serialize(); // editor internals: the kinds and size of its history commands
   const originalFrames = editor.report.keyframes, firstFrame = editor.frame;
   const created = editor.createLayer('  Foreground  ');
   assert.equal(created.name, 'Foreground'); assert.equal(editor.activeLayerId, created.id);
@@ -82,7 +87,7 @@ test('user layer creation, rename, reorder and deletion form reversible sparse h
 });
 
 test('Scene and Camera are permanent tracks and the final user layer cannot be removed', () => {
-  const editor = new Editor(), before = editor.serialize();
+  const editor = open(), before = editor.serialize();
   for (const id of ['scene', 'camera']) {
     assert.throws(() => editor.renameLayer(id, 'Changed'), /permanent/);
     assert.throws(() => editor.deleteLayer(id), /cannot be deleted/);
@@ -113,7 +118,7 @@ test('figure layer assignments persist across every frame without changing nativ
 });
 
 test('deleting the default layer reassigns implicit and explicit membership and restores it on undo', () => {
-  const editor = new Editor(), source = editor.getLayerFigureUids('layer-1').slice();
+  const editor = open(), source = editor.getLayerFigureUids('layer-1').slice();
   const second = editor.createLayer('Second').id, third = editor.createLayer('Third').id;
   editor.assignFiguresToLayer([source[0]], third);
   editor.assignFiguresToLayer([source[1]], 'layer-1');
@@ -140,7 +145,7 @@ test('new figures use the active layer while figure duplicates preserve their so
 });
 
 test('visibility, lock, and track state survive native project serialization and reopening', () => {
-  const editor = new Editor(), second = editor.createLayer('Actors').id, uid = editor.selectedUid;
+  const editor = open(), second = editor.createLayer('Actors').id, uid = editor.selectedUid;
   editor.assignFiguresToLayer([uid], second);
   editor.setLayerVisible(second, false); editor.setLayerLocked(second, true);
   editor.setLayerVisible('scene', false); editor.setLayerLocked('camera', true);
@@ -160,7 +165,7 @@ test('layer paint grouping is stable and never changes native object slots or at
   editor.addFigure(); const fourth = editor.selectedUid;
   const second = editor.createLayer('Front').id;
   editor.assignFiguresToLayer([parent, third], second);
-  const frame = editor.frame;
+  const frame = structuredClone(editor.frame);
   frame.object_draw_order = [3, 0, 1, 2]; frame.object_draw_order_unique_ids = [fourth, parent, child, third];
   const before = structuredClone(frame), output = applyLayerOrder(editor.report, frame);
   assert.deepEqual(output.object_draw_order, [3, 1, 0, 2]);
@@ -173,7 +178,7 @@ test('layer paint grouping is stable and never changes native object slots or at
 });
 
 test('object dragging keeps layer indexes, descriptors and revision stable', () => {
-  const editor = new Editor(), layer = editor.createLayer('Selected').id;
+  const editor = new Editor(), layer = editor.createLayer('Selected').id; // editor internals: its layer caches and the kind of its history command
   editor.assignFiguresToLayer([editor.selectedUid], layer);
   const revision = editor.layerRevision, descriptors = editor.layers, members = editor.getLayerFigureUids(layer), counts = editor._layerUidCounts;
   editor.beginDrag('Move figure');
@@ -217,7 +222,7 @@ test('retained authored pose sources keep their figure identities in user layers
 });
 
 test('optional permanent track metadata supplies editable defaults for missing tracks', () => {
-  const editor = new Editor(), document = editor.serialize();
+  const editor = open(), document = editor.serialize();
   document._styk.layers.fixed = {scene: {visible: false, locked: false}};
   editor.load(document);
   assert.equal(editor.getLayer('camera').visible, true); assert.equal(editor.getLayer('camera').locked, false);
@@ -228,7 +233,7 @@ test('optional permanent track metadata supplies editable defaults for missing t
 });
 
 test('invalid layer metadata and unsafe layer identifiers never replace or corrupt the active document', () => {
-  const editor = new Editor(), report = editor.report, before = editor.serialize();
+  const editor = open(), report = editor.report, before = editor.serialize();
   for (const id of ['__proto__', 'constructor', 'missing', 'scene']) {
     assert.throws(() => editor.renameLayer(id, 'Invalid'));
     assert.throws(() => editor.assignFiguresToLayer([editor.selectedUid], id));

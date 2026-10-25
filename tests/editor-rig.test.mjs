@@ -5,26 +5,30 @@ import {editorRigMethods} from '../src/editor-rig.mjs';
 import {createFrame, createObject, emptyDocument} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 Object.assign(Editor.prototype, editorRigMethods);
 const near = (a, b, tolerance = 2e-4) => assert.ok(Math.abs(a - b) <= tolerance, `${a} != ${b}`);
 const pointNear = (a, b) => { near(a.x, b.x); near(a.y, b.y); };
-function fixture() {
+function fixture({curved = false, plain = false} = {}) {
   const document = emptyDocument(), figure = document.figure_types[0], base = figure.segments[0];
   figure.segments = [
-    {...base, segment_id: 11, parent_id: 0, length: 100, angle_rad: 0, aux_code: 1},
-    {...base, segment_id: 22, parent_id: 11, length: 50, angle_rad: Math.PI / 2, aux_code: 1},
+    {...base, segment_id: 11, parent_id: 0, length: 100, angle_rad: 0, aux_code: 1, bend_rad: curved ? 0.7 : 0},
+    {...base, segment_id: 22, parent_id: 11, length: 50, angle_rad: Math.PI / 2, aux_code: 1, bend_rad: curved ? -0.4 : 0},
     {...base, segment_id: 33, parent_id: 22, length: 30, angle_rad: 0, aux_code: 0},
     {...base, segment_id: 44, parent_id: 0, length: 70, angle_rad: Math.PI, aux_code: 0},
   ];
   figure.segment_count = 4;
   document.keyframes = [createFrame([createObject(figure, 1, 100, 100)], 2), createFrame([createObject(figure, 1, 200, 200)], 1)];
   document.keyframes[1].objects[0].angles = figure.segments.map(s => s.angle_rad + 0.6);
-  const editor = new Editor({demo: false}).load(document); editor.select(1, 0); return editor;
+  const editor = plain ? new Editor({demo: false}).load(document) : open({demo: false}, document); editor.select(1, 0); return editor;
 }
 
 test('static construction joints reposition while every other visible joint stays fixed', () => {
-  const editor = fixture(), initial = editor.geometry.objects.get(0), target = {x: 225, y: 115};
+  const editor = fixture({plain: true}), // editor internals: the kind of its history command
+    initial = editor.geometry.objects.get(0), target = {x: 225, y: 115};
   assert.equal(editor.poseJoint(target.x, target.y), false, 'Normal posing must reject a static handle');
   editor.beginRigDrag(); editor.editRigJoint(target.x, target.y);
   const preview = editor.geometry.objects.get(0);
@@ -74,8 +78,7 @@ test('cancel and pointer return produce no history or dirty state; gesture optio
 });
 
 test('curved incident segments preserve their bends and fixed endpoints during repositioning', () => {
-  const editor = fixture(); editor.figure.segments[0].bend_rad = 0.7; editor.figure.segments[1].bend_rad = -0.4;
-  editor._invalidate(); const initial = editor.geometry.objects.get(0), target = {x: initial.joints.get(11).x + 20, y: initial.joints.get(11).y - 10};
+  const editor = fixture({curved: true}); const initial = editor.geometry.objects.get(0), target = {x: initial.joints.get(11).x + 20, y: initial.joints.get(11).y - 10};
   editor.editRigJoint(target.x, target.y);
   const geometry = editor.geometry.objects.get(0); pointNear(geometry.joints.get(11), target);
   for (const id of [0, 22, 33, 44]) pointNear(geometry.joints.get(id), initial.joints.get(id));

@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 function fixture(){
   const report=emptyDocument(),figure=report.figure_types[0];
@@ -12,7 +14,7 @@ function fixture(){
     object.angles=object.angles.map((angle,i)=>angle+index*.12*(i%2?1:-1));
     return createFrame([object,createObject(figure,2,430,260)],4);
   });
-  const editor=new Editor({demo:false}).load(report);editor.select(1);editor.setOrigin(4);return editor;
+  const editor=open({demo:false}, report);editor.select(1);editor.setOrigin(4);return editor;
 }
 function points(editor,index,{evaluated=true,projected=false}={}){
   const raw=editor.report.keyframes[index],frame=evaluated?evaluatedFrame(editor.report,index,0,editor.timeline[index].start):raw;

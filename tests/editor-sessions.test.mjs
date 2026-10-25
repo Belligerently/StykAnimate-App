@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {isSharedEditorKey} from '../src/editor-sessions.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
 
-const application = () => new Editor({demo: false, propertyChannels: true, layerTimeline: true}).newDocument();
+const open = ownedScope();
+
+const application = () => open({demo: false, propertyChannels: true, layerTimeline: true}).newDocument();
 function scene(count = 3, objects = 2) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = Array.from({length: count}, (_, i) => createFrame(Array.from({length: objects}, (_, j) => createObject(figure, j + 1, i * 10 + j * 100, 180)), 5));
@@ -20,7 +22,7 @@ const rootX = editor => editor.frame.objects[0].root_x;
 const events = editor => { const seen = []; editor.addEventListener('change', event => seen.push(event.detail)); return seen; };
 
 test('a detached project comes back with its history, selection, playhead and saved state', () => {
-  const editor = new Editor({demo: false}).load(scene(), 'First');
+  const editor = open({demo: false}).load(scene(), 'First');
   const first = editor.report, start = rootX(editor);
   setX(editor, 55); setX(editor, 80); editor.undo();
   editor.selectFrame(2);
@@ -54,7 +56,7 @@ test('a detached project comes back with its history, selection, playhead and sa
 });
 
 test('a session is spent once resumed and an edit in progress keeps the project in front', () => {
-  const editor = new Editor({demo: false}).load(scene(), 'First');
+  const editor = open({demo: false}).load(scene(), 'First');
   const resting = editor.detachDocument();
   editor.load(scene(1), 'Second');
   const second = editor.detachDocument();
@@ -149,7 +151,7 @@ test('clipboards, configuration and installed services belong to the editor, not
 });
 
 test('an asynchronous load hands the open project over only when the new one is published', async () => {
-  const editor = new Editor({demo: false}).load(scene(), 'First');
+  const editor = open({demo: false}).load(scene(), 'First');
   setX(editor, 44);
   const first = editor.report;
   let detached = null;
@@ -167,7 +169,7 @@ test('an asynchronous load hands the open project over only when the new one is 
 });
 
 test('a load whose receiver fails leaves the open project in place', async () => {
-  const editor = new Editor({demo: false}).load(scene(), 'First');
+  const editor = open({demo: false}).load(scene(), 'First');
   setX(editor, 44);
   const first = editor.report, seen = events(editor);
   let received = null;
@@ -181,7 +183,7 @@ test('a load whose receiver fails leaves the open project in place', async () =>
 });
 
 test('the Simple timeline working frame follows the project, and the mode follows the editor', () => {
-  const editor = new Editor({demo: false}).load(scene(), 'First');
+  const editor = open({demo: false}).load(scene(), 'First');
   editor.enableFrameDrafts();
   setX(editor, 91);
   assert.equal(editor.frameDraft.dirty, true);

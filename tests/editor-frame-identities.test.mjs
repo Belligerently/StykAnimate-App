@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {validateFrameIdentities} from '../src/editor-frames.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const clone = value => structuredClone(value);
 const ids = editor => editor.report.keyframes.map((_, index) => editor.getFrameId(index));
@@ -14,7 +17,7 @@ function fixture() {
     frame._styk = {custom: {note: `native-${index}`}};
     return frame;
   });
-  const editor = new Editor({demo: false}).load(document);
+  const editor = open({demo: false}, document);
   return editor.load(editor.serialize());
 }
 

@@ -5,6 +5,8 @@ import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {planInsertInbetweens,planInsertInbetweenSteps} from '../src/editor-inbetween.mjs';
 import {inbetweenPlanWire} from '../src/editor-inbetween-async.mjs';
 
+// session gap: the planner, signal and progress options of insertInbetweenFramesAsync are functions, which cannot reach the session (arguments that are not plain data).
+
 const clone=value=>structuredClone(value);
 function fixture(frames=5,count=8){
   const report=emptyDocument(),figure=report.figure_types[0];

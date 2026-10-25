@@ -5,12 +5,15 @@ import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {validateSimpleFrameDraft} from '../src/editor-frame-draft.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';
 import {documentChunks, applyDocumentChunk} from '../src/document-transport.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const clone = value => structuredClone(value);
 function fixture(count = 4, objects = 3) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = Array.from({length: count}, (_, i) => createFrame(Array.from({length: objects}, (_, j) => createObject(figure, j + 1, i * 10 + j * 100, 180)), 5));
-  const editor = new Editor({demo: false}).load(report); editor.enableFrameDrafts(); return editor;
+  const editor = open({demo: false}, report); editor.enableFrameDrafts(); return editor;
 }
 function value(editor, uid, key, value) {
   editor.select(uid); const token = beginNativePropertyEdit(editor, key); previewNativePropertyEdit(token, value); commitNativePropertyEdit(token);

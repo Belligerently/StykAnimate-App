@@ -4,11 +4,16 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 const clone = value => structuredClone(value), near = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
-function fixture() {
+/** `prepare` changes the document before it opens; `plain`: the editor alone, for what the session cannot be asked. */
+function fixture({prepare = null, plain = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [0, 1, 2].map(index => createFrame([createObject(figure, 1, 100 + index * 20, 180), createObject(figure, 2, 260, 180), createObject(figure, 3, 420, 180)], 5));
-  const editor = new Editor({demo: false}).load(report); editor.select(1); return editor;
+  prepare?.(report);
+  const editor = plain ? new Editor({demo: false}).load(report) : open({demo: false}, report); editor.select(1); return editor;
 }
 
 test('paste in place preserves coordinates and undo without advancing the normal paste offset', () => {
@@ -68,7 +73,8 @@ test('deleting across frames detaches surviving joined children at their visible
   assert.equal(editor.report.keyframes[1].objects.length, 3); editor.undo(); assert.deepEqual(editor.report, before); editor.redo(); assert.doesNotThrow(() => editor.serialize());
 });
 test('order stays inside assigned layers and records only paint-order arrays', () => {
-  const editor = fixture(), layer = editor.createLayer('Top'); editor.assignFiguresToLayer([2], layer.id); editor.select(1);
+  const editor = fixture({plain: true}), // editor internals: the shape of its history command
+    layer = editor.createLayer('Top'); editor.assignFiguresToLayer([2], layer.id); editor.select(1);
   const before = clone(editor.report), result = editor.orderFiguresInFrames('front', [0, 1]); assert.equal(result.changedFrames, 2);
   assert.deepEqual(editor.report.keyframes[0].object_draw_order_unique_ids, [3, 2, 1]);
   assert.ok(editor._undo.at(-1).changes.every(change => !change.patches.length)); editor.undo(); assert.deepEqual(editor.report, before);
@@ -83,7 +89,7 @@ test('later-frame invalid join rejects the complete range before changing identi
   editor.detachFiguresInFrames([2]); assert.equal(editor.report.keyframes[2].objects[0].join, null);
 });
 test('absolute range scale preserves selected proportions and mirror affects joined descendants only once', () => {
-  const editor = fixture(); editor.report.keyframes[0].objects[1].scale = 2; editor.selectMany([2, 1]);
+  const editor = fixture({prepare: report => { report.keyframes[0].objects[1].scale = 2; }}); editor.selectMany([2, 1]);
   editor.scaleFiguresInFrames(3, [0]); near(editor.report.keyframes[0].objects[0].scale, 3); near(editor.report.keyframes[0].objects[1].scale, 6);
   editor.undo(); editor.select(2); editor.joinTo(1, 1); editor.selectMany([1, 2]); const before = clone(editor.report), angle = editor.report.keyframes[0].objects[1].angles[0];
   editor.mirrorFiguresInFrames('vertical', [0, 2]); near(editor.report.keyframes[0].objects[1].angles[0], -angle); editor.undo(); assert.deepEqual(editor.report, before);
@@ -184,7 +190,7 @@ for (const operation of ['rotate', 'align', 'center']) test(`${operation} range 
   }
   editor.load(editor.report); editor.selectMany([2, 3]); const original = clone(editor.report), expected = [];
   for (let index = 0; index < 3; index++) {
-    const single = new Editor({demo: false}).load(clone(original)); single.selectFrame(index); single.selectMany([2, 3]);
+    const single = open({demo: false}, clone(original)); single.selectFrame(index); single.selectMany([2, 3]);
     if (operation === 'rotate') single.rotateSelection(.3);
     else if (operation === 'align') single.alignSelection('x', 'start');
     else single.centerFigure();
@@ -203,7 +209,7 @@ for (const operation of ['rotate', 'align', 'center']) test(`${operation} range 
 });
 
 test('range alignment rejects a later invalid bound atomically and attached selections from one component create no edit', () => {
-  const editor = fixture(); editor.selectMany([1, 2]); const before = clone(editor.report);
+  const editor = fixture({plain: true}); editor.selectMany([1, 2]); const before = clone(editor.report); // session gap: a bounds callback of the test cannot reach the session (only the app's measuring callback does)
   assert.throws(() => editor.alignFiguresInFrames('x', 'start', [0, 2], {boundsOf: g => ({minX: g.obj.root_x === 140 ? NaN : g.root.x, minY: g.root.y, maxX: g.root.x + 10, maxY: g.root.y + 10})}), /bounds/);
   assert.deepEqual(editor.report, before); assert.equal(editor.canUndo, false);
   editor.report.keyframes.forEach(frame => { frame.objects[1].join = {target_object_slot: 0, target_handle_id: 4, target_unique_id: 1}; });

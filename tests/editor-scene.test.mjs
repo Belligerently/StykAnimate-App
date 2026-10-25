@@ -5,6 +5,9 @@ import {sceneValuesAt} from '../src/editor-scene.mjs';
 import {evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const clone = value => structuredClone(value);
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD1kAAAAASUVORK5CYII=';
@@ -14,8 +17,8 @@ function addBackground(editor, source) {
   const asset = {...clone(source), background_id: Math.max(0, ...(editor.report.backgrounds ?? []).map(background => background.background_id)) + 1};
   (editor.report.backgrounds ??= []).push(asset); return asset;
 }
-function fixture({pose = false, historyLimit = 80} = {}) {
-  const editor = new Editor({demo: false, historyLimit}); editor.addFigure();
+function fixture({pose = false, historyLimit = 80, plain = false} = {}) {
+  const editor = plain ? new Editor({demo: false, historyLimit}) : open({demo: false, historyLimit}); editor.addFigure();
   editor.setFramesDuration([editor.frameIndex], 10); editor.duplicateFrame(); editor.moveSelection(30, 5); editor.duplicateFrame(); editor.moveSelection(45, -10);
   const asset = addBackground(editor, gradient), second = addBackground(editor, {kind: 2, color: 0xff112233, name: 'Night'});
   editor.setSceneBackground(asset.background_id, {indices: [0, 1]}); editor.selectFrame(0);
@@ -120,7 +123,7 @@ test('sparse Scene sampler agrees with the full evaluator over native blends, Sc
 });
 
 test('Scene source history survives pruning earlier commands and undo to the previous pose', () => {
-  const {editor} = fixture({pose: true, historyLimit: 1}); editor.seek(5);
+  const {editor} = fixture({pose: true, historyLimit: 1, plain: true}); editor.seek(5); // session gap: scene edits with property channels run in the editor, and the session's history limit drops the pose source the undo needs
   editor.setSceneColor(0xff113355); const first = editor.animationChannel({kind: 'scene'}, 'pose').keys.find(key => key.tick === 5).value.frameId;
   editor.setSceneColor(0xff7799bb); assert.ok(editor.getFrameById(first));
   editor.undo(); assert.equal(colorOf(editor, at(editor, 5)), 0xff113355);

@@ -793,7 +793,8 @@ impl Editor {
                 // `setFigureColor(color, {opacity, ...range})`.
                 let mut operation = Obj::new();
                 operation.set("mode", Value::str("all"));
-                if let Some(color) = args.first() {
+                // A color the caller left out (`undefined`) reaches the session as null.
+                if let Some(color) = args.first().filter(|color| !color.is_null()) {
                     operation.set("color", color.clone());
                 }
                 let mut range = arg(1).as_obj().cloned().unwrap_or_default();

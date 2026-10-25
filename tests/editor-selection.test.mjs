@@ -6,10 +6,14 @@ import {createObject, createFrame, defaultFigure, emptyDocument} from '../src/de
 import {frameOrder, setOrder} from '../src/pivot/structure.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {objectBounds} from '../src/renderer-geometry.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 Object.assign(Editor.prototype, editorSelectionMethods);
 
-function fixture() {
+/** `plain`: the editor alone, for what the session cannot be asked. */
+function fixture({plain = false} = {}) {
   const report = emptyDocument(), [a, b, c] = [17, 300, 900].map(defaultFigure);
   a.segments.forEach(segment => { segment.segment_id *= 11; segment.parent_id *= 11; });
   report.figure_types = [a, b, c];
@@ -18,7 +22,7 @@ function fixture() {
   objects[2].join = {target_object_slot: 0, target_unique_id: 1011, target_handle_id: 33};
   report.keyframes = [createFrame(objects)];
   setOrder(report.keyframes[0], [9, 707, 1011, 500003, 40]);
-  const editor = new Editor({demo: false}); editor.load(report); return editor;
+  const editor = plain ? new Editor({demo: false}) : open({demo: false}); editor.load(report); return editor;
 }
 const ids = editor => [...editor.selectedUids];
 
@@ -38,7 +42,7 @@ test('connected selection traverses both directions by slots, preserving clipboa
 });
 
 test('branch selection includes descendants and attachments, copies only the posed branch and enclosed polygons', () => {
-  const editor = fixture(), figure = editor.report.figure_types[0];
+  const editor = fixture({plain: true}), figure = editor.report.figure_types[0]; // session gap: copying a selected branch and pasting on a native timeline run in the editor, and the session's geometry then lacks the pasted figure
   figure.polyfills = [{polyfill_id:1,segment_ids:[11,33,44],segment_ids_raw:[11,33,44],color_rgb:[12,34,56],alpha_raw:17,z_order:3.5},
     {polyfill_id:2,segment_ids:[11,33,55],color_rgb:[30,40,50],alpha_raw:0,z_order:4}];
   editor._invalidate();
@@ -161,7 +165,7 @@ test('empty, whole-frame and already terminal layer selections do not create his
   editor.selectMany([9, 707]); assert.equal(editor.sendToBack(), false);
   assert.equal(editor.canUndo, false); assert.equal(editor.dirty, false);
 });
-
+// session gap: the alignment tests measure with bounds callbacks of their own, and only the app's reaches the session (the engine measures for itself), so they run on the editor alone.
 function joinedFixture() {
   const report = emptyDocument(), figure = report.figure_types[0];
   for (const segment of figure.segments) { segment.segment_id *= 11; segment.parent_id *= 11; }

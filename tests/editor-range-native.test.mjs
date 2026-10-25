@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {frameOrder} from '../src/pivot/structure.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 test('range join, mirror, scale, appearance and order preserve native PIV geometry over three frames', async () => {
-  const editor = new Editor({demo: false}); editor.addFigure(); const parent = editor.selectedUid;
+  const editor = open({demo: false}); editor.addFigure(); const parent = editor.selectedUid;
   const child = editor.duplicateFigure().unique_id; editor.joinTo(parent, 4);
   const leaf = editor.duplicateFigure().unique_id; editor.joinTo(child, 2);
   editor.duplicateFrame(); editor.duplicateFrame();

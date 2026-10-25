@@ -5,18 +5,22 @@ import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
 import {vfxProperty, vfxStack} from '../src/vfx.mjs';
 import {clipboardSnapshot, restoreClipboard} from '../src/shared-clipboard.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
 
-function fixture(sheet = true) {
+const open = ownedScope();
+
+/** `plain`: the editor alone, for the test that reads the effect stacks of the editor's own evaluated objects. */
+function fixture(sheet = true, {plain = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [0, 1, 2].map(() => createFrame([createObject(figure, 1, 120, 180), createObject(figure, 2, 280, 180)], 10));
-  const editor = new Editor({demo: false}).load(report);
-  if (sheet) { initializeLayerSheet(editor.report); editor._invalidate({timing: true}); }
-  return editor;
+  const staged = new Editor({demo: false}).load(report);
+  if (sheet) { initializeLayerSheet(staged.report); staged._invalidate({timing: true}); }
+  return plain ? staged : open({demo: false}, staged.serialize());
 }
 const clipsFor = (editor, uid) => editor.getVfxClips().filter(clip => clip.target.uid === uid);
 
 for (const sheet of [true, false]) test(`pasting a figure keeps its timeline effects (${sheet ? 'layers' : 'legacy'})`, () => {
-  const editor = fixture(sheet);
+  const editor = fixture(sheet, {plain: true}); // session gap: the engine's evaluated objects carry no effect stacks (vfxStack), its effects are in the draw list
   const always = editor.addVfxClip({kind: 'figure', uid: 1}, 'glow');
   const timed = editor.addVfxClip({kind: 'segment', uid: 1, handleId: 2}, 'tint', {start: 4, duration: 12});
   const effect = editor.getVfxClips().find(clip => clip.id === timed).effects[0];

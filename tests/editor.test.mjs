@@ -4,12 +4,16 @@ import {Editor, emptyDocument} from '../src/editor.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {frameOrder} from '../src/pivot/structure.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const near = (a, b, tolerance = 1e-5) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
-const blank = () => { const editor = new Editor({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
+/** `plain`: the editor alone, for the tests of its own history commands, gestures made in place and caches, which the session has no counterpart for. */
+const blank = ({plain = false} = {}) => { const editor = plain ? new Editor({demo: false}) : open({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
 
 test('native starter project evaluates and serializes every keyframe', () => {
-  const editor = new Editor();
+  const editor = open();
   assert.equal(editor.name, 'First steps'); assert.equal(editor.report.keyframes.length, 24);
   assert.equal(editor.totalTicks, 47); assert.equal(editor.dirty, false);
   for (let tick = 0; tick < editor.totalTicks; tick++) {
@@ -20,7 +24,7 @@ test('native starter project evaluates and serializes every keyframe', () => {
 });
 
 test('a drag records only touched figures, is one undo step, and preserves other frames', () => {
-  const editor = new Editor(), frameBefore = structuredClone(editor.frame);
+  const editor = new Editor(), frameBefore = structuredClone(editor.frame); // session gap: the gesture is made in place (object edits and touch) and the test reads the editor's history command kind
   const otherFrame = editor.report.keyframes[12], otherFigure = editor.frame.objects[1];
   editor.beginDrag('Move figure');
   for (let i = 0; i < 100; i++) { editor.object.root_x += 1; editor.touch(); }
@@ -33,14 +37,14 @@ test('a drag records only touched figures, is one undo step, and preserves other
 });
 
 test('cancelled and motionless drags preserve saved state and history', () => {
-  const editor = new Editor(), initial = editor.object.root_x;
+  const editor = new Editor(), initial = editor.object.root_x; // session gap: the gesture is made in place (object edits and touch), which the session never sees
   editor.beginDrag(); editor.object.root_x = 800; editor.touch(); editor.cancelDrag();
   assert.equal(editor.object.root_x, initial); assert.equal(editor.canUndo, false); assert.equal(editor.dirty, false);
   editor.beginDrag(); editor.commitDrag(); assert.equal(editor.canUndo, false);
 });
 
 test('geometry updates retain untouched object references and refresh only changed figures', () => {
-  const editor = new Editor(); editor.beginDrag();
+  const editor = new Editor(); editor.beginDrag(); // editor internals: the geometry objects the editor retains
   const baseline = editor.geometry, ground = baseline.objects.get(1), walker = baseline.objects.get(0);
   editor.object.root_x += 20; editor.touch();
   const changed = editor.geometry;
@@ -50,7 +54,7 @@ test('geometry updates retain untouched object references and refresh only chang
 });
 
 test('object UID allocation, draw order, duplicate offset and frame undo stay coherent', () => {
-  const editor = new Editor(), before = editor.serialize();
+  const editor = open(), before = editor.serialize();
   editor.select(1); const copy = editor.duplicateFigure();
   assert.equal(copy.unique_id, 4); assert.equal(copy.join, null); near(copy.root_x, before.keyframes[0].objects[0].root_x + 24);
   assert.deepEqual(frameOrder(editor.frame), [1, 2, 3, 4]);
@@ -135,7 +139,7 @@ test('figure import remaps IDs, copies binary asset references and poses, and is
 });
 
 test('history is bounded and failed edits restore the current frame', () => {
-  const editor = new Editor({historyLimit: 3});
+  const editor = open({historyLimit: 3});
   for (let i = 0; i < 10; i++) editor.updateObject({root_x: 600 + i});
   assert.equal(editor._undo.length, 3);
   const before = structuredClone(editor.frame);
@@ -147,7 +151,7 @@ test('history is bounded and failed edits restore the current frame', () => {
 });
 
 test('load validates before replacing the active document; serialization cannot mutate live poses', () => {
-  const editor = new Editor(), original = editor.report, revision = editor.revision, undo = editor._undo;
+  const editor = open(), original = editor.report, revision = editor.revision, undo = editor._undo;
   assert.throws(() => editor.load({...emptyDocument(), keyframes: [{duration_raw: 1, objects: null}]}));
   assert.equal(editor.report, original); assert.equal(editor.revision, revision); assert.equal(editor._undo, undo);
   const output = editor.serialize(); output.keyframes[0].objects[0].angles[0] = 42;
@@ -155,7 +159,7 @@ test('load validates before replacing the active document; serialization cannot 
 });
 
 test('project aliases, background swatches and dirty assignments integrate with the application', () => {
-  const editor = new Editor(), before = editor.serialize();
+  const editor = new Editor(), before = editor.serialize(); // session gap: the test assigns the editor's dirty flag directly
   editor.updateProject({canvas_width: 1280}); assert.equal(editor.report.canvas_width, 1280);
   editor.undo(); assert.equal(editor.report.canvas_width, 960);
   assert.equal(editor.setAutoEasing, undefined);
@@ -174,7 +178,7 @@ test('project aliases, background swatches and dirty assignments integrate with 
 });
 
 test('drawing on an empty selection creates a native figure at the pointer in one undo step', () => {
-  const editor = new Editor({demo: false}); editor.select(null);
+  const editor = open({demo: false}); editor.select(null);
   editor.addSegment({type: 'circle', length: 80, angle: 0, thickness: 6, start: {x: 120, y: 230}});
   assert.equal(editor.frame.objects.length, 1); assert.equal(editor.figure.segments.length, 1);
   assert.equal(editor.figure.segments[0].primitive_code, 1); near(editor.object.root_x, 120); near(editor.object.root_y, 230);
@@ -191,7 +195,7 @@ test('bend edits turn descendants without changing the bent segment baseline', (
 });
 
 test('non-contiguous frame reversal is atomic and undoable', () => {
-  const editor = new Editor(), initial = editor.serialize();
+  const editor = open(), initial = editor.serialize();
   editor.reverseFrames([0, 2, 4]); assert.deepEqual(editor.serialize().keyframes[0], initial.keyframes[4]);
   assert.deepEqual(editor.serialize().keyframes[2], initial.keyframes[2]); editor.undo(); assert.deepEqual(editor.serialize(), initial);
 });
@@ -217,7 +221,7 @@ test('clipboard pose remaps native handles when a shared definition topology cha
 });
 
 test('multi-selection toggle/add and command undo keep the primary UID and selected set synchronized', () => {
-  const editor = new Editor(); editor.select(1); editor.select(3, -1, {add: true});
+  const editor = open(); editor.select(1); editor.select(3, -1, {add: true});
   assert.deepEqual([...editor.selectedUids], [1, 3]); assert.equal(editor.selectedUid, 3); assert.equal(editor.selectedJoint, -1);
   editor.select(3, {toggle: true}); assert.deepEqual([...editor.selectedUids], [1]); assert.equal(editor.selectedUid, 1);
   editor.selectMany([1, 3, 999]); assert.deepEqual([...editor.selectedUids], [1, 3]);
@@ -227,7 +231,7 @@ test('multi-selection toggle/add and command undo keep the primary UID and selec
 });
 
 test('group drag unions joined descendants once and baseline translation never accumulates pointer deltas', () => {
-  const editor = blank(), parent = editor.selectedUid, child = editor.duplicateFigure().unique_id;
+  const editor = blank({plain: true}), parent = editor.selectedUid, child = editor.duplicateFigure().unique_id; // editor internals: the gesture it collects (_drag.before) and its history command
   editor.joinTo(parent, 2); editor.selectMany([parent, child]); const before = editor.serialize();
   const originalRoot = {...editor.geometry.objects.get(1).root};
   editor.beginDrag('Move selected'); assert.equal(editor._drag.before.length, 2);
@@ -278,7 +282,7 @@ test('group clipboard preserves internal joins, detaches external anchors, remap
 });
 
 test('multi-delete detaches surviving children and layer moves preserve selected relative order', () => {
-  const editor = new Editor(); editor.selectMany([1, 3]); editor.moveSelectionLayer(1);
+  const editor = open(); editor.selectMany([1, 3]); editor.moveSelectionLayer(1);
   assert.deepEqual(frameOrder(editor.frame), [2, 1, 3]); editor.undo();
   editor.select(3); editor.joinTo(1, 2); const world = {...editor.geometry.objects.get(2).root};
   editor.selectMany([1, 2]); editor.deleteSelection(); assert.equal(editor.frame.objects.length, 1);
@@ -287,7 +291,7 @@ test('multi-delete detaches surviving children and layer moves preserve selected
 });
 
 test('invalid frame mutations and drag commits restore the document and selected set atomically', () => {
-  const editor = new Editor(); editor.selectMany([1, 3]); const before = editor.serialize();
+  const editor = new Editor(); editor.selectMany([1, 3]); const before = editor.serialize(); // session gap: the test sets a negative scale in place during a gesture, which the session never sees
   assert.throws(() => editor.transaction('Invalid join', frame => { frame.objects[0].join = {target_object_slot: 999, target_handle_id: 0}; editor.select(null); }), /Join/);
   assert.deepEqual(editor.serialize(), before); assert.deepEqual([...editor.selectedUids], [1, 3]);
   editor.beginDrag(); editor.object.scale = -1; editor.touch(); assert.throws(() => editor.commitDrag(), /negative/);
@@ -305,7 +309,7 @@ test('replacement definitions preserve animated instance transforms and can be u
 });
 
 test('playback seek may update timeline state without evaluating the sampled frame', () => {
-  const editor = new Editor(), revision = editor.revision;
+  const editor = open(), revision = editor.revision;
   const frame = editor.seek(3, {evaluate: false}); assert.equal(frame, editor.frame); assert.equal(editor.tick, 3);
   assert.equal(editor._evaluated, null); assert.equal(editor.revision, revision);
 });
@@ -322,7 +326,7 @@ test('splitting a curved limb preserves original endpoint handles, poses and des
 });
 
 test('setting the origin preserves rendered geometry and retargets attached children', () => {
-  const editor = new Editor(); editor.select(3); editor.joinTo(1, 2); editor.select(1, 1);
+  const editor = open(); editor.select(3); editor.joinTo(1, 2); editor.select(1, 1);
   const before = editor.serialize(), baseline = editor.geometry, oldWalker = baseline.objects.get(0), oldChildRoot = {...baseline.objects.get(2).root};
   const oldOrigin = {...oldWalker.root}, newOrigin = {...oldWalker.joints.get(2)};
   editor.setOrigin(); const geometry = editor.geometry, walker = geometry.objects.get(0);
@@ -353,8 +357,8 @@ test('relative movement across keyframes matches identities, retains selection, 
   editor.undo(); assert.deepEqual(editor.serialize(), before);
 });
 
-function nestedJoinedScene() {
-  const editor = blank(), root = editor.selectedUid, child = editor.duplicateFigure().unique_id;
+function nestedJoinedScene({plain = false} = {}) {
+  const editor = blank({plain}), root = editor.selectedUid, child = editor.duplicateFigure().unique_id;
   editor.joinTo(root, 4); const grandchild = editor.duplicateFigure().unique_id; editor.joinTo(child, 2);
   const sibling = editor.duplicateFigure().unique_id; editor.joinTo(root, 0);
   const separate = editor.duplicateFigure().unique_id, report = editor.serialize(), frame = report.keyframes[0];
@@ -369,11 +373,12 @@ function nestedJoinedScene() {
     object.join.target_object_slot = slots.get(object.join.target_unique_id);
     object.join.target_handle_id = remapHandle(object.join.target_handle_id);
   } });
+  if (plain) { const reloaded = new Editor({demo: false}).load(report); reloaded.select(grandchild); return {editor: reloaded, root, child, grandchild, sibling, separate}; }
   editor.load(report); editor.select(grandchild); return {editor, root, child, grandchild, sibling, separate};
 }
 
 test('translation resolves a nested child to the full connected component with arbitrary slots and sparse handles', () => {
-  const {editor, root, child, grandchild, sibling, separate} = nestedJoinedScene();
+  const {editor, root, child, grandchild, sibling, separate} = nestedJoinedScene({plain: true}); // editor internals: its history command (_undo.before)
   const resolved = editor.resolveTranslationSelection();
   assert.deepEqual(resolved.rootUids, [root]); assert.deepEqual(resolved.rootSlots, [3]);
   assert.deepEqual(resolved.affectedUids, [grandchild, sibling, root, child]);
@@ -396,7 +401,7 @@ test('translation resolves a nested child to the full connected component with a
 });
 
 test('overlapping nested selection translates each component once and legacy beginDrag expands safely', () => {
-  const {editor, root, child, grandchild, separate} = nestedJoinedScene();
+  const {editor, root, child, grandchild, separate} = nestedJoinedScene({plain: true}); // session gap: the test sets a negative scale in place during a gesture, which the session never sees
   editor.selectMany([grandchild, root, child, separate]);
   assert.deepEqual(editor.resolveTranslationSelection().rootUids, [separate, root]);
   const before = editor.serialize(), baseline = editor.geometry;
@@ -420,7 +425,7 @@ test('posing a nested joined child still rotates its descendants without rotatin
 });
 
 test('connected selection resolution handles a deep reverse chain with linear join reads', () => {
-  const editor = new Editor({demo: false}), count = 12000; let reads = 0;
+  const editor = open({demo: false}), count = 12000; let reads = 0;
   const objects = Array.from({length: count}, (_, slot) => ({unique_id: slot + 1,
     get join() { reads++; return slot + 1 < count ? {target_object_slot: slot + 1, target_handle_id: 0} : null; }}));
   const result = editor.resolveTranslationSelection(objects.map(o => o.unique_id), {frame: {objects}});
@@ -443,7 +448,7 @@ test('numeric scale changes explicitly selected figures while attached artwork r
 });
 
 test('repeated pointer posing reuses branch targets while each angular delta applies once', () => {
-  const editor = blank(), parent = editor.selectedUid, child = editor.duplicateFigure().unique_id;
+  const editor = blank({plain: true}), parent = editor.selectedUid, child = editor.duplicateFigure().unique_id; // editor internals: the rotation targets of its gesture (_drag.rotationTargets)
   editor.joinTo(parent, 4); editor.select(parent, 2); const before = editor.frame.objects[1].angles.slice();
   editor.beginDrag(); editor.rotateJoint(0.01); const targets = editor._drag.rotationTargets.get('0:2');
   for (let i = 0; i < 29; i++) editor.rotateJoint(0.01);

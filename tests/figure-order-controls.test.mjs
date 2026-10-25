@@ -1,15 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {planFigureFrameOperation as plan} from '../src/range-figure-operations.mjs';
 import {applyLayerOrder} from '../src/layers.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 function fixture(propertyChannels = true) {
   const report = emptyDocument();
   report.keyframes = [0, 1, 2].map(() => createFrame([1, 2, 3, 4].map(uid => createObject(report.figure_types[0], uid, 200, 200)), 10));
-  const e = new Editor({demo: false, propertyChannels}).load(report);
+  const e = open({demo: false, propertyChannels}, report);
   for (const uid of [1, 2, 3, 4]) e.adoptNativePoseTrack({kind: 'figure', uid});
   e.seek(5); return e;
 }
