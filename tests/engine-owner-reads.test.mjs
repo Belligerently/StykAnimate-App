@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject, createFrame, emptyDocument} from '../src/demo.mjs';
 import {Editor} from '../src/editor.mjs';
@@ -68,4 +69,11 @@ test('a read the session refuses reaches the interface as the localized error a 
   assert.throws(() => editor._shown.figureDocument({figureUid: 999, tick: 0}),
     error => error.messageKey === 'errors.nativeFigure.selectAFigureOrMovieclipToExport' && error.message === 'Select a figure or movieclip to export.');
   assert.equal(editor._shown.figureDocument({figureUid: 1, tick: 0}).figure_types.length > 0, true, 'a figure that is there is answered');
+});
+
+test('a document with a property channel the engine cannot read is refused at open, so no read of the frame meets one', () => {
+  // The records of the frame on show read the document's channels strictly; opening is where an unreadable one is told.
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/origin-gestures-layout-sheet.document.json', import.meta.url), 'utf8'));
+  document._styk.layerSheet.legacyAnimation = {channels: [null]};
+  assert.throws(() => engineEditor({demo: false, layerTimeline: true, propertyChannels: true}, document), /animation channel table/);
 });

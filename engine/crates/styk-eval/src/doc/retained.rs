@@ -70,7 +70,6 @@ pub(crate) fn figure(visitor: &mut Visitor<'_>, value: &Arc<Figure>) -> Result<(
     visitor.allocations.buffer(&value.polyfills)?;
     visitor.allocations.buffer(&value.images)?;
     visitor.allocations.buffer(&value.texts)?;
-    visitor.allocations.buffer(&value.unsupported)?;
     visitor.allocations.slice(&value.mesh_colors)?;
     for segment in &value.segments {
         visitor.check()?;

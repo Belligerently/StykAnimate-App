@@ -34,7 +34,7 @@ the recorded fixtures were made from the JavaScript editor and are frozen
   Drawables gain `ItemKind::Mesh` (a painter-order bucket of a mesh's faces:
   `Item::mesh`, `Item::faces`), and a polygon that is a depth-tested surface carries
   one depth per point (`Item::depth`). `Item::depth_surface` is `depthSurface`.
-- `Document::unsupported` names no 3D feature, and the interface refuses no 3D document: drawings a spatial bone
+- The interface refuses no 3D document: drawings a spatial bone
   turns (`drawingRotation`) are evaluated too (step 6 below). `Movieclip::drawing_sets`
   and `Movieclip::drawing_rotation` hold a clip's forms and their rotation;
   `ObjectSpatial` keeps each joint's authored angle and a bone's start before perspective

@@ -23,11 +23,6 @@ fn extended_sheet_views_match_editor() {
             )
             .unwrap();
             let prepared = styk_eval::prepare(styk_eval::from_value(&tree, "").unwrap());
-            assert!(
-                prepared.doc.unsupported.is_empty(),
-                "{name}: {:?}",
-                prepared.doc.unsupported
-            );
             let report = styk_eval::parity::compare(&prepared, &reference);
             assert!(report.matches(), "{name}: {:?}", report.bad_frames);
         }

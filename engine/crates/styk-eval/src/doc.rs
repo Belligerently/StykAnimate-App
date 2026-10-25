@@ -282,8 +282,6 @@ pub struct Figure {
     /// The mesh palette as this figure draws it (an instance's `meshColors` replace entries).
     pub mesh_colors: Arc<[[u8; 3]]>,
     pub plan: FigurePlan,
-    /// Features the engine does not evaluate yet (reported, never silently lost).
-    pub unsupported: Vec<&'static str>,
     /// For a figure resolved from an instance's style overlay: the definition it was resolved from.
     pub base: Option<Arc<Figure>>,
 }
@@ -640,8 +638,6 @@ pub struct Document {
     /// `_styk.animation`, or a layer sheet's `legacyAnimation`, which its imported keys
     /// sample. `None` when there is no channel.
     pub animation: Option<Arc<crate::channels::Animation>>,
-    /// Features present in the file that this engine does not evaluate yet.
-    pub unsupported: Vec<String>,
     /// Non-fatal notes from loading.
     pub notes: Vec<String>,
     /// A figure has an animation origin ([`crate::origin`]): native intervals correct roots.

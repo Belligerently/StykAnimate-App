@@ -8,7 +8,6 @@ fn timed_native_movieclip_views_match_editor() {
             let tree = styk_doc::json::parse(&std::fs::read(folder.join(format!("{name}.json"))).unwrap()).unwrap();
             let reference = styk_doc::json::parse(&std::fs::read(folder.join(format!("{name}.native.reference.json"))).unwrap()).unwrap();
             let prepared = styk_eval::prepare(styk_eval::from_value(&tree, "").unwrap());
-            assert!(prepared.doc.unsupported.is_empty(), "{name}: {:?}", prepared.doc.unsupported);
             let report = styk_eval::parity::compare(&prepared, &reference);
             assert!(report.matches(), "{name}: {:?}", report.bad_frames);
         }

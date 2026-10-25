@@ -258,8 +258,10 @@ byte for byte, so the commit runs in the engine ([editing.md](editing.md)). It f
 the record-level shape the recordings fixed (which record a pose comes from, which
 keys a tween writes and in which order: the layer sheet, the native tween,
 virtual pose tracks, layer order, the stored pose) and takes every interpolated number from the typed evaluator, so the
-arithmetic has one implementation. Frames it does not produce yet answer `Unported` with
-the reason.
+arithmetic has one implementation. A read of the frame on show never refuses for a document that opened: opening validates the
+channels, joins and sources records read (a hand-built document with an unreadable channel answers `Unported`), what the
+typed evaluator does not read of a pose (an effect stack, a 3D pose or an animation origin it ignored) is left as the record
+holds it, as the typed evaluator draws it, and layer poses that join each other in a ring leave one figure loose.
 
 - Covered: imported layers (the native timeline, exact and tweened), layers with authored
   pose keys (virtual pose tracks), the whole-pose shortcut and the per-layer composition,
@@ -269,9 +271,10 @@ the reason.
   movieclip frame replacements (tweened along their own track),
   movieclips leaving the frame outside their span, layer order, 3D poses between keys
   (the record of a spatial pose tween), hidden pose keys, and property channels (below).
-- Not yet (each answers `Unported`): figures joined to a hidden movieclip and a movieclip's
-  own retained-source document. A tweened camera keeps its baked camera-motion
-  offset (`_parallaxMotionOffset`) as the editor writes it.
+- A figure joined to a movieclip instance that is not shown (its placement ended, or a once-clip finished) comes loose
+  where the whole frame had it (its root is the geometry of the frame with the instance in it, its join `null`), in the
+  record and in the typed frame alike (`Prepared::apply_movieclips`). A tweened camera keeps its baked camera-motion offset
+  (`_parallaxMotionOffset`) as the editor writes it.
 - **Property channels as records** (`styk_eval::records` `channels.rs`): where the editor
   composes them, so do records: on the native timeline a layer sheet's imported keys sample
   (`sampleLegacy`, with the sheet's `legacyAnimation`; a native document's own
@@ -398,8 +401,8 @@ playhead's. `src/engine/engine-shown.mjs` asks `EditSession.query` (`Session::qu
   stay visible after its end (`generated::clip_tail`), whether the clip is on at the tick (`Clip::active_at`) and whether the
   inspector lists it there (on, or its generated effects still showing). The effects timeline draws the tail and lists the
   clips from it (`src/vfx-clip-views.mjs`). `vfxGroup` names, for a figure, the figures its connected effects filter together
-  at the playhead (`FrameVfx`'s attached group, owner first), or nothing when it owns no group; the effects gizmo measures them
-  from the geometry it holds.
+  at the playhead (`FrameVfx`'s attached group, owner first, from `Prepared::frame_vfx`: the effects the stage draws, a crop's
+  inherited effect clips included), or nothing when it owns no group; the effects gizmo measures them from the geometry it holds.
 
 The same fixtures judge them: the evaluation fixtures (`tests/fixtures/eval/follow-*`, the camera records) for the
 camera, and `styk-edit/src/views_tests.rs` and `tests/onion-skins.test.mjs`, `tests/motion-trails.test.mjs`,

@@ -911,9 +911,6 @@ impl Editor {
     /// `buildGeometry(report, frame)` for a frame record that need not be the one on show.
     pub(crate) fn record_geometry(&self, record: &Value) -> Result<styk_eval::geometry::Scene, EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         Ok(styk_eval::geometry::build(&prepared.doc, &frame))
     }
@@ -1362,5 +1359,61 @@ impl Editor {
         }
         // Counting never fails here: nothing is recorded, so no figure is new.
         let _ = self.track_frames(&removed, &[], false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(text: &str) -> Value { styk_doc::json::parse(text.as_bytes()).unwrap() }
+
+    fn easing(keys: &[Value], tick: f64) -> Value {
+        let mut out = Obj::new();
+        for (name, value) in inherited_easing(keys, tick) {
+            out.set(name, value);
+        }
+        Value::object(out)
+    }
+
+    #[test]
+    fn a_new_key_inherits_the_nearest_earlier_visible_key() {
+        // The key at 8 is later and the key at 4 is hidden: only the bezier key at 2 counts at tick 5.
+        let keys = [
+            parse(r#"{"tick":8,"interpolation":"linear"}"#),
+            parse(r#"{"tick":2,"interpolation":"bezier","bezier":[0.1,0.2,0.8,0.9]}"#),
+            parse(r#"{"tick":4,"hidden":true,"interpolation":"linear"}"#),
+        ];
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 5.0)), r#"{"interpolation":"bezier","bezier":[0.1,0.2,0.8,0.9]}"#);
+        // A key at the same tick is not before it.
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 2.0)), r#"{"interpolation":"constant"}"#);
+        // Later keys, once a visible key is before.
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 9.0)), r#"{"interpolation":"linear"}"#);
+    }
+
+    #[test]
+    fn a_key_with_nothing_before_it_holds() {
+        let keys = [parse(r#"{"tick":8,"interpolation":"linear"}"#)];
+        for tick in [0.0, 8.0] {
+            assert_eq!(styk_doc::json::to_string(&easing(&keys, tick)), r#"{"interpolation":"constant"}"#, "tick {tick}");
+        }
+        assert_eq!(styk_doc::json::to_string(&easing(&[], 3.0)), r#"{"interpolation":"constant"}"#);
+    }
+
+    #[test]
+    fn a_key_without_an_interpolation_eases_linearly_and_hold_reads_as_constant() {
+        let keys = [parse(r#"{"tick":1}"#), parse(r#"{"tick":3,"interpolation":"hold"}"#)];
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 2.0)), r#"{"interpolation":"linear"}"#);
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 4.0)), r#"{"interpolation":"constant"}"#);
+    }
+
+    #[test]
+    fn a_bezier_curve_is_copied_and_never_shared() {
+        // The inherited curve is a value of its own: changing the new key's controls leaves the key it came from alone.
+        let keys = [parse(r#"{"tick":2,"interpolation":"bezier","bezier":[0.1,0.2,0.8,0.9]}"#)];
+        let mut inherited = easing(&keys, 5.0);
+        inherited.make_obj().unwrap().get_mut("bezier").unwrap().make_arr().unwrap()[0] = Value::Num(0.5);
+        assert_eq!(styk_doc::json::to_string(&inherited), r#"{"interpolation":"bezier","bezier":[0.5,0.2,0.8,0.9]}"#);
+        assert_eq!(styk_doc::json::to_string(keys[0].get("bezier").unwrap()), "[0.1,0.2,0.8,0.9]");
     }
 }

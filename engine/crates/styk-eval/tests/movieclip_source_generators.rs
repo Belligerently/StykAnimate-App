@@ -31,7 +31,6 @@ fn retained_generator_census_and_local_batches_match_editor() {
     for name in ["only-native", "inherited-native", "inherited-app", "local-native", "local-app", "inherited-timed", "inherited-presence", "local-timed", "local-presence"] {
         let tree = json(&folder.join(format!("{name}.json")));
         let prepared = styk_eval::prepare(styk_eval::from_value(&tree, "").unwrap());
-        assert!(prepared.doc.unsupported.is_empty(), "{name}: {:?}", prepared.doc.unsupported);
         let suffix = if name.ends_with("native") { "native.reference" } else { "reference" };
         let reference = json(&folder.join(format!("{name}.{suffix}.json")));
         let report = parity::compare(&prepared, &reference);

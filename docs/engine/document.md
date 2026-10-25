@@ -108,8 +108,7 @@ the ticks it bakes, and a worker that joined gives its thread back before it end
 ## Invariants
 
 - No silent loss: a field the engine does not understand stays in the tree and
-  is written back; a feature it does not evaluate is named in
-  `Document::unsupported`, which the stage reads: the frame goes to the JavaScript renderer.
+  is written back.
 - Never mutate a published node: build a new path (`Arc::make_mut` on a clone).
 - Number identity: a value read and written unchanged is the same bytes.
 
