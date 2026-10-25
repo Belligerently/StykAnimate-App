@@ -1,13 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
 import {timeline} from '../src/pivot/read-view.mjs';
 import {falloffWeight, planFalloff, normalizeFalloff} from '../src/motion-path-falloff.mjs';
 
-const clone = value => structuredClone(value);
 const near = (a, b, tolerance = 1e-3) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 const root = {kind: 'node', uid: 1, handleId: 0, joint: -1};
 const FALLOFF = {radius: 15, shape: 'smooth'};
@@ -19,9 +17,7 @@ function report() {
   return document;
 }
 const modes = {
-  native: () => new Editor({demo: false}).load(report()),
-  channels: () => { const editor = plainEditorFor({demo: false}, report()); editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'}); return editor; },
-  sheet: () => new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(report()),
+  sheet: () => ownedEditorFor({demo: false, propertyChannels: true, layerTimeline: true}, report()),
 };
 function rootAt(source, tick) {
   const rows = timeline(source), index = rows.findLastIndex(row => row.start <= tick), row = rows[index];
@@ -63,14 +59,13 @@ for (const [mode, make] of Object.entries(modes)) {
     const editor = make();
     editor.seek(0); editor.select(1);
     const before = Object.fromEntries([0, 2, 4, 10, 20, 30, 36, 40].map(t => [t, at(editor, t)]));
-    const history = editor._undo.length, stored = clone(editor.report.keyframes);
+    const history = editor._undo.length;
     assert.ok(editor.beginMotionPathEdit(root, 20, {falloff: FALLOFF}));
     assert.equal(editor._drag.falloff.radius, 15);
     for (let i = 1; i <= 5; i++) editor.updateMotionPathEdit({x: before[20].x, y: 200 - i * 20});
     // Live: the virtual report is reshaped while the document is untouched.
     near(rootAt(editor.motionPathReport(), 20).y, 100);
     near(rootAt(editor.motionPathReport(), 10).y, 200 - 100 * falloffWeight(10, 15));
-    if (mode === 'native') assert.deepEqual(editor.report.keyframes, stored);
     const plan = editor.motionPathFalloff();
     assert.deepEqual(plan.writes.map(w => w.tick), [4, 10, 20, 30, 36]);
     assert.deepEqual([...plan.changed].sort((a, b) => a - b), [4, 10, 20, 30, 36]);
@@ -85,7 +80,6 @@ for (const [mode, make] of Object.entries(modes)) {
     assert.doesNotThrow(() => editor.serialize());
     editor.undo();
     for (const tick of [4, 10, 20, 30, 36]) { near(at(editor, tick).y, before[tick].y); near(at(editor, tick).x, before[tick].x); }
-    if (mode === 'native') assert.deepEqual(editor.report.keyframes, stored);
     editor.redo();
     near(at(editor, 20).y, 100);
   });
@@ -118,7 +112,7 @@ for (const [mode, make] of Object.entries(modes)) {
 }
 
 test('holding and releasing falloff mid-drag switches the same gesture', () => {
-  const editor = modes.native();
+  const editor = modes.sheet();
   editor.select(1);
   const history = editor._undo.length;
   assert.ok(editor.beginMotionPathEdit(root, 20));
@@ -140,7 +134,7 @@ test('holding and releasing falloff mid-drag switches the same gesture', () => {
 });
 
 test('a camera trail reshapes with falloff too', () => {
-  const editor = modes.native();
+  const editor = modes.sheet();
   const camera = {kind: 'camera'}, centre = {x: editor.report.canvas_width / 2, y: editor.report.canvas_height / 2};
   assert.ok(editor.beginMotionPathEdit(camera, 20, {falloff: FALLOFF}));
   editor.updateMotionPathEdit({x: centre.x + 60, y: centre.y});
@@ -154,13 +148,15 @@ test('a camera trail reshapes with falloff too', () => {
 });
 
 test('joint trails rotate neighbouring keys partially toward the moved arc', () => {
-  const editor = modes.native(), figure = editor.report.figure_types[0];
+  const editor = modes.sheet(), figure = editor.report.figure_types[0];
   const joint = figure.segments.findIndex(s => !s.is_static && s.parent_id !== 0 && !figure.segments.some(c => c.parent_id === s.segment_id));
   const target = {kind: 'node', uid: 1, handleId: Number(figure.segments[joint].segment_id), joint};
   const angle = tick => { const rows = editor.timeline, i = rows.findLastIndex(r => r.start <= tick); return evaluatedFrame(editor.report, i, 0, tick).objects[0].angles[joint]; };
   const before = [10, 20, 30].map(angle);
   assert.ok(editor.beginMotionPathEdit(target, 20, {falloff: FALLOFF}));
-  const origin = editor._drag.grab.origin;
+  // The grabbed joint is where the pose of tick 20 puts its limb tip.
+  const rows = editor.timeline, row = rows.findLastIndex(r => r.start <= 20), pose = evaluatedFrame(editor.report, row, 0, 20);
+  const origin = [...buildGeometry(editor.report, pose).objects.values()][0].segments[joint].end;
   editor.updateMotionPathEdit({x: origin.x + 25, y: origin.y - 25});
   assert.equal(editor.commitMotionPathEdit(), true);
   const after = [10, 20, 30].map(angle), turn = i => Math.abs(Math.atan2(Math.sin(after[i] - before[i]), Math.cos(after[i] - before[i])));
@@ -172,8 +168,7 @@ test('joint trails rotate neighbouring keys partially toward the moved arc', () 
 test('sheet holds: writes resolve onto held keys without duplicates or edge keys', () => {
   const editor = modes.sheet();
   const track = () => editor.report._styk.layerSheet.tracks['layer-1'];
-  for (const key of track().keys) key.interpolation = 'constant';
-  editor._invalidate({timing: true});
+  editor.sheetSetEasing(['layer-1'], 0, 40, {interpolation: 'constant'});
   editor.seek(0); editor.select(1);
   const keyTicks = track().keys.map(k => k.tick), before = at(editor, 20);
   assert.ok(editor.beginMotionPathEdit(root, 15, {falloff: FALLOFF}));
@@ -187,19 +182,3 @@ test('sheet holds: writes resolve onto held keys without duplicates or edge keys
   near(at(editor, 0).y, 200 - 80 * falloffWeight(15, 15));
 });
 
-test('incremental pose captures equal fresh snapshots after the component moves', async () => {
-  const {incrementalPoseSnapshot} = await import('../src/editor-motion-path.mjs');
-  const {snapshotPoseFrame} = await import('../src/pose-snapshot.mjs');
-  const document = emptyDocument(), figure = document.figure_types[0];
-  const child = createObject(figure, 3, 0, 0);
-  child.join = {target_object_slot: 1, target_handle_id: figure.segments[0].segment_id, target_unique_id: 2};
-  const frame = createFrame([createObject(figure, 1, 10, 10), createObject(figure, 2, 50, 50), child, createObject(figure, 4, 90, 90)], 5);
-  const capture = incrementalPoseSnapshot(new Set([2, 3]));
-  assert.deepEqual(capture(frame, [2, 3, 4]), snapshotPoseFrame(frame, [2, 3, 4]));
-  frame.objects[1].root_x = 70; frame.objects[1].angles[0] += 0.5; frame.objects[2].angles[1] -= 0.25;
-  const next = capture(frame, [2, 3, 4]);
-  assert.deepEqual(next, snapshotPoseFrame(frame, [2, 3, 4]));
-  frame.objects[1].angles[0] += 0.5;
-  assert.notEqual(capture(frame, [2, 3, 4]).objects[0], next.objects[0], 'changed records are fresh');
-  assert.equal(capture(frame, [2, 3, 4]).objects[2], next.objects[2], 'unchanged records are reused');
-});

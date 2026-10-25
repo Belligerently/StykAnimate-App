@@ -1,6 +1,6 @@
 # Figure edits across keys
 
-`src/editor-range-commands.mjs` provides atomic range commands. Operations identify figures by native `unique_id`, so a missing figure in an individual frame is skipped. All targets are planned and validated before the first mutation. One Undo restores the complete operation.
+The range commands are commands of the engine session (`engine/crates/styk-edit/src/range.rs`, `range_plan.rs`) that `Editor` forwards to (`src/engine/engine-owner.mjs`); they are atomic. Operations identify figures by native `unique_id`, so a missing figure in an individual frame is skipped. All targets are planned and validated before the first mutation. One Undo restores the complete operation.
 
 This follows Pivot's eligible multi-frame figure controls and proportional group scaling. Numeric positions are handled separately by `native-property-edit.mjs`, which applies a pose value to one frame; at one value across several frames it is refused (the relative range commands above exist). Per-segment values are not range controls. References: [Figure controls](https://pivotanimator.net/help5-2/figure_controls.htm), [Value input](https://pivotanimator.net/help5-2/value_input.htm).
 

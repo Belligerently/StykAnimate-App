@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cameraValues} from '../src/editor-camera.mjs';
+import {cameraValues} from '../src/pivot/model.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 const make=()=>{const e=ownedEditorFor({demo:false,layerTimeline:true,propertyChannels:true});e.addFigure();return e;};
 

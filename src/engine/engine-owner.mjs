@@ -43,7 +43,7 @@ import {createOwnedDrawings, DRAWING_COMMITS} from './engine-owner-drawing.mjs';
 import {appBoundsMarker} from './engine-edit-bounds.mjs';
 import {createShown} from './engine-shown.mjs';
 import {createClipboards} from './engine-clipboards.mjs';
-import {SESSION_COMMANDS, REFUSED_CALLS, VIEW_CALLS} from './engine-commands.mjs';
+import {SESSION_COMMANDS, VIEW_CALLS} from './engine-commands.mjs';
 import {yieldLoadTask} from '../yield-task.mjs';
 
 /** How many values of each kind a call that draws many identities is handed. */
@@ -714,7 +714,6 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   }
   layer.movieclipBatch = function owned(...args) { return batchCall(args); };
   layer.bakeMovieclip = function owned() { return bakeCall(); };
-  for (const name of REFUSED_CALLS) layer[name] = function refused() { throw refuse(name, 'a native timeline has no engine command'); };
   // The reads the session answers.
   for (const name of SESSION_READS) {
     const original = editor[name];
