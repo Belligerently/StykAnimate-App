@@ -6,10 +6,11 @@
 //   node engine/tools/container-fixtures.mjs [--out <folder>] [--list]
 //
 // Without --out it regenerates engine/tests/containers/. Every file is written from a document that is
-// already in the repository (an editor-built fixture, opened the way the app opens a project) by the app's
+// already in the repository (a recorded fixture, opened the way the app opens a project) by the app's
 // own save path: the document export worker (src/document-export-worker.mjs, run in a Node worker as the
-// integration tests run it) for the projects, the figure and the movieclip, and the lift and the Rust
-// writer (src/document-lift.mjs, src/native-file-codec.mjs) for the file with shared arrays, which the
+// integration tests run it) for the projects, and for the figure and the movieclips the same worker saving
+// from the engine's session of the document (as the app saves a figure or a clip); the lift and the Rust
+// writer (src/document-lift.mjs, src/native-file-codec.mjs) write the file with shared arrays, which the
 // worker's transport does not carry. The output is byte-stable: the container writer is deterministic and
 // the only generated input, a noise picture, comes from a fixed sequence. `scripts/engine-parity.mjs`
 // (the "containers" stage) opens and saves every one of them again against the Rust store, and
@@ -40,7 +41,10 @@ class WorkerFacade extends EventTarget {
   terminate() { void this.worker.terminate(); }
 }
 globalThis.Worker = WorkerFacade;
+await import(url('tests/support/register-engine.mjs'));
 const {DocumentExporter} = await import(url('src/document-export.mjs'));
+const {Editor} = await import(url('src/editor.mjs'));
+const {installEngineOwner} = await import(url('src/engine/engine-owner.mjs'));
 const {FakeCodecHost} = await import(url('tests/support/codec-host.mjs'));
 const {openDocument, buildContainerV2} = await import(url('tests/support/native-files.mjs'));
 const {buildContainerV1} = await import(url('tests/support/container-v1.mjs'));
@@ -136,7 +140,21 @@ const files = [
 if (args.includes('--list')) { for (const file of files) console.log(file.name); process.exit(0); }
 
 const codecHost = new FakeCodecHost(), exporter = new DocumentExporter({codecHost, idleMs: 0});
-const save = async (document, {format = 'styk', ...options}) => new Uint8Array(await (await exporter.export(document, {format, ...options})).arrayBuffer());
+const owners = [];
+/** The editor the engine holds `document` in, as the app opens it: a figure or movieclip file is saved from the engine's session. */
+function held(document) {
+  const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: Boolean(document._styk?.layerSheet)});
+  editor.load(structuredClone(document));
+  const owner = installEngineOwner(editor, {verify: false});
+  owners.push(owner);
+  if (!owner.ready()) throw new Error('The document has no session.');
+  return editor;
+}
+const save = async (document, {format = 'styk', ...options}) => {
+  const engineFormat = format === 'stkz' || format === 'stykmov', editor = engineFormat ? held(document) : null;
+  const blob = await exporter.export(editor ? editor.report : document, {format, ...options, ...(editor ? {revision: editor.revision} : {})});
+  return new Uint8Array(await blob.arrayBuffer());
+};
 mkdirSync(out, {recursive: true});
 try {
   for (const file of files) {
@@ -144,5 +162,5 @@ try {
     writeFileSync(path.join(out, file.name), bytes);
     console.log(`${file.name}: ${bytes.length} bytes`);
   }
-} finally { exporter.dispose(); codecHost.close(); }
+} finally { for (const owner of owners) owner.release(); exporter.dispose(); codecHost.close(); }
 process.exit(0);
