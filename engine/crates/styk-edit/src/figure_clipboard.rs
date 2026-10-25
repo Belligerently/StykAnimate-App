@@ -4,8 +4,9 @@
 //!
 //! The clipboard belongs to the editor that copied: a session pastes only what it copied
 //! itself (the facade checks that the editor's clipboard is that object). Figures with effect
-//! clips paste them too, with new random identities, in one history entry. Drawings and
-//! clipboards from another document or an older format answer `Unported` when pasted.
+//! clips paste them too, with new random identities, in one history entry. A drawing pastes as a cel
+//! of its own (a new cel identity, the pixels of the copied cel forked for the interface to copy).
+//! Clipboards from another document or an older format answer `Unported` when pasted.
 
 use std::collections::HashMap;
 
@@ -25,7 +26,6 @@ pub(crate) struct FigureClipboard {
     source_version: Value,
     pub(crate) offset: f64,
     pastes: f64,
-    unported: Option<&'static str>,
     /// The effect clips of the copied figures (`vfxClips`), pasted on the copies.
     vfx_clips: Vec<Value>,
     /// The frame the figures were copied at (`copyTick`), which timed effect clips keep their distance from.
@@ -72,6 +72,11 @@ pub(crate) fn snapshot_figure_definition(figure: &Value) -> Value {
 
 fn is_movieclip(figure: &Value) -> bool {
     figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy)
+}
+
+/// `drawingMetadata(figure)`: a drawing cel.
+fn is_drawing(figure: &Value) -> bool {
+    figure.path(&["_styk", "drawing"]).is_some_and(Value::truthy)
 }
 
 fn invalid(key: &str) -> EditError {
@@ -186,16 +191,12 @@ impl Editor {
             }
         }
         let figures: Vec<Value> = types.iter().map(|t| definitions.iter().find(|f| f.get("figure_type_id") == Some(t)).cloned().unwrap_or(Value::Null)).collect();
-        let mut unported = None;
         // A movieclip instance pasted again carries on from where it was when copied.
         let movieclip_samples: Vec<(u32, f64)> = selected
             .iter()
             .filter(|o| figures.iter().any(|f| f.get("figure_type_id") == o.get("figure_type_id") && is_movieclip(f)))
             .filter_map(|o| Some((uid(o)?, o.get("_movieclipSample").and_then(Value::as_f64).filter(|t| t.is_finite())?)))
             .collect();
-        if figures.iter().any(|f| f.path(&["_styk", "drawing"]).is_some_and(Value::truthy)) {
-            unported = Some("pasting drawings");
-        }
         let vfx_clips: Vec<Value> = self.report.path(&["_styk", "vfxClips", "clips"]).and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default().into_iter()
             .filter(|c| c.path(&["target", "kind"]).and_then(Value::as_str) != Some("scene") && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| ids.contains(&(u as u32)))).collect();
         let objects: Vec<Value> = selected
@@ -225,7 +226,7 @@ impl Editor {
         let order: Vec<u32> = crate::figures::frame_order(frame.as_obj().unwrap_or(&Obj::new())).into_iter().map(|u| u as u32).filter(|u| ids.contains(u)).collect();
         let layers = ids.iter().map(|&u| (u, self.layer_of(u))).collect();
         let count = objects.len();
-        self.figure_clipboard = Some(FigureClipboard { objects, figures, layers, order, source_version: self.report.get("version").cloned().unwrap_or(Value::Null), offset: 24.0, pastes: 0.0, unported, vfx_clips, copy_tick: Some((self.tick + 0.5).floor()), foreign: false, movieclip_samples });
+        self.figure_clipboard = Some(FigureClipboard { objects, figures, layers, order, source_version: self.report.get("version").cloned().unwrap_or(Value::Null), offset: 24.0, pastes: 0.0, vfx_clips, copy_tick: Some((self.tick + 0.5).floor()), foreign: false, movieclip_samples });
         Ok(Value::Num(count as f64))
     }
 
@@ -313,20 +314,22 @@ impl Editor {
             }
             None => None,
         };
-        let source = document.get("document").filter(|d| !d.is_null()).or_else(|| document.get("report").filter(|d| !d.is_null())).unwrap_or(document);
-        let figures: Vec<Value> = match source.get("figure_types").filter(|f| !f.is_null()) {
-            Some(list) => list.elements().map(|e| e.iter().collect()).unwrap_or_default(),
-            None if source.get("segments").is_some_and(Value::truthy) => vec![source.clone()],
-            None => Vec::new(),
+        let mut source = document.get("document").filter(|d| !d.is_null()).or_else(|| document.get("report").filter(|d| !d.is_null())).unwrap_or(document).clone();
+        let definitions = |source: &Value| -> Vec<Value> {
+            match source.get("figure_types").filter(|f| !f.is_null()) {
+                Some(list) => list.elements().map(|e| e.iter().collect()).unwrap_or_default(),
+                None if source.get("segments").is_some_and(Value::truthy) => vec![source.clone()],
+                None => Vec::new(),
+            }
         };
-        if figures.iter().any(|f| f.path(&["_styk", "movieclip"]).is_some_and(Value::truthy)) {
-            return Err(EditError::Unported("importing a movieclip".into()));
-        }
+        let mut figures = definitions(&source);
         if figures.is_empty() {
             return Err(invalid("errors.editor.theImportedFileContainsNoFigureDefinitions"));
         }
-        if figures.iter().any(|f| f.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy) || f.path(&["_styk", "drawing"]).is_some_and(Value::truthy)) {
-            return Err(EditError::Unported("importing figures with animation origins or drawings".into()));
+        // A movieclip's own documents are validated and normalized as the editor does a file it opens (`prepareEditorLoad`).
+        if figures.iter().any(is_movieclip) {
+            source = crate::load::prepare_editor_load(source)?.report;
+            figures = definitions(&source);
         }
         let frame = source.get("keyframes").and_then(|k| k.item(0));
         let mut sources: Vec<Value> = frame.as_ref().map(objects_of).unwrap_or_default();
@@ -375,7 +378,7 @@ impl Editor {
         } else {
             objects.iter().filter_map(uid).collect()
         };
-        let clipboard = FigureClipboard { objects, figures, layers: Vec::new(), order, source_version: Value::Null, offset: 0.0, pastes: 0.0, unported: None, vfx_clips: Vec::new(), copy_tick: None, foreign: true, movieclip_samples: Vec::new() };
+        let clipboard = FigureClipboard { objects, figures, layers: Vec::new(), order, source_version: Value::Null, offset: 0.0, pastes: 0.0, vfx_clips: Vec::new(), copy_tick: None, foreign: true, movieclip_samples: Vec::new() };
         let canvas = [num(&self.report, "canvas_width").unwrap_or(f64::NAN) / 2.0, num(&self.report, "canvas_height").unwrap_or(f64::NAN) / 2.0];
         let mut operation = Obj::new();
         operation.set("newIdentities", Value::Bool(true));
@@ -405,9 +408,6 @@ impl Editor {
         if !self.sheet() {
             return Err(EditError::Unported("pasting figures on a native timeline".into()));
         }
-        if let Some(reason) = clipboard.unported {
-            return Err(EditError::Unported(reason.into()));
-        }
         let paste_mode = match options.get("pasteMode").filter(|m| !m.is_null()) {
             None if clipboard.foreign => "instance".to_string(),
             None => "default".to_string(),
@@ -434,7 +434,7 @@ impl Editor {
         let mut next_uid = self.next_uid;
         // Definitions: the copied ones themselves (instances, and movieclips unless unique),
         // else new copies.
-        let independent = |figure: &Value| clipboard.foreign || paste_mode == "unique" || (paste_mode == "default" && !is_movieclip(figure));
+        let independent = |figure: &Value| clipboard.foreign || paste_mode == "unique" || is_drawing(figure) || (paste_mode == "default" && !is_movieclip(figure));
         let copied_type = |object: &Value| clipboard.figures.iter().find(|f| f.get("figure_type_id") == object.get("figure_type_id"));
         // A movieclip instance pasted where it is not on show keeps its identity (`linked`,
         // `retained`): once and hide clips still own theirs after their artwork is gone.
@@ -477,6 +477,7 @@ impl Editor {
         }
         let renamed = |old: u32| uid_map.iter().find(|(from, _)| *from == old).map(|(_, to)| *to);
         let mut added: Vec<Value> = Vec::new();
+        let mut forks: Vec<(String, String)> = Vec::new();
         let mut types: Vec<(f64, Value, HashMap<i64, usize>)> = Vec::new();
         for original in &clipboard.figures {
             let type_id = num(original, "figure_type_id").unwrap_or(f64::NAN);
@@ -487,7 +488,18 @@ impl Editor {
                     let mut copy = snapshot_figure_definition(original).as_obj().cloned().unwrap_or_default();
                     copy.set("figure_type_id", Value::Num(next_type));
                     next_type += 1.0;
-                    let copy = Value::object(copy);
+                    let mut copy = Value::object(copy);
+                    // A drawing is a cel of its own, with the pixels of the one it copies.
+                    if is_drawing(&copy) {
+                        let cel = format!("cel-{}", self.draw_uuid()?);
+                        let from = copy.path(&["_styk", "drawing", "celId"]).and_then(Value::as_str).map(str::to_string);
+                        if let Some(drawing) = copy.make_obj().and_then(|f| f.get_mut("_styk")).and_then(Value::make_obj).and_then(|styk| styk.get_mut("drawing")).and_then(Value::make_obj) {
+                            drawing.set("celId", Value::str(&cel));
+                        }
+                        if let Some(from) = from.filter(|_| !clipboard.foreign) {
+                            forks.push((from, cel));
+                        }
+                    }
                     added.push(copy.clone());
                     copy
                 }
@@ -623,6 +635,9 @@ impl Editor {
             self.synchronize_origin_frame_with(&mut frame, &objects_of(target), true, &added)?;
             entries.push((*tick, frame, inserted.clone()));
         }
+        if !added.is_empty() {
+            crate::load::validate_definitions(&self.report, &added)?;
+        }
         // Published, the pasted figures are selected and the identities taken; refused, neither.
         let (selection, previous, previous_next, branch) = (self.selection_state(), self.selection.clone(), self.next_uid, self.selection_metadata.branch.take());
         self.selection = crate::Selection { uid: order.last().copied(), uids: order.clone(), joint: -1 };
@@ -633,6 +648,7 @@ impl Editor {
             self.next_uid = previous_next;
             return Err(error);
         }
+        self.drawing_forks.extend(forks);
         if !clipboard.vfx_clips.is_empty() {
             let type_map: Vec<(f64, f64)> = types.iter().map(|(from, figure, _)| (*from, num(figure, "figure_type_id").unwrap_or(f64::NAN))).collect();
             let shift = clipboard.copy_tick.map_or(0.0, |copied| (self.tick + 0.5).floor() - copied);

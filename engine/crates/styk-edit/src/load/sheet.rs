@@ -26,7 +26,7 @@ fn native_rows(report: &Value) -> Vec<styk_eval::eval::Row> {
 
 /// Gives a document without a layer sheet one, and takes its authored animation and saved frame draft into
 /// it (the animation as the sheet's `legacyAnimation`).
-pub(super) fn initialize(report: &mut Value) -> Result<(), EditError> {
+pub(crate) fn initialize(report: &mut Value) -> Result<(), EditError> {
     if truthy(path(Some(report), &["_styk", "layerSheet"])) {
         // The sheet was validated with the rest of the document.
         return Ok(());

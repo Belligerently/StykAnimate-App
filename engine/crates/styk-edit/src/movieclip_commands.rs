@@ -29,6 +29,13 @@ fn presence(playback: &Value) -> Value {
     }
     Value::object(out)
 }
+/// `presencePlayback({mode, speed})`: the presence clock from the start, in a copied instance's mode (loop by default) and speed.
+pub(crate) fn presence_of(mode: Option<Value>, speed: Option<Value>) -> Value {
+    let mut settings = Obj::new();
+    settings.set("mode", mode.unwrap_or_else(|| Value::str("loop")));
+    settings.set("speed", speed.unwrap_or(Value::Num(1.0)));
+    presence(&Value::object(settings))
+}
 fn uses_presence(o: &Value) -> bool {
     o.path(&["_stykMovieclip", "clock"]).and_then(Value::as_str) == Some("presence")
 }
@@ -40,6 +47,81 @@ fn set_continuations(frame: &mut Obj, values: Vec<Value>) {
         styk.set("movieclipContinuations", Value::array(values));
     }
     frame.set("_styk", Value::object(styk));
+}
+/// `clipDrawingKeys(document, localFrames)`: a captured clip's layer sheet with ordinary drawing keys. Without one, loading
+/// derives imported-timing keys, which draw the cels but cannot be painted, copied or re-timed like drawing keys. Each
+/// exposure gets its own pose frame; consecutive keys showing the same cel become one hold.
+fn clip_drawing_keys(document: &mut Value, local: &[Value]) -> Result<(), EditError> {
+    crate::load::initialize_layer_sheet(document)?;
+    let mut starts = Vec::with_capacity(local.len());
+    let mut elapsed = 0.0;
+    for frame in local {
+        starts.push(elapsed);
+        elapsed += num(frame, "duration_raw").unwrap_or(f64::NAN);
+    }
+    let frame_at = |tick: f64| {
+        let mut i = starts.len().saturating_sub(1);
+        while i > 0 && starts[i] > tick {
+            i -= 1;
+        }
+        local.get(i)
+    };
+    let layers = document.path(&["_styk", "layers"]).cloned().unwrap_or(Value::Null);
+    let order: Vec<String> = items(layers.get("order")).iter().filter_map(|id| id.as_str().map(str::to_string)).collect();
+    let mut sources = document.path(&["_styk", "frameSources"]).and_then(Value::as_obj).cloned().unwrap_or_default();
+    let mut next = 1u64;
+    let mut tracks: Vec<(String, Vec<Value>)> = Vec::new();
+    for id in &order {
+        if layers.path(&["byId", id, "drawing", "version"]).and_then(Value::as_f64) != Some(1.0) {
+            continue;
+        }
+        let mut previous: Option<Option<Value>> = None;
+        let mut keys: Vec<Value> = Vec::new();
+        for key in items(document.path(&["_styk", "layerSheet", "tracks", id, "keys"])) {
+            let tick = num(&key, "sourceTick").or_else(|| num(&key, "tick")).unwrap_or(f64::NAN);
+            let frame = frame_at(tick).ok_or_else(|| EditError::Unported("a movieclip without frames".into()))?;
+            let owned: Vec<Value> = objects_of(frame).into_iter().filter(|o| uid(o).is_some_and(|u| layers.path(&["assignments", &u.to_string()]).and_then(Value::as_str) == Some(id.as_str()))).collect();
+            let cel = owned.first().and_then(|o| o.get("figure_type_id")).cloned();
+            if !keys.is_empty() && previous.as_ref() == Some(&cel) {
+                continue;
+            }
+            previous = Some(cel.clone());
+            let mut kept = Obj::new();
+            kept.set("id", key.get("id").cloned().unwrap_or(Value::Null));
+            kept.set("tick", key.get("tick").cloned().unwrap_or(Value::Null));
+            kept.set("interpolation", Value::str("constant"));
+            if cel.is_none() {
+                kept.set("value", object(&[("frameId", Value::Null)]));
+                kept.set("empty", Value::Bool(true));
+                keys.push(Value::object(kept));
+                continue;
+            }
+            while sources.contains(&format!("frame-{next}")) {
+                next += 1;
+            }
+            let frame_id = format!("frame-{next}");
+            next += 1;
+            let uids: Vec<f64> = owned.iter().filter_map(uid).map(f64::from).collect();
+            let mut pose = styk_eval::records::snapshot_pose_frame_of(frame, Some(&uids)).as_obj().cloned().unwrap_or_default();
+            let mut styk = pose.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+            styk.set("frameId", Value::str(&frame_id));
+            pose.set("_styk", Value::object(styk));
+            sources.set(&frame_id, Value::object(pose));
+            kept.set("value", object(&[("frameId", Value::str(&frame_id))]));
+            keys.push(Value::object(kept));
+        }
+        tracks.push((id.clone(), keys));
+    }
+    let styk = document.make_obj().and_then(|d| d.get_mut("_styk")).and_then(Value::make_obj).ok_or_else(|| EditError::Unported("a movieclip document without metadata".into()))?;
+    styk.set("frameSources", Value::object(sources));
+    if let Some(existing) = styk.get_mut("layerSheet").and_then(Value::make_obj).and_then(|sheet| sheet.get_mut("tracks")).and_then(Value::make_obj) {
+        for (id, keys) in tracks {
+            let mut track = existing.get(&id).and_then(Value::as_obj).cloned().unwrap_or_default();
+            track.set("keys", Value::array(keys));
+            existing.set(&id, Value::object(track));
+        }
+    }
+    Ok(())
 }
 fn movieclip_figure(id: f64, name: Value, document: Value, duration: f64, pivot: Value) -> Value {
     let segment = object(&[
@@ -340,9 +422,16 @@ impl Editor {
             source_table.set(k, filtered_frame(f, &selected));
         }
         let used_types: HashSet<u32> = filtered.iter().chain(source_table.iter().map(|(_, f)| f)).flat_map(objects_of).filter_map(|o| num(&o, "figure_type_id").map(|n| n as u32)).collect();
-        let figures = items(self.report.get("figure_types")).into_iter().filter(|f| num(f, "figure_type_id").is_some_and(|n| used_types.contains(&(n as u32)))).collect::<Vec<_>>();
-        if figures.iter().any(|f| f.path(&["_styk", "drawing"]).is_some()) {
-            return Err(EditError::Unported("capturing drawing layers into a movieclip".into()));
+        let mut figures = items(self.report.get("figure_types")).into_iter().filter(|f| num(f, "figure_type_id").is_some_and(|n| used_types.contains(&(n as u32)))).collect::<Vec<_>>();
+        // Captured drawings become the clip's own cels, as copied keys do: sharing the project's cel identities would show and
+        // edit the project's pixels. They are the published pixels the definitions carry.
+        for figure in figures.iter_mut() {
+            if figure.path(&["_styk", "drawing"]).is_some_and(|d| !d.is_null()) {
+                let cel = format!("cel-{}", self.draw_uuid()?);
+                if let Some(drawing) = figure.make_obj().and_then(|f| f.get_mut("_styk")).and_then(Value::make_obj).and_then(|styk| styk.get_mut("drawing")).and_then(Value::make_obj) {
+                    drawing.set("celId", Value::str(&cel));
+                }
+            }
         }
         let mut metadata = self.report.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
         let mut animation = metadata.get("animation").and_then(Value::as_obj).cloned().unwrap_or_default();
@@ -449,14 +538,20 @@ impl Editor {
         let mut retained = source.clone();
         retained.set("figure_types", Value::array(vec![]));
         let mut doc = source;
-        doc.set("keyframes", Value::array(local));
+        doc.set("keyframes", Value::array(local.clone()));
         let mut styk = object(&[("format", Value::str("StykAnimate")), ("format_version", Value::Num(1.0)), ("name", name.clone())]).as_obj().cloned().unwrap();
         if let Some(layers) = metadata.get("layers") {
             styk.set("layers", layers.clone());
         }
         styk.set("movieclipSource", object(&[("document", Value::object(retained)), ("inheritFigures", Value::Bool(true))]));
         doc.set("_styk", Value::object(styk));
-        let figure = movieclip_figure(allocate_type(&self.report), name, Value::object(doc), end - start, pivot);
+        let mut doc = Value::object(doc);
+        // The clip of a drawing layer gets drawing keys of its own.
+        let drawing_layers = metadata.get("layers").and_then(|layers| layers.get("byId")).and_then(Value::as_obj).is_some_and(|layers| layers.iter().any(|(_, layer)| layer.path(&["drawing", "version"]).and_then(Value::as_f64) == Some(1.0)));
+        if drawing_layers {
+            clip_drawing_keys(&mut doc, &local)?;
+        }
+        let figure = movieclip_figure(allocate_type(&self.report), name, doc, end - start, pivot);
         if options.get("replace").and_then(Value::as_bool) == Some(false) {
             return self.movieclip_batch("Create movieclip", |editor| {
                 editor.publish_definition(items(editor.report.get("figure_types")).len(), figure.clone(), "Create movieclip")?;
@@ -602,8 +697,9 @@ impl Editor {
 
     pub(crate) fn break_apart_movieclip_with(&mut self, worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<Value, EditError> {
         let (_, original, _) = self.selected_movieclip()?;
-        if self.sheet() && !uses_presence(&original) && worker.is_none() {
-            return Err(EditError::Unported("break apart with legacy sheet timing".into()));
+        // A clip on the document's own clock is first given the presence clock, which samples the layer.
+        if worker.is_none() && self.sheet() && !uses_presence(&original) {
+            return self.inline_timeline(|editor, worker| editor.break_apart_movieclip_with(Some(worker)));
         }
         let tick = (self.tick + 0.5).floor();
         let previous = uid(&original).unwrap();

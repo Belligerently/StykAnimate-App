@@ -182,9 +182,6 @@ impl Editor {
         if !(num(&object, "scale").unwrap_or(f64::NAN).abs() > EPS) {
             return Err(EditError::Invalid("errors.editorHandleEdit.increaseFigureScaleBeforeRepositioningAHandle".into()));
         }
-        if figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy) {
-            return Err(EditError::Unported("handle edit on a movieclip".into()));
-        }
         if !self.begin_drag(&label, false)? {
             return Ok(false);
         }

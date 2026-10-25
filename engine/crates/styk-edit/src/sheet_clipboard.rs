@@ -4,8 +4,9 @@
 //! figures take new identities). The clipboard belongs to the editor that copied: a
 //! session pastes only what it copied itself (the facade checks that the editor's
 //! clipboard is that one). Movieclips on the presence clock carry on from where they were
-//! copied. Drawing layers and movieclip parts answer `Unported` when pasted, as does a
-//! clipboard from another document, which the engine never holds.
+//! copied. Drawing keys paste as cels of their own (new cel identities, the pixels of the copied cels forked for
+//! the interface to copy) and the parts of a broken-apart movieclip follow the instance they belong to. A
+//! clipboard from another document is never the engine's.
 
 use styk_doc::{Obj, Value};
 
@@ -27,8 +28,8 @@ pub(crate) struct Clipboard {
     rows: Vec<Row>,
     /// Where each movieclip on the presence clock was in its clip when copied (`phases`).
     phases: Vec<(u32, f64)>,
-    /// Why pasting it stays in JavaScript, if it does.
-    unported: Option<&'static str>,
+    /// The drawing cels the rows show, as they were when copied: each pastes as a cel of its own.
+    drawings: Vec<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -135,7 +136,6 @@ impl Editor {
         let ids = distinct(ids, "selectDistinctSourceLayers")?;
         self.assert_layers(&ids)?;
         let sheet = self.report.path(&["_styk", "layerSheet"]).cloned().ok_or_else(|| EditError::Unported("copying frames without a layer timeline".into()))?;
-        let mut unported = None;
         let mut rows = Vec::with_capacity(ids.len());
         let mut types: Vec<f64> = Vec::new();
         for id in &ids {
@@ -162,9 +162,6 @@ impl Editor {
                 let owned = self.owned_frame(&frame, &uids, &steps)?;
                 let objects = objects_of(&owned);
                 types.extend(objects.iter().filter_map(|o| num(o, "figure_type_id")));
-                if objects.iter().any(|o| o.get("_stykMovieclipPart").is_some_and(Value::truthy)) {
-                    unported.get_or_insert("pasting movieclip parts");
-                }
                 let at = key_at(&keys, tick).map(|i| keys[i].clone()).unwrap_or_else(constant);
                 let mut easing = Obj::new();
                 for (name, value) in key_easing(&at) {
@@ -173,17 +170,11 @@ impl Editor {
                 entries.push(Entry { offset: tick - start, frame: owned, easing: Value::object(easing) });
             }
             let drawing = self.drawing_layer_id(id);
-            if drawing {
-                unported.get_or_insert("pasting drawing keys");
-            }
             rows.push(Row { id: id.clone(), drawing, keys: entries });
         }
-        let figures = items(self.report.get("figure_types"));
-        if figures.iter().any(|f| num(f, "figure_type_id").is_some_and(|t| types.contains(&t)) && f.path(&["_styk", "drawing"]).is_some_and(Value::truthy)) {
-            unported.get_or_insert("pasting drawings");
-        }
+        let drawings = items(self.report.get("figure_types")).into_iter().filter(|f| num(f, "figure_type_id").is_some_and(|t| types.contains(&t)) && f.path(&["_styk", "drawing"]).is_some_and(Value::truthy)).collect();
         let phases = self.clip_phases(&rows, start)?;
-        self.sheet_clipboard = Some(Clipboard { start, duration: end - start + 1.0, rows, phases, unported });
+        self.sheet_clipboard = Some(Clipboard { start, duration: end - start + 1.0, rows, phases, drawings });
         Ok(Value::Null)
     }
 
@@ -236,9 +227,6 @@ impl Editor {
         let kept = self.sheet_clipboard.clone();
         let result = (|| {
             self.sheet_copy_frames(ids, start, &Value::Num(end))?;
-            if let Some(reason) = self.sheet_clipboard.as_ref().and_then(|c| c.unported) {
-                return Err(EditError::Unported(reason.into()));
-            }
             self.begin_batch(if copy { "Copy frames to layer" } else { "Move frames to layer" })?;
             let moved = (|| {
                 if !copy {
@@ -317,9 +305,6 @@ impl Editor {
         let Some(clipboard) = self.sheet_clipboard.clone() else { return Err(invalid("copyTimelineFramesFirst")) };
         let tick = tick.as_f64().filter(|t| t.fract() == 0.0 && (0.0..MAX_SHEET_TICKS).contains(t)).ok_or_else(|| invalid("chooseAValidWholeFrame"))?;
         let ids = distinct(ids, "selectDistinctDestinationLayers")?;
-        if let Some(reason) = clipboard.unported {
-            return Err(EditError::Unported(reason.into()));
-        }
         let insert = options.get("insert").is_some_and(Value::truthy);
         let rows = &clipboard.rows;
         if ids.len() != 1 && ids.len() != rows.len() {
@@ -354,7 +339,8 @@ impl Editor {
         for (row, id) in rows.iter().zip(&destinations) {
             for entry in &row.keys {
                 let steps = continuations(&entry.frame).iter().filter_map(|step| num(step, "uid").map(|u| u as u32)).collect::<Vec<_>>();
-                for old in objects_of(&entry.frame).iter().filter_map(uid).chain(steps) {
+                let parts = objects_of(&entry.frame).iter().filter_map(|o| o.path(&["_stykMovieclipPart", "instance"]).and_then(Value::as_f64).map(|u| u as u32)).collect::<Vec<_>>();
+                for old in objects_of(&entry.frame).iter().filter_map(uid).chain(steps).chain(parts) {
                     if row.id == *id && self.layer_of(old) == *id {
                         continue;
                     }
@@ -367,6 +353,32 @@ impl Editor {
                     }
                 }
             }
+        }
+        // Every drawing cel is a cel of its own, with the pixels of the one it copies.
+        let mut type_map: Vec<(f64, f64)> = Vec::new();
+        let mut forks: Vec<(String, String)> = Vec::new();
+        if !clipboard.drawings.is_empty() {
+            let figures = items(self.report.get("figure_types"));
+            let mut next_type = figures.iter().filter_map(|f| num(f, "figure_type_id")).fold(0.0f64, f64::max) + 1.0;
+            let mut definitions = Vec::with_capacity(clipboard.drawings.len());
+            for figure in &clipboard.drawings {
+                let old = num(figure, "figure_type_id").unwrap_or(f64::NAN);
+                type_map.push((old, next_type));
+                let mut copy = figure.clone();
+                let cel = format!("cel-{}", self.draw_uuid()?);
+                if let Some(record) = copy.make_obj() {
+                    record.set("figure_type_id", Value::Num(next_type));
+                    if let Some(drawing) = record.get_mut("_styk").and_then(Value::make_obj).and_then(|styk| styk.get_mut("drawing")).and_then(Value::make_obj) {
+                        if let Some(from) = drawing.get("celId").and_then(Value::as_str) {
+                            forks.push((from.to_string(), cel.clone()));
+                        }
+                        drawing.set("celId", Value::str(&cel));
+                    }
+                }
+                next_type += 1.0;
+                definitions.push(copy);
+            }
+            plan.definitions = definitions;
         }
         let renamed = |old: u32| map.iter().find(|(from, _)| *from == old).map(|(_, to)| *to);
         let phase_of = |old: u32| clipboard.phases.iter().find(|(u, _)| *u == old).map(|(_, p)| *p);
@@ -398,12 +410,34 @@ impl Editor {
             plan.set_end(id, end);
             for entry in &row.keys {
                 let mut frame = crate::sheet_frames::shift_clip_time(&entry.frame, tick - clipboard.start);
+                if !type_map.is_empty() {
+                    let mut record = frame.as_obj().cloned().unwrap_or_default();
+                    let objects: Vec<Value> = objects_of(&frame)
+                        .into_iter()
+                        .map(|mut object| {
+                            let old = num(&object, "figure_type_id").unwrap_or(f64::NAN);
+                            if let (Some((_, new)), Some(record)) = (type_map.iter().find(|(from, _)| *from == old), object.make_obj()) {
+                                styk_eval::vfx::remap_owner(record, *new, None, old);
+                                record.set("figure_type_id", Value::Num(*new));
+                            }
+                            object
+                        })
+                        .collect();
+                    record.set("objects", Value::array(objects));
+                    frame = Value::object(record);
+                }
                 if !map.is_empty() {
                     let mut record = frame.as_obj().cloned().unwrap_or_default();
                     let mut objects = objects_of(&frame);
                     for object in objects.iter_mut() {
                         let Some(old) = uid(object) else { continue };
                         let Some(record) = object.make_obj() else { continue };
+                        // The part of a broken-apart movieclip follows its instance.
+                        if let Some(instance) = record.get("_stykMovieclipPart").and_then(|part| part.get("instance")).and_then(Value::as_f64).and_then(|instance| renamed(instance as u32)) {
+                            if let Some(part) = record.get_mut("_stykMovieclipPart").and_then(Value::make_obj) {
+                                part.set("instance", Value::Num(instance as f64));
+                            }
+                        }
                         if let Some(new) = renamed(old) {
                             record.set("unique_id", Value::Num(new as f64));
                             plan.assign(new, id);
@@ -469,6 +503,7 @@ impl Editor {
         let selection = self.selection_state();
         let published = self.publish(plan, "Paste frames", selection, None)?;
         self.next_uid = next_uid;
+        self.drawing_forks.extend(forks);
         Ok(published)
     }
 }

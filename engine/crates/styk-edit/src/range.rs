@@ -460,8 +460,10 @@ impl Editor {
                 uids.push(id);
             }
         }
-        if matches!(request, Request::Duplicate { .. }) && self.figure_effect_clips(&uids) {
-            return Err(EditError::Unported("duplicating figures with effect clips".into()));
+        // Duplicated figures keep their timeline effects in the same undo step.
+        let effects = if matches!(request, Request::Duplicate { .. }) { self.figure_effect_clips(&uids) } else { Vec::new() };
+        if !effects.is_empty() && self.batch.is_none() {
+            return self.movieclip_batch(&label, |editor| editor.apply_figure_range_with(request, options, movieclip_insertion, worker));
         }
         let mut part = None;
         if matches!(request, Request::Mirror(_)) && self.selection.joint >= 0 && (self.selected_objects()?.len() == 1 || self.branch_selected()) {
@@ -520,7 +522,7 @@ impl Editor {
         let canvas = [num(&self.report, "canvas_width").unwrap_or(f64::NAN), num(&self.report, "canvas_height").unwrap_or(f64::NAN)];
         let operation = match &request {
             Request::Add { .. } => None,
-            _ => Some(validate(&request, version, canvas, self.selection.uid, part, matches!(request, Request::Order(_)) && authored, map)?),
+            _ => Some(validate(&request, version, canvas, self.selection.uid, part, matches!(request, Request::Order(_)) && authored, map.clone())?),
         };
         let mut plans: Vec<(Target, Planned)> = Vec::new();
         let origins = figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy));
@@ -595,7 +597,8 @@ impl Editor {
                 self.select_ids(payload.order.clone());
                 self.next_uid = payload.next_uid;
             }
-            let insertion = payload.as_ref().filter(|_| movieclip_insertion).map(|payload| (payload.objects.as_slice(), false));
+            // Movieclips alone inserted inside a layer's span are replacements of their own.
+            let insertion = payload.as_ref().filter(|payload| movieclip_insertion || (!payload.objects.is_empty() && payload.objects.iter().all(|o| o.get("_stykMovieclip").is_some_and(Value::truthy)))).map(|payload| (payload.objects.as_slice(), false));
             if let Err(error) = self.commit_sheet_range_worker(&entries, &inserted, &hints, Vec::new(), &label, selection, insertion, deletion, worker) {
                 self.selection = previous_selection;
                 self.next_uid = previous_next;
@@ -637,6 +640,9 @@ impl Editor {
                     ("frameIndices", Value::array(indices.iter().map(|&i| Value::Num(i as f64)).collect())),
                 ],
             );
+        }
+        if !effects.is_empty() {
+            self.paste_figure_vfx_clips(&effects, &map.unwrap_or_default(), &[], 0.0)?;
         }
         Ok(outcome(&ticks, &inserted))
     }
@@ -815,10 +821,10 @@ impl Editor {
         self.report.get("figure_types").and_then(Value::elements).and_then(|e| e.iter().find(|f| num(f, "figure_type_id") == Some(id)))
     }
 
-    /// `figureVfxClips(report, uids)` is not empty: effect clips target one of the figures.
-    fn figure_effect_clips(&self, uids: &[u32]) -> bool {
+    /// `figureVfxClips(report, uids)`: the effect clips that target one of the figures.
+    fn figure_effect_clips(&self, uids: &[u32]) -> Vec<Value> {
         let clips = self.report.path(&["_styk", "vfxClips", "clips"]).and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default();
-        clips.iter().any(|c| c.path(&["target", "kind"]).and_then(Value::as_str) != Some("scene") && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| uids.contains(&(u as u32))))
+        clips.into_iter().filter(|c| c.path(&["target", "kind"]).and_then(Value::as_str) != Some("scene") && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| uids.contains(&(u as u32)))).collect()
     }
 
     /// `insertionPlan(editor, {kind: 'add', typeId, x, y})`: a new figure of a library definition.
@@ -837,8 +843,8 @@ impl Editor {
             return Err(invalid("errors.editorRangeCommands.figurePositionMustBeFinite"));
         }
         let movieclip = figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy);
-        if movieclip && !movieclip_insertion {
-            return Err(EditError::Unported("adding a movieclip".into()));
+        if movieclip && !movieclip_insertion && !self.sheet() {
+            return Err(EditError::Unported("adding a movieclip on a native timeline".into()));
         }
         let mut object = crate::figures::with_origin_pivot(figure, crate::figures::create_object(figure, identity, x, y));
         if movieclip {
