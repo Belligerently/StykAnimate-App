@@ -1,17 +1,19 @@
 // A call the engine session refuses (here: copying a selected branch, which the session has no command for yet) runs in
 // the editor and reaches the session as a history entry: the user's edit works, undoes and redoes exactly as the editor
-// alone does, and the refusal is counted.
+// alone did (the frozen references of tests/support/owner-references.mjs), and the refusal is counted.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
+import {canonical, ownerReferences} from './support/owner-references.mjs';
 
+const refs = ownerReferences(import.meta.url);
 const text = editor => JSON.stringify(editor.report, (key, value) => key.startsWith('_') && key !== '_styk' ? undefined : value);
 const document = () => JSON.parse(readFileSync(new URL('../engine/tests/edit/startup.document.json', import.meta.url), 'utf8'));
 
-test('a command refused for a document runs in the editor and undoes exactly', {skip: !engineBuilt}, async () => {
+refs.test('a command refused for a document runs in the editor and undoes exactly', {skip: !engineBuilt}, async take => {
   const run = async owned => {
     const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(document());
     const owner = owned ? installEngineOwner(editor) : null;
@@ -26,8 +28,8 @@ test('a command refused for a document runs in the editor and undoes exactly', {
       return {steps, refused: owner ? Object.keys(owner.refused) : []};
     } finally { owner?.release(); }
   };
-  const alone = await run(false), owned = await run(true);
-  assert.deepEqual(owned.steps, alone.steps);
+  const alone = await take('alone', async () => (await run(false)).steps), owned = await run(true);
+  assert.deepEqual(canonical(owned.steps), alone);
   assert.ok(owned.refused.some(key => key.startsWith('cutSelection: ') && key.includes('branch')), `the session refused it: ${owned.refused}`);
   assert.equal(owned.refused.length, 1, 'the palette colour is not refused');
 });
