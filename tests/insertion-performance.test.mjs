@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback} from '../src/movieclip-presence.mjs';
 
 for(const layerTimeline of [false,true])test(`imports own only new assets and replay atomically (sheet=${layerTimeline})`,()=>{
-  const e=new Editor({demo:false,layerTimeline}),unrelated=e.report.figure_types[0];
+  // The session's check of the read view would visit the library the test forbids the import to read.
+  const e=engineEditor({demo:false,layerTimeline},undefined,{verify:false}),unrelated=e.report.figure_types[0];
   const frames=e.report.keyframes.slice(),oldClipboard={marker:true};e._selectionClipboard=oldClipboard;
   Object.defineProperty(unrelated,'unrelatedPayload',{enumerable:true,get(){throw new Error('Visited the destination library');}});
   const source=emptyDocument();source.keyframes=[createFrame([createObject(source.figure_types[0],1,50,60)])];
@@ -21,7 +23,7 @@ for(const layerTimeline of [false,true])test(`imports own only new assets and re
 });
 
 test('failed import preserves the document, IDs, clipboard and history',()=>{
-  const e=new Editor({demo:false,layerTimeline:true}),before=e.serialize(),uid=e._nextUid,history=e.historySize;
+  const e=engineEditor({demo:false,layerTimeline:true}),before=e.serialize(),uid=e._nextUid,history=e.historySize;
   const source=emptyDocument();source.keyframes=[createFrame([createObject(source.figure_types[0],1,0,0)])];
   source.keyframes[0].objects[0].scale=-1;
   assert.throws(()=>e.importFigure(source),/Scale/i);
@@ -31,6 +33,7 @@ test('failed import preserves the document, IDs, clipboard and history',()=>{
 test('copy retains immutable movie animation without reading it or building geometry',()=>{
   const source=emptyDocument();source.keyframes=[createFrame([createObject(source.figure_types[0],1,50,60)])];
   const clip=movieclipFigure(2,'Clip',source,{duration:1});
+  // The editor alone: its subject is the clipboard of the JavaScript editor, which holds the movie itself.
   const e=new Editor({demo:false,layerTimeline:true}).load({...emptyDocument(),figure_types:[defaultFigure(),clip],
     keyframes:[createFrame([createObject(clip,7,100,100,{_stykMovieclip:presencePlayback()})])]});
   // The engine opened the document: the movie's document is the one in the editor's report.
@@ -52,6 +55,7 @@ test('copy retains immutable movie animation without reading it or building geom
 });
 
 test('committing a canvas translation retains its exact incremental preview',()=>{
+  // The editor alone: its subject is the identity of the JavaScript editor's geometry across a commit.
   const e=new Editor({layerTimeline:true});e.select(1);e.geometry;e.beginTranslationDrag();
   e.moveSelection(20,30,{fromStart:true});const preview=e.geometry,frame=e.evaluatedFrame;
   e.commitDrag();assert.equal(e.geometry,preview);assert.equal(e.evaluatedFrame,frame);

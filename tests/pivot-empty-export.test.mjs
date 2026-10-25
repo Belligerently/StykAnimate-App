@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {deflateSync} from 'node:zlib';
 import {Worker} from 'node:worker_threads';
 import {once} from 'node:events';
-import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {createObject,emptyDocument} from '../src/demo.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
@@ -11,7 +11,7 @@ import {NATIVE_FRAME_CONTENT_TYPE,unpackNativeFrameResponse,materializeNativeFra
 import {nodeCodec, codecPort} from './support/codec.mjs';
 import {documentChunks} from '../src/document-transport.mjs';
 function working(){
-  const editor=new Editor({demo:false}).load(emptyDocument()),report=editor.report;
+  const editor=engineEditor({demo:false}, emptyDocument()),report=editor.report;
   report.keyframes[0].objects.push(createObject(report.figure_types[0],1,123,234));
   report._styk.simpleFrameDraft={version:1,mode:'add',index:0,frameId:report.keyframes[0]._styk.frameId,empty:true};
   return report;

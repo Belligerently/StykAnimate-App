@@ -3,16 +3,19 @@ import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {spatialPoint,quatRotate,quatMultiply} from '../src/rig-spatial.mjs';
 import {spatialWorldQuaternion,spatialWorldVector,inverseQuaternion} from '../src/ik-spatial.mjs';
 import {validateIK,interpolateIK} from '../src/ik.mjs';
 import {spatialControlsView} from '../src/spatial-controls.mjs';
-function fixture(){
+/** `setup(editor, ids)` edits the document in place on an editor alone: the engine opens the document it leaves. */
+function fixture(setup,{alone=false}={}){
  const q=construction();q.add(0,0,0,'Figure rotation');
  const bone=(parent,origin,tip,name)=>{const turn=q.add(0,0,0,name+' turn'),pitch=q.add(0,0,0,name+' tilt'),v=tip.map((n,i)=>n-origin[i]);return q.add(parent,Math.hypot(...v),Math.atan2(v[1],v[0]),name,{control:true,rig:{spatial:{parent,origin,tip,turn,pitch}}});};
  const body=bone(0,[0,0,0],[0,0,0],'Body'),upper=bone(body,[0,0,0],[0,90,15],'Thigh'),lower=bone(upper,[0,90,15],[0,170,0],'Shin'),foot=bone(lower,[0,170,0],[0,185,35],'Foot'),toe=bone(foot,[0,185,35],[0,185,50],'Toe');
- const f={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},e=new Editor({demo:false});e.load({...emptyDocument(),figure_types:[f],keyframes:[createFrame([createObject(f,1,200,100)])]});
- return{e,body,upper,lower,foot,toe};
+ const f={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},document={...emptyDocument(),figure_types:[f],keyframes:[createFrame([createObject(f,1,200,100)])]},ids={body,upper,lower,foot,toe};
+ if(setup){const plain=new Editor({demo:false}).load(document);setup(plain,ids);return{e:engineEditor({demo:false},plain.serialize()),...ids};}
+ return{e:alone?new Editor({demo:false}).load(document):engineEditor({demo:false},document),...ids};
 }
 const near=(a,b,t=.003)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 function state(e,id){const g=e.geometry.objects.get(0),s=g.segments[id-1];return {q:spatialWorldQuaternion(s.spatialFrame.q,e.figure,e.object),p:spatialPoint(s.spatialFrame,s.seg._stykRig.spatial.tip),end:s.end};}
@@ -59,12 +62,13 @@ test('spatial targets reject invalid orientations and interpolate rotations on t
  c.spatialTarget.depth=Infinity;assert.throws(()=>validateIK(b),/spatial IK/);c.spatialTarget.depth=0;c.spatialFollowers[99]=[0,0,0,2];assert.throws(()=>validateIK(b),/spatial IK/);
 });
 test('planting both feet is one undoable edit and retains selection',()=>{
- const{e,lower,foot}=fixture();e.figure.segments[foot-1].name='Left foot ankle';e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:false,bendDirection:0});e.select(1,-1);
+ const{e,lower,foot}=fixture((plain,{foot})=>{plain.figure.segments[foot-1].name='Left foot ankle';});e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:false,bendDirection:0});e.select(1,-1);
  const count=e._undo.length,old=e.serialize();assert.equal(e.setSpatialFeetPinned(true),true);assert.equal(e.selectedJoint,-1);assert.equal(e._undo.length,count+1);assert.equal(e.object._stykIK[lower].pinned,true);e.undo();assert.deepEqual(e.serialize(),old);
 });
 test('dragging a spatial pole changes the knee, retains the foot, and cancels as one gesture',()=>{
  for(const pinned of [false,true]){
-  const{e,lower,upper,foot}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned,bendDirection:0});e.poseIKTarget(215,245);
+  // session gap: `setSpatialIKPole` has no command in the session, so a drag begun there is committed before the editor moves the pole and cannot be cancelled.
+  const{e,lower,upper,foot}=fixture(null,{alone:true});e.select(1,lower-1);e.setNodeIK({enabled:true,pinned,bendDirection:0});e.poseIKTarget(215,245);
   const before=e.serialize(),pole=e.getSpatialIKPole(),knee=state(e,upper),ankle=state(e,lower),boot=state(e,foot);assert.ok(pole);
   e.beginDrag('Move IK pole');e.setSpatialIKPole(pole.point[0]+80,pole.point[1]-20,pole.point[2]);
   assert.ok(Math.hypot(...state(e,upper).p.map((v,i)=>v-knee.p[i]))>5);near(state(e,lower).end.x,ankle.end.x);near(state(e,lower).end.y,ankle.end.y);sameOrientation(state(e,foot).q,pinned?boot.q:quatMultiply(quatMultiply(state(e,lower).q,inverseQuaternion(ankle.q)),boot.q));assert.equal(e.object._stykIK[lower].pinned,pinned);
@@ -127,7 +131,7 @@ test('target depth and full knee orbits preserve planted orientation or the free
 
 test('direct joint dragging preserves depth and returns without accumulated twist',()=>{
  for(const mirror of [false,true])for(const scale of [.65,1.4]){
-  const{e,body,upper,foot}=fixture();e.select(1,-1);if(mirror)e.mirrorFigure();e.object.scale=scale;e.touch();
+  const{e,body,upper,foot}=fixture(plain=>{plain.select(1,-1);if(mirror)plain.mirrorFigure();plain.object.scale=scale;plain.touch();});e.select(1,-1);
   e.select(1,body-1);e.setSpatialPose({turn:.6,pitch:.3});e.select(1,upper-1);e.setSpatialPose({turn:.4,pitch:.2});
   const g=e.geometry.objects.get(0).segments[upper-1],center={...g.start},point={...g.end},before=state(e,upper),boot=state(e,foot),saved=e.serialize();
   const radius=Math.hypot(point.x-center.x,point.y-center.y),angle=Math.atan2(point.y-center.y,point.x-center.x);
@@ -150,8 +154,8 @@ test('dragging a planted knee steers the existing pole and retains the foot',()=
 
 test('whole-figure orientation rigidly carries planted ankles, poles and boots with undo and cancellation',()=>{
  for(const mirror of [false,true])for(const scale of [1.4,.8]){
-  const{e,body,upper,lower,foot,toe}=fixture();e.object.scale=scale;
-  e.select(1,-1);if(mirror)e.mirrorFigure();
+  const{e,body,upper,lower,foot,toe}=fixture(plain=>{plain.object.scale=scale;plain.select(1,-1);if(mirror)plain.mirrorFigure();});
+  e.select(1,-1);
   e.select(1,foot-1);e.setSpatialPose({turn:.3,pitch:.2});
   e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});
   e.rotateIKTarget(.25);const p=state(e,lower).end;e.poseIKTarget(p.x+12,p.y-15*scale);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
-import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument, needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
@@ -12,14 +12,16 @@ import {missingFixture} from './helpers/local-fixtures.mjs';
 import {exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < .001, `${a} != ${b}`);
-function fixture() {
+/** `edit(report)` changes the document before the engine opens it. */
+function fixture(edit = null) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [40, 250, 80].map((x, index) => {
     const parent = createObject(figure, 1, x, 200), other = createObject(figure, 2, 350 - index * 20, 210);
     const child = createObject(figure, 3, x, 122, {join: {target_object_slot: 0, target_unique_id: 1, target_handle_id: 1}});
     return {...createFrame([parent, other, child], 4), opaque_native: {token: index}};
   });
-  const editor = new Editor({demo: false}).load(report), layer = editor.createLayer('Second');
+  edit?.(report);
+  const editor = engineEditor({demo: false}, report), layer = editor.createLayer('Second');
   editor.assignFiguresToLayer([2], layer.id); editor.moveLayerTo(layer.id, 0);
   return editor;
 }
@@ -53,12 +55,12 @@ test('untouched native documents retain the exact original export path and refer
   const native = emptyDocument();
   // Native exposures have no authored per-frame easing metadata.
   native.keyframes = [createFrame([createObject(native.figure_types[0], 1, 40, 200)], 4)];
-  const report = new Editor({demo: false}).load(native).report;
+  const report = engineEditor({demo: false}, native).report;
   assert.equal(needsPivotMaterialization(report), false); assert.equal(materializePivotDocument(report), report);
 });
 
 test('new documents retain authored Hold easing through native export materialization', () => {
-  const editor = new Editor({demo: false}); editor.addFigure(); const report = editor.report;
+  const editor = engineEditor({demo: false}); editor.addFigure(); const report = editor.report;
   const before = structuredClone(report);
   assert.equal(needsPivotMaterialization(report), true);
   const output = materializePivotDocument(report);
@@ -96,7 +98,7 @@ test('independent layer/scalar/camera/scene channels bake and really roundtrip t
 });
 
 test('native and independently retimed hidden poses remain distinct zero-duration exposures', async () => {
-  const editor = fixture(); editor.report.keyframes[1].duration_raw = 0; editor._invalidate({timing: true});
+  const editor = fixture(report => { report.keyframes[1].duration_raw = 0; });
   const target = {kind: 'layer', id: 'layer-1'}, pose = editor.nativePoseChannel(target);
   editor.moveAnimationKeys([{channelId: pose.id, keyIds: [pose.keys[1].id]}], 2);
   const report = editor.report, output = materializePivotDocument(report), rows = timeline(output);
@@ -128,7 +130,7 @@ test('authored legacy export migrates real held poses and preserves new hidden e
   {skip: missingFixture('../Pivot Animator v5/Animations/Legacy/walking.piv')}, async () => {
   const sourcePath = fileURLToPath(new URL('../../Pivot Animator v5/Animations/Legacy/walking.piv', import.meta.url));
   const decoded = (await importBytes(readFileSync(sourcePath), path.basename(sourcePath))).document;
-  const editor = new Editor({demo: false}).load(decoded); assert.ok(editor.report.version < 5);
+  const editor = engineEditor({demo: false}, decoded); assert.ok(editor.report.version < 5);
   const camera = {kind: 'camera'}, key = editor.addAnimationKey(camera, 'pose', 2, {frameId: editor.getFrameId(0)});
   editor.setAnimationKey(editor.animationChannel(camera, 'pose').id, key.id, {hidden: true});
   editor.addAnimationKeys([{target: camera, property: 'x', tick: 0, value: 0}, {target: camera, property: 'x', tick: 6, value: 30},

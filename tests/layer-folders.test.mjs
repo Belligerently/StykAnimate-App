@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument} from '../src/demo.mjs';
 import {layerFolderRows} from '../src/layer-folders.mjs';
 import {organizeTimelineRows} from '../src/timeline-organization.mjs';
@@ -8,7 +9,7 @@ import {sheetRowLayout} from '../src/timeline-rows.mjs';
 import {runTimelineHotkey} from '../src/timeline-hotkeys.mjs';
 import {roundTrip} from './support/codec.mjs';
 
-function editor() { const e = new Editor({demo:false,layerTimeline:true}).load(emptyDocument()); for(const name of ['Floor','Drawing','Scene 2'])e.createLayer(name); return e; }
+function editor() { const e = engineEditor({demo:false,layerTimeline:true}, emptyDocument()); for(const name of ['Floor','Drawing','Scene 2'])e.createLayer(name); return e; }
 test('keyboard layer navigation skips folder headers and never selects folder cells', () => {
   const selected=[], timeline={tracks:[{id:'scene',kind:'scene'},{id:'layer-1',kind:'layer'},{id:'folder-1',kind:'folder'},{id:'layer-2',kind:'layer'}],selectedTrackId:'layer-2',editor:{tick:5},_run:fn=>fn(),_selectCell:hit=>selected.push(hit),revealPlayhead(){}};
   runTimelineHotkey(timeline,'timeline-layer-up');assert.deepEqual(selected.pop(),{row:1,tick:5});

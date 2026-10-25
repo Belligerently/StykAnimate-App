@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import english from '../src/locales/en.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument,createDemo} from '../src/demo.mjs';
 import {spatialSections} from '../src/spatial-controls.mjs';
@@ -234,7 +235,7 @@ test('canonical skeleton names keep secondary part controls and localized depth 
  const chest=bone(0,[0,0,0],[0,40,0],'Chest');bone(chest,[0,40,0],[10,60,0],'My hair');
  const unnamed=bone(chest,[0,40,0],[-10,60,0],'');
  const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]};
- const editor=new Editor({demo:false}).load({...emptyDocument(),figure_types:[figure],keyframes:[createFrame([createObject(figure,1,200,100)])]});
+ const editor=engineEditor({demo:false}, {...emptyDocument(),figure_types:[figure],keyframes:[createFrame([createObject(figure,1,200,100)])]});
  editor.select(1,-1);const bytes=JSON.stringify(editor.serialize());
  interfaceLocalization.setPseudo('long');
  try{
@@ -270,7 +271,7 @@ test('fill ordering captions and fixed image shapes retain display keys while co
  }
  assert.equal(JSON.stringify(editor.serialize()),bytes);
  const {createImageFigure}=await import('../src/media-authoring.mjs');
- const image=new Editor({demo:false});image.importFigure(createImageFigure({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=',width:1,height:1,name:'Artist image'}));image.select(image.selectedUid,0);
+ const image=engineEditor({demo:false});image.importFigure(createImageFigure({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=',width:1,height:1,name:'Artist image'}));image.select(image.selectedUid,0);
  const fields=walk(inspectorDescriptor({editor:image}).sections.flatMap(section=>section.rows??[]));
  const fixed=fields.flatMap(row=>row.options??[]).find(option=>option.value==='image');
  assert.equal(fixed.labelKey,'builderOutliner.image');assert.equal(image.figure.name,'Artist image');

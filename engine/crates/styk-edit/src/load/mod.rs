@@ -32,7 +32,7 @@ use self::js::*;
 use crate::EditError;
 
 pub use self::js::TYPE_ERROR;
-pub(crate) use self::object::spatial_pose;
+pub(crate) use self::object::{object_pose as validate_object_pose, spatial_pose};
 pub(crate) use self::scene::projected_drawing;
 pub(crate) use self::sheet::initialize as initialize_layer_sheet;
 

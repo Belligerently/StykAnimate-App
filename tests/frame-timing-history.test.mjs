@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {createDemo} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
-const fresh=()=>new Editor({demo:false}).load(createDemo());
+const fresh=()=>engineEditor({demo:false},createDemo());
+// The editor alone: `_setFrameDurations` is a private helper of the JavaScript editor with no command in the session.
+const alone=()=>new Editor({demo:false}).load(createDemo());
 const exact=e=>assert.deepEqual(e.geometry.drawables,buildGeometry(e.report,e.evaluatedFrame).drawables);
 
 test('duration history keeps figure arrays and native-key geometry, including undo/redo',()=>{
@@ -22,7 +25,7 @@ test('timing undo cannot overwrite subsequent figure edits and alternate key sel
 });
 
 test('extend-style timing edits preserve selection and validate the entire change before mutation',()=>{
-  const e=fresh();e.selectFrame(1);e.select(e.frame.objects[0].unique_id);const selection=e._selectionState(),before=structuredClone(e.report);
+  const e=alone();e.selectFrame(1);e.select(e.frame.objects[0].unique_id);const selection=e._selectionState(),before=structuredClone(e.report);
   assert.throws(()=>e._setFrameDurations([{index:0,ticks:3},{index:1,ticks:65536}]),/duration/);assert.deepEqual(e.report,before);assert.equal(e._undo.length,0);
   e._setFrameDurations([{index:0,ticks:3},{index:1,ticks:9}],{retainSelection:true,label:'Extend frames'});
   assert.equal(e.selectedUid,selection.uid);assert.equal(e.frameIndex,selection.frameIndex);assert.equal(e.tick,selection.tick);exact(e);

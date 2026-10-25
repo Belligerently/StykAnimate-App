@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
 import {sheetKeyAt,validateLayerSheet} from '../src/layer-sheet.mjs';
@@ -8,19 +9,19 @@ import {sheetKeyAt,validateLayerSheet} from '../src/layer-sheet.mjs';
 function fixture({legacy=false}={}){
   const report=emptyDocument(),figure=report.figure_types[0];
   report.keyframes=[0,10,20].map(x=>createFrame([createObject(figure,1,x,200),createObject(figure,2,100+x,200)],10));
-  const e=new Editor({demo:false,propertyChannels:true,layerTimeline:!legacy}).load(report);
+  const e=engineEditor({demo:false,propertyChannels:true,layerTimeline:!legacy}, report);
   const layer=e.createLayer('Effects');e.assignFiguresToLayer([2],layer.id);return e;
 }
 function sample(e,tick){e.seek(tick,{allowBeyondEnd:true});return e.evaluatedFrame.objects.map(o=>({uid:o.unique_id,x:o.root_x}));}
 test('native import uses exact original evaluation and holds object identities',()=>{
-  const old=fixture({legacy:true}),e=new Editor({demo:false,layerTimeline:true}).load(old.serialize());
+  const old=fixture({legacy:true}),e=engineEditor({demo:false,layerTimeline:true}, old.serialize());
   for(let i=0;i<=20;i++)assert.deepEqual(sample(e,i),sample(old,i));
   assert.equal(e.report._styk.animation,undefined);assert.equal(e.report._styk.layerSheet.duration,21);
 });
 test('existing independent property animation remains exact on import',()=>{
   const old=fixture({legacy:true});old.addAnimationKey({kind:'figure',uid:1},'x',0,0);old.addAnimationKey({kind:'figure',uid:1},'x',20,200);
   const c=old.animationChannels.find(c=>c.property==='x');old.setAnimationKeysEasing([{channelId:c.id,keyIds:[c.keys[0].id]}],{interpolation:'bezier',bezier:[.2,.1,.8,.9]});
-  const e=new Editor({demo:false,layerTimeline:true}).load(old.serialize());for(let i=0;i<20;i++)assert.deepEqual(sample(e,i),sample(old,i));
+  const e=engineEditor({demo:false,layerTimeline:true}, old.serialize());for(let i=0;i<20;i++)assert.deepEqual(sample(e,i),sample(old,i));
 });
 test('key insertion and retiming affect only the selected layer',()=>{
   const e=fixture(),before=e.serialize();e.sheetInsertKey(['layer-1'],5);e.sheetMoveFrames(['layer-1'],5,5,2);
@@ -140,7 +141,7 @@ test('scene colors use fixed scene poses and undo',()=>{
 });
 
 test('moving and copying clip keys retain their playback clock at the destination',()=>{
-  const e=new Editor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:10});const uid=e.selectedUid;
+  const e=engineEditor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:10});const uid=e.selectedUid;
   e.sheetCopyFrames(['layer-1'],0,9);const destination=e.createLayer('Clip copy');e.sheetPasteFrames([destination.id],15);
   e.seek(15);const copy=e.evaluatedFrame.objects.find(o=>e.layerForUid(o.unique_id)===destination.id&&o._stykMovieclip);assert.ok(copy);assert.equal(copy._movieclipSample,0);
   e.sheetMoveFrames([destination.id],15,24,20);e.seek(35);const moved=e.evaluatedFrame.objects.find(o=>o.unique_id===copy.unique_id);assert.ok(moved);assert.equal(moved._movieclipSample,0);
@@ -175,13 +176,13 @@ test('copying frames between projects imports definitions and remaps identities 
 });
 
 test('extending a movieclip exposure continues its loop through the added cells',()=>{
-  const e=new Editor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:10});const uid=e.selectedUid;e.sheetInsertFrames(['layer-1'],10,10);
+  const e=engineEditor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:10});const uid=e.selectedUid;e.sheetInsertFrames(['layer-1'],10,10);
   e.seek(15);const clip=e.evaluatedFrame.objects.find(o=>o.unique_id===uid);assert.ok(clip);assert.equal(clip._stykMovieclip.clock,'presence');assert.equal(clip._movieclipSample,5);
   e.undo();e.seek(15);assert.ok(!e.evaluatedFrame.objects.some(o=>o.unique_id===uid));
 });
 
 test('legacy Pivot holds remain held on import and can become explicit modern tweens',()=>{
-  const source=fixture({legacy:true}).serialize();source.version=4;const e=new Editor({demo:false,layerTimeline:true}).load(source);
+  const source=fixture({legacy:true}).serialize();source.version=4;const e=engineEditor({demo:false,layerTimeline:true}, source);
   assert.equal(sample(e,5).find(o=>o.uid===1).x,0);e.sheetSetEasing(['layer-1'],0,0,{interpolation:'linear'});
   assert.equal(sample(e,5).find(o=>o.uid===1).x,5);
 });
@@ -199,7 +200,7 @@ for(const operation of ['split','delete','replace'])test(`imported segment anima
   const old=fixture({legacy:true});old.select(1,operation==='split'?0:old.report.figure_types[0].segments.length-1);
   const handle=old.figure.segments[old.selectedJoint].segment_id;
   old.addAnimationKeys([0,20].map(tick=>({target:{kind:'segment',uid:1,handleId:handle},property:'opacity',tick,value:tick?.8:.2})));
-  const e=new Editor({demo:false,propertyChannels:true,layerTimeline:true}).load(old.serialize());e.select(1,old.selectedJoint);const before=e.serialize();
+  const e=engineEditor({demo:false,propertyChannels:true,layerTimeline:true}, old.serialize());e.select(1,old.selectedJoint);const before=e.serialize();
   if(operation==='split')e.splitSegment(.4);
   else if(operation==='delete')e.deleteSegment();
   else{const definition=structuredClone(e.figure);definition.segments=definition.segments.filter(s=>s.segment_id!==handle);e.replaceFigureDefinition(definition.figure_type_id,definition);}
@@ -239,7 +240,7 @@ test('applying the sheet camera preserves visible geometry and is reversible',as
 
 test('blank Camera and Scene cells reset imported values and resume at the next key',()=>{
   const source=fixture({legacy:true}).serialize();for(const frame of source.keyframes){frame.camera={is_default:false,x:25,y:0,scale:1,angle_rad:0};frame._stykBackgroundColor=0xffabcdef;}
-  const e=new Editor({demo:false,layerTimeline:true}).load(source),before=e.serialize();e.sheetInsertKey(['camera','scene'],5,{blank:true});
+  const e=engineEditor({demo:false,layerTimeline:true}, source),before=e.serialize();e.sheetInsertKey(['camera','scene'],5,{blank:true});
   for(const tick of [4,5,9,10]){e.seek(tick);const blank=tick>=5&&tick<10;assert.equal(e.evaluatedFrame.camera.x,blank?0:25);assert.equal(e.evaluatedFrame._stykBackgroundColor,blank?undefined:0xffabcdef);}
   e.undo();assert.deepEqual(e.serialize(),before);
 });
@@ -248,11 +249,11 @@ test('Stick Nodes project layers retain source movieclips, geometry and edits ac
   const {readFile}=await import('node:fs/promises'),{importStickNodes}=await import('../src/sticknodes/adapter.mjs');
   const data=JSON.parse(await readFile(new URL('./sticknodes-synthetic.json',import.meta.url),'utf8'));
   const {document}=await importStickNodes(Buffer.from(data.base64,'base64'),{filename:'synthetic.stknds'});
-  const old=new Editor({demo:false}).load(document),e=new Editor({demo:false,propertyChannels:true,layerTimeline:true}).load(document);
+  const old=engineEditor({demo:false}, document),e=engineEditor({demo:false,propertyChannels:true,layerTimeline:true}, document);
   const geometry=editor=>editor.geometry.drawables.map(d=>[d.type,d.rgb,d.points]);
   for(let tick=0;tick<e.totalTicks;tick++){old.seek(tick);e.seek(tick);assert.deepEqual(geometry(e),geometry(old));}
   e.seek(0);const uid=e.evaluatedFrame.objects[0].unique_id;e.select(uid);const before=e.serialize();e.moveSelection(5,3);
-  const reopened=new Editor({demo:false,layerTimeline:true}).load(e.serialize());assert.deepEqual(geometry(reopened),geometry(e));
+  const reopened=engineEditor({demo:false,layerTimeline:true}, e.serialize());assert.deepEqual(geometry(reopened),geometry(e));
   e.undo();assert.deepEqual(e.serialize(),before);
 });
 
@@ -266,7 +267,7 @@ test('inserting frames at the start retains the opening pose and identities',()=
 test('editing an imported Bezier curve updates its evaluated motion',()=>{
   const r=emptyDocument();r.keyframes=[0,100].map(x=>createFrame([createObject(r.figure_types[0],1,x,200)],10));
   r.keyframes[0]._styk={easing:{interpolation:'bezier',bezier:[.42,0,.58,1]}};
-  const e=new Editor({demo:false,layerTimeline:true}).load(r),before=e.serialize(),x=sample(e,2)[0].x;
+  const e=engineEditor({demo:false,layerTimeline:true}, r),before=e.serialize(),x=sample(e,2)[0].x;
   e.sheetSetEasing(['layer-1'],0,0,{interpolation:'bezier',bezier:[0,0,1,1]});
   assert.ok(Math.abs(sample(e,2)[0].x-20)<1e-6);assert.ok(Math.abs(x-20)>1);
   e.undo();assert.deepEqual(e.serialize(),before);
@@ -309,7 +310,7 @@ test('property channels cannot persist into a layer document',()=>{
 });
 
 test('inserting opening frames keeps movieclips visible through the inserted time',()=>{
-  const e=new Editor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:2});
+  const e=engineEditor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:2});
   const uid=e.selectedUid,before=e.serialize();e.sheetInsertFrames(['scene','camera',...e.report._styk.layers.order],0,3);
   for(let tick=0;tick<=3;tick++){e.seek(tick);assert.ok(e.evaluatedFrame.objects.some(o=>o.unique_id===uid),`Clip missing at ${tick}`);}
   e.undo();assert.deepEqual(e.serialize(),before);

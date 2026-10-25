@@ -46,3 +46,6 @@ export function plainEditorWithDrawings(options, document, names = [undefined]) 
   editor.selectSheetLayer(layers.at(-1).id);
   return {editor, layers};
 }
+
+/** The editor the engine owns, for the tests of what an editor does with its calls: the identities a call draws are the engine's own. */
+export const engineEditor = (options, document, settings) => ownedEditorSync(options, document, {recorded: false, ...settings}).editor;

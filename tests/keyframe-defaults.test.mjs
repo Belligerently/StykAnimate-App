@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {DEFAULT_EDITOR_SETTINGS, normalizeEditorSettings} from '../src/settings.mjs';
 import {inheritedKeyEasing, easingMode} from '../src/keyframe-easing.mjs';
 
@@ -10,7 +10,7 @@ test('advanced timeline is the default', () => {
 });
 
 test('new documents hold; inserted and blank layer keys inherit the previous curve', () => {
-  const e = new Editor({demo: false, layerTimeline: true});
+  const e = engineEditor({demo: false, layerTimeline: true});
   e.newDocument();
   const id = e.activeLayerId;
   assert.equal(easingMode(e.layerFrameKeys(id)[0]), 'constant');
@@ -28,7 +28,7 @@ test('new documents hold; inserted and blank layer keys inherit the previous cur
 });
 
 test('property key insertion inherits the earlier key rather than the later key', () => {
-  const e = new Editor({demo: false});
+  const e = engineEditor({demo: false});
   // Exercise legacy property channels without the new document's layer sheet.
   e.addFigure();
   const target = {kind:'figure', uid:e.selectedUid};

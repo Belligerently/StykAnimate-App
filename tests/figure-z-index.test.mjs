@@ -1,16 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {composeAnimationChannels, validateAnimationDocument} from '../src/animation-channels.mjs';
 import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 
 const target = {kind: 'figure', uid: 1};
-function fixture() {
+/** `edit(report)` changes the document before the engine opens it. */
+function fixture(edit = null) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [0, 100, 0].map(x => createFrame([1, 2, 3].map(uid => createObject(figure, uid, x, 200)), 10));
-  return new Editor({demo: false}).load(report);
+  edit?.(report);
+  return engineEditor({demo: false}, report);
 }
 function sample(report, tick) {
   const row = timeline(report).findLast(row => row.start <= tick);
@@ -36,9 +39,8 @@ test('Z-index is a sparse held channel; ties retain pose order and source object
 });
 
 test('Z-index respects layer boundaries and never renumbers attachment slots', () => {
-  const e = fixture(), layer = e.createLayer('Front');
-  for (const frame of e.report.keyframes) frame.objects[1].join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 1};
-  e._invalidate(); const root = {...e.geometry.objects.get(1).root};
+  const e = fixture(report => { for (const frame of report.keyframes) frame.objects[1].join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 1}; }), layer = e.createLayer('Front');
+  const root = {...e.geometry.objects.get(1).root};
   e.assignFiguresToLayer([3], layer.id);
   e.addAnimationKey(target, 'zIndex', 0, 1000000);
   assert.deepEqual(order(e.evaluatedFrame), [2, 1, 3]);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback,continuations,usesPresence} from '../src/movieclip-presence.mjs';
@@ -12,7 +12,7 @@ function fixture() {
   document.keyframes=Array.from({length:8},(_,i)=>createFrame([createObject(child,1,200+i*9,250)]));
   const clip=movieclipFigure(2,'Clip',document,{duration:8,pivot:{x:200,y:250}});
   const object=()=>createObject(clip,7,300,300,{_stykMovieclip:presencePlayback()});
-  return new Editor({demo:false,layerTimeline:true}).load({...emptyDocument(),figure_types:[child,clip],keyframes:[createFrame([object()],11),createFrame([object()])]});
+  return engineEditor({demo:false,layerTimeline:true}, {...emptyDocument(),figure_types:[child,clip],keyframes:[createFrame([object()],11),createFrame([object()])]});
 }
 function compare(editor) {
   const report=editor.report,rows=timeline(report),sample=createSheetMembershipSampler(report,nativeTimeline(report));

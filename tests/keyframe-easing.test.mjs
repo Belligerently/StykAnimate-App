@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {easedProgress, cubicBezierProgress, keyEasing} from '../src/keyframe-easing.mjs';
 import {sampleAnimationChannel, validateAnimationDocument} from '../src/animation-channels.mjs';
@@ -9,13 +10,16 @@ import {materializePivotDocument, needsPivotMaterialization} from '../src/pivot-
 
 const near = (actual, expected, epsilon = 1e-7) => assert.ok(Math.abs(actual - expected) < epsilon, `${actual} ≠ ${expected}`);
 const modes = ['auto', 'bezier', 'ease-in', 'ease-out', 'linear', 'constant'];
-function fixture(legacy = false) {
+/** `edit(report)` changes the document before the engine opens it. */
+function fixture(legacy = false, edit = null) {
   const report = emptyDocument(); report.auto_easing = legacy;
   report.keyframes = [0,100,20].map((x, index) => ({...createFrame([
     createObject(report.figure_types[0], 1, x, 100), createObject(report.figure_types[0], 2, x + 200, 100),
   ], 10), camera: {is_default: false, x, y: 0, scale: 1 + index, angle_rad: index * .2}}));
-  return new Editor({demo: false}).load(report);
+  edit?.(report);
+  return engineEditor({demo: false}, report);
 }
+const widerLast = report => { report.keyframes[2].objects[0].root_x = 160; };
 function sample(report, tick) {
   const rows = timeline(report), row = rows.findLast(row => row.start <= tick);
   return evaluatedFrame(report, row.index, row.count ? (tick - row.start) / row.count : 0, tick);
@@ -155,8 +159,7 @@ test('Auto shares velocity at unevenly spaced keys, stops at extrema and never o
 });
 
 test('Auto pose and scalar curves agree across a run and update neighbours after edits and history', () => {
-  const editor = fixture(), target={kind:'figure',uid:1};
-  editor.report.keyframes[2].objects[0].root_x=160;
+  const editor = fixture(false, widerLast), target={kind:'figure',uid:1};
   editor.setFramesDuration([0],4);editor.setFramesDuration([1],13);
   const pose=editor.nativePoseChannel(target);
   editor.setAnimationKeysEasing([{channelId:pose.id,keyIds:pose.keys.map(k=>k.id)}],{interpolation:'auto'});
@@ -176,8 +179,7 @@ test('Auto pose and scalar curves agree across a run and update neighbours after
 
 test('Auto preserves unedited integer samples across camera baking and native baking', () => {
   for (const operation of ['camera','bake']) {
-    const editor=fixture(),target={kind:'figure',uid:1};
-    editor.report.keyframes[2].objects[0].root_x=160;
+    const editor=fixture(false,widerLast),target={kind:'figure',uid:1};
     if(operation==='bake')editor.setFramesEasing([0,1,2],{interpolation:'auto'});
     else editor.addAnimationKeys([0,10,20].map((tick,i)=>({target,property:'x',tick,value:[0,100,160][i],interpolation:'auto'})));
     const expected=Array.from({length:21},(_,tick)=>sample(editor.report,tick).objects.find(o=>o.unique_id===1).root_x);
