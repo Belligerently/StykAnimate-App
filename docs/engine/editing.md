@@ -819,7 +819,8 @@ command across keys; a single figure's is the `zIndex` channel.
 
 `discardNewFigure(typeId, {label})` (`figure_discard.rs`) is the builder session's repair when history eviction dropped the entries
 that created a figure: the definition leaves the library and every instance leaves every keyframe and pose source that holds one (figures
-joined to an instance stay where they were drawn), as one `figure-discard` entry whose undo brings all of it back.
+joined to an instance stay where they were drawn, and the joins of the figures that remain follow their targets to the slots they take), as one `figure-discard` entry
+whose undo brings all of it back. A document the discard would leave unable to be saved or reopened is refused before anything changes.
 
 `bakeMovieclip()` is the owner's composition of three session calls (`movieclip_bake.rs`): `bakeMovieclipBegin` checks the clip and opens a
 job, `bakeMovieclipSample(ticks)` samples some more of its frames, and `bakeMovieclipPublish` publishes them as one `Bake animation` entry

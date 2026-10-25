@@ -22,34 +22,47 @@ pub struct DiscardedFrame {
     pub after: Value,
 }
 
-/// The frame without the figures in `gone`: the figures joined to one of them are detached, slots follow the figures that remain, and the
-/// drawing order names the same figures (`_removeCreatedFigure`).
+/// The frame without the figures in `gone`: the figures joined to one of them are detached, the joins of the figures that remain follow their
+/// targets to the slots they take, and the drawing order names the same figures (`_removeCreatedFigure`).
 fn without(frame: &Value, gone: &HashSet<u32>) -> Value {
     let objects: Vec<Value> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
     let mut out = frame.as_obj().cloned().unwrap_or_default();
     let ids: Vec<f64> = frame_order(&out).into_iter().filter(|id| !gone.contains(&(*id as u32))).collect();
+    // The slot each figure that stays takes, by the slot it held.
+    let mut moved: Vec<Option<usize>> = Vec::with_capacity(objects.len());
+    let mut next = 0;
+    for object in &objects {
+        if uid(object).is_some_and(|id| gone.contains(&id)) {
+            moved.push(None);
+        } else {
+            moved.push(Some(next));
+            next += 1;
+        }
+    }
     let kept: Vec<Value> = objects
         .iter()
-        .filter(|object| !uid(object).is_some_and(|id| gone.contains(&id)))
-        .map(|object| {
+        .zip(&moved)
+        .filter_map(|(object, slot)| slot.map(|slot| (object, slot)))
+        .map(|(object, slot)| {
             let mut record = object.as_obj().cloned().unwrap_or_default();
             if let Some(mut join) = record.get("join").filter(|join| join.truthy()).and_then(Value::as_obj).cloned() {
-                let target = join.get("target_object_slot").and_then(Value::as_f64).filter(|slot| *slot >= 0.0).and_then(|slot| objects.get(slot as usize)).and_then(|parent| parent.get("unique_id").cloned());
-                join.set("target_unique_id", target.clone().unwrap_or(Value::Null));
-                if target.and_then(|id| id.as_f64()).is_some_and(|id| gone.contains(&(id as u32))) {
-                    record.set("join", Value::Null);
-                } else {
-                    record.set("join", Value::object(join));
+                let held = join.get("target_object_slot").and_then(Value::as_f64).filter(|slot| *slot >= 0.0 && slot.fract() == 0.0).map(|slot| slot as usize);
+                match held.and_then(|held| moved.get(held).map(|target| (held, *target))) {
+                    // The target is leaving: nothing holds this figure any more.
+                    Some((_, None)) => record.set("join", Value::Null),
+                    Some((held, Some(target))) => {
+                        join.set("target_object_slot", Value::Num(target as f64));
+                        join.set("target_unique_id", objects[held].get("unique_id").cloned().unwrap_or(Value::Null));
+                        record.set("join", Value::object(join));
+                    }
+                    None => {
+                        join.set("target_unique_id", Value::Null);
+                        record.set("join", Value::object(join));
+                    }
                 }
             }
+            record.set("object_slot", Value::Num(slot as f64));
             Value::object(record)
-        })
-        .enumerate()
-        .map(|(slot, mut object)| {
-            if let Some(record) = object.make_obj() {
-                record.set("object_slot", Value::Num(slot as f64));
-            }
-            object
         })
         .collect();
     out.set("objects", Value::array(kept));
@@ -80,6 +93,7 @@ impl Editor {
             let after = without(&before, &removed);
             frames.push(DiscardedFrame { place, before, after });
         }
+        self.validate_discard(figure_index, &frames)?;
         self.ensure_counts();
         let before_selection = self.selection_state();
         let before_report = frames.iter().map(|frame| frame.before.clone()).collect::<Vec<_>>();
@@ -114,6 +128,24 @@ impl Editor {
         })?;
         self.emit("edit", vec![("label", Value::str(&label)), ("structural", Value::Bool(true)), ("definition", Value::Bool(true))]);
         Ok(true)
+    }
+
+    /// `validateScene` on the document the discard would leave (the frames it changed, the library without the definition): a document
+    /// that cannot be saved or reopened is refused before anything changes.
+    fn validate_discard(&self, figure_index: usize, frames: &[DiscardedFrame]) -> Result<(), EditError> {
+        let mut probe = self.report.clone();
+        let Some(report) = probe.make_obj() else { return Ok(()) };
+        let mut figures = report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect::<Vec<Value>>()).unwrap_or_default();
+        if figure_index < figures.len() {
+            figures.remove(figure_index);
+        }
+        let mut changed: Vec<Value> = frames.iter().map(|frame| frame.after.clone()).collect();
+        if changed.is_empty() {
+            changed.push(crate::sheet::create_frame(&[]));
+        }
+        report.set("figure_types", Value::array(figures));
+        report.set("keyframes", Value::array(changed));
+        crate::load::validate_scene(&probe)
     }
 
     /// Undo or redo of a `figure-discard` entry: the definition and the frames as they were, or as the discard left them.
