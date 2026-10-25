@@ -25,7 +25,3 @@ export function validateSimpleFrameDraft(report, {validateFrame = true} = {}) {
   }
 }
 
-export const editorFrameDraftMethods = {
-  /** Changes whenever the document the editor holds changes (a tab switch); the interface keys what it caches on it. */
-  get frameDraftRevision() { return this._frameDraftRevision ?? 0; },
-};

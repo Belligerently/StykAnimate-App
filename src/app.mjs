@@ -257,7 +257,7 @@ async function runDocumentExport(format, consume, { recovery = false, controller
       tick: editor.tick,
       revision: editor.revision,
       signal: controller.signal,
-      getRevision: () => `${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`,
+      getRevision: () => `${editor.revision}:${saveMutationEpoch}`,
     });
     context.size = sizeBucket(blob.size);
     telemetry.performance.record('serialize',performance.now()-started);
@@ -581,20 +581,16 @@ function syncPlayback() {
   if (
     state.playbackRevision !== editor.revision ||
     playback.report !== editor.report ||
-    state.playbackHiddenKey !== hiddenKey ||
-    state.playbackDraftRevision !== editor.frameDraftRevision
+    state.playbackHiddenKey !== hiddenKey
   ) {
     if (
       state.playbackRevision !== editor.revision ||
       playback.report !== editor.report
     )
       playback.load(editor.report, {revision: editor.revision, hiddenUids, hiddenKey});
-    else if (state.playbackDraftRevision !== editor.frameDraftRevision)
-      playback.updateDocument({revision: editor.revision, hiddenUids, hiddenKey, frameIndices: []});
     else playback.updateView({hiddenUids, hiddenKey});
     state.playbackRevision = editor.revision;
     state.playbackHiddenKey = hiddenKey;
-    state.playbackDraftRevision = editor.frameDraftRevision;
     state.playbackPacket = null;
   }
 }
@@ -623,8 +619,8 @@ let warmGeneration=0;
 function warmPlayback({immediate = false} = {}) {
   const generation=++warmGeneration;
   clearTimeout(warmTimer);
-  const report=editor.report,revision=editor.revision,tick=editor.tick,draft=editor.frameDraftRevision;
-  const current=()=>generation===warmGeneration&&editor.report===report&&editor.revision===revision&&editor.tick===tick&&editor.frameDraftRevision===draft&&!state.playing&&!editingGestureActive()&&!state.scrubbing&&!document.hidden;
+  const report=editor.report,revision=editor.revision,tick=editor.tick;
+  const current=()=>generation===warmGeneration&&editor.report===report&&editor.revision===revision&&editor.tick===tick&&!state.playing&&!editingGestureActive()&&!state.scrubbing&&!document.hidden;
   warmTimer = setTimeout(async () => {
     if(!current())return;
     // Learn the current frame's real footprint before widening the idle window.
@@ -3718,7 +3714,6 @@ async function performNativeSave({saveAs}) {
     interruptRecovery();
     status({messageKey: "app.savingProject", messageParams: {}}, false, true);
     const revision = editor.revision,
-      draftRevision = editor.frameDraftRevision,
       report = editor.report,
       documentToken = state.documentToken,
       name = editor.name;
@@ -3778,7 +3773,6 @@ async function performNativeSave({saveAs}) {
         editor.report === report &&
         state.documentToken === documentToken &&
         editor.revision === revision &&
-        editor.frameDraftRevision === draftRevision &&
         saveMutationEpoch === checkpoint.epoch &&
         !editor.dirty,
     );
@@ -3794,7 +3788,7 @@ async function performNativeSave({saveAs}) {
 function documentStateNow() {
   const open = projects.summary();
   return {name: editor.name || "Untitled", dirty: open.unsaved > 0, activeDirty: editor.dirty, unsaved: open.unsaved, unsavedName: open.unsavedName,
-    revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}:${open.stamp}`};
+    revision: `${state.documentToken}:${editor.revision}:${saveMutationEpoch}:${open.stamp}`};
 }
 /** Close/restart only the saved revision, including changes arriving during IPC. */
 async function finishDocumentAction(action, savedCheckpoint = null) {
@@ -5611,8 +5605,7 @@ editor.addEventListener("change", (e) => {
     (kind === "edit" || kind === "frame-draft" || (kind === "history" && (e.detail.layerSheet || e.detail.figureIndices?.length || (e.detail.frameIndices || e.detail.animation) && !e.detail.structural))) &&
     !e.detail?.live &&
     playback.report === editor.report &&
-    (state.playbackRevision !== editor.revision ||
-      state.playbackDraftRevision !== editor.frameDraftRevision)
+    state.playbackRevision !== editor.revision
   ) {
     const metadataOnly = Boolean(
       kind === "frame-draft" || e.detail.animation || e.detail.cameraMotion || e.detail.layerMetadata || e.detail.layerSheet,
@@ -5630,7 +5623,6 @@ editor.addEventListener("change", (e) => {
       structural: Boolean(e.detail.structural && !metadataOnly),
     });
     state.playbackRevision = editor.revision;
-    state.playbackDraftRevision = editor.frameDraftRevision;
     state.playbackPacket = null;
   }
   if (kind === "seek") interruptRecovery();
