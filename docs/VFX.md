@@ -136,12 +136,10 @@ Channel visibility is editor session state, reset on document load and capped at
 weak projection cache shares the original channel arrays; filtering never scans
 their keys, reindexes timeline tracks, marks the document dirty, or enters undo.
 
-Opaque vector groups without inner effects or Canvas-only artwork can rasterize
-and filter on one WebGPU device. Worker packets transfer vector buffers and effect
-descriptors; prepared playback uses the same GPU path as live editing. Transient
-resources are released after submission and final textures use existing bounded
-caches. Subpixel strokes, nested effects and unsupported artwork retain the
-existing compatibility renderer. This fast path does not change export quality.
+The engine draws every effect, nested effects included, on the stage's one graphics
+device (WebGPU, or WebGL2 where there is none). Prepared playback and live editing
+use the same path, and transient resources are released after submission. See
+[the engine's effects](engine/vfx.md) and [rendering](engine/rendering.md).
 
 Additional checks: `tests/vfx-clips.test.mjs`, `tests/vfx-clips.browser.mjs`,
 `tests/vfx-key-channels.test.mjs`, `tests/vfx-key-channels.browser.mjs`

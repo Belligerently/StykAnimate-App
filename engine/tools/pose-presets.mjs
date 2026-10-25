@@ -1,7 +1,7 @@
 // Pose-choice presets for edit-scenarios.mjs: authoring poses compiled into a figure's existing
-// channel choice selector (`figure._styk.poseChoices`, as tests/rig-pose-choices.test.mjs builds
-// them). Each choice writes the group's complete union of channels, reset values included, and
-// leaves the figure's orientation and unrelated groups alone.
+// channel choice selector (`figure._styk.poseChoices`, which src/rig-pose-choices.mjs validates).
+// Each choice writes the group's complete union of channels, reset values included, and leaves the
+// figure's orientation and unrelated groups alone.
 import {validateFigurePoseChoices} from '../../src/rig-pose-choices.mjs';
 
 const indexOfSegment = (figure, name) => {

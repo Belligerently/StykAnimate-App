@@ -549,7 +549,7 @@ scenario('figures-layers-sheet', app, [
     ['resetSpatialPose', true], ['undo'], ['undo'], ['redo'],
   ], 'spatial-reset.document.json');
   // Pose choices: a group of 3D bones shown one at a time (or none), and a group of presets
-  // over existing channels (as tests/rig-pose-choices.test.mjs builds them), on a figure
+  // over existing channels (as src/rig-pose-choices.mjs validates them), on a figure
   // turned, moved, scaled and mirrored.
   {
     const {construction} = await import('../../src/rig-examples-3d.mjs');
