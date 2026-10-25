@@ -1,15 +1,16 @@
 import {messageError} from './localized-error.mjs';
 /** Small native-field gestures. Authored transform channels use editor-animation.
  *
- * Every gesture here is a session call or a gesture of the session's: the animation edit of a property channel, a pose or camera
- * gesture (a pose at one value in several frames is the session's `setPoseProperty`), the keys of a branch's style, the project's
- * fields and the sheet's duration. What this module used to write into the document itself, to record it as an entry of the editor's
- * own (the definition of a figure), is the engine's alone now, and refused where the session has no command for it. */
+ * Every gesture here is a session call or a gesture of the session's: the animation edit of a property channel (of one target, or
+ * of the several of a branch's style or a draw order), a pose or camera gesture (a pose at one value in several frames is the
+ * session's `setPoseProperty`), the project's fields and the sheet's duration. What this module used to write into the document
+ * itself, to record it as an entry of the editor's own (the definition of a figure), is the engine's alone now, and refused where
+ * the session has no command for it. */
 import { objectBounds } from "./renderer-geometry.mjs";
 import { cameraValues } from "./pivot/model.mjs";
 import { animationStyleValue, polygonIdentity, resolveInstanceFigure } from "./animation-style.mjs";
-import { builderStyleProperty, beginBuilderOrderAnimation, previewBuilderOrderAnimation } from './editor-builder-style.mjs';
-import { branchOpacityPlan, beginBranchStyleAnimation, previewBranchStyleAnimation, commitBranchStyleAnimation, cancelBranchStyleAnimation } from './editor-branch-style.mjs';
+import { builderStyleProperty, builderOrderTargets, builderOrderValues } from './editor-builder-style.mjs';
+import { branchOpacityPlan } from './editor-branch-style.mjs';
 
 const active = new WeakMap();
 const poseKeys = new Set([
@@ -303,6 +304,11 @@ function assertCurrent(token) {
     cancelNativePropertyEdit(token);
     throw messageError(new Error(''), "errors.nativePropertyEdit.theSelectedPropertyChangedDuringTheGesture", {});
   }
+  // A branch or a draw order is keyed at the playhead where it began.
+  if ((token.branchAnimation || token.orderAnimation) && editor.tick !== token.tick) {
+    cancelNativePropertyEdit(token);
+    throw messageError(new Error(''), "errors.editorBranchStyle.theBranchEditTargetChanged", {});
+  }
 }
 /** The project's own fields: shown as typed, one command of the session when the edit ends. */
 const projectKeys = new Set(["fps", "canvas_width", "canvas_height"]);
@@ -319,7 +325,7 @@ export function beginNativePropertyEdit(
   const sheet = Boolean(editor.report._styk?.layerSheet);
   const begun = fields => {
     const token = {
-      editor, key, report: editor.report, frameIndex: editor.frameIndex, uid: editor.selectedUid, joint: editor.selectedJoint,
+      editor, key, report: editor.report, frameIndex: editor.frameIndex, tick: editor.tick, uid: editor.selectedUid, joint: editor.selectedJoint,
       selection: editor._selectionState(), closed: false, ...fields,
     };
     active.set(editor, token);
@@ -344,14 +350,24 @@ export function beginNativePropertyEdit(
   const frames = editor._frameIndices(indices?.length ? [...indices, editor.frameIndex] : [editor.frameIndex]);
   if (sheetTicks) frames.sheetTicks = sheetTicks;
   const common = {label: builder?.label ?? (branchPlan ? `Branch ${key === 'thickness' ? 'thickness' : branchPlan.property === 'opacity' ? 'opacity' : 'gradient opacity'}` : label),
-    builder, branchPlan, pose, camera, sheetTicks, indices: frames, rangeMode, value, initialValue: value, bounds: null};
-  if (builder?.animated) return begun({...common, orderAnimation: beginBuilderOrderAnimation(editor, builder)});
+    builder, pose, camera, sheetTicks, indices: frames, rangeMode, value, initialValue: value, bounds: null};
+  if (builder?.animated) {
+    // The draw order of the figure on show: one edit of every drawable's position.
+    const targets = builderOrderTargets(editor, builder);
+    editor.beginAnimationEdit(targets, 'zIndex', {exactTarget: true});
+    return begun({...common, orderAnimation: {targets, values: null}});
+  }
   const scalar = editor.propertyChannels && !branchPlan ? styleBinding(editor, key) : null;
   if (scalar) {
     editor.beginAnimationEdit(scalar.target, scalar.property);
     return begun({...common, scalar, factor: ['thickness', 'outlineWidth'].includes(scalar.property) ? 1 : 100});
   }
-  if (branchPlan?.authored) return begun({...common, branchAnimation: beginBranchStyleAnimation(editor, branchPlan)});
+  if (branchPlan?.authored) {
+    // The branch's segments (and enclosed polygons): one edit of the property on all of them.
+    const targets = branchPlan.entries.map(entry => entry.target);
+    editor.beginAnimationEdit(targets, branchPlan.property, {exactTarget: true});
+    return begun({...common, branchAnimation: {targets, property: branchPlan.property}});
+  }
   if (camera) {
     if (!editor.beginCameraDrag({ label: common.label }))
       throw messageError(new Error(''), "errors.nativePropertyEdit.chooseACameraFrame", {});
@@ -370,15 +386,19 @@ export function previewNativePropertyEdit(token, value) {
   assertCurrent(token);
   validate(token.key, value);
   if (token.sheetDuration || token.project) { token.value = value; return true; }
-  if (token.value === value && (!token.branchAnimation || token.branchStyleApplied)) return false;
+  if (token.value === value && (!token.branchAnimation || token.branchAnimation.applied)) return false;
   const { editor, key } = token;
   if (token.orderAnimation) {
-    previewBuilderOrderAnimation(editor, token.builder, value);
+    // Every drawable takes the position the move gives it.
+    const values = builderOrderValues(token.builder, value);
+    editor.previewAnimationEdit(values);
+    token.orderAnimation.values = values;
   } else if (token.scalar) {
     editor.previewAnimationEdit(value / token.factor);
   } else if (token.branchAnimation) {
-    previewBranchStyleAnimation(editor, value / (key === 'thickness' ? 1 : 100));
-    token.branchStyleApplied = true;
+    // A value the selected segment already has still sets the others of the branch.
+    editor.previewAnimationEdit(value / (key === 'thickness' ? 1 : 100));
+    token.branchAnimation.applied = true;
   } else if (token.camera) {
     const field = key === "camera_angle" ? "angle_rad" : key.slice(7);
     editor.updateCameraDrag(
@@ -446,11 +466,12 @@ export function commitNativePropertyEdit(token) {
   if (token.orderAnimation) {
     return finish(() => {
       if (rangeCount > 1) {
-        const entries = rangeTimes().flatMap(tick => token.orderAnimation.entries.map(entry => ({...entry, tick})));
-        cancelBranchStyleAnimation(editor);
+        const { targets, values } = token.orderAnimation;
+        const entries = rangeTimes().flatMap(tick => targets.map((target, index) => ({target, property: 'zIndex', tick, value: values[index], exactTarget: true, interpolation: 'constant'})));
+        editor.cancelAnimationEdit();
         return editor.addAnimationKeys(entries);
       }
-      return commitBranchStyleAnimation(editor);
+      return editor.commitAnimationEdit();
     });
   }
   if (token.scalar) {
@@ -462,11 +483,12 @@ export function commitNativePropertyEdit(token) {
   if (token.branchAnimation) {
     return finish(() => {
       if (rangeCount > 1) {
-        const entries = rangeTimes().flatMap(tick => token.branchPlan.entries.map(entry => ({target: entry.target, property: token.branchPlan.property, tick, value: token.value / (token.key === 'thickness' ? 1 : 100)})));
-        cancelBranchStyleAnimation(editor);
+        const { targets, property } = token.branchAnimation;
+        const entries = rangeTimes().flatMap(tick => targets.map(target => ({target, property, tick, value: token.value / (token.key === 'thickness' ? 1 : 100)})));
+        editor.cancelAnimationEdit();
         return editor.addAnimationKeys(entries);
       }
-      return commitBranchStyleAnimation(editor);
+      return editor.commitAnimationEdit();
     });
   }
   if (token.camera) {
@@ -501,9 +523,7 @@ export function cancelNativePropertyEdit(token) {
   active.delete(editor);
   if (editor.report !== token.report) return false;
   if (token.sheetDuration || token.project) return true;
-  if (token.orderAnimation) return cancelBranchStyleAnimation(editor);
-  if (token.scalar) return editor.cancelAnimationEdit();
-  if (token.branchAnimation) return cancelBranchStyleAnimation(editor);
+  if (token.scalar || token.orderAnimation || token.branchAnimation) return editor.cancelAnimationEdit();
   editor.cancelDrag();
   editor._restoreSelection(token.selection);
   editor._invalidate();

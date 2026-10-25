@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 29 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 28 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
-| `styk-edit` | 92 | 871 KiB | 23 | 23 | 2 | 0 | 44 | 44 % | 39 % | 43 % |
+| `styk-edit` | 92 | 867 KiB | 23 | 23 | 2 | 0 | 44 | 44 % | 39 % | 43 % |
 | `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
 | `styk-eval` | 80 | 657 KiB | 16 | 46 | 9 | 0 | 9 | 20 % | 72 % | 2 % |
 | `styk-export` | 14 | 63 KiB | 8 | 2 | 0 | 0 | 4 | 0 % | 10 % | 0 % |
 | `styk-formats` | 56 | 742 KiB | 23 | 7 | 1 | 22 | 3 | 65 % | 11 % | 7 % |
 | `styk-render` | 51 | 95 KiB | 4 | 1 | 2 | 0 | 44 | 48 % | 23 % | 27 % |
-| **Total** | 355 | 2668 KiB | 91 | 87 | 22 | 22 | 133 | 41 % | 36 % | 18 % |
+| **Total** | 355 | 2663 KiB | 91 | 87 | 22 | 22 | 133 | 41 % | 36 % | 18 % |
 
 ## Engine modules
 
@@ -79,9 +79,9 @@ Engine logic: ported to Rust.
 | `src/editor-animation.mjs` | `styk-edit` | partial | Rust: every edit of the authored animation, the camera motion and the motion path, and the reads the session answers (animationValue, segmentAnimationTarget); the editor keeps the channel reads, the camera-motion clips, the motion-path gesture state the owner mirrors and the native channel projection (nativePropertyChannel, nativePoseChannel) that the branch and builder order previews of native-property-edit.mjs still build on |
 | `src/editor-audio.mjs` | `styk-edit` | ported | Rust: every command (styk-edit/src/audio.rs): tracks, clips, import, split, duplicate, copy, cut, paste with identities from the draws, rippleAudio and the audioRipple option on frame inserts and removals (2026-10-24); the JavaScript module remains only as the fallback for a call the session refuses |
 | `src/editor-authored-pose.mjs` | `styk-edit` | removed | deleted: the pose gestures and whole-frame transactions are commands of the engine session (styk-edit authored.rs) (10860 bytes) |
-| `src/editor-branch-style.mjs` | `styk-edit` | partial | Rust: the draw order's held keys after a live preview (beginBranchStyleAnimation, previewBranchStyleValues, commitBranchStyleAnimation for moveBuilderOrder and setBuilderOrder: styk-edit/src/builder.rs); branch opacity and width gestures still JS |
+| `src/editor-branch-style.mjs` | `styk-edit` | partial | Rust: the animation edit of several targets (beginAnimationEdit([targets], property): styk-edit/src/property_edit.rs) and the branch style commands (styk-edit/src/builder.rs). Left in JavaScript: branchOpacityPlan, the interface's choice of the targets of a branch edit; the JavaScript edit (begin, preview, commit and cancel of the branch keys) is deleted |
 | `src/editor-builder-branch.mjs` | `styk-edit` | removed | deleted: the branch style commands are session commands (styk-edit/src/builder.rs); the selection indices of a branch edit moved to editor-branch-style.mjs |
-| `src/editor-builder-style.mjs` | `styk-edit` | partial | Rust: the draw order and polygon opacity commands (styk-edit/src/builder.rs). Left in JavaScript: builderDrawables, builderStyleProperty and the order animation calls of native-property-edit.mjs |
+| `src/editor-builder-style.mjs` | `styk-edit` | partial | Rust: the draw order and polygon opacity commands (styk-edit/src/builder.rs). Left in JavaScript: builderDrawables, builderStyleProperty, builderOrderTargets and builderOrderValues (the targets and positions a draw-order gesture hands to the session's animation edit) |
 | `src/editor-builder-topology.mjs` | `styk-edit` | removed | deleted: delete, unsplit and mirror of a segment are session commands (styk-edit/src/topology.rs) |
 | `src/editor-builder.mjs` | `styk-edit` | removed | deleted: the builder commands are session commands (styk-edit/src/builder.rs, polygons.rs, topology.rs); segmentBranchIndices moved to src/pivot/structure.mjs |
 | `src/editor-camera-motion.mjs` | `styk-edit` | removed | deleted: camera-motion edits are the engine session's (styk-edit camera_motion.rs); getCameraMotions moved to src/editor-animation.mjs (5645 bytes) |
@@ -136,7 +136,7 @@ Engine logic: ported to Rust.
 | `src/media-image-worker.mjs` | `styk-edit` | js |  |
 | `src/motion-path-falloff.mjs` | `styk-edit` | ported | motion-path falloff planning. Rust: falloffWeight (the sharp shape cubed as V8 does), planFalloff and normalizeFalloff (styk-edit/src/motion_path.rs), every weight checked against the editor; the app still reads its constants for the overlay |
 | `src/native-figure.mjs` | `styk-edit` | removed | deleted: the document of a figure, a set of figures or a movieclip file is made by the engine (styk-edit/src/export/figure.rs, pose_sequences.rs) on the export worker |
-| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated. The module is the inspector's token over session calls (animation edits, pose and camera gestures, branch keys, the project's fields, the sheet's duration) and refuses what the session has no command for; it writes nothing into the document itself |
+| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated. The module is the inspector's token over session calls (animation edits of one target or of several, pose and camera gestures, the project's fields, the sheet's duration) and refuses what the session has no command for; it writes nothing into the document itself |
 | `src/native-property-ranges.mjs` | `styk-edit` | removed | deleted: a pose at one value across several frames is the session's setPoseProperty (styk-edit pose_value.rs), planned like the other figure operations across frames |
 | `src/native-text-authoring.mjs` | `styk-edit` | js |  |
 | `src/onion-skin.mjs` | `styk-edit` | removed | deleted: the session plans the onion skins (styk-edit onion_skins.rs) and the stage draws them; the drawing cels' prefetch moved to src/drawing-cel-prefetch.mjs (19636 bytes) |

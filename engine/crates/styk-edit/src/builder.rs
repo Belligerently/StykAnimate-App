@@ -1245,8 +1245,8 @@ impl Editor {
         self.write_builder_order(&label, &figure, &object, &entries, &next).map(Value::Bool)
     }
 
-    /// `beginBuilderOrderAnimation`, `previewBuilderOrderSequence`, `commitBranchStyleAnimation`: every
-    /// drawable keyed at its new place (a held key), after the preview's live event.
+    /// Every drawable keyed at its new place (a held key), after the preview's live event, as the inspector's draw-order gesture
+    /// (`beginAnimationEdit([targets], "zIndex")`, `property_edit.rs`) keys it.
     fn key_builder_order(&mut self, figure: &Value, object: &Value, entries: &[Drawable], next: &[usize]) -> Result<bool, EditError> {
         if self.property_edit.is_some() {
             return Err(EditError::Unported("a draw order edit while a property edit is open".into()));

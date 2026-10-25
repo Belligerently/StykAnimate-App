@@ -41,7 +41,7 @@ try{
  check(await page.evaluate(before=>JSON.stringify(window.styk.editor.report._styk.animation)===before.animation&&window.styk.editor._undo.length===before.history,beforeCancel),'Escape restores every branch key and history exactly');
  await page.screenshot({path:path.join(out,'inspector.png')});
  await scrub.scrollIntoViewIfNeeded();box=await scrub.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+10,box.y+box.height/2,{steps:3});
- await page.waitForFunction(()=>window.styk.editor._animationEdit?.branchStyle&&window.styk.editor._animationEdit.changed);
+ await page.waitForFunction(()=>window.styk.editor._animationEdit?.targets?.length&&window.styk.editor._animationEdit.changed);
  const expected=await page.evaluate(()=>window.styk.editor.animationValue({kind:'segment',uid:window.styk.editor.selectedUid,handleId:3},'opacity'));
  const download=page.waitForEvent('download');await page.keyboard.press('Control+s');const saved=await download;await page.mouse.up();const filename=path.join(out,'branch-authored.styk');await saved.saveAs(filename);
  const bundle=await readNativeDocument(filename),document=bundle.document??bundle;
