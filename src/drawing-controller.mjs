@@ -211,7 +211,7 @@ export class DrawingController {
   }
   history(direction){
     return this.afterGesture(()=>{
-      const command=this.editor[direction==='undo'?'_undo':'_redo'].at(-1),side=direction==='undo'?'before':'after';
+      const command=this.editor.historyPixels(direction),side=direction==='undo'?'before':'after';
       if(!this.owner?.history?.needsLoad(command)&&!this.owner?.needsPreparation(command,side))return this.editor[direction]();
       return this.pixelOperation({messageKey:direction==='undo'?'drawingController.restoringUndo':'drawingController.restoringRedo'},async op=>{op.history=true;return this.editor[direction]({signal:op.abort.signal});});
     });

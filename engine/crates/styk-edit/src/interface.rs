@@ -68,6 +68,8 @@ impl Editor {
         let arg = |index: usize| args.item(index).filter(|value| !value.is_null());
         Some(match name {
             "getIKSettings" => self.get_ik_settings().map(Some),
+            "drawingReplay" => Ok(Some(self.drawing_replay(arg(0).is_some_and(|redo| redo.truthy())))),
+            "drawingRefs" => Ok(Some(self.drawing_refs())),
             "animationValue" | "vfxEffects" | "segmentAnimationTarget" if !self.sheet() => {
                 Err(EditError::Unported("property values of a document without a layer sheet".into()))
             }

@@ -12,12 +12,12 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | Rust owner | Modules | Source at start | js | partial | ported | verified | removed | Covered by Rust | Partly covered | Deleted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
-| `styk-drawing` | 36 | 169 KiB | 11 | 7 | 8 | 0 | 10 | 23 % | 23 % | 0 % |
+| `styk-drawing` | 36 | 170 KiB | 11 | 7 | 8 | 0 | 10 | 22 % | 23 % | 0 % |
 | `styk-edit` | 90 | 1230 KiB | 38 | 44 | 6 | 1 | 1 | 5 % | 69 % | 2 % |
 | `styk-engine` | 24 | 40 KiB | 11 | 0 | 0 | 0 | 13 | 3 % | 0 % | 3 % |
 | `styk-eval` | 80 | 688 KiB | 20 | 46 | 9 | 0 | 5 | 17 % | 72 % | 0 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
-| `styk-formats` | 59 | 769 KiB | 27 | 6 | 1 | 22 | 3 | 63 % | 11 % | 6 % |
+| `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 13 | 8 | 3 | 0 | 27 | 12 % | 50 % | 0 % |
 | **Total** | 356 | 3224 KiB | 129 | 115 | 27 | 23 | 62 | 23 % | 50 % | 2 % |
 
@@ -91,7 +91,7 @@ Engine logic: ported to Rust.
 | `src/editor-colors.mjs` | `styk-edit` | partial | Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs) and recolouring figures (editFigureColors, setFigureColor, replaceFigureColor, resetFigureColors: styk-edit/src/recolor.rs); figurePalette for the inspector still JS |
 | `src/editor-combine.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-disconnect.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-drawing.mjs` | `styk-edit` | partial | Rust: the structure of a drawing layer (createDrawingLayer, drawingKey, nextDrawing, addDrawingFrame, extendDrawing, autoKeyDrawing: styk-edit/src/drawing_structure.rs); the pixel commands (commitDrawingPixels, resampleDrawing, prepareDrawingCel) and the drawing history stay in the editor with the drawing store |
+| `src/editor-drawing.mjs` | `styk-edit` | partial | Rust: the structure of a drawing layer (createDrawingLayer, drawingKey, nextDrawing, addDrawingFrame, extendDrawing, autoKeyDrawing: styk-edit/src/drawing_structure.rs) and the pixel commits (commitDrawingPixels, resampleDrawing: styk-edit/src/drawing_pixels.rs, session history entries that name the cel and the record the drawing store holds); the JavaScript bodies of the commits remain for the plain editor; prepareDrawingCel stays with the drawing store |
 | `src/editor-draws.mjs` | `styk-edit` | partial | Rust: Editor::set_draws, draw_uuid, draw_seed and draw_random take what the editor drew for a call (D18); drawing the values stays in JavaScript until the engine owns the document |
 | `src/editor-duplicate-drag.mjs` | `styk-edit` | ported | Rust: beginDuplicateDrag, finishDuplicateDrag and their commit and cancel through commitDrag/cancelDrag (styk-edit/src/duplicate_drag.rs; engine-run in the app since 2026-10-24); the JavaScript module still ships for editing inside a movieclip |
 | `src/editor-figure-transform.mjs` | `styk-edit` | ported | beginFigureHandleDrag, transformFigureHandle, commitFigureHandleDrag, cancelFigureHandleDrag, createFigureHandleTransform, figureHandleTransform (styk-edit/src/figure_transform.rs); recorded native/sheet animation-origin handle transforms preserve retained support; an origin figure with a 3D pose, mesh, movieclip or drawing runs in the editor |

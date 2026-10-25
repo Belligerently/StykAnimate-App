@@ -665,6 +665,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     editor.set_draws(view.get("draws").unwrap_or(&Value::Null));
     editor.draw_pool = view.get("drawPool") == Some(&Value::Bool(true));
     editor.drawing_forks.clear();
+    editor.drawing_retired = false;
     let args: Vec<Value> = args.elements().map(|e| e.iter().collect()).unwrap_or_default();
     let clipboard_requested = matches!(method, "pasteSelection" | "duplicateSelection")
         && view.get("figureClipboardPastes") == Some(&Value::Bool(true));
@@ -752,6 +753,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     if called_ok && !editor.drawing_forks.is_empty() {
         let forks = std::mem::take(&mut editor.drawing_forks);
         answer.push(("drawingForks", Value::array(forks.into_iter().map(|(old, new)| Value::array(vec![Value::str(&old), Value::str(&new)])).collect())));
+    }
+    if called_ok && std::mem::take(&mut editor.drawing_retired) {
+        answer.push(("drawingRetired", Value::Bool(true)));
     }
     let events = editor.take_events();
     let report = editor.report();

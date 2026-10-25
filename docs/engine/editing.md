@@ -394,6 +394,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `setFrameDuration` (the exposure under the playhead: `sheetSetDuration`), `addMovieclipToNextKeyframes` on a layer sheet (`extend_sheet_movieclip` with an inline worker context) | yes | movieclip-sheet-extension (the owner tapes and `movieclip_sheet_extension.rs` replay its eight recordings through the session's own call), `session_commands.rs` |
 | Layer membership (`styk-edit/src/layer_membership.rs`): `assignFiguresToLayer`, `deleteLayer` plan with `layer_planning::sheet_layer_plan` and publish in one call (`deleteLayer` into a chosen layer is refused) | yes (layer sheets) | layer-sheet-migration (`tests/layer_sheet_commands.rs`) |
 | Drawing structure (`styk-edit/src/drawing_structure.rs`): `createDrawingLayer`, `addDrawingFrame`, `nextDrawing`, `extendDrawing`, `drawingKey`, `autoKeyDrawing`; a drawing layer's one-cel rule is the sheet writer's (`Plan::write`). A copied cel is a definition of its own with a draw identity (`cel-<uuid>`); the answer names the cels it copied (`drawingForks`) so that the owner gives the copy the pixels of the cel it copies. A key (`sheetInsertKey`) or a frame after the playhead (`sheetDuplicateFrameAfter`) on a drawing layer is a cel (`drawingKey`, `nextDrawing`) | yes (layer sheets) | `session_commands.rs` |
+| Drawing pixel commits (`styk-edit/src/drawing_pixels.rs`, `src/engine/engine-owner-drawing.mjs`): `commitDrawingPixels` (a stroke, an erase, a fill, a pasted or moved selection; for the first stroke on a blank exposure or on a v1 cel, the cel's definition and key in the same entry) and `resampleDrawing` (a layer sheet entry that adds the cel of the new resolution, answered by its identity). The session never takes tiles: a pixel commit's entry names the cel and the `record` of the drawing store's history that holds the before and after tiles, with the weight the interface measured, and undo/redo change the revision and name the cel in a `history` event with `drawing: true`. The interface applies the tiles around the call (`docs/engine/drawing.md`, "History") | yes (layer sheets) | `drawing_pixels_tests.rs`, `tests/engine-owner-drawing.test.mjs` |
 | `bakeCameraMotion` (`styk-edit/src/camera_bake.rs`): the motion sampled with `camera_at_time` / `camera_travel_at`, held keys on the camera track, the clips muted over the range; sampled in the call itself (the editor's worker and its cancellation are gone) | yes (layer sheets) | `session_commands.rs` |
 | `pasteFiguresInFrames`: the figure clipboard into every chosen frame (the playhead paste's planner over several frames, `commit_sheet_range`) | yes (layer sheets) | `session_commands.rs` |
 | `undo`, `redo` of what those record | yes | all of the above |
@@ -669,10 +670,10 @@ it on the editor, for every document.
   not valid (`errors.engineOwner.invalidValue`). A call the session refuses (`Unported`: a document it does
   not edit) raises `errors.engineOwner.notSupported` and never runs in the editor.
 - **What still runs in the editor.** A call the session has no command for at all (it answers `unported` with the call's own
-  name) runs in the JavaScript editor on the read view (the drawing pixel commits, inbetweens, the frame clipboard,
+  name) runs in the JavaScript editor on the read view (inbetweens, the frame clipboard,
   combining figures with media or a rig); `report.editor` counts them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
-  history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and
+  history entry <id>`; the editor applies its own command and
   the changed records are written back. A session gesture or edit still open when such a call is made is committed first.
   Edits other modules make in place (the camera-motion and parallax previews, the inspector's native property
   tokens) or through `editor._record` are written back the same way before the next call, and editing the inside of a
@@ -683,7 +684,9 @@ it on the editor, for every document.
   a rig edit or a camera drag (the session does not redo under them) and leaves any other gesture open under the entry
   it applies, as the editor does. The editor's stacks
   mirror the session's (`depths`): its own commands for external entries, placeholders for native ones, so code
-  that reads or amends the entry on top keeps working.
+  that reads or amends the entry on top keeps working. An entry that names pixel commits (`drawingReplay`) waits for
+  the drawing store before the session's undo or redo runs (loading cold records, preparing large replacements) and
+  applies its tiles with it; a replay that fails or is cancelled changes neither (`docs/engine/drawing.md`, "History").
 - **Start.** The session starts when the document opens, on the tree and typed views the engine
   opened it with (`OpenedDocument.start_session`), the same tree the editor's read view was built
   from, so there is no history to take over and nothing to bring to the read view. It becomes the

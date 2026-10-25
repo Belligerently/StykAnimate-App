@@ -416,7 +416,8 @@ on demand in the same worker, keeping their caches for later requests. A module
 load failure releases that worker and rejects all pending requests so retrying
 can start a fresh one. This adds no extra worker or queue.
 
-Undo belongs to the editor's chronological history. Before/after tile records
+Undo belongs to the engine session's chronological history, whose entries name
+the records of the pixel history below ([docs/engine/drawing.md](engine/drawing.md#history)). Before/after tile records
 are exact; absent sides are `null` and uniform tiles use a four-byte color
 representation. Where workers and IndexedDB are available, records of at least
 64 KiB move to a session-owned disk tier. Its dedicated worker encodes, hashes
