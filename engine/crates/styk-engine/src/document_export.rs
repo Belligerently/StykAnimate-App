@@ -32,18 +32,28 @@ pub enum Output {
     CodecRequest { source_id: Option<String>, format: String },
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum DocumentExportError {
-    #[error("The engine does not hold this revision of the document.")]
+    /// The engine does not hold the revision the interface exports.
     Stale,
-    #[error("The export was cancelled.")]
     Cancelled,
     /// A refusal: the editor's message key (with its values after a separator), as the commands raise them.
-    #[error("{0}")]
     Refused(String),
-    #[error("{0} is not exported by the engine yet")]
     Unported(String),
 }
+
+impl std::fmt::Display for DocumentExportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DocumentExportError::Stale => f.write_str("The engine does not hold this revision of the document."),
+            DocumentExportError::Cancelled => f.write_str("The export was cancelled."),
+            DocumentExportError::Refused(message) => f.write_str(message),
+            DocumentExportError::Unported(feature) => write!(f, "{feature} is not exported by the engine yet"),
+        }
+    }
+}
+
+impl std::error::Error for DocumentExportError {}
 
 impl Engine {
     /// The document the export of `request` saves, at `revision`.
