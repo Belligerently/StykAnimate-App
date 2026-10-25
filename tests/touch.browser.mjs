@@ -142,7 +142,8 @@ try {
     const spare = { x: hand.x - 160, y: hand.y };
     await t.fingers('touchStart', [[spare.x, spare.y], [spare.x + 60, spare.y]]); await t.page.waitForTimeout(60); await t.fingers('touchEnd', []); await t.page.waitForTimeout(300);
     check('A two-finger tap undoes', await t.eval(() => !window.styk.editor.canUndo && window.styk.editor.canRedo));
-    await t.fingers('touchStart', [[spare.x, spare.y], [spare.x + 60, spare.y], [spare.x + 30, spare.y + 50]]); await t.page.waitForTimeout(60); await t.fingers('touchEnd', []); await t.page.waitForTimeout(300);
+    // The third finger goes above the others: below them, the stage ends at a splitter in this layout.
+    await t.fingers('touchStart', [[spare.x, spare.y], [spare.x + 60, spare.y], [spare.x + 30, spare.y - 50]]); await t.page.waitForTimeout(60); await t.fingers('touchEnd', []); await t.page.waitForTimeout(300);
     check('A three-finger tap redoes', await t.eval(() => window.styk.editor.canUndo));
 
     await t.tap('.touch-modifiers-toggle');
