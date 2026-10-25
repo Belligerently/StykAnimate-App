@@ -75,6 +75,27 @@ test(`numeric order ranges update only selected frames`,()=>{
   e.undo();e.seek(0);assert.deepEqual(current(e),base);
 });
 
+test('a draw order edit at a layer key with bezier easing is one entry that holds the order and undoes exactly',()=>{
+  const edits=[
+    e=>e.moveBuilderOrder({kind:'segment',index:2},'front'),
+    e=>numeric(e,'segment_z_order',current(e).length),
+  ];
+  for(const edit of edits) {
+    const e=fixture(),id=e.layerForUid(1),bezier=[.1,.2,.3,.9];
+    e.sheetSetEasing([id],10,10,{interpolation:'bezier',bezier});
+    e.sheetSetEasing([id],20,20,{interpolation:'bezier',bezier});
+    e.seek(10);
+    const base=current(e),source=JSON.stringify(e.serialize()),entries=e._undo.length;
+    assert.ok(edit(e));
+    assert.notDeepEqual(current(e),base);
+    assert.equal(e._undo.length,entries+1);
+    const keys=e.layerFrameKeys(id),written=keys.find(key=>key.tick===10);
+    assert.equal(written.interpolation,'constant');assert.equal(written.bezier,undefined,'the key holds the order, it keeps no curve');
+    assert.deepEqual(keys.find(key=>key.tick===20).bezier,bezier,'the other key is as it was');
+    e.undo();assert.equal(JSON.stringify(e.serialize()),source);
+  }
+});
+
 test('internal depth validates persisted overrides and permits imported fractional order',()=>{
   const e=fixture(),target={kind:'segment',uid:1,handleId:1};
   assert.equal(validateAnimationValue(target,'zIndex',1.5),1.5);
