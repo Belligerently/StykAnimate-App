@@ -295,10 +295,10 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
   assertBudget(descriptor, 'figure');
 
   // Joined: Arrange's action unjoins, and the Connection section opens by itself.
-  const joined = engineEditor();
-  const [child, parent] = joined.frame.objects;
-  child.join = {target_object_slot: parent.object_slot, target_unique_id: parent.unique_id, target_handle_id: 3};
+  const joined = engineEditor({layerTimeline: true, propertyChannels: true});
+  const [parent, child] = joined.selectionFrame.objects;
   joined.select(child.unique_id);
+  joined.joinTo(parent.unique_id, 3);
   const connected = inspectorView({editor: joined});
   assert.equal(tag(connected, {'data-action': 'join-figure'}).attrs['data-hotkey-title'], 'Unjoin figure');
   assert.ok('data-open' in tag(connected, {'data-section': 'connection'}).attrs);

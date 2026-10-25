@@ -27,7 +27,7 @@ Inspect these contracts and their current callers before editing. Proposed new m
 
 | Concern | Existing owner / contract |
 | --- | --- |
-| Document, commands, history | `src/editor.mjs`, `src/animation-history.mjs`, `docs/ARCHITECTURE.md` |
+| Document, commands, history | `src/editor.mjs`, `docs/engine/editing.md`, `docs/ARCHITECTURE.md` |
 | Layers and independent exposures | `src/editor-layer-sheet.mjs`, `src/layer-sheet.mjs`, `src/editor-layers.mjs`, `src/layers.mjs` |
 | Timeline UI and shortcuts | `src/layer-timeline.mjs`, `src/timeline-hotkeys.mjs`, `src/hotkeys.mjs`, `docs/TIMELINE.md`, `docs/animation-modes.md` |
 | Sprite representation | `src/media-authoring.mjs`, especially `createImageFigure` |

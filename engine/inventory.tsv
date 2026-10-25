@@ -1,6 +1,6 @@
 path	kind	owner	status	note
 src/animation-channels.mjs	engine	styk-eval::channels	partial	Rust: reading channels, sampleAnimationChannel, composeAnimationChannels, animationEndTick (styk_eval::channels); composeAnimationChannels and animationPropertyValue on records (styk_eval::records); animationChannelId, normalizeAnimationTarget and validateAnimationValue for property edits (styk-edit/src/property_edit.rs); document validation and native-timeline authoring still JS
-src/animation-history.mjs	engine	styk-edit	partial	Rust: recorded UTF-16 history weights and warm checkpoints; same exclusive Session coupled to portable quiet/live Core with terminal-ACK retirement; actual browser shown/release and persistent current charge pending; private undo/redo heads share until recorded writes, five alias plus191 owning controls pass; exact limits/prune/rollback/ACK owner retained, no public API change
+src/animation-history.mjs	engine	styk-edit	removed	Deleted with the editor command bodies: the session weighs its history entries (styk-edit)
 src/animation-origin-support.mjs	engine	styk-eval::origin	partial	Rust: support-graph origins/ghost corrections and recorded whole/joint/handle/range/join/2D-rig synchronization; an origin figure with a 3D pose, mesh, movieclip or drawing runs in the editor
 src/animation-origin-validation.mjs	engine	styk-eval	partial	Rust: typed origin compiler validates retained support indices, numbers, bindings and capacity against 68 editor refusals; cooperative import/object validation still JS
 src/animation-origin.mjs	engine	styk-eval::origin	partial	Rust: layout origins, offsets, corrected roots, in-between tweens, the rotation figure_angle uses (styk_eval::origin); evaluated records and scalar property previews byte-exact; most origin editing still JS
@@ -455,7 +455,7 @@ src/timeline-navigation.mjs	ui	-	stays
 src/timeline-organization.mjs	ui	-	stays	
 src/timeline-rows.mjs	ui	-	stays	
 src/timeline.mjs	ui	-	removed	deleted: an alias of layer-timeline.mjs that only tests imported (83 bytes)
-src/topology-history.mjs	engine	styk-edit	partial	Rust: topology entries' snapshots of the definition and the poses they touch, undo and redo (styk-edit/src/topology.rs); the history byte budget still JS
+src/topology-history.mjs	engine	styk-edit	removed	Deleted with the editor command bodies: the session records topology entries (styk-edit/src/topology.rs)
 src/touch/canvas-touch.mjs	ui	-	stays	
 src/touch/long-press.mjs	ui	-	stays	
 src/touch/modifier-dock.mjs	ui	-	stays	

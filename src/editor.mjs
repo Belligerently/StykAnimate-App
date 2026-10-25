@@ -40,13 +40,11 @@ import {editorHandleCommandMethods} from './editor-handle-commands.mjs';
 import {editorFrameDraftMethods, installFrameDraftPreflights} from './editor-frame-draft.mjs';
 import {prepareLoad, prepareLoadNow} from './engine/engine-open.mjs';
 import {editorOriginMutationMethods} from './editor-origin-mutations.mjs';
-import {animationHistoryBytes} from './animation-history.mjs';
 import {editorIKMethods} from './editor-ik.mjs';
 import {editorMovieclipMethods} from './editor-movieclips.mjs';
 import {editorLayerSheetMethods} from './editor-layer-sheet.mjs';
 import {validateLayerSheet} from './layer-sheet.mjs';
 import {editorMotionPathMethods} from './editor-motion-path.mjs';
-import {topologyHistoryBytes} from './topology-history.mjs';
 import {editorDrawingMethods} from './editor-drawing.mjs';
 import {DrawingResources,drawingResourcesFor} from './drawing-resources.mjs';
 import {editorSessionMethods} from './editor-sessions.mjs';
@@ -84,7 +82,7 @@ export class Editor extends EventTarget {
     this.load(demo ? createDemo() : emptyDocument());
   }
   get frame() { return this._authoredPoseEdit?.frame ?? this.report.keyframes[this.frameIndex]; }
-  get selectionFrame() { return this._authoredPoseEdit?.frame ?? (this.report._styk?.layerSheet || this.animationChannels.length ? this.evaluatedFrame : this.frame); }
+  get selectionFrame() { return this._authoredPoseEdit?.frame ?? this.evaluatedFrame; }
   get selectedUid() {
     if (!this.selectedUids?.has(this._selectedUid)) this._selectedUid = [...(this.selectedUids ?? [])].at(-1) ?? null;
     return this._selectedUid;
@@ -223,9 +221,7 @@ export class Editor extends EventTarget {
       id: change.id, before: {exists: change.before.exists}, after: {exists: change.after.exists},
     }))} : command;
     command.bytes = (Number.isFinite(command.precomputedBytes) && command.precomputedBytes >= 0
-      ? command.precomputedBytes : command.kind === 'animation' || command.draftAnimation
-        ? animationHistoryBytes(sized) : command.kind === 'topology' ? topologyHistoryBytes(sized)
-          : JSON.stringify(sized).length * 2 + (command.sourceBytes ?? 0)) + (this._pendingSourceBytes ?? 0);
+      ? command.precomputedBytes : JSON.stringify(sized).length * 2 + (command.sourceBytes ?? 0)) + (this._pendingSourceBytes ?? 0);
     this._pendingSourceBytes = 0;
     drawingResourcesFor(this.report)?.history?.track(command,delta=>{
       if(this._undo.includes(command)||this._redo.includes(command)){this._historySize+=delta;this._trimHistory();}

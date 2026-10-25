@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
-| `styk-edit` | 90 | 1023 KiB | 27 | 36 | 7 | 5 | 15 | 23 % | 58 % | 14 % |
+| `styk-edit` | 90 | 1020 KiB | 27 | 34 | 7 | 5 | 17 | 23 % | 58 % | 14 % |
 | `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
 | `styk-eval` | 80 | 688 KiB | 18 | 46 | 10 | 0 | 6 | 18 % | 72 % | 1 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 767 KiB | 26 | 6 | 1 | 22 | 4 | 63 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 8 | 7 | 3 | 0 | 33 | 24 % | 48 % | 12 % |
-| **Total** | 356 | 3017 KiB | 104 | 106 | 29 | 27 | 90 | 32 % | 45 % | 8 % |
+| **Total** | 356 | 3014 KiB | 104 | 104 | 29 | 27 | 92 | 32 % | 45 % | 8 % |
 
 ## Engine modules
 
@@ -65,7 +65,7 @@ Engine logic: ported to Rust.
 | `src/drawing-worker-operations.mjs` | `styk-drawing` | removed | deleted: the pixel worker runs styk-drawing (src/engine/engine-drawing-worker.mjs) |
 | `src/drawing-worker-preview.mjs` | `styk-drawing` | removed | deleted: the preview is a pixel-worker operation of styk-drawing (src/engine/engine-drawing-worker.mjs) |
 | `src/drawing-worker.mjs` | `styk-drawing` | partial | Rust: the pixel worker hands its operations to styk-drawing; the worker shell is JS |
-| `src/animation-history.mjs` | `styk-edit` | partial | Rust: recorded UTF-16 history weights and warm checkpoints; same exclusive Session coupled to portable quiet/live Core with terminal-ACK retirement; actual browser shown/release and persistent current charge pending; private undo/redo heads share until recorded writes, five alias plus191 owning controls pass; exact limits/prune/rollback/ACK owner retained, no public API change |
+| `src/animation-history.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the session weighs its history entries (styk-edit) |
 | `src/builder-appearance.mjs` | `styk-edit` | partial | Rust: pasting runs updateBuilderSegmentStyle (styk-edit/src/builder.rs); copying reads the figure on show (a view) |
 | `src/builder-session.mjs` | `styk-edit` | js |  |
 | `src/clipboard-asset-plan.mjs` | `styk-edit` | removed | deleted with the native frame clipboard: nothing in the interface copied or pasted keyframes on a native timeline (4009 bytes) |
@@ -154,7 +154,7 @@ Engine logic: ported to Rust.
 | `src/text-authoring-worker.mjs` | `styk-edit` | js |  |
 | `src/text-authoring.mjs` | `styk-edit` | js |  |
 | `src/text-font-compat.mjs` | `styk-edit` | js |  |
-| `src/topology-history.mjs` | `styk-edit` | partial | Rust: topology entries' snapshots of the definition and the poses they touch, undo and redo (styk-edit/src/topology.rs); the history byte budget still JS |
+| `src/topology-history.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the session records topology entries (styk-edit/src/topology.rs) |
 | `src/playback-bitmap-pool.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-budget.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-cadence.mjs` | `styk-engine::playback` | js | scheduling, budgets |

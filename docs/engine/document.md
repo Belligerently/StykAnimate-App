@@ -34,10 +34,9 @@ through `styk-piv`, `.styk` through `styk-formats`) or a document as JSON (a new
 document, a tutorial's, a recovery copy, a Stick Nodes import the importer worker decoded).
 `Engine::open_document` runs on an engine worker (`EngineHandle.open_document`, a job the interface
 polls on the progress counter and cancels with `cancel_open`) or, for a small document the editor needs
-at once, on the calling thread (`open_document_now`). It decodes, normalizes the document as the editor's
-load always did (`styk_edit::load::prepare_for_editor`: the validation and migration of
-`prepareEditorLoad`, then the layer sheet an editor with a layer timeline gives every document) and
-converts it into the typed views (`styk_eval::load::Loader`, the image atlas). The result, an
+at once, on the calling thread (`open_document_now`). It decodes, normalizes the document
+(`styk_edit::load::prepare_for_editor`: the validation and migration, then the layer sheet an editor with
+a layer timeline gives every document) and converts it into the typed views (`styk_eval::load::Loader`, the image atlas). The result, an
 `OpenedDocument`, holds the normalized tree, the indexes the editor adopts (next identities, figures per
 layer, tracks) and the typed views; nothing is published yet. A failure is an `OpenError`: a message
 key with its parameters where the editor has one (`errors.nativeContainer.*`, the load's keys), the
