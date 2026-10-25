@@ -467,7 +467,7 @@ impl Records<'_> {
     }
 
     /// `buildGeometry(report, frame)` of a frame record, read into a typed frame.
-    fn geometry_of(&self, frame: &Value) -> Result<crate::geometry::Scene, Error> {
+    pub(super) fn geometry_of(&self, frame: &Value) -> Result<crate::geometry::Scene, Error> {
         let doc = &self.prepared.doc;
         let typed = crate::load::Loader::new().edit_frame(frame, None, doc).map_err(|error| Error::Invalid(error.to_string()))?;
         Ok(crate::geometry::build(doc, &typed))

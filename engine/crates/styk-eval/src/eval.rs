@@ -915,14 +915,27 @@ impl Prepared {
         }
         let mut objects = Vec::with_capacity(next as usize);
         let mut origins = Vec::with_capacity(next as usize);
+        // A figure joined to an instance that left the frame comes loose where the whole
+        // frame had it, built once (`resolveGeometry` of `sampleMovieclipObjects`).
+        let mut loose: Option<crate::geometry::Scene> = None;
         for (i, o) in frame.objects.iter().enumerate() {
             if !keep[i] {
                 continue;
             }
             let mut o = o.clone();
             if let Some(j) = o.join {
-                let target = remap[j.slot as usize];
-                Arc::make_mut(&mut o).join = (target != u32::MAX).then_some(Join { slot: target, handle: j.handle });
+                let target = remap.get(j.slot as usize).copied().unwrap_or(u32::MAX);
+                if target == u32::MAX {
+                    let scene = loose.get_or_insert_with(|| crate::geometry::build(doc, frame));
+                    let root = scene.objects.get(i).filter(|g| g.resolved).map(|g| g.root);
+                    let detached = Arc::make_mut(&mut o);
+                    detached.join = None;
+                    if let Some(root) = root {
+                        detached.root = root;
+                    }
+                } else {
+                    Arc::make_mut(&mut o).join = Some(Join { slot: target, handle: j.handle });
+                }
             }
             objects.push(o);
             origins.push(frame.origins.get(i).cloned().flatten());

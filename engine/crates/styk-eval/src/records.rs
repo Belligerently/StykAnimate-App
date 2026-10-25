@@ -315,17 +315,33 @@ impl<'a> Records<'a> {
                 slots.insert(slot, slots.len());
             }
         }
+        // A figure joined to an instance that left the frame comes loose where the whole
+        // frame had it (`resolveGeometry` of `sampleMovieclipObjects`), built once.
+        let mut loose: Option<crate::geometry::Scene> = None;
         let mut visible = Vec::with_capacity(slots.len());
         for (slot, object) in objects.iter().enumerate() {
             let Some(&at) = slots.get(&slot) else { continue };
             let mut next = object.as_obj().cloned().unwrap_or_default();
             next.set("object_slot", Value::Num(at as f64));
             if let Some(join) = object.get("join").filter(|j| j.truthy()) {
-                let target = num(join, "target_object_slot").map(|s| s as usize);
-                let Some(&parent) = target.and_then(|t| slots.get(&t)) else { return unported("figures joined to a hidden movieclip") };
-                let mut join = join.as_obj().cloned().unwrap_or_default();
-                join.set("target_object_slot", Value::Num(parent as f64));
-                next.set("join", Value::object(join));
+                let parent = num(join, "target_object_slot").filter(|s| *s >= 0.0 && s.fract() == 0.0).and_then(|s| slots.get(&(s as usize)));
+                if let Some(&parent) = parent {
+                    let mut join = join.as_obj().cloned().unwrap_or_default();
+                    join.set("target_object_slot", Value::Num(parent as f64));
+                    next.set("join", Value::object(join));
+                } else {
+                    if loose.is_none() {
+                        let mut every = frame.as_obj().cloned().unwrap_or_default();
+                        every.set("objects", Value::array(objects.clone()));
+                        loose = Some(self.geometry_of(&Value::object(every))?);
+                    }
+                    if let Some(root) = loose.as_ref().and_then(|scene| scene.objects.get(slot)).filter(|g| g.resolved).map(|g| g.root) {
+                        next.set("root_x", Value::Num(root[0]));
+                        next.set("root_y", Value::Num(root[1]));
+                    }
+                    next.set("join", Value::Null);
+                    next.remove("runtime_segments");
+                }
             }
             visible.push(Value::object(next));
         }

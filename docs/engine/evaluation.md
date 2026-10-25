@@ -275,9 +275,10 @@ the reason.
   movieclip frame replacements (`replaceMovieclipFrame`, tweened along their own track),
   movieclips leaving the frame outside their span, layer order, 3D poses between keys
   (`interpolateSpatialPose`'s record), hidden pose keys, and property channels (below).
-- Not yet (each answers `Unported`): figures joined to a hidden movieclip and a movieclip's
-  own retained-source document. A tweened camera keeps its baked camera-motion
-  offset (`_parallaxMotionOffset`) as the editor writes it.
+- A figure joined to a movieclip instance that is not shown (its placement ended, or a once-clip finished) comes loose
+  where the whole frame had it (`sampleMovieclipObjects`: its root is the geometry of the frame with the instance in
+  it, its join `null`), in the record and in the typed frame alike (`Prepared::apply_movieclips`). A tweened
+  camera keeps its baked camera-motion offset (`_parallaxMotionOffset`) as the editor writes it.
 - **Property channels as records** (`styk_eval::records` `channels.rs`): where the editor
   composes them, so do records: on the native timeline a layer sheet's imported keys sample
   (`sampleLegacy`, with the sheet's `legacyAnimation`; a native document's own

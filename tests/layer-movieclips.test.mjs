@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {engineEditor} from './support/owned-editor.mjs';
 /** The editor the engine owns, on a layer sheet. */
 const layerEditor=(options={},document)=>engineEditor({...options,layerTimeline:true},document);
@@ -7,6 +8,8 @@ import {movieclipAsset,movieclipTime,playbackSettings,validateMovieclipGraph} fr
 import {timeline} from '../src/pivot/read-view.mjs';
 import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 import {sceneAt} from './support/engine-geometry.mjs';
+
+const near=(a,b,tolerance=1e-9)=>assert.ok(Math.abs(a-b)<=tolerance,`${a} != ${b}`);
 
 // The scene the engine draws at a tick, movieclip contents included (a clip's own geometry is its handle: engine-geometry.mjs).
 const sample=sceneAt;
@@ -146,3 +149,28 @@ test('conversion rejects interleaved stacking later in the range without a parti
   assert.equal(e._undo.length,count);assert.equal(e.report.figure_types.length,definitions);
 });
 
+
+test('a figure joined to a movieclip that is not shown stays where the clip had it',()=>{
+  // The clip's placement ends at tick 3; the figure joined to its root comes loose there and goes on following the clip's place
+  // in the timeline (it is never refused, and the clip's own geometry is gone from the frame).
+  const document=JSON.parse(readFileSync(new URL('../engine/tests/edit/clip-playback-all-native.document.json',import.meta.url),'utf8'));
+  const e=layerEditor({propertyChannels:true},document);
+  e.addFigure();e.select(2);e.joinFigure(1,0);e.select(1);e.setMovieclipPlayback({start:0,end:3,mode:'loop'},{allFrames:true});
+  const placed=tick=>{e.seek(tick,{allowBeyondEnd:true});return e.evaluatedFrame.objects.map(o=>[o.unique_id,o.join??null,o.root_x,o.root_y,o._movieclipSample??null]);};
+  const groups=tick=>{e.seek(tick,{allowBeyondEnd:true});const {objects,orderedObjects}=e.geometry;return {slots:[...objects.keys()],roots:orderedObjects.map(g=>[g.obj.unique_id,g.root.x,g.root.y])};};
+  // While the clip plays the figure stays joined to it, at its root.
+  const playing=placed(1);
+  assert.deepEqual(playing.map(o=>o[0]),[1,2,3]);
+  assert.equal(playing[1][1].target_object_slot,0);
+  // When the placement has ended the frame holds the two figures that remain, the joined one detached at the clip's last place.
+  assert.deepEqual(placed(3),[[2,null,196.25,146.375,null],[3,null,480,270,null]]);
+  const later=placed(5);
+  assert.deepEqual(later.map(o=>[o[0],o[1]]),[[2,null],[3,null]]);
+  near(later[0][2],180+32.5*5/6);near(later[0][3],150-7.25*5/6);
+  for(const tick of [3,5]){
+    const shown=groups(tick);
+    assert.deepEqual(shown.slots,[0,1]);
+    assert.deepEqual(shown.roots.map(r=>r[0]),[2,3]);
+    near(shown.roots[0][1],placed(tick)[0][2]);near(shown.roots[0][2],placed(tick)[0][3]);
+  }
+});
