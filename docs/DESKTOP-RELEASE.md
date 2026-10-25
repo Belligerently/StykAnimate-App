@@ -17,6 +17,8 @@ python -m pip install -r scripts/requirements-build.txt
 npm run build:video-encoder
 ```
 
+Python is used only here, to stage the offline video encoder (and, on Windows, to build the codec helpers); the installer carries no Python and no Python codec.
+
 On Windows, also run `npm run build:vfw` to build both 32-bit and 64-bit installed-codec helpers. The video staging step verifies MP4, AVI, WMV, and VP9 encoder availability and includes its license and provenance files. Build guards reject a missing or stale engine or codec module (its bytes must match `src/engine/pkg/build-info.json`), stale helper sources, and an encoder staged for another OS or architecture. No Python codec ships: the app runs the Pivot codec in the editor page.
 
 Release artifacts are kept in separate numeric version directories. For a Windows 0.3.0 release, first set the root package and lockfile versions to 0.3.0, then run this sequence in PowerShell after source changes are frozen:

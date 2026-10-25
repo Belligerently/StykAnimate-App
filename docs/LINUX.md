@@ -133,7 +133,7 @@ the editor page and ends with it, however the app stops.
 ## Why WebGPU is on by default
 
 Before `desktop/gpu-switches.cjs`, Electron on Linux found no WebGPU adapter and the
-editor used the Canvas 2D compatibility renderer (since deleted: the engine's WebGL2
+editor drew with a Canvas 2D renderer (since deleted: the engine's WebGL2
 backend is the fallback now). `scripts/benchmark-synthetic-scene.mjs`
 measures the difference with no private files: it clones the startup figure into a
 dense scene and zooms it through the app's own Ctrl+wheel handler, so every frame

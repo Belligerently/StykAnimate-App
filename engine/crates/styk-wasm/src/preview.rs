@@ -14,9 +14,9 @@
 //! canvas failing the probe) are drawn here too, always on the CPU ([`Previews::thumbnail`]):
 //! the document is the engine's, pinned at the interface's revision (`ExportFrames`), its
 //! frames prepared on the engine's workers and its pictures decoded there once per document
-//! lineage, kept across revisions. In-between poses and the camera monitor share this
-//! worker's existing device/atlas (or its CPU rasterizer); even their first preparation
-//! runs here, never on the interface thread.
+//! lineage, kept across revisions. The camera monitor shares this worker's existing
+//! device/atlas (or its CPU rasterizer); even its first preparation runs here, never on
+//! the interface thread.
 //!
 //! A library file is not the open document: its pictures go into an atlas of this device (or
 //! the CPU's pictures), replaced when another file is drawn (library files hold few
@@ -29,7 +29,6 @@ use styk_engine::edit::{EditOptions, EditScene};
 use styk_engine::export::{ExportFrames, AHEAD};
 use styk_engine::thumbnails::library::{fit, fitted, LibraryPreview, Sample, NOWHERE, SAMPLE, SIZE};
 use styk_engine::thumbnails::{card, Framing, CARD, MAX_SIDE};
-use styk_engine::thumbnails::inbetween::{InbetweenPreview, Onions};
 use styk_engine::{Engine, Generation};
 use styk_raster::{Edges, Images, Place, Raster};
 use styk_render::{DrawingGrid, Renderer, ViewParams, wgpu};
@@ -61,7 +60,6 @@ struct Gpu {
 struct DocumentThumbnails {
     frames: ExportFrames,
     images: Images,
-    preview: Option<InbetweenPreview>,
 }
 
 #[wasm_bindgen]
@@ -261,8 +259,8 @@ impl Previews {
 
     /// The open document's pose `json` (a keyframe record, as the stage is sent edit frames)
     /// seen through the scene camera it carries, framed as `mode` and `params` say, on
-    /// transparency: the parallax monitor shows how a camera position moves the layers. Like
-    /// [`Previews::inbetween`]: 0: drawn; 1: some pictures of the document are not ready yet;
+    /// transparency: the parallax monitor shows how a camera position moves the layers. 0: drawn;
+    /// 1: some pictures of the document are not ready yet;
     /// 2: the engine holds another revision. Fails for a pose it cannot read.
     #[allow(clippy::too_many_arguments)]
     pub fn pose(&mut self, revision: f64, json: &str, width: u32, height: u32, mode: u32, params: &[f64]) -> Result<u32, JsError> {
@@ -397,23 +395,6 @@ impl Previews {
     /// Direct source pixels must use createImageBitmap(ImageData), not a 2D
     /// OffscreenCanvas conversion with a different destination backing lifetime.
     pub fn monitor_pixels(&self) -> bool { self.monitor_pixels }
-
-    /// Explicit in-between samples, including hidden and one-tick native intervals,
-    /// prepared here using one typed sampling view of the pinned generation.
-    pub fn inbetween(&mut self, revision: f64, index: u32, ratio: f64, mode: u32, count: u32, opacity: f64, ahead: bool, width: u32, height: u32) -> Result<u32, JsError> {
-        if !(1..=MAX_SIDE).contains(&width) || !(1..=MAX_SIDE).contains(&height) { return Err(js_error("Invalid in-between preview dimensions.")); }
-        let Some(engine) = self.engine.clone() else { return Ok(STALE) };
-        let Some(generation) = engine.generation().filter(|g| g.revision == revision as u64) else { return Ok(STALE) };
-        self.pin(&engine, &generation)?;
-        let pictures = self.thumbnails.as_mut().expect("pinned above");
-        for image in pictures.frames.take_images(usize::MAX) { pictures.images.add_shared(&generation.assets, image); }
-        if pictures.frames.images_pending() > 0 { return Ok(WAIT) }
-        let preview = pictures.preview.get_or_insert_with(|| InbetweenPreview::new(generation.clone()));
-        let (list, camera) = preview.sample(index as usize, ratio, Onions { mode, count, opacity, ahead }, clock).map_err(js_error)?;
-        let view = view_of(card(&generation.prepared.doc, camera.as_ref(), width, height), CARD, true, true);
-        self.draw_document(&generation, &list, &view, width, height, DrawingGrid::Destination, styk_render::paint::PaintContext::Native)?;
-        Ok(READY)
-    }
 
     /// Draws the thumbnail of `tick` of the open document at `revision` on a `width ×
     /// height` card (`styk_engine::thumbnails::card`) with the CPU rasterizer, into the CPU's
@@ -597,17 +578,17 @@ impl Previews {
         match self.thumbnails.take() {
             Some(earlier) if earlier.frames.generation().lineage == generation.lineage && earlier.frames.images_pending() == 0 => {
                 frames.decode_images_since(Some(earlier.frames.generation()));
-                self.thumbnails = Some(DocumentThumbnails { frames, images: earlier.images, preview: None });
+                self.thumbnails = Some(DocumentThumbnails { frames, images: earlier.images });
             }
             _ => {
                 frames.decode_images();
-                self.thumbnails = Some(DocumentThumbnails { frames, images: Images::default(), preview: None });
+                self.thumbnails = Some(DocumentThumbnails { frames, images: Images::default() });
             }
         }
         Ok(())
     }
 
-    /// Monitor and in-between frames share this worker's existing atlas/device and
+    /// Monitor frames share this worker's existing atlas/device and
     /// the pinned document's decoded pictures; library files reuse the same device.
     fn draw_document(&mut self, generation: &Generation, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32, grid: DrawingGrid, paint: styk_render::paint::PaintContext) -> Result<(), JsError> {
         let pictures = self.thumbnails.as_mut().expect("a document is pinned");

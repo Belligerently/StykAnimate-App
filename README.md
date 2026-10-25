@@ -35,7 +35,7 @@ Everything (decoding, editing, saving and rendering) runs locally. Optional, con
 
 ## Build from source
 
-Requirements: Node.js 22+ (CI uses 24.11), the Rust toolchain below, and Python 3.11+ for tests and packaging (CI uses 3.12). Windows and Linux are tested on every change; macOS has an untested build target.
+Requirements: Node.js 22+ (CI uses 24.11), the Rust toolchain below, and, for development only, Python 3.11+ (CI uses 3.12): it stages the offline video encoder and builds the Windows codec helpers when packaging, and runs the tests of the Python Pivot codec kept as an oracle. The app, desktop and web, contains and needs no Python. Windows and Linux are tested on every change; macOS has an untested build target.
 
 ```sh
 npm ci
@@ -63,7 +63,7 @@ The browser build: `npm run web:build`, then `npm run web:preview`. See [Web bui
 ```sh
 npm run check        # syntax, stylesheet lint
 npm test             # unit tests
-python -m unittest discover -s backend -p "test_*.py"
+python -m unittest discover -s backend -p "test_*.py"   # the Python codec oracle (development only)
 ```
 
 Browser tests (`tests/*.browser.mjs`) run against `npm run serve` with Chrome or Playwright Chromium, for example `node tests/timeline.browser.mjs`. Some tests read a local corpus of Pivot projects that is not distributed; they skip and name the missing file. Desktop tests and scripts (`tests/*.desktop.mjs`, `scripts/smoke-*.mjs`) open the app in a window; set `STYK_BACKGROUND_WINDOW=1` to open it off-screen without taking focus (packaged builds too). [`.github/workflows/ci.yml`](.github/workflows/ci.yml) shows what runs on every pull request.

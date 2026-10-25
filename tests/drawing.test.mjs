@@ -10,7 +10,6 @@ import {TileStore,TILE,TILE_BYTES,tileKey} from '../src/drawing-tiles.mjs';
 import {encodeTileBlob,decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX} from '../src/drawing-tile-codec.mjs';
 import {encodeDrawingPNG,decodeDrawingPNG} from '../src/drawing-png.mjs';
 import {presenterScratch,levelStore,invalidateLevels,flattenedDrawingPNG} from '../src/drawing-raster.mjs';
-import {DrawingTileProvider} from '../src/drawing-provider.mjs';
 import {createDrawingFigure} from '../src/drawing-model.mjs';
 import {objectBounds} from '../src/renderer-geometry.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
@@ -669,45 +668,6 @@ test('forking a cel does not double-count copy-on-write tiles in the byte stats'
     const b=new DrawingStroke(s2,{size:8,pressureSize:false});b.sample({x:70,y:20});e.commitDrawingPixels(copy,b.finish());
     assert.ok(resources.stats.bytes>before,'a diverged tile adds real bytes');
   }finally{resources.dispose();}
-});
-
-test('the drawing provider decodes published blobs and evicts LRU over budget',async()=>{
-  const store=new TileStore();store.set(-1,0,new Uint8ClampedArray([7,8,9,200]));store.set(3,3,new Uint8ClampedArray([4,5,6,255]));
-  const figure=id=>{const f=createDrawingFigure({celId:id});f._styk.drawing.revision=1;f._styk.drawing.bounds={...store.bounds};return f;};
-  const blob=await encodeTileBlob(store);
-  const provider=new DrawingTileProvider({budgetBytes:4*TILE_BYTES});
-  try{
-    const [a,b,c]=[figure('cel-a'),figure('cel-b'),figure('cel-c')];
-    a.image_assets[0].styk_tiles=blob;b.image_assets[0].styk_tiles=blob;c.image_assets[0].styk_tiles=blob;
-    await provider.prepare([a]);assert.equal(provider.presenter(a).store.pixel(-32,5)[3],200);
-    assert.equal(provider.presenter(a).store.tileBounds.x,-64);
-    await provider.prepare([b]);await provider.prepare([c]);
-    assert.equal(provider.presenter(a),null,'LRU eviction released the oldest cel');
-    assert.ok(provider.presenter(b)?.store&&provider.presenter(c)?.store);
-    assert.ok(provider.bytes<=provider.budgetBytes);
-    // A matching revision is a cache hit; a stale revision decodes again.
-    await provider.prepare([b]);b._styk.drawing.revision=2;await provider.prepare([b]);
-    assert.equal(provider.entries.get('cel-b').revision,2);
-  }finally{provider.dispose();}
-});
-
-test('the drawing provider never serves a superseded revision',async()=>{
-  const store=new TileStore();store.set(0,0,new Uint8ClampedArray([7,8,9,255]));
-  const blob=await encodeTileBlob(store);
-  const provider=new DrawingTileProvider();
-  try{
-    const figure=createDrawingFigure({celId:'cel-gate'});
-    figure._styk.drawing.revision=1;figure._styk.drawing.bounds={...store.bounds};figure.image_assets[0].styk_tiles=blob;
-    await provider.prepare([figure]);
-    assert.equal(provider.presenter(figure)?.store?.pixel(5,5)?.[3],255);
-    // A patch bumps the figure's revision before the worker re-decodes; the
-    // stale store must not answer bounds or paint queries in between.
-    figure._styk.drawing.revision=2;
-    assert.equal(provider.presenter(figure),null);
-    await provider.prepare([figure]);
-    assert.equal(provider.presenter(figure)?.revision,2);
-    assert.equal(provider.presenter(figure)?.store?.pixel(5,5)?.[3],255);
-  }finally{provider.dispose();}
 });
 
 test('a v2 cel world bounds equal its tile bounds through drawingPixelMatrix',()=>{

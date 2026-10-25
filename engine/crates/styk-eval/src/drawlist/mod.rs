@@ -1454,38 +1454,10 @@ pub fn layer_effects(layer: &EffectLayer) -> &[Arc<Effect>] {
 /// With a scene effect stack the camera image is drawn over the frame and the
 /// onion skins over the camera image, as the editor's overlays.
 pub fn encode_composed(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Overrides<'_>, ghosts: &[Ghost<'_>], order: Option<&[Layer]>) -> DrawList {
-    encode_layers(doc, assets, scene, overrides, ghosts, order, false)
-}
-
-/// Thumbnail previews draw their untinted onion figures before the current frame,
-/// at each figure's own faded opacity. Scene effects cover that complete picture.
-/// The scenes supplied as `ghosts` already carry the per-figure fade.
-pub fn encode_preview(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Overrides<'_>, ghosts: &[Ghost<'_>]) -> DrawList {
-    let mut order = Vec::new();
-    for (index, ghost) in ghosts.iter().enumerate() {
-        let mut previous = None;
-        for item in &ghost.scene.items {
-            if previous != Some(item.slot) { order.push(Layer::Ghost(index as u32, item.slot)); previous = Some(item.slot); }
-        }
-    }
-    let mut previous = None;
-    for item in &scene.items {
-        if previous != Some(item.slot) { order.push(Layer::Current(item.slot)); previous = Some(item.slot); }
-    }
-    encode_layers(doc, assets, scene, overrides, ghosts, Some(&order), true)
-}
-
-fn encode_layers(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Overrides<'_>, ghosts: &[Ghost<'_>], order: Option<&[Layer]>, preview: bool) -> DrawList {
     let bypass = overrides.bypass_effects;
     let current = encode_scene(assets, overrides.live, scene, overrides.hidden, overrides.translations, None, bypass, true);
     let camera_stack = if bypass { None } else { scene.vfx.as_ref().map(|v| &v.scene).filter(|s| !s.is_empty()) };
-    // The software preview's scene-effect path moves its combined ghost/current
-    // picture by the current camera's parallax. Ordinary preview ghosts stay still.
-    let offsets: std::collections::HashMap<_, _> = if preview && camera_stack.is_some() { overrides.translations.iter().filter_map(|(slot, delta)| scene.objects.get(*slot as usize).map(|object| (object.uid, *delta))).collect() } else { Default::default() };
-    let ghost_scenes: Vec<Encoded> = ghosts.iter().map(|ghost| {
-        let translations: Vec<_> = if preview && camera_stack.is_some() { ghost.scene.objects.iter().filter_map(|object| offsets.get(&object.uid).map(|delta| (object.slot, *delta))).collect() } else { Vec::new() };
-        encode_scene(assets, overrides.live, ghost.scene, ghost.hidden, &translations, ghost.tint, bypass, preview)
-    }).collect();
+    let ghost_scenes: Vec<Encoded> = ghosts.iter().map(|ghost| encode_scene(assets, overrides.live, ghost.scene, ghost.hidden, &[], ghost.tint, bypass, false)).collect();
     // Generated effects: each draw encoded once, placed in the frame and in the camera image.
     let batch = overrides.generators.filter(|_| !bypass);
     // The exportSVG predicate runs on visible source drawables, not on emitted
@@ -1543,11 +1515,7 @@ fn encode_layers(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Ove
                             continue;
                         }
                         flush(&mut b, &mut pending, frame_walker.as_mut());
-                        if preview {
-                            let source = &ghosts[ghost as usize];
-                            let encoded = &ghost_scenes[ghost as usize];
-                            if let Some(&range) = encoded.of_slot.get(&slot) { place(&mut b, source.scene, encoded, range, 0, source.hidden, None); }
-                        } else { place_ghost(&mut b, &mut open, ghosts, &ghost_scenes, ghost, slot); }
+                        place_ghost(&mut b, &mut open, ghosts, &ghost_scenes, ghost, slot);
                     }
                 }
             }
@@ -1568,21 +1536,14 @@ fn encode_layers(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Ove
         if let Some(walker) = &mut camera_walker {
             walker.begin(&mut b, camera);
         }
-        if preview {
-            for (ghost, encoded) in ghosts.iter().zip(&ghost_scenes) {
-                place(&mut b, ghost.scene, encoded, (0, encoded.runs.len()), camera, ghost.hidden, None);
-            }
-        }
         place(&mut b, scene, &current, whole, camera, overrides.hidden, camera_walker.as_mut());
         if let Some(walker) = &mut camera_walker {
             walker.end(&mut b, camera);
         }
         b.close(camera, 1.0, true);
         let mut open: Option<(u32, usize)> = None;
-        if !preview {
-            for &(ghost, slot) in &deferred {
-                place_ghost(&mut b, &mut open, ghosts, &ghost_scenes, ghost, slot);
-            }
+        for &(ghost, slot) in &deferred {
+            place_ghost(&mut b, &mut open, ghosts, &ghost_scenes, ghost, slot);
         }
         close_ghost(&mut b, &mut open, ghosts);
     }

@@ -68,16 +68,6 @@ const LINES: usize = 6;
 /// Compares every tick of `reference` (`frames[].drawables` and
 /// `frames[].objects[].joints`) with the engine's scene at that tick.
 pub fn compare(prepared: &Prepared, reference: &Value) -> Report {
-    let preview = items(reference.get("frames")).iter().any(|frame| frame.get("inbetween").is_some()).then(|| prepared.inbetween_view());
-    compare_with(prepared, reference, |frame, tick| match frame.get("inbetween") {
-        Some(sample) => preview.as_ref().expect("sampling view").inbetween(sample.get("index").and_then(Value::as_f64).unwrap_or(0.0) as usize, sample.get("ratio").and_then(Value::as_f64).unwrap_or(0.5)).expect("valid editor-built preview"),
-        None => prepared.evaluate(tick),
-    })
-}
-
-/// Compares an explicit read-only sample using the ordinary geometry, style and
-/// effect checks. The document used to draw it remains the authored document.
-pub fn compare_with(prepared: &Prepared, reference: &Value, sample: impl Fn(&Value, f64) -> crate::eval::Frame) -> Report {
     let mut report = Report::default();
     let reference_total = reference.get("totalTicks").and_then(Value::as_f64).unwrap_or(0.0) as u32;
     if reference_total != prepared.total_ticks {
@@ -85,7 +75,7 @@ pub fn compare_with(prepared: &Prepared, reference: &Value, sample: impl Fn(&Val
     }
     for frame in items(reference.get("frames")) {
         let tick = frame.get("tick").and_then(Value::as_f64).unwrap_or(0.0);
-        let evaluated = sample(frame, tick);
+        let evaluated = prepared.evaluate(tick);
         let scene: Scene = build(&prepared.doc, &evaluated);
         let mut problems: Vec<String> = Vec::new();
         report.frames += 1;

@@ -21,7 +21,7 @@ test('a call the session has no command for is refused and changes nothing', {sk
     assert.equal(text(editor), colored, 'the refused call changed nothing');
     assert.equal(editor.undoLabel, label);
     assert.deepEqual(owner.refused, {'insertBlankFrame: a native timeline has no engine command': 1});
-    for (const name of ['addFrame', 'deleteFrame', 'duplicateFrame', 'reverseFrames', 'insertInbetweenFrames', 'insertInbetweenFramesAsync']) {
+    for (const name of ['addFrame', 'deleteFrame', 'duplicateFrame', 'reverseFrames']) {
       assert.throws(() => editor[name](), error => error.messageKey === 'errors.engineOwner.notSupported', name);
     }
     assert.equal(text(editor), colored);

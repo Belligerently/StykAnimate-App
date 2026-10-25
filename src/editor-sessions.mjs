@@ -23,7 +23,7 @@ const SHARED_KEYS = new Set([
   // counters that stay monotonic across every document
   '_revisionSerial', '_loadRequestId', '_layerRevision', '_definitionRevision', '_frameDraftRevision',
   // services and listeners installed once
-  '_inbetweenPlanner', '_frameDraftListener', '_frameDraftEnabled',
+  '_frameDraftListener', '_frameDraftEnabled',
   // the engine owner's view of the frame on show, which follows whichever document is open
   '_shown',
   // clipboards
@@ -31,7 +31,7 @@ const SHARED_KEYS = new Set([
   '_segmentValuesClipboard',
   '_vfxClipClipboard', '_vfxClipClipboardValues', '_drawingPixelClipboard',
   // panel state and diagnostics
-  '_vfxTimelineVisible', '_cameraInspectorTab', 'lastLoadTimings', 'lastInbetweenTimings',
+  '_vfxTimelineVisible', '_cameraInspectorTab', 'lastLoadTimings',
 ]);
 /** Derived from the report and rebuilt on demand: a resting session does not hold them. */
 const DERIVED_KEYS = ['_geometry', '_evaluated', '_incremental', '_seekGeometry', '_propertyChannelCache', '_nativePoseMarkerCache',

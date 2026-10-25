@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newPlainEditor} from './support/plain-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {connectedTimelineGroups} from '../src/connected-timeline.mjs';
+import {connectedTimelineGroups} from './helpers/legacy-connected-timeline.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
 import {authoredKeyTimes} from './helpers/legacy-key-times.mjs';
 

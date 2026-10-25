@@ -408,18 +408,20 @@ function writeNativeBlob(bridge,blob,options={}){
   const context=telemetry.consent.diagnostics?telemetry.performance.context():null,epoch=telemetry.epoch;
   return writeNativeBlobRaw(bridge,blob,{...options,...(context?{onTiming:(metric,ms)=>{if(epoch===telemetry.epoch)telemetry.performance.record(metric,ms,context);}}:{})});
 }
+/** The stage's graphics backend as telemetry names it: the engine draws with WebGPU, or with WebGL2 where there is none. */
+const telemetryBackend = () => ({WebGPU: 'webgpu', WebGL2: 'webgl2'})[state.renderer?.stats?.backend] ?? 'unavailable';
 const telemetry = new DesktopTelemetryClient(desktop, { getContext: () => ({
   mode: state.settings.timelineMode, locale: state.settings.locale,
   playing: state.playing,
   pending:playback.stats.pendingFrames,cacheBytes:playback.stats.bytes,cache:playback.stats,
   performance:{
-    backend:state.renderer?.stats?.backend==='WebGPU'?'webgpu':'unavailable',
+    backend:telemetryBackend(),
     complexity:complexityBucket(state.renderer?.stats?.primitives),fps:fpsBucket(editor.report?.fps),
     pixels:canvas.width*canvas.height<1e6?'under-1mp':canvas.width*canvas.height<4e6?'1-4mp':'4mp-plus',
     phase:state.playing?'playing':'editing',quality:images.reduced||state.previewGovernor?.index?'reduced':'full',
     features:(state.onion?1:0)|(state.inspectorContext==='camera'?2:0)|(state.vfxEnabled?4:0)|(state.motionPaths?8:0)|(state.renderer?.stats?.textureObjects?16:0),
   },
-  backend: state.renderer?.stats?.backend === 'WebGPU' ? 'webgpu' : 'unavailable',
+  backend: telemetryBackend(),
   gauges: { gpu_memory_mb: state.renderer?.stats?.gpuBytes / 1048576, draw_calls: state.renderer?.stats?.drawCalls,
     upload_kb: state.renderer?.stats?.uploadBytes / 1024, scene_figures: state.renderer?.stats?.objects,
     scene_primitives: state.renderer?.stats?.primitives, scene_frames: editor.totalTicks },
@@ -4435,25 +4437,20 @@ const actions = {
   "next-keyframe": () => { pause(); runTimelineHotkey(timelineUI, 'next-keyframe'); },
   "add-frame": () => addFrameKeepingDrag(() => {
     if(editor.getLayer(editor.activeLayerId)?.drawing)return editor.addDrawingFrame();
-    if(editor.report._styk?.layerSheet) {
-      if(state.settings.timelineMode !== 'simple')
-        return timelineUI.addFrameCell();
-      const result=editor.sheetDuplicateFrameAfter(['scene','camera',...editor.report._styk.layers.order]);
-      timelineUI.revealPlayhead();
-      return result;
-    }
-    return editor.addFrame();
+    if(state.settings.timelineMode !== 'simple')
+      return timelineUI.addFrameCell();
+    const result=editor.sheetDuplicateFrameAfter(['scene','camera',...editor.report._styk.layers.order]);
+    timelineUI.revealPlayhead();
+    return result;
   }),
   "extend-keyframe": () => {
     pause();finishCurrentEdit();
     if(drawingController?.active)return editor.extendDrawing(timelineUI?.ids?.length?timelineUI.ids:[editor.activeLayerId],drawingController.settings.length);
-    if(editor.report._styk?.layerSheet) return timelineUI.extendKeyframe();
-    return editor.setFrameDuration(editor.frame.duration_raw + 1);
+    return timelineUI.extendKeyframe();
   },
   "delete-frame": () => {
     pause();
-    if(editor.report._styk?.layerSheet)return state.settings.timelineMode === "simple"?timelineUI.action("delete"):timelineUI.removeFrames();
-    editor.deleteFrame();
+    return state.settings.timelineMode === "simple"?timelineUI.action("delete"):timelineUI.removeFrames();
   },
   "add-figure": () => {
     pause();
@@ -5278,7 +5275,7 @@ const hotkeys = new HotkeyManager({run: guarded(runKeyboardCommand), release: gu
 overlays.hotkeys = hotkeys;
 // The timeline island: its mount, its header's controls and what the header shows (src/timeline-host.mjs).
 timelineHost = createTimelineHost({
-  editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, overlays, play, pause, finishKeyboardHandle, cancelDrag,
+  editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, overlays, play, pause, finishKeyboardHandle,
   cancelPolygonDraft, interruptRecovery, cancelWarmPlayback: () => clearTimeout(warmTimer), warmPlayback, scheduleRecovery,
   requestRender, queueUI, renderInspector, syncSelectionControls, rangeFrames, selectTrack, previewScrub, scrubAudio, stopAudioScrub,
   changeFigureLayer, confirmDiscardFrame: dialogs.confirmDiscardFrame, simpleFrameCount, fail,
@@ -6085,13 +6082,6 @@ async function init() {
   });
   installShellCommands(actions, { shell, keyboard: shellKeyboard, layout: layoutPopover });
   timelineHost.attach(shell);
-  // The editor's background planning job runs on the engine's workers against the document
-  // synced for it; the editor still checks its own document again before it publishes a plan.
-  const currentDocument = () => { const report = editor.report, revision = editor.revision; return () => editor.report === report && editor.revision === revision; };
-  editor.setInbetweenPlanner((params, options) => {
-    syncPlayback();
-    return playback.planInsertInbetweens(params, { ...options, isCurrent: currentDocument() });
-  });
   cameraMotionControls = new CameraMotionControls($('inspector'),editor,{onError:fail,onRender:()=>{queueUI();requestRender();},beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onPreview:clip=>{pause();editor.seek(clip.start);state.motionPreviewRange={start:clip.start,end:Math.min(editor.totalTicks,clip.start+clip.duration)};play();},posePicture:(pose,options)=>posePictures.picture(pose,options)});
   propertyControls = new PropertyControls($("inspector"), {
     canHandle: (key, input) =>

@@ -296,7 +296,7 @@ ownership gate.
 Portable mobile pin additions include `HistoryLimits`, worker history configuration,
 preparation and application methods, `Editor::set_revision_counters`,
 `set_selection_metadata`, `motion_display_frame_worker`, prepared/guarded publication
-types and accessors, and the Engine layer planning and canonical publication APIs.
+types and accessors, and the Engine canonical publication APIs.
 `CommandKind::Animation` gains structural metadata, `FigureRange` retains geometry when
 recorded, and layer/movieclip command variants preserve their recorded history shape.
 Browser bindings remain confined to `styk-wasm`.
@@ -712,9 +712,8 @@ it on the editor, for every document.
 - **Refusals.** A call the session refuses for this document or selection (`Unported`), or has no command for (it answers
   `unported` with the call's own name), raises `errors.engineOwner.notSupported` with the call's name and the reason on
   `error.reason`, and changes nothing: the editor never runs it, and `report.refused` counts it. The keyframe commands of a
-  native timeline (`REFUSED_CALLS`: `addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`,
-  `insertInbetweenFrames` and its asynchronous form) are refused by the owner itself. The app gives every document a layer
-  sheet, so none of these is reached from it ("Refusals" below lists what is refused on a sheet). Nothing but the session's
+  native timeline (`REFUSED_CALLS`: `addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames` and `insertBlankFrame`) are
+  refused by the owner itself. The app gives every document a layer sheet, so none of these is reached from it ("Refusals" below lists what is refused on a sheet). Nothing but the session's
   answers writes to the editor's read view: code that changed a record in place would leave it apart from the session's
   document, which the tests' `verify` mode (the session's document compared with the read view after every call) reports.
 - **Arguments.** JSON drops an object member set to `undefined` and turns `NaN` into `null`, so the owner encodes both
@@ -793,7 +792,7 @@ made from the app:
 | an animation-origin figure with a 3D pose, a mesh, a movieclip or a drawing (`origin_component_gate`: the pivots are not read for them) | the pose, handle, rig and pose-choice calls, joins, range edits and pose-property keys whose component holds one | Set Origin refuses a figure that has rig relationships, no movieclip or drawing cel is a figure with an origin, and no recorded document holds such a pose |
 | combining a group with Stick Nodes shapes, 3D meshes, movieclips, drawings or origins | combineJoinedFigure | the editor's own result is not defined for them: it drops the mesh or clip, and a Stick Nodes shape names handles of the old figures (every recorded document with one fails its validation) |
 | combining in a document with saved animation channels (`authored`) | combineJoinedFigure | native timelines only: the app gives every document a layer sheet (a working frame open is the editor's error, `disconnectSegment` answers it) |
-| the keyframe commands of a native timeline, working frames | `addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`, `insertInbetweenFrames`, `enableFrameDrafts` and the rest of the working frame API | native timelines only: the app gives every document a layer sheet and never starts a working frame |
+| the keyframe commands of a native timeline, working frames | `addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`, `enableFrameDrafts` and the rest of the working frame API | native timelines only: the app gives every document a layer sheet and never starts a working frame |
 | a pose at an absolute value across several frames, and a figure's own stacking number | the inspector's token (`native-property-edit.mjs`) for `root_x`, `root_y`, `group_*`, `scale`, `rotation`, `joint_*` with more than one frame chosen, and `figure_z_order` of several figures or a movieclip | no command of the session sets a pose property to one value in every chosen frame (the relative range commands exist); a single figure's stacking number is the `zIndex` channel |
 | the definition of a figure and the fields of a frame through the inspector's token | `outline_*`, `thickness`, `segment_*` opacity and the project's `duration` on a document without property channels | native timelines only: with property channels these are keys of the figure's channels |
 

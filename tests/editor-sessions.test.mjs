@@ -131,8 +131,7 @@ test('a loaded project receives nothing from the one it replaces in front, and g
 
 test('clipboards, configuration and installed services belong to the editor, not to a project', () => {
   const editor = application();
-  const planner = () => {};
-  editor.setInbetweenPlanner(planner); editor.autoKey = true;
+  editor.autoKey = true;
   const uid = editor.frame.objects[0].unique_id;
   editor.select(uid); editor.copySelection();
   const copied = editor._selectionClipboard ?? editor._figureClipboard;
@@ -141,7 +140,6 @@ test('clipboards, configuration and installed services belong to the editor, not
   const first = editor.detachDocument();
   editor.newDocument();
   assert.equal(editor._selectionClipboard ?? editor._figureClipboard, copied);
-  assert.equal(editor._inbetweenPlanner, planner);
   assert.equal(editor.autoKey, true); assert.equal(editor.layerTimeline, true); assert.equal(editor.propertyChannels, true);
   assert.equal(editor.hasFigureClipboard, true);
   assert.notEqual(editor._documentToken, source);

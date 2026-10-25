@@ -109,7 +109,7 @@ passes all four views and its engine RGBA output is byte-identical to the retain
 original captures; all four software-web legacy captures are also byte-identical.
 The draw-list entry marks exactly one published drawing image before tile expansion.
 `DrawingGrid::Destination` uses the existing nested placement/filter owner for direct
-software edit frames, thumbnails and in-between previews, including a single drawing
+software edit frames and thumbnails, including a single drawing
 inside a movieclip with child/outer effects. Multiple children and ordinary onion
 entries retain their existing policy. `DrawingGrid::World` remains the portable default
 for prepared playback and ordinary GPU rendering. The private monitor request carries
@@ -539,8 +539,8 @@ stage is drawn by JavaScript renderer code: where the engine cannot draw one (a 
 without the engine's worker threads, a stage that gets no GPU device at all), the picture is not drawn.
 
 **Frame thumbnails** (the timeline's filmstrip cards at 320×192, the export dialog's stage and
-strip at up to 512×288 and 96×60): `src/engine/engine-thumbnails.mjs` is the object the filmstrip, the export dialog
-and the in-between dialog draw with (`renderThumbnail` resolves `false` for a thumbnail the engine did
+strip at up to 512×288 and 96×60): `src/engine/engine-thumbnails.mjs` is the object the filmstrip and the export dialog
+draw with (`renderThumbnail` resolves `false` for a thumbnail the engine did
 not draw, and the filmstrip asks again later). For a thumbnail it brings the engine to the
 editor's revision (`src/engine/engine-document.mjs`, the synchronisation exports use), then asks
 the stage (`renderThumbnail` in `engine-stage.mjs`, `Stage::prepare_thumbnail` and
@@ -559,10 +559,7 @@ with an `ExportFrames`, waits on the engine's progress counter for the frame (pr
 workers) and every picture (decoded there once per document lineage: a later revision decodes only
 the images and drawing cels the earlier one lacked, `ExportFrames::decode_images_since`), rasterizes
 the card with styk-raster and hands it over as an `ImageBitmap`, which the interface draws onto the
-card. No copy of the document goes to a thumbnail worker. In-between previews
-(`docs/INSERT-INBETWEEN.md`, a sampled pose that is not in the document) are drawn by the same worker
-(`Previews::inbetween`, an explicit interval with the dialog's onion settings). Thumbnails show parallax
-layers moved by the camera, as playback does.
+card. No copy of the document goes to a thumbnail worker. Thumbnails show parallax layers moved by the camera, as playback does.
 
 **Library previews** (`src/library-files.mjs`, `src/library-hover-preview.mjs`): one preview
 worker per page (`src/engine/engine-previews.mjs`, `engine-preview-worker.mjs`) joins the
@@ -713,7 +710,7 @@ particle), `node --test tests/engine-previews.test.mjs` (which renderer draws a 
 preview worker's CPU thumbnails from the engine's document, the thumbnails not drawn, the preview
 worker's queue, messages made when sent, cancellation, failure and release, the camera monitor's
 one pending request), `tests/camera-monitor-visibility.test.mjs`, `tests/asset-library.browser.mjs`
-and `tests/insert-inbetween-app.browser.mjs` in the app. Measured when the pictures moved to the
+in the app. Measured when the pictures moved to the
 engine (Electron, an RTX 4070 SUPER): a 320×192 thumbnail of an open document took 1.7–7 ms on the stage's
 device (the first 1.8–8.8 ms, no worker to start), a library poster 11–34 ms and a hover frame
 0.5–2 ms once the preview worker ran, the camera monitor 0.5–0.7 ms of the interface thread. Not

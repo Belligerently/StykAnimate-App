@@ -1,5 +1,6 @@
-/** Canvas 2D drawing for generated effects: the compatibility renderer,
- * software playback packets, camera monitors, thumbnails and export.
+/** Canvas 2D drawing for generated effects. The app no longer draws with it
+ * (the engine does, docs/engine/vfx.md); only tests and the engine's fixture
+ * tools (engine/tools/export-policy-fixtures.mjs) still run it.
  *
  * Particles come from evaluateParticle(), the same function the WebGPU shader
  * mirrors. Each layer's colour ramp is quantized into a few tinted sprites that

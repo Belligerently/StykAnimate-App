@@ -57,7 +57,7 @@ export const SESSION_COMMANDS = Object.freeze([
 ]);
 
 /** Calls the interface can still make that the session has no command for: the keyframe commands of a native timeline (the app
- * gives every document a layer sheet) and the dialog that inserted inbetweens between them. They are refused, never run. */
+ * gives every document a layer sheet). They are refused, never run. */
 export const REFUSED_CALLS = Object.freeze([
-  'addFrame', 'deleteFrame', 'duplicateFrame', 'reverseFrames', 'insertBlankFrame', 'insertInbetweenFrames', 'insertInbetweenFramesAsync',
+  'addFrame', 'deleteFrame', 'duplicateFrame', 'reverseFrames', 'insertBlankFrame',
 ]);

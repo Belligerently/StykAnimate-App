@@ -286,16 +286,6 @@ function applyPatch(root, patch) {
 }
 /** Called by Editor's history dispatcher. Only small validated field values are copied. */
 export function applyNativePropertyCommand(editor, command, direction) {
-  if (command.scope === "objects-range") {
-    for (const entry of command[direction])
-      editor._replaceObjects(entry.index, entry.objects);
-    return;
-  }
-  if (command.scope === "frames-range") {
-    for (const entry of command[direction])
-      applyPatch(editor.report.keyframes[entry.index], entry.patch);
-    return;
-  }
   const root = rootFor(editor, command.scope, command.index);
   if (!root) throw messageError(new Error(''), "errors.nativePropertyEdit.thePropertyTargetNoLongerExists", {});
   applyPatch(root, command[direction]);

@@ -534,7 +534,7 @@ try {
   check('One-sided numeric bounds retain their original infinity value in translated validation',await page.evaluate(()=>validationInput.validationMessage===styk.localization.t('propertyControls.enterValueBetween',{min:-Infinity,max:10})&&validationInput.value==='12'));
   await page.evaluate(()=>{validationControls.destroy();rigCaptionProbe.remove();styk.localization.localization.setPseudo(null);});
   await page.evaluate(async()=>{
-    const {Editor}=await import('/src/editor.mjs');const {emptyDocument}=await import('/src/demo.mjs');const {Timeline}=await import('/src/timeline.mjs');
+    const {Editor}=await import('/src/editor.mjs');const {emptyDocument}=await import('/src/demo.mjs');const {Timeline}=await import("/src/layer-timeline.mjs");
     const {appendLocalized}=await import('/src/localization-bindings.mjs');
     window.organizationEditor=new Editor({demo:false,layerTimeline:true}).load(emptyDocument());const artist=organizationEditor.createLayer('Artist layer',{activate:false});
     window.organizationHost=document.createElement('div');organizationHost.className='workspace';organizationHost.dataset.mode='animate';organizationHost.style.cssText='position:fixed;top:40px;right:10px;width:760px;height:300px;background:white;z-index:10';appendLocalized(document.body,organizationHost);
@@ -557,38 +557,6 @@ try {
   await page.evaluate(()=>{organizationHost.dataset.mode='draw';organizationTimeline._syncOrganization();styk.localization.localization.setPseudo('rtl');organizationTimeline._syncOrganization();});
   check('Draw workspace refresh retains the translated drawing-layer action in RTL',await page.evaluate(()=>organizationTimeline.newLayerButton.getAttribute('aria-label')===styk.localization.t('timeline.newDrawingLayer')&&organizationTimeline.newLayerButton.firstElementChild===organizationIcon));
   await page.evaluate(()=>{organizationTimeline.destroy();organizationHost.remove();styk.localization.localization.setPseudo(null);});
-  await page.evaluate(async()=>{
-    const {Editor}=await import('/src/editor.mjs');const {createDemo}=await import('/src/demo.mjs');const {InsertInbetweenDialog}=await import('/src/insert-inbetween-dialog.mjs');
-    window.inbetweenCaptionEditor=new Editor({demo:false}).load(createDemo());window.inbetweenCaptionProbe=new InsertInbetweenDialog({editor:inbetweenCaptionEditor,renderThumbnail:async()=>true});inbetweenCaptionProbe.open([0,1]);
-    window.inbetweenCaptionBytes=JSON.stringify(inbetweenCaptionEditor.report);window.inbetweenCaptionUndo=inbetweenCaptionEditor._undo.length;
-  });
-  await page.waitForFunction(()=>!inbetweenCaptionProbe.applyButton.disabled);
-  await page.evaluate(()=>{
-    window.inbetweenDraft=inbetweenCaptionProbe.$('[type=number]');inbetweenDraft.focus();inbetweenDraft.value='37.5';
-    window.inbetweenCaptionNodes=[inbetweenCaptionProbe.applyButton,inbetweenCaptionProbe.statusCaption,inbetweenCaptionProbe.statusSuffix,inbetweenCaptionProbe.$('.styk-inbetween-onions span')];
-    styk.localization.localization.setPseudo('long');
-  });
-  check('Inbetween range insertion and onion captions translate in place while the ratio draft and source keyframes remain unchanged',await page.evaluate(()=>{
-    const probe=inbetweenCaptionProbe,t=(key,params)=>styk.localization.t(key,params);
-    return document.activeElement===inbetweenDraft&&inbetweenDraft.value==='37.5'&&probe.applyButton===inbetweenCaptionNodes[0]
-      &&probe.applyButton.textContent===t('insertInbetweenDialog.insertFrames',{count:2})
-      &&probe.$('.styk-inbetween-onions span').textContent===t('insertInbetweenDialog.onionSkinsBeforeAfter')
-      &&probe.$('.styk-inbetween-onions').getAttribute('aria-label')===t('insertInbetweenDialog.onionSkinsBeforeAfter')
-      &&JSON.stringify(inbetweenCaptionEditor.report)===inbetweenCaptionBytes&&inbetweenCaptionEditor._undo.length===inbetweenCaptionUndo;
-  }));
-  await page.evaluate(()=>{
-    const probe=inbetweenCaptionProbe;window.inbetweenCaptionJob={session:probe.session,controller:new AbortController()};probe.applyJob=inbetweenCaptionJob;probe.setApplying(true);
-    for(let index=0;index<1000;index++)probe.updateProgress(inbetweenCaptionJob,{phase:'sampling',completed:index,total:1000});
-    styk.localization.localization.setPseudo('rtl');
-  });
-  check('Inbetween progress reuses a bounded pair of nodes and translates its current phase without changing numeric progress',await page.evaluate(()=>{
-    const probe=inbetweenCaptionProbe;return probe.statusCaption===inbetweenCaptionNodes[1]&&probe.statusSuffix===inbetweenCaptionNodes[2]&&probe.$('[role=status]').childNodes.length===2
-      &&probe.statusCaption.textContent===styk.localization.t('insertInbetweenDialog.preparingPoses')&&probe.statusSuffix.nodeValue===' · 999 / 1000'
-      &&probe.applyButton.textContent===styk.localization.t('insertInbetweenDialog.preparing')&&probe.$('progress').value===999;
-  }));
-  await page.evaluate(()=>{inbetweenCaptionProbe.setApplying(false);inbetweenCaptionProbe.showError(new Error('External validation detail'));styk.localization.localization.setPseudo('long');});
-  check('Inbetween error clearing does not revive a stale progress phase or busy action after language switching',await page.evaluate(()=>inbetweenCaptionProbe.$('[role=status]').textContent===''&&inbetweenCaptionProbe.applyButton.textContent===styk.localization.t('insertInbetweenDialog.insertFrames',{count:2})&&JSON.stringify(inbetweenCaptionEditor.report)===inbetweenCaptionBytes));
-  await page.evaluate(()=>{inbetweenCaptionProbe.destroy();styk.localization.localization.setPseudo(null);});
   await page.evaluate(async()=>{
     const {Editor}=await import('/src/editor.mjs');const {createDemo}=await import('/src/demo.mjs');
     const {vfxPresetStore}=await import('/src/vfx-user-presets.mjs');const {appendLocalized}=await import('/src/localization-bindings.mjs');

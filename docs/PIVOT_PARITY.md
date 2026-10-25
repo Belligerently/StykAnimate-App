@@ -266,15 +266,7 @@ style findings.
   with an arbitrary CSS easing curve.
 - [ ] T06 Insert a baked inbetween at a chosen ratio and retain surrounding
   timing/media. Reject unrepresentable background transitions explicitly.
-  **Progress:** [5 root-app](../artifacts/insert-inbetween-app.json),
-  [14 dialog](../artifacts/insert-inbetween-dialog.json) and 14 model/codec checks
-  prove selected native ranges, forced-linear ratio previews, exposure inheritance,
-  cancel/undo and PIV/STYK reopen. [The contract](INSERT-INBETWEEN.md) records
-  unsupported blends and bounded large ranges. Cancellable worker planning now
-  has seven async-model and 15 transport checks. The [actual Akane run](../artifacts/akane-inbetween-async-app/report.json)
-  inserts 20 keys with exact pose/order/joins/media/camera, one Undo/Redo and
-  cancellation: 8.39 seconds background, 16.3 ms commit and zero long tasks.
-  Its 104.2 ms maximum rAF gap remains an explicit performance observation.
+  **Progress:** the Insert Inbetween dialog and its planner were removed from the app; nothing opened them.
 - [ ] T07 Play/stop/loop/preview/scrub, previous/next key and output tick,
   visible time, and elapsed-time-based playback without cumulative timer drift.
   **Progress:** Stored/output-key navigation, Ctrl+Play current-frame camera preview,
@@ -289,7 +281,7 @@ style findings.
   pacing, native comparison and repeated-session drift remain open.
 - [x] T08 A bottom timeline with time ruler, playhead, visible keys/holds,
   editable timing, track selection, range selection, and horizontal zoom.
-  **Verified:** [timeline.mjs](../src/timeline.mjs),
+  **Verified:** [layer-timeline.mjs](../src/layer-timeline.mjs),
   [timeline.browser.mjs](../tests/timeline.browser.mjs),
   [timeline report](../artifacts/timeline-verification.json) and integrated
   authoring/creation UI reports exercise timing, tracks, ranges and scrubbing.

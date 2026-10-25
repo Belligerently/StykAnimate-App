@@ -9,7 +9,7 @@ const root = path.resolve(import.meta.dirname, '..');
 async function measure(file) {
   const profile = mkdtempSync(path.join(os.tmpdir(), 'styk-mem-'));
   writeFileSync(path.join(profile, 'editor-settings.json'), JSON.stringify({theme: 'light', locale: 'en'}));
-  const env = {...process.env, STYK_STARTUP_VIEW: 'editor', STYK_USER_DATA_DIR: profile, STYK_LIBRARY_DIR: path.join(profile, 'library'), STYK_PYTHON: path.join(root, '.venv/bin/python')}; delete env.ELECTRON_RUN_AS_NODE;
+  const env = {...process.env, STYK_STARTUP_VIEW: 'editor', STYK_USER_DATA_DIR: profile, STYK_LIBRARY_DIR: path.join(profile, 'library')}; delete env.ELECTRON_RUN_AS_NODE;
   const app = await _electron.launch({executablePath: createRequire(path.join(root, 'package.json'))('electron'), args: [root, '--js-flags=--expose-gc'], cwd: root, env});
   const page = await app.firstWindow();
   await page.waitForFunction(() => window.styk?.ready === true);

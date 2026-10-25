@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {exportMemoryPlan} from '../src/export-memory.mjs';
 import {downsampleExportPixels} from '../src/export-sampling.mjs';
-import {PlaybackResources} from '../src/playback-resources.mjs';
 import {exportAnimation} from '../src/image-export.mjs';
 import {encodeNativeVideo} from '../src/native-video-export.mjs';
 import {encodeVfwVideo} from '../src/vfw-video-export.mjs';
@@ -86,25 +85,4 @@ test('image and native video workers have bounded waits and cancel native jobs o
   vfw.cancelVfwExport = desktop.cancelVideoExport;
   await assert.rejects(encodeVfwVideo({...options, codecId: 'vfw:x64:12345678', desktop: vfw}), /timed out/);
   assert.equal(cancelled, 2); assert.ok(state.workers.every(worker => worker.terminated));
-});
-
-test('export rejects oversized PNG metadata before pixel decoding and closes unexpected oversized decodes', async t => {
-  const png = (width, height) => {
-    const header = new Uint8Array(33); header.set([137,80,78,71,13,10,26,10]);
-    const view = new DataView(header.buffer); view.setUint32(16, width); view.setUint32(20, height);
-    return new Blob([header], {type: 'image/png'});
-  };
-  let decoded = 0, closed = 0, blob = png(8192, 8192);
-  t.mock.method(globalThis, 'fetch', async () => ({ok: true, blob: async () => blob}));
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'createImageBitmap');
-  globalThis.createImageBitmap = async () => {decoded++; return {width: 8192, height: 8192, close() {closed++;}};};
-  t.after(() => {if (descriptor) Object.defineProperty(globalThis, 'createImageBitmap', descriptor); else delete globalThis.createImageBitmap;});
-  const resources = new PlaybackResources({baseURL: 'https://example.test', maxBytes: 8 * MiB, hardMaxBytes: 8 * MiB});
-  try {
-    const items = [{type: 'image', asset: {url: '/large.png'}}];
-    await assert.rejects(resources.preload(items), {code: 'export_memory_limit'}); assert.equal(decoded, 0);
-    blob = png(1, 1);
-    await assert.rejects(resources.preload(items), {code: 'export_memory_limit'}); assert.equal(decoded, 1); assert.equal(closed, 1);
-    assert.equal(resources.bytes, 0); assert.equal(resources.images.size, 0);
-  } finally {resources.dispose();}
 });

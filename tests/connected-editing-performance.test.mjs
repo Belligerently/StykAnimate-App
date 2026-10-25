@@ -6,7 +6,7 @@ import {composePoseChannels} from '../src/animation-pose.mjs';
 import {evaluatedNativeFrame,buildGeometry} from '../src/pivot/geometry.mjs';
 import {documentChunks,applyDocumentChunk} from '../src/document-transport.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
-import {connectedTimelineGroups} from '../src/connected-timeline.mjs';
+import {connectedTimelineGroups} from './helpers/legacy-connected-timeline.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
 
 function fixture({frames=30,parts=24,plain=false}={}) {

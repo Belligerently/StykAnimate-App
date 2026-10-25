@@ -46,8 +46,6 @@ const repo = path.resolve(here, '../..');
 const repoUrl = pathToFileURL(repo).href;
 const {openDocument} = await import(`${repoUrl}/tests/support/native-files.mjs`);
 const {Editor} = await import(`${repoUrl}/src/editor.mjs`);
-const {sampleInbetweenPreview} = await import(`${repoUrl}/src/editor-inbetween.mjs`);
-const {buildGeometry} = await import(`${repoUrl}/src/pivot/geometry.mjs`);
 
 const [input, output, ...rest] = process.argv.slice(2);
 if (!input || !output) {
@@ -91,23 +89,16 @@ else {
 }
 const max = Number(option('--max') ?? Infinity);
 ticks = ticks.filter(t => t >= 0 && t < total).slice(0, max);
-const samples = option('--inbetween')?.split(',').map(value => {
-  const [index, ratio] = value.split(':').map(Number);
-  return {index, ratio};
-});
 
 const round = v => typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v;
 const pt = p => p ? [round(p.x), round(p.y)] : null;
 const frames = [];
 let evalMs = 0;
-for (const entry of samples ?? ticks) {
+for (const tick of ticks) {
   const t0 = performance.now();
-  const sample = samples ? sampleInbetweenPreview(editor.report, entry.ratio, entry.index) : null;
-  const tick = sample?.sourceTick ?? entry;
-  if (!sample) editor.seek(tick);
-  const frame = sample?.frame ?? editor.evaluatedFrame;
-  const geometry = sample ? buildGeometry(editor.report, frame) : editor.geometry;
-  const drawables = geometry.drawables;
+  editor.seek(tick);
+  const frame = editor.evaluatedFrame;
+  const geometry = editor.geometry, drawables = geometry.drawables;
   evalMs += performance.now() - t0;
   // Evaluated meshes (docs/engine/spatial.md): each once per tick, in the order
   // their first drawable appears; a drawable names its mesh and its faces.
@@ -153,7 +144,6 @@ for (const entry of samples ?? ticks) {
   }
   frames.push({
     tick,
-    ...(sample ? {inbetween: {index: sample.index, ratio: sample.ratio}} : {}),
     camera: frame.camera ?? null,
     background: {id: frame.background_id ?? 0, b: frame.background_id_b ?? 0, mix: frame.background_mix ?? 0},
     objects, drawables: items,
