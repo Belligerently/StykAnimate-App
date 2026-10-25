@@ -3,7 +3,7 @@
 How the engine turns a document and a tick into world-space geometry and a
 draw list (`engine/crates/styk-eval`). The JavaScript editor's evaluation
 (`src/pivot/geometry.mjs`, `src/layer-sheet.mjs`, `src/animation-pose.mjs`, …)
-is the oracle while both exist.
+is what the recorded fixtures were made from ([README](README.md#fixtures)); the recordings are frozen and are the oracle now.
 
 ## Contract
 
@@ -115,7 +115,7 @@ bones are ghosts. A pose stores its pivot (`_stykAnimationOrigin`: `x`, `y`, a l
   including scalar property previews. Its raw writer preserves unknown pivot/ghost fields,
   record key order and unchanged COW identities; a corrected root drops runtime geometry.
   Inspector rotation and joined world positions share the typed origin/geometry owners.
-  `records-fixtures.mjs` records origin fixtures every half tick: layout, real local offsets,
+  The recorded origin fixtures hold every half tick: layout, real local offsets,
   retained ghost support, joins, zero scale and property previews. `tests/records_origin.rs`
   compares full bytes and scalar values and proves the fixtures need their pivots.
 
@@ -181,7 +181,7 @@ asset's width and its height times the ratio, anchored at the pivot. The engine 
 where it resolves an object's figure, after a style overlay (`Loader::styled_object`,
 `sticknodes::sprite_figure`, shared by identical sprites), so the draw list, effect bounds
 and editing all read the stretched asset. `styk compare` checks where pictures are drawn
-when the reference has them (`reference.mjs --images`).
+when the reference has them.
 
 ## The scene camera
 
@@ -242,21 +242,17 @@ boundary before JavaScript evaluation is deleted. The work queue in the plan ord
 
 ## Testing
 
-- `styk compare <file> <reference.json>` against `engine/tools/reference.mjs`
-  (every primitive and joint of the sampled ticks; `--vfx` adds effects, `--camera`
-  the shot camera and each object's parallax offset, `--scene` the background and
-  colour key, `--style` each object's outline and each segment's second colour;
-  `--native` evaluates the document on its native timeline instead of as the app
-  loads it).
-- Fixture suites built by the editor's own commands:
-  `engine/tools/ik-fixtures.mjs`, `eval-fixtures.mjs`, `vfx-fixtures.mjs`,
-  `spatial-fixtures.mjs`, `origin-fixtures.mjs`, `channel-fixtures.mjs` (byte-stable),
-  checked by `cargo test -p styk-eval`. Each channel fixture is checked as saved (against
-  the editor's native timeline) and as the app holds it (a layer sheet with
-  `legacyAnimation`, against the app's evaluation); `tests/channels.rs` also requires that
-  each fixture, each channel kind and each curve flag it uses changes the result when
-  removed.
-- `npm run engine:parity -- --corpus` runs the benchmark files at every tick.
+- `styk compare <file> <reference.json>` compares the engine with a recorded dump of the editor's
+  evaluation (every primitive and joint of the sampled ticks; the dump may add effects, the shot
+  camera and each object's parallax offset, the background and colour key, each object's outline
+  and each segment's second colour, and an evaluation on the native timeline). The dumps are the
+  frozen fixtures' `*.reference.json` files; nothing records new ones from the JavaScript.
+- The fixture suites (`ik`, `eval`, `vfx`, `generators`, `spatial`, `origin`, `channels`, `records` under
+  `engine/crates/styk-eval/tests/fixtures/`) were built by the editor's own commands and are frozen; `cargo test -p
+  styk-eval` checks them. Each channel fixture is checked as saved (against the editor's native timeline) and as
+  the app holds it (a layer sheet with `legacyAnimation`, against the app's evaluation); `tests/channels.rs` also
+  requires that each fixture, each channel kind and each curve flag it uses changes the result when removed.
+  New or changed behaviour gets a Rust test that states its expected result ([README](README.md#fixtures)).
 
 ## The evaluated frame as records
 
@@ -304,15 +300,13 @@ the reason.
 - Angles are tweened through `styk_math::shortest`: with the platform's `sin` and `atan2`
   an IK target rotation came out as `-0.06` where the editor stores
   `-0.05999999999999999` (D16).
-- Harness: `engine/tools/records-reference.mjs <file> <folder>` records the editor's loaded
-  report and, per tick, the snapshot (SHA-256, and the JSON for small documents);
-  `styk records <folder> [--write]` compares. `--native` keeps a document's channels on its
-  native timeline (no layer sheet); `--entries <list.json>` records, per tick, the frame a
-  property edit writes there and the channels it built. `engine/tools/records-fixtures.mjs`
-  records every editor-built fixture into `tests/fixtures/records/`, the channel fixtures
-  in both forms and seven sets of property edits (`entries-*`); `tests/records.rs` requires
-  every recorded frame to be produced and identical, and every channel fixture and property
-  edit to differ somewhere without its channels.
+- Harness: `styk records <folder> [--write]` compares the engine's records with a recording of the editor's loaded
+  report and, per tick, the snapshot (SHA-256, and the JSON for small documents). The recordings kept in
+  `tests/fixtures/records/` are frozen: every editor-built fixture, the channel fixtures in both forms (a
+  document's channels on its native timeline, no layer sheet) and seven sets of property edits (`entries-*`: per
+  tick, the frame a property edit writes there and the channels it built). `tests/records.rs` requires every
+  recorded frame to be produced and identical, and every channel fixture and property edit to differ somewhere
+  without its channels.
 
 ## The interface's frame
 

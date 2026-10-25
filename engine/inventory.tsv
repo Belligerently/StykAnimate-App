@@ -399,7 +399,7 @@ src/simple-timeline.mjs	ui	-	removed	deleted: an alias of sheet-filmstrip.mjs th
 src/source-record.mjs	engine	styk-formats::container	js	
 src/spatial-controls.mjs	ui	-	stays	
 src/spatial-gizmo.mjs	ui	-	stays	
-src/spatial-mesh-legacy.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/spatial-mesh-legacy.mjs	engine	styk-eval::rig	js	Kept: the converter behind scripts/convert-spatial-meshes.mjs (docs/SPATIAL-MESHES.md); the app does not run it on open
 src/spatial-mesh.mjs	engine	styk-eval::spatial	partial	Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS
 src/spatial-projection.mjs	engine	styk-eval::spatial	partial	Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS
 src/sprite-placement-dialog.mjs	ui	-	stays	

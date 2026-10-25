@@ -18,7 +18,7 @@
 //! | [`parse`] | the `_stykIK` table of a pose object |
 //!
 //! The arithmetic follows the JavaScript operation by operation: the editor is
-//! the oracle (`engine/tools/reference.mjs`), see docs/engine/rigs-ik.md.
+//! the oracle the fixtures were recorded from (frozen), see docs/engine/rigs-ik.md.
 
 pub mod interpolate;
 pub mod joined;

@@ -1,8 +1,7 @@
 //! Property channels against the JavaScript editor.
 //!
 //! Every fixture in `tests/fixtures/channels/` is a small project animated with channels
-//! on its native timeline, built by the editor (`node engine/tools/channel-fixtures.mjs`
-//! regenerates them): as saved (`<name>.json`, against the editor's evaluation of its
+//! on its native timeline, built by the editor (frozen recordings): as saved (`<name>.json`, against the editor's evaluation of its
 //! native timeline) and as the app holds it once loaded (`<name>.sheet.json`, a layer sheet
 //! whose imported keys sample the channels as `legacyAnimation`, against the app's
 //! evaluation). The engine must draw the same joints, primitives, effects, backgrounds,
@@ -120,7 +119,7 @@ fn kind(channel: &Channel) -> String {
 #[test]
 fn every_fixture_evaluates_like_the_editor() {
     let names = fixtures();
-    assert!(names.len() >= 10, "fixtures are missing: run node engine/tools/channel-fixtures.mjs");
+    assert!(names.len() >= 10, "fixtures are missing: the channel fixtures are frozen recordings (restore them from version control)");
     for name in &names {
         for (form, reference) in FORMS {
             let document = open(name, form);

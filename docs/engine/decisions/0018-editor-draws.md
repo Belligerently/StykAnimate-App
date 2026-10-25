@@ -15,8 +15,8 @@ they are made.
 - The editor draws through one module, `src/editor-draws.mjs` (`editorDraws.uuid`, `seed`,
   `random`). `withDraws(run, source)` records the draws of a call in order as `[kind, value]`,
   and with `source` replaces them.
-- The command-replay recorder (`engine/tools/edit-replay.mjs`) draws from a fixed sequence
-  (identities `d0d0d0d0-0000-4000-8000-…`, a pattern no fixture generator uses) and records
+- The command-replay recorder (deleted: the tapes in `engine/tests/edit/` are frozen) drew from a fixed sequence
+  (identities `d0d0d0d0-0000-4000-8000-…`, a pattern no fixture generator used) and recorded
   each step's draws as `draws`.
 - The engine takes the draws of the call it is making, in order and by kind
   (`Editor::set_draws`, `draw_uuid`, `draw_seed`, `draw_random`); a call that would draw what

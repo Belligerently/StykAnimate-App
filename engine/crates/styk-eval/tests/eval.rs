@@ -1,8 +1,7 @@
 //! Evaluation against the JavaScript editor.
 //!
 //! Every fixture in `tests/fixtures/eval/` is a small project and the editor's
-//! own evaluation of it (`node engine/tools/eval-fixtures.mjs` regenerates
-//! them). The engine must draw the same joints and primitives, within the
+//! own evaluation of it (frozen recordings). The engine must draw the same joints and primitives, within the
 //! tolerance `styk compare` uses.
 
 use std::path::{Path, PathBuf};
@@ -42,7 +41,7 @@ fn describe(report: &Report) -> String {
 #[test]
 fn every_fixture_evaluates_like_the_editor() {
     let names = fixtures();
-    assert!(names.len() >= 3, "fixtures are missing: run node engine/tools/eval-fixtures.mjs");
+    assert!(names.len() >= 3, "fixtures are missing: the evaluation fixtures are frozen recordings (restore them from version control)");
     for name in &names {
         let document = open(name);
         assert!(document.unsupported.is_empty(), "{name}: not evaluated: {:?}", document.unsupported);

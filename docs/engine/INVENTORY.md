@@ -238,7 +238,7 @@ Engine logic: ported to Rust.
 | `src/rig-constraints.mjs` | `styk-eval::rig` | partial | Rust: plan and evaluation (styk_eval::rig); the plan's validation with its refusals (styk-edit/src/rig_behavior.rs); authoring helpers still JS |
 | `src/rig-control-details.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
 | `src/rig-weighted.mjs` | `styk-eval::rig` | partial | Rust: weighted joints and bindings (styk_eval::rig); validateWeightedJoint (styk-edit/src/rig_behavior.rs); authoring still JS |
-| `src/spatial-mesh-legacy.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
+| `src/spatial-mesh-legacy.mjs` | `styk-eval::rig` | js | Kept: the converter behind scripts/convert-spatial-meshes.mjs (docs/SPATIAL-MESHES.md); the app does not run it on open |
 | `src/movieclip-mesh.mjs` | `styk-eval::spatial` | partial | Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS |
 | `src/pivot/surfaces.mjs` | `styk-eval::spatial` | ported | Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer |
 | `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation and ordinary choice/group/preset editing; 24 recorded spatial-origin visibility/preset/mixed tapes/2724 steps including joins; origin instances admitted with a joint, several figures or IK limbs; additional spatial/native-projection cases and panel validation/adoption remain guarded |

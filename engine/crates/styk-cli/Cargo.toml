@@ -1,6 +1,6 @@
 [package]
 name = "styk-cli"
-description = "Headless tools: decode, evaluate, benchmark and compare against the JavaScript reference."
+description = "Headless tools: decode, evaluate, benchmark and compare against the recorded JavaScript references."
 edition.workspace = true
 version.workspace = true
 license.workspace = true

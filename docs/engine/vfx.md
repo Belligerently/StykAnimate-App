@@ -22,8 +22,7 @@ and clip commands. The remaining 12 recordings / 392 steps cover every built-in
 preset, saved preset timing/keys with remapped identities, attached scopes through
 depth 16 and refusal at 17, raw paint validation and keyed solid/gradient sampling.
 `records::paint_record` preserves the typed paint's editor record form. The facade
-records identity/seed draws (D18) for preset/group creation; commands retain their
-existing shadow/adoption policy. User-preset storage and inspector flows remain in
+records identity/seed draws (D18) for preset/group creation. User-preset storage and inspector flows remain in
 their existing UI owners.
 
 ## Evaluation order
@@ -76,7 +75,7 @@ Invariants:
 
 Differences, on purpose or known:
 
-- `Math.pow` (sizes over life, trail fades, some material shapes) is `styk_math::pow`, V8's own (D16), and the fixtures are recorded with Node pinned to it (`engine/tools/v8-pin.mjs`); a browser's is the platform's, which can differ in the last bit and cannot change a stored record (single precision) or a material byte in practice. Particle sizes are compared bit for bit.
+- `Math.pow` (sizes over life, trail fades, some material shapes) is `styk_math::pow`, V8's own (D16), and the fixtures were recorded with Node pinned to it (`engine/tools/v8-pin.mjs`, still imported by the JavaScript tests that load the engine); a browser's is the platform's, which can differ in the last bit and cannot change a stored record (single precision) or a material byte in practice. Particle sizes are compared bit for bit.
 - A styled instance's nested generators are read from its base figure's movieclip (the same clip document).
 
 ## Invariants
@@ -117,7 +116,7 @@ A filtered group is an isolation group with a raster **layer** (`Group::layer`, 
 - **Entries**: the outermost group of top-level artwork that holds effects anywhere (an object, a movieclip instance or a connected run) is an *entry* (`LayerKind::Entry`), even when it is opaque and has no stack of its own: the editor rasterizes such artwork whole and resamples it. Groups inside an entry are *nested* (`LayerKind::Nested`).
 - **The scene stack** becomes the *camera image* (`LayerKind::Camera`): the background and the frame's runs drawn again inside it, composited last over the unfiltered frame, then the onion skins over it (`ViewportVfx` draws them as overlays).
 
-Every layer carries the rectangles the editor filters on: `objectBounds` with the padding of every stack from that level down to each item (`drawableVfxPadding`), and without it (the effects' **domain**, which global coordinates, gradient positions and centres are relative to), in whole world units. `vfx/layers.rs` ports `objectBounds` (three units beyond half the stroke width and the figure outline, circles by radius, sprites and cels by their corners, text by its glyphs and box). `styk layers <file> <tick>` prints them; `engine/tools/vfx-layer-bounds.mjs` prints the editor's for a project, to compare.
+Every layer carries the rectangles the editor filters on: `objectBounds` with the padding of every stack from that level down to each item (`drawableVfxPadding`), and without it (the effects' **domain**, which global coordinates, gradient positions and centres are relative to), in whole world units. `vfx/layers.rs` ports `objectBounds` (three units beyond half the stroke width and the figure outline, circles by radius, sprites and cels by their corners, text by its glyphs and box). `styk layers <file> <tick>` prints them.
 
 Edit frames take their stacks from the pose the editor sends (see the Contract): nothing is applied twice.
 
@@ -197,23 +196,21 @@ Cost: building a batch takes 0.1 to 1.6 ms on the fixtures and evaluating their 
 
 ### Adding an effect type to the renderer
 
-After its evaluation (see Changing it): add its passes to `Recorder::effect` in `effects/recipe.rs`, as `VfxWebGPU.run` records them; a new operation goes into `passes.wgsl` as in the editor's shader (one more `if (operation == N)`) and into `general` in `styk-raster/src/effects.rs` with the same arithmetic; its padding and sampling padding come from `vfx::padding`. Add it to a document of `engine/tools/vfx-parity-docs.mjs` with non-default parameters and compare in the app.
+After its evaluation (see Changing it): add its passes to `Recorder::effect` in `effects/recipe.rs`, as `VfxWebGPU.run` records them; a new operation goes into `passes.wgsl` as in the editor's shader (one more `if (operation == N)`) and into `general` in `styk-raster/src/effects.rs` with the same arithmetic; its padding and sampling padding come from `vfx::padding`. Add a Rust test of the pass (`styk-render` and `styk-raster` tests) that states what it draws for non-default parameters.
 
 ### Testing the rendering
 
 ```sh
 cd engine && cargo test -p styk-render -p styk-eval --test vfx_layers   # planning, records, pass recording, layer structure
-target/debug/styk layers <file> <tick>          # a frame's layers; compare with:
-node tools/vfx-layer-bounds.mjs <project.json> <tick>
+target/debug/styk layers <file> <tick>          # a frame's layers
 target/debug/styk render <file> <tick> out.png [--zoom Z] [--neutral] [--after T]   # --after: the renderer drew tick T first
-node engine/tools/vfx-parity-docs.mjs           # tmp/vfx-parity/*.json and their ticks
 ```
 
 ### Measured when this landed
 
 Machine: Linux, NVIDIA RTX 4070 SUPER, shared with other work (load average 4 to 12 during the runs), 2026-10-02 and 03. Pictures were compared by the app-parity script (since deleted) with its limits unchanged (a step fails on any pixel more than 32 levels off together with its eight neighbours, or a mean above 0.25 levels not counting differences of 2 or less; [D13](decisions/0013-app-parity-rule.md)), in a 1,440×900 window, onion skins on (the app's default), at the fitted view and four zoom-in steps (2.07×).
 
-**Editor-built documents** (`engine/tools/vfx-parity-docs.mjs`). Each cell: steps passing, largest mean, largest single difference, solid pixels.
+**Editor-built documents** (built with the editor by a generator that is deleted with the JavaScript renderer; the documents were not kept). Each cell: steps passing, largest mean, largest single difference, solid pixels.
 
 | Document | Electron: engine (WebGPU) against the WebGPU renderer, fit | zoomed | Web: engine (WebGL2) against Canvas 2D, fit | zoomed |
 | --- | --- | --- | --- | --- |
@@ -275,14 +272,13 @@ The memory is bounded but the bound is large: a layer is at most 3,968 pixels on
 
 ## Changing it
 
-- **A parameter**: add a field to its type in `registry.rs`, in the registry's order, with its saved name, default and range; a switch is `bool`, an option list an enum (`choice!`), a discrete number `u32`. If it changes what is neutral, the padding or the working slots, update `Params::neutral`, `padding.rs`. Regenerate the fixtures; give the parameter a non-default value in one.
-- **An effect type**: an `effects!` entry (with `generator`/`scene_only`), its `neutral` rule, its padding and slot rules, `Params::delay` for a generator, `Kind::available` if the scene catalogue changes. Add it to a fixture.
-- **Behaviour changes start in the JavaScript** while it is the oracle: change it there, regenerate the fixtures, then make the engine match.
+- **A parameter**: add a field to its type in `registry.rs`, in the registry's order, with its saved name, default and range; a switch is `bool`, an option list an enum (`choice!`), a discrete number `u32`. If it changes what is neutral, the padding or the working slots, update `Params::neutral`, `padding.rs`. Add a Rust test that gives the parameter a non-default value and states the result.
+- **An effect type**: an `effects!` entry (with `generator`/`scene_only`), its `neutral` rule, its padding and slot rules, `Params::delay` for a generator, `Kind::available` if the scene catalogue changes. Add a Rust test that states what it evaluates to.
+- **The recorded fixtures are frozen** ([README](README.md#fixtures)): a new or changed behaviour gets a Rust test that states its expected result; nothing re-records `fixtures/vfx/` or `fixtures/generators/` from the JavaScript.
 
 ## Testing
 
 ```sh
-node engine/tools/vfx-fixtures.mjs                # regenerate engine/crates/styk-eval/tests/fixtures/vfx/ (byte-stable)
 cd engine && cargo test -p styk-eval --test vfx   # well under a second
 cargo clippy -p styk-eval --all-targets
 cargo build -p styk-eval --target wasm32-unknown-unknown
@@ -295,18 +291,9 @@ cargo build -p styk-eval --target wasm32-unknown-unknown
 - checks that documents without effects resolve none;
 - replays recorded inputs of `interpolateVfxColor`, `sampleVfxKeys`, `vfxPadding`, `vfxSamplingPadding`, `vfxWorkingSlots` and `neutralVfx` (`vectors.json`).
 
-Against a real file:
-
-```sh
-cd engine && cargo build -p styk-cli
-node tools/reference.mjs <file.styk> /tmp/reference.json --every 1 --vfx
-target/debug/styk compare <file.styk> /tmp/reference.json     # adds an effects line
-```
-
 Generated effects:
 
 ```sh
-node engine/tools/generator-fixtures.mjs          # regenerate engine/crates/styk-eval/tests/fixtures/generators/ (byte-stable)
 cd engine && cargo test -p styk-eval --test generators
 target/debug/styk generators <file> <tick>…       # a frame's draws, live particles and what they cost
 ```
