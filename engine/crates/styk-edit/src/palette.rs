@@ -75,7 +75,7 @@ impl Editor {
         }
         let unique = colors.iter().collect::<std::collections::HashSet<_>>().len() == colors.len();
         if colors.len() > LIMIT {
-            return Err(EditError::Invalid("errors.colorPalette.aProjectPaletteHoldsUpToColors".into()));
+            return Err(crate::invalid_with("errors.colorPalette.aProjectPaletteHoldsUpToColors", vec![("PROJECT_PALETTE_LIMIT", Value::Num(LIMIT as f64))]));
         }
         if colors.iter().any(|c| palette_hex(c).as_deref() != Some(c.as_str())) || !unique {
             return Err(EditError::Invalid("errors.colorPalette.paletteColorsMustBeUniqueRrggbbValues".into()));
@@ -137,7 +137,7 @@ impl Editor {
             return Ok(false);
         }
         if colors.len() >= LIMIT {
-            return Err(EditError::Invalid("errors.editorColors.theProjectPaletteIsFullRemoveAColor".into()));
+            return Err(crate::invalid_with("errors.editorColors.theProjectPaletteIsFullRemoveAColor", vec![("value", Value::str(&hex.to_uppercase()))]));
         }
         let mut next = colors;
         next.push(hex);
@@ -159,7 +159,8 @@ impl Editor {
             return Ok(Value::Num(0.0));
         }
         if colors.len() + added.len() > LIMIT {
-            return Err(EditError::Invalid("errors.editorColors.theProjectPaletteHoldsUpToColorsRemove".into()));
+            let over = (colors.len() + added.len() - LIMIT) as f64;
+            return Err(crate::invalid_with("errors.editorColors.theProjectPaletteHoldsUpToColorsRemove", vec![("PROJECT_PALETTE_LIMIT", Value::Num(LIMIT as f64)), ("value", Value::Num(over))]));
         }
         let count = added.len();
         let mut next = colors;
@@ -191,5 +192,41 @@ impl Editor {
         let mut next: Vec<String> = colors.into_iter().filter(|c| *c != hex).collect();
         next.insert(to.min(next.len()), hex);
         self.publish_palette(next, "Reorder palette colors")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn editor() -> Editor {
+        let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/audio.document.json");
+        let document = styk_doc::json::parse(std::fs::read_to_string(file).unwrap().as_bytes()).unwrap();
+        let mut editor = Editor::new(document, crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
+        editor.set_view(0.0, 0, crate::Selection::default());
+        editor
+    }
+
+    fn color(index: usize) -> Value { Value::str(&format!("#{index:06x}")) }
+
+    #[test]
+    fn a_full_palette_refuses_a_color_with_the_color_its_message_names() {
+        let mut editor = editor();
+        for index in 0..LIMIT {
+            assert_eq!(editor.call("addPaletteColor", &[color(index)]).unwrap(), Value::Bool(true));
+        }
+        let EditError::Invalid(message) = editor.call("addPaletteColor", &[Value::str("#abcdef")]).unwrap_err() else { panic!("refused as invalid") };
+        assert_eq!(message, format!("errors.editorColors.theProjectPaletteIsFullRemoveAColor{}{{\"value\":\"#ABCDEF\"}}", crate::PARAMS));
+    }
+
+    #[test]
+    fn colors_past_the_limit_name_the_limit_and_how_many_to_remove() {
+        let mut editor = editor();
+        for index in 0..LIMIT - 1 {
+            editor.call("addPaletteColor", &[color(index)]).unwrap();
+        }
+        let more = Value::array((100..103).map(color).collect());
+        let EditError::Invalid(message) = editor.call("addPaletteColors", &[more]).unwrap_err() else { panic!("refused as invalid") };
+        assert_eq!(message, format!("errors.editorColors.theProjectPaletteHoldsUpToColorsRemove{}{{\"PROJECT_PALETTE_LIMIT\":64,\"value\":2}}", crate::PARAMS));
     }
 }
