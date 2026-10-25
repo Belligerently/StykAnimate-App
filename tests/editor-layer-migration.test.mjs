@@ -5,6 +5,9 @@ import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {planLayerMembershipMigration, migrationPlanPayload, LAYER_MIGRATION_LIMITS} from '../src/editor-layer-migration.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 function fixture({joined = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
@@ -14,7 +17,7 @@ function fixture({joined = false} = {}) {
     if (joined) { b.join = {target_object_slot: 0, target_handle_id: 1}; b.angles = b.angles.map(angle => angle + index * .2); }
     const frame = createFrame([a, b, c], 10); frame.unknown_native = {value: 51}; return frame;
   });
-  const editor = new Editor({demo: false}).load(report);
+  const editor = open({demo: false}, report);
   editor.createLayer('Second'); editor.createLayer('Unchanged');
   editor.assignFiguresToLayer([2], 'layer-2'); editor.assignFiguresToLayer([3], 'layer-3');
   return editor;

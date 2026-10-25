@@ -4,6 +4,9 @@ import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {validateLayerSheet} from '../src/layer-sheet.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 function fixture() {
   const report=emptyDocument(),figure=report.figure_types[0],source=emptyDocument();
@@ -11,7 +14,7 @@ function fixture() {
   const clip=movieclipFigure(2,'Reusable motion',source,{duration:3});
   report.figure_types.push(clip);
   report.keyframes=[createFrame([createObject(figure,1,100,100),createObject(figure,2,200,100)],20)];
-  const e=new Editor({demo:false,layerTimeline:true}).load(report);
+  const e=open({demo:false,layerTimeline:true}, report);
   const second=e.createLayer('Second').id;e.assignFiguresToLayer([2],second);
   e.sheetInsertKey(['layer-1',second],0);
   e.sheetSetDuration(20,'layer-1',0);e.sheetSetDuration(20,second,0);

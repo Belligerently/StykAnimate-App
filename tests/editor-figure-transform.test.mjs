@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {createFigureHandleTransform, figureHandleTransform, editorFigureTransformMethods} from '../src/editor-figure-transform.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 Object.assign(Editor.prototype, editorFigureTransformMethods);
 const near = (a,b) => assert.ok(Math.abs(a-b)<2e-4, `${a} != ${b}`);
 const pointNear = (a,b) => { near(a.x,b.x); near(a.y,b.y); };
-function fixture() {
+function fixture({plain = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [createFrame([
     createObject(figure,1,100,200),
@@ -14,7 +17,7 @@ function fixture() {
     createObject(figure,3,100,44,{join:{target_object_slot:1,target_handle_id:1}}),
     createObject(figure,4,100,122,{join:{target_object_slot:0,target_handle_id:1}}),
   ]),createFrame([createObject(figure,1,300,200)])];
-  const editor = new Editor({demo:false}).load(report); editor.select(2,0); return editor;
+  const editor = plain ? new Editor({demo:false}).load(report) : open({demo:false}, report); editor.select(2,0); return editor;
 }
 
 test('Alt transforms only the picked figure subtree about its own origin, preserving parent and siblings', () => {
@@ -71,7 +74,7 @@ test('authored transform adds one pose key without mutating imported frames', ()
 });
 
 test('invalid and origin-coincident starts leave the document and history untouched', () => {
-  const editor=fixture(), before=structuredClone(editor.report), origin=editor.geometry.objects.get(1).root;
+  const editor=fixture({plain:true}), /* session gap: a NaN argument reaches the session as null */ before=structuredClone(editor.report), origin=editor.geometry.objects.get(1).root;
   assert.throws(()=>editor.beginFigureHandleDrag(origin.x,origin.y),/away from/);
   assert.throws(()=>editor.beginFigureHandleDrag(NaN,0),/finite/);
   assert.deepEqual(editor.report,before); assert.equal(editor._drag,null); assert.equal(editor._undo.length,0);
@@ -79,7 +82,7 @@ test('invalid and origin-coincident starts leave the document and history untouc
 
 test('multiple selected subtrees transform once, retain separate origins, and undo together', () => {
   for (const authored of [false, true]) {
-    const editor = fixture();
+    const editor = fixture({plain: authored}); // session gap: a figure transform with property channels runs in the editor, and the geometry read in its gesture is the session's
     if (authored) editor.adoptNativePoseTrack({kind:'layer',id:'layer-1'});
     editor.selectMany([3,4,2]);
     const before = structuredClone(editor.frame), initial = editor.geometry, history = editor._undo.length;
@@ -107,7 +110,7 @@ test('multiple selected subtrees transform once, retain separate origins, and un
 test('independent figures in a group transform orbit the dragged origin like Pivot', () => {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [createFrame([createObject(figure,1,100,200), createObject(figure,5,400,200)])];
-  const editor = new Editor({demo:false}).load(report); editor.selectMany([5,1]);
+  const editor = open({demo:false}, report); editor.selectMany([5,1]);
   const before = structuredClone(editor.frame), picked = editor.geometry.objects.get(0), start = picked.segments[0].end;
   editor.beginFigureHandleDrag(start.x, start.y, {joint:0});
   editor.transformFigureHandle(picked.root.x + 156, picked.root.y);
@@ -124,7 +127,7 @@ test('independent figures in a group transform orbit the dragged origin like Piv
 test('Ctrl-locked group rotation orbits positions without scaling them toward the origin', () => {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [createFrame([createObject(figure,1,100,200), createObject(figure,5,400,200)])];
-  const editor = new Editor({demo:false}).load(report); editor.selectMany([5,1]);
+  const editor = open({demo:false}, report); editor.selectMany([5,1]);
   const picked = editor.geometry.objects.get(0), start = picked.segments[0].end;
   editor.beginFigureHandleDrag(start.x, start.y, {joint:0});
   editor.transformFigureHandle(picked.root.x + 156, picked.root.y, {ctrlKey: true});

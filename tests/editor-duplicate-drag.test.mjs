@@ -4,14 +4,20 @@ import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {normalizeEditorSettings} from '../src/settings.mjs';
 import {snapshotPoseObject} from '../src/pose-snapshot.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
 
-function fixture(mode = 'native', joined = false) {
+const open = ownedScope();
+
+/** `prepare` changes the document before it opens; `plain`: the editor alone, for what the session cannot be asked. */
+function fixture(mode = 'native', joined = false, {prepare = null, plain = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [0, 1].map(i => createFrame([
     createObject(figure, 1, 180 + i * 20, 200),
     createObject(figure, 2, 400, 200, joined ? {join: {target_object_slot: 0, target_handle_id: 1, target_unique_id: 1}} : {}),
   ], 10));
-  const editor = new Editor({demo: false, layerTimeline: mode === 'sheet'}).load(report);
+  prepare?.(report);
+  const options = {demo: false, layerTimeline: mode === 'sheet'};
+  const editor = plain ? new Editor(options).load(report) : open(options, report);
   if (mode === 'authored') editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'});
   if (mode === 'simple') { editor.enableFrameDrafts(); editor.beginFrameDraft({mode: 'add', index: 0}); }
   if (mode === 'sheet' || mode === 'authored') editor.seek(4);
@@ -63,7 +69,7 @@ for (const mode of ['native', 'sheet', 'authored', 'simple']) for (const pasteMo
   });
 
   test(`${mode}: cancelling ${pasteMode} duplication restores document, selection, dirty state and redo`, () => {
-    const e = fixture(mode);
+    const e = fixture(mode, false, {plain: mode === 'authored'}); // session gap: with property channels the gesture runs in the editor, and the cancel leaves its pose source in the session's document
     e.moveSelection(8, 0); e.undo(); e.markSaved();
     const before = e.serialize(), undo = e._undo.slice(), redo = e._redo.slice(), size = e.historySize;
     e.beginDuplicateDrag({pasteMode}); e.moveSelection(50, 30, {fromStart: true}); e.cancelDrag();
@@ -86,7 +92,8 @@ test('Duplicating a root copies its connected figures with internal joins and fr
 });
 
 test('Rejected insertion or invalid translation does not leave copies or history behind', () => {
-  const e = fixture('sheet'), before = e.serialize(), history = e._undo.length;
+  const e = fixture('sheet', false, {plain: true}), // session gap: the invalid pose (NaN) is set in place during the gesture, which the session never sees
+    before = e.serialize(), history = e._undo.length;
   assert.throws(() => e.beginDuplicateDrag({pasteMode: 'invalid'}), /paste mode/);
   assert.deepEqual(e.serialize(), before); assert.equal(e._undo.length, history);
   e.beginDuplicateDrag({pasteMode: 'unique'}); e.object.root_x = NaN;
@@ -103,8 +110,7 @@ test('A locked destination rejects duplication without changing the document', (
 });
 
 test('Repeated cancelled copies release their generated sources and keep unrelated media out of history', () => {
-  const e = fixture('sheet');
-  e.report.figure_types.push({...structuredClone(e.figure), figure_type_id: 9, name: 'Unrelated', privatePayload: 'x'.repeat(500000)});
+  const e = fixture('sheet', false, {prepare: report => report.figure_types.push({...structuredClone(report.figure_types[0]), figure_type_id: 9, name: 'Unrelated', privatePayload: 'x'.repeat(500000)})});
   const before = e.serialize(), sourceCount = Object.keys(e.report._styk.frameSources ?? {}).length;
   for (let i = 0; i < 20; i++) {
     e.beginDuplicateDrag({pasteMode: 'unique'}); e.moveSelection(i + 10, 15); e.cancelDrag();

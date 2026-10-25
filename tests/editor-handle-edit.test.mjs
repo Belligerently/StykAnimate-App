@@ -5,31 +5,35 @@ import {editorHandleEditMethods} from '../src/editor-handle-edit.mjs';
 import {createFrame, createObject, emptyDocument} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 Object.assign(Editor.prototype, editorHandleEditMethods);
 const near = (a, b, tolerance = 2e-4) => assert.ok(Math.abs(a - b) <= tolerance, `${a} != ${b}`);
 const pointNear = (a, b) => { near(a.x, b.x); near(a.y, b.y); };
-function fixture({curved = false, joined = false} = {}) {
+function fixture({curved = false, joined = false, scale = 1, fullCircle = false, plain = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0], base = figure.segments[0];
   figure.segments = [
-    {...base, segment_id: 11, parent_id: 0, length: 100, angle_rad: 0, aux_code: 1, bend_rad: curved ? .7 : 0},
+    {...base, segment_id: 11, parent_id: 0, length: 100, angle_rad: 0, aux_code: 1, bend_rad: fullCircle ? Math.PI * 2 : curved ? .7 : 0},
     {...base, segment_id: 22, parent_id: 11, length: 50, angle_rad: Math.PI / 2, aux_code: 0, bend_rad: curved ? -.4 : 0},
     {...base, segment_id: 33, parent_id: 22, length: 30, angle_rad: 0, aux_code: 0},
     {...base, segment_id: 44, parent_id: 0, length: 70, angle_rad: Math.PI, aux_code: 0},
   ];
   figure.segment_count = 4;
-  const objects = [createObject(figure, 1, 100, 100)];
+  const objects = [createObject(figure, 1, 100, 100, {scale})];
   if (joined) {
     objects.push(createObject(figure, 2, 200, 100, {join: {target_object_slot: 0, target_handle_id: 11}}));
     objects.push(createObject(figure, 3, 200, 100, {join: {target_object_slot: 1, target_handle_id: 0}}));
     objects.push(createObject(figure, 4, 300, 100, {join: {target_object_slot: 1, target_handle_id: 11}}));
   }
   report.keyframes = [createFrame(objects, 2), createFrame([createObject(figure, 1, 300, 200)], 1)];
-  const editor = new Editor({demo: false}).load(report); editor.select(1, 0); return editor;
+  const editor = plain ? new Editor({demo: false}).load(report) : open({demo: false}, report); editor.select(1, 0); return editor;
 }
 
 test('Handle Edit repositions a static joint in one pose without mutating definitions or another frame', () => {
-  const editor = fixture(), original = structuredClone(editor.report), initial = editor.geometry.objects.get(0);
+  const editor = fixture({plain: true}), // session gap: asserts the editor's history command kind ('objects'), which the session's entries do not have
+    original = structuredClone(editor.report), initial = editor.geometry.objects.get(0);
   const definition = editor.figure, otherFrame = editor.report.keyframes[1], target = {x: 225, y: 115};
   assert.equal(editor.poseJoint(target.x, target.y), false);
   editor.beginHandleEditDrag();
@@ -95,10 +99,10 @@ test('cancel, exact pointer return, and option switches keep one reversible gest
 test('invalid coordinates, zero scale, and full-circle degeneracy cannot partially edit a pose', () => {
   const editor = fixture(), before = structuredClone(editor.report);
   assert.throws(() => editor.editHandlePosition(NaN, 0), /finite/); assert.deepEqual(editor.report, before);
-  editor.object.scale = 0; assert.throws(() => editor.beginHandleEditDrag(), /scale/); assert.equal(editor._drag, null);
-  editor.object.scale = 1; editor.figure.segments[0].bend_rad = Math.PI * 2; editor._invalidate();
-  const circle = structuredClone(editor.report);
-  assert.throws(() => editor.editHandlePosition(120, 100), /full-circle/); assert.deepEqual(editor.report, circle);
+  const flat = fixture({scale: 0});
+  assert.throws(() => flat.beginHandleEditDrag(), /scale/); assert.equal(flat._drag, null);
+  const circular = fixture({fullCircle: true}), circle = structuredClone(circular.report);
+  assert.throws(() => circular.editHandlePosition(120, 100), /full-circle/); assert.deepEqual(circular.report, circle);
 });
 
 test('composed authored pose edits create one key while all imported native frames remain unchanged', () => {

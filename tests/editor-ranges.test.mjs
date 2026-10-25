@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const clone = value => structuredClone(value);
 const withoutFrameId = frame => { const value = clone(frame); if (value._styk) delete value._styk.frameId; return value; };
@@ -26,7 +28,7 @@ function fixture({durations = [3, 4, 2, 9], easing = false} = {}) {
     frame.camera = {is_default: false, x: index * 11, y: index * 4, scale: 1 + index / 5, angle_rad: index / 10};
     return frame;
   });
-  return new Editor({demo: false}).load(report);
+  return open({demo: false}, report);
 }
 
 function visibleSamples(report) {

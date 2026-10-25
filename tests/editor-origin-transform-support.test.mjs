@@ -6,10 +6,13 @@ import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {animationRotation,synchronizeAnimationOrigin} from '../src/animation-origin.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit} from '../src/native-property-edit.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const clone=structuredClone;
 const near=(a,b,tolerance=1e-9)=>assert.ok(Math.abs(a-b)<tolerance,`${a} != ${b}`);
-function fixture({joined=false}={}) {
+function fixture({joined=false,plain=false}={}) {
   const report=emptyDocument(),figure=report.figure_types[0],base=figure.segments[0];
   figure.segments=[7,99,301,502].map((id,index)=>({...clone(base),segment_id:id,parent_id:[0,7,7,301][index],
     length:[78,43,31,26][index],angle_rad:[-.8,.5,-1.2,.2][index],bend_rad:[.2,-.3,.1,-.25][index],z_order:index}));
@@ -22,7 +25,7 @@ function fixture({joined=false}={}) {
     object.bends=[[.2,-.3,.1,-.25],[-.9,.7,.2,.45],[1.1,-.5,-.6,.3]][index];
     return createFrame([object],index===2?1:5);
   });
-  const editor=new Editor({demo:false}).load(report);editor.select(1,0);editor.setOrigin(99);
+  const editor=open({demo:false}, report);editor.select(1,0);editor.setOrigin(99);
   const reference=editor.figure._styk.animationOrigin.rotationHandleId;
   editor.select(1,editor.figure.segments.findIndex(segment=>segment.segment_id===reference));editor.deleteSingleSegment();
   const document=editor.serialize(),definition=document.figure_types[0];
@@ -41,7 +44,7 @@ function fixture({joined=false}={}) {
   }
   const retained=clone(document.keyframes[0]);retained._styk={...retained._styk,frameId:'retained-support-pose'};
   document._styk.frameSources={'retained-support-pose':retained};
-  editor.load(document);editor.select(1,0);editor.markSaved();return editor;
+  const result=plain?new Editor({demo:false}):editor;result.load(document);result.select(1,0);result.markSaved();return result;
 }
 const ghosts=object=>object._stykAnimationOrigin.ghosts;
 function checkGhosts(actual,before,transform) {
@@ -162,7 +165,8 @@ test('branch rotation changes each attached child ghost once while the selected 
 });
 
 test('native absolute rotation ranges carry support by each frame’s own live-angle delta',()=>{
-  const editor=fixture(),before=record(editor),definition=editor.figure,middle=editor.report.keyframes[1],value=43;
+  const editor=fixture({plain:true}), // session gap: a range rotation by native property edit is made in place in the editor and does not match the session's document
+  before=record(editor),definition=editor.figure,middle=editor.report.keyframes[1],value=43;
   const token=beginNativePropertyEdit(editor,'rotation',{indices:[0,2]});
   previewNativePropertyEdit(token,25);previewNativePropertyEdit(token,value);commitNativePropertyEdit(token);
   for(const index of [0,2]) {

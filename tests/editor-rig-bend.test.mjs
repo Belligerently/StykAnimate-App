@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < 2e-5, `${a} != ${b}`);
 function fixture({sheet = false, staticJoint = false} = {}) {
@@ -17,7 +20,7 @@ function fixture({sheet = false, staticJoint = false} = {}) {
   second.bend_flag = 1; second.bends = [.2, 0, 0]; second.len_flag = 1; second.lengths = [120, 60, 40];
   second.angles = second.angles.map(a => a + .3);
   report.keyframes = [createFrame([first], 1), createFrame([second], 1)];
-  const e = new Editor({demo: false, layerTimeline: sheet, propertyChannels: sheet}).load(report);
+  const e = open({demo: false, layerTimeline: sheet, propertyChannels: sheet}, report);
   e.select(1, 0); return e;
 }
 

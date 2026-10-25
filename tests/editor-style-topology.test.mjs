@@ -6,6 +6,8 @@ import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {roundTrip} from './support/codec.mjs';
 
+// session gap: captureFrameSource and the topology commands with property channels run in the editor, and what they leave does not match the session's document when the owner writes it back.
+
 const clone=value=>structuredClone(value), target=handleId=>({kind:'segment',uid:1,handleId});
 function fixture() {
   const report=emptyDocument(), figure=report.figure_types[0];

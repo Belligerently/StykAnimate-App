@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
 import {animationRotation, animationOriginOffset, synchronizeAnimationOrigin} from '../src/animation-origin.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 const clone = structuredClone;
 function fixture({authored = true, easing = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0], base = figure.segments[0];
@@ -21,7 +23,7 @@ function fixture({authored = true, easing = false} = {}) {
     object.bends = [[.2, -.3, .1, -.25], [-.9, .7, .2, .45], [1.1, -.5, -.6, .3], [.1, .4, .8, -.7]][i];
     return createFrame([object], i === 3 ? 1 : [7, 5, 8][i]);
   });
-  const editor = new Editor({demo: false}).load(report); editor.select(1, 0);
+  const editor = open({demo: false}, report); editor.select(1, 0);
   if (authored) editor.addAnimationKeys([['rotation', [-.5, .9, -1.7]], ['scale', [.6, 1.8, .95]], ['x', [183, 277, 221]], ['y', [230, 168, 249]]]
     .flatMap(([property, values]) => [0, 8, 20].map((tick, i) => ({target: {kind: 'figure', uid: 1}, property, tick, value: values[i]}))));
   editor.setOrigin(99); return editor;
@@ -123,7 +125,7 @@ test('independently retimed joined descendants and retained sources follow nativ
     child.object_slot = 1; frame.objects.push(child); frame.object_draw_order = [0, 1];
     const root = buildGeometry(report, frame).objects.get(1).root; child.root_x = root.x; child.root_y = root.y; synchronizeAnimationOrigin(childFigure, child);
   });
-  const editor = new Editor({demo: false}).load(report), layer = editor.createLayer('Retimed attached figure'); editor.assignFiguresToLayer([2], layer.id);
+  const editor = open({demo: false}, report), layer = editor.createLayer('Retimed attached figure'); editor.assignFiguresToLayer([2], layer.id);
   const parent = editor.nativePoseChannel({kind: 'layer', id: 'layer-1'}), child = editor.nativePoseChannel({kind: 'layer', id: layer.id});
   editor.moveAnimationKeys([{channelId: parent.id, keyIds: [parent.keys[1].id]}], 2);
   editor.moveAnimationKeys([{channelId: child.id, keyIds: [child.keys[2].id]}], -1);

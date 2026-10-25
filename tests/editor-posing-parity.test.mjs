@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {createFrame, createObject, emptyDocument} from '../src/demo.mjs';
 import {arc} from '../src/pivot/geometry.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const near = (a, b, tolerance = 2e-4) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 function isolationFixture() {
@@ -28,14 +30,14 @@ function isolationFixture() {
     object(root, 11), object(ordinary, 97, 4, 0), object(ordinary, 101, 2, 210),
   ], 1)];
   report.keyframes[0].objects.forEach((o, slot) => { o.object_slot = slot; if (o.join) o.join.target_unique_id = report.keyframes[0].objects[o.join.target_object_slot].unique_id; });
-  const editor = new Editor({demo: false}).load(report); editor.select(11, 3); return editor;
+  const editor = open({demo: false}, report); editor.select(11, 3); return editor;
 }
 function simple() {
   const report = emptyDocument(), figure = report.figure_types[0], base = figure.segments[0];
   figure.segments = [{...base, segment_id: 1, parent_id: 0, angle_rad: 0, length: 100, bend_rad: 0},
     {...base, segment_id: 2, parent_id: 1, angle_rad: 0, length: 50, bend_rad: 0}];
   report.keyframes = [createFrame([createObject(figure, 1, 0, 0)], 1)];
-  const editor = new Editor({demo: false}).load(report); editor.select(1, 0); return editor;
+  const editor = open({demo: false}, report); editor.select(1, 0); return editor;
 }
 
 test('animation isolation follows static chains and native joined-origin admission without restarting at dynamic boundaries', () => {

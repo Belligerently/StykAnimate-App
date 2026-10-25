@@ -5,13 +5,17 @@ import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
 
-function fixture(mode='native', {frames=4, parts=4, definitions=1}={}) {
+const open = ownedScope();
+
+/** `plain`: the editor alone, for the tests of its own copying, caches and counters, which the session has no counterpart for. */
+function fixture(mode='native', {frames=4, parts=4, definitions=1, plain=false}={}) {
   const report=emptyDocument(),figure=report.figure_types[0];
   for(let i=1;i<definitions;i++)report.figure_types.push({...structuredClone(figure),figure_type_id:i+1});
   report.keyframes=Array.from({length:frames},(_,i)=>createFrame(Array.from({length:parts},(_,slot)=>
     createObject(figure,slot+1,100+i*10,200,{join:slot?{target_object_slot:slot-1,target_handle_id:1,target_unique_id:slot}:null})),5));
-  const editor=new Editor({demo:false,layerTimeline:mode==='sheet'}).load(report);
+  const editor=plain?new Editor({demo:false,layerTimeline:mode==='sheet'}).load(report):open({demo:false,layerTimeline:mode==='sheet'}, report);
   if(mode==='authored')editor.adoptNativePoseTrack({kind:'layer',id:'layer-1'});
   editor.selectConnected(1);return editor;
 }
@@ -43,7 +47,7 @@ for(const mode of ['native','authored','sheet'])test(`${mode}: paste across fram
 });
 
 for(const mode of ['native','authored','sheet'])for(const crossDocument of [false,true])test(`${mode}: ${crossDocument?'cross-project':'same-project'} paste never traverses unrelated library contents`,()=>{
-  const e=fixture(mode,{definitions:80});
+  const e=fixture(mode,{definitions:80,plain:true}); // editor internals: what its copy and paste traverse, and the weight of its history command
   e.copySelection();if(crossDocument)e.load(e.serialize());
   const library=e.report.figure_types.slice();
   const restore=library.slice(1).map(figure=>trap(figure,'image_assets'));
@@ -55,7 +59,7 @@ for(const mode of ['native','authored','sheet'])for(const crossDocument of [fals
 });
 
 test('copy excludes runtime caches before cloning and keeps unknown saved fields independent',()=>{
-  const e=fixture();e.geometry;
+  const e=fixture('native',{plain:true});e.geometry; // editor internals: what its copy clones
   e.object.extension={nested:[1,2,3]};
   const restore=[trap(e.object,'runtime_segments'),trap(e.object,'_movieclipSample')];
   try{e.copySelection();e.copyFigure();}finally{restore.forEach(fn=>fn());}
@@ -83,7 +87,7 @@ test('single and range paste remap changed handles and detach a copied join whos
 
 test('locked-layer and invalid-pose paste failures publish no IDs, assets, history, selection or paste count',()=>{
   for(const invalid of ['locked','pose','capacity']){
-    const e=fixture('sheet');e.copySelection();
+    const e=fixture('sheet',{plain:true});e.copySelection(); // editor internals: its id counters and clipboard
     if(invalid==='locked')e.setLayerLocked('layer-1',true);
     if(invalid==='pose')e._selectionClipboard.objects[0].root_x=NaN;
     if(invalid==='capacity')e._nextUid=0x7ffffffe;
@@ -121,7 +125,7 @@ test('pasting a group uses the active layer, preserves attachments and leaves un
 });
 
 for(const mode of ['native','sheet'])test(`${mode}: paste, undo and redo reuse unchanged geometry with exact fresh-build parity`,()=>{
-  const e=fixture(mode);e.copySelection();
+  const e=fixture(mode,{plain:true});e.copySelection(); // editor internals: the geometry it retains
   const original=e.geometry,signature=g=>[...g.objects.values()].map(o=>({uid:o.obj.unique_id,joints:[...o.joints]})).sort((a,b)=>a.uid-b.uid);
   for(const operation of ['pasteSelection','undo','redo']){
     e[operation]();const actual=e.geometry;

@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {frameOrder, setOrder} from '../src/pivot/structure.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 test('nested joined movement and posing roundtrip through native PIV with canonical origins and sparse handles', async () => {
-  const editor = new Editor({demo: false}); editor.addFigure(); const root = editor.selectedUid;
+  const editor = open({demo: false}); editor.addFigure(); const root = editor.selectedUid;
   const child = editor.duplicateFigure().unique_id; editor.joinTo(root, 4);
   const grandchild = editor.duplicateFigure().unique_id; editor.joinTo(child, 2);
   const document = editor.serialize(), frame = document.keyframes[0], order = frameOrder(frame);

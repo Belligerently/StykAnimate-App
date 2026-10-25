@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {animationChannelId} from '../src/animation-channels.mjs';
 import {reverseGradientEndpoints} from '../src/editor-style-topology.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 const clone=value=>structuredClone(value),target=handleId=>({kind:'segment',uid:1,handleId});
 function fixture({single=false}={}){
   const report=emptyDocument(),figure=report.figure_types[0],base=figure.segments[0];
@@ -13,7 +15,7 @@ function fixture({single=false}={}){
   figure.segment_count=figure.segments.length;report.figure_types.push({...clone(figure),figure_type_id:2});
   report.keyframes=[0,1].map(i=>createFrame([createObject(figure,1,100+i*30,200),createObject(report.figure_types[1],2,400,200)],i?1:4));
   for(const frame of report.keyframes)frame.objects[0]._stykStyle={outlineOpacity:.8,segments:{7:{opacity:.2},...(!single?{99:{gradientOpacity:.7},301:{opacity:.4,gradientOpacity:.6}}:{})}};
-  const editor=new Editor({demo:false}).load(report);editor.captureFrameSource(editor.frame);
+  const editor=open({demo:false}, report);editor.captureFrameSource(editor.frame);
   editor.addAnimationKeys([
     {target:target(7),property:'opacity',tick:0,value:.25},{target:target(7),property:'opacity',tick:4,value:.55},
     {target:target(7),property:'gradientOpacity',tick:1,value:.85},{target:target(7),property:'gradientOpacity',tick:3,value:.15},

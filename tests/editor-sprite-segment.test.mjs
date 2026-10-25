@@ -7,6 +7,9 @@ import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {builderDrawables} from '../src/editor-builder-style.mjs';
 import {exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
+
+const open = ownedScope();
 
 const clone = structuredClone;
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=';
@@ -16,7 +19,8 @@ function sprite(start = {x: -7, y: 5}, end = {x: 23, y: -35}) {
   Object.assign(figure.image_assets[0], {anchor_start: start, anchor_end: end});
   return figure;
 }
-function fixture({frames = 3, posed = true} = {}) {
+/** `prepare` changes the document before it opens; `plain`: the editor alone, for what the session cannot be asked. */
+function fixture({frames = 3, posed = true, prepare = null, plain = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
   for (const segment of figure.segments) {segment.segment_id *= 11; segment.parent_id *= 11;}
   const other = {...clone(figure), figure_type_id: 2}; report.figure_types.push(other);
@@ -32,7 +36,8 @@ function fixture({frames = 3, posed = true} = {}) {
     child.join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 33};
     return createFrame([object, child], 3);
   });
-  const editor = new Editor({demo: false}).load(report); editor.select(1, 2); return editor;
+  prepare?.(report);
+  const editor = plain ? new Editor({demo: false}).load(report) : open({demo: false}, report); editor.select(1, 2); return editor;
 }
 const segmentsGeometry = (report, frame) => [...buildGeometry(report, frame).objects.values()].map(object => ({
   root: clone(object.root), segments: object.segments.map(segment => ({start: clone(segment.start), end: clone(segment.end)})),
@@ -63,13 +68,12 @@ test('sprite attachment uses the selected tip and integer anchors without changi
 });
 
 test('native parent-bend interpolation governs the new sprite at an in-between tick', () => {
-  const editor = fixture({frames: 2}), source = sprite({x: 0, y: 0}, {x: 10, y: 0});
-  editor.report.keyframes.forEach((frame, index) => {
-    const object = frame.objects[0]; object.angles = editor.figure.segments.map(segment => segment.angle_rad);
-    object.bends = editor.figure.segments.map(() => 0); object.bends[0] = index * 4;
+  const editor = fixture({frames: 2, prepare: report => report.keyframes.forEach((frame, index) => {
+    const object = frame.objects[0], figure = report.figure_types[0]; object.angles = figure.segments.map(segment => segment.angle_rad);
+    object.bends = figure.segments.map(() => 0); object.bends[0] = index * 4;
     frame.duration_raw = 10;
-  });
-  editor._invalidate({timing: true}); editor.seek(5); editor.select(1, 0);
+  })}), source = sprite({x: 0, y: 0}, {x: 10, y: 0});
+  editor.seek(5); editor.select(1, 0);
   const before = editor.serialize(); editor.addSpriteSegment(source);
   // Native interpolation wraps the relative child angle before adding the
   // parent's interpolated bend. A constant source tangent can therefore turn
@@ -94,7 +98,7 @@ test('origin selection, explicit parent and angle overrides retain the anchor sc
 });
 
 test('sparse existing image IDs are remapped without changing text assets, PNG bytes, or media flags', () => {
-  const editor = new Editor({demo: false}); editor.importFigure(sprite());
+  const editor = new Editor({demo: false}); editor.importFigure(sprite()); // session gap: importing a figure on a native timeline runs in the editor, and the test then edits its figure in place
   const figure = editor.figure, existing = figure.segments[0];
   Object.assign(figure.image_assets[0], {asset_index: 7, table_index: 7, image_index: 7});
   Object.assign(existing, {extra_u16: 7, extra: [7, 1, 1], extra_u8_a: 1, extra_u8_b: 1, image_asset_index: 7, aux_code: 1, flags: 258, is_static: true});
@@ -129,7 +133,7 @@ test('retained pose sources and a dirty Simple baseline receive one segment each
 });
 
 test('runtime lengths and bends survive conversion to explicit pose vectors', () => {
-  const editor = fixture({posed: false});
+  const editor = fixture({posed: false, plain: true}); // editor internals: the pose caches (runtime_segments) the editor evaluates
   for (const frame of editor.report.keyframes) frame.objects[0].runtime_segments = editor.figure.segments.map(segment => ({length: segment.length + 4, bend_rad: .15}));
   editor._invalidate(); const before = editor.serialize(), expected = editor.report.keyframes.map(frame => segmentsGeometry(editor.report, frame));
   editor.addSpriteSegment(sprite());
@@ -141,7 +145,8 @@ test('runtime lengths and bends survive conversion to explicit pose vectors', ()
 });
 
 test('invalid source, coincident or fractional anchors, parent IDs, and nonfinite angles are atomic', () => {
-  const editor = fixture(), before = editor.serialize(), history = editor._undo.length;
+  const editor = fixture({plain: true}), // session gap: a NaN angle reaches the session as null, which means no angle
+    before = editor.serialize(), history = editor._undo.length;
   const cases = [
     () => editor.addSpriteSegment(null), () => editor.addSpriteSegment({...sprite(), segments: []}),
     () => editor.addSpriteSegment(sprite({x: 0, y: 0}, {x: 0, y: 0})),
@@ -159,7 +164,8 @@ test('invalid source, coincident or fractional anchors, parent IDs, and nonfinit
 });
 
 test('a failed topology validation restores asset-table edits, all pose vectors, selection, and history', () => {
-  const editor = fixture(), before = editor.serialize(), history = editor._undo.length, select = editor.selectedJoint;
+  const editor = fixture({plain: true}), // editor internals: the test replaces the editor's own _allSourceFrames
+    before = editor.serialize(), history = editor._undo.length, select = editor.selectedJoint;
   const bad = sprite(); bad.image_assets[0].asset_index = bad.image_assets[0].table_index = 0;
   const original = editor._allSourceFrames;
   editor._allSourceFrames = function () {const frames = original.call(this); if (this.figure.segments.length > 10) this.figure.segments.at(-1).thickness = NaN; return frames;};
@@ -168,10 +174,11 @@ test('a failed topology validation restores asset-table edits, all pose vectors,
 });
 
 test('native handle and segment limits are checked before changing the figure', () => {
-  const editor = fixture(); editor.figure.segments.at(-1).segment_id = 65535;
+  const editor = fixture({prepare: report => { report.figure_types[0].segments.at(-1).segment_id = 65535; }});
   const before = editor.serialize(); assert.throws(() => editor.addSpriteSegment(sprite()), /16-bit/); assert.deepEqual(editor.serialize(), before);
-  editor.figure.segments = Array.from({length: 30000}, (_, index) => ({...clone(editor.figure.segments[0]), segment_id: index + 1, parent_id: 0}));
-  assert.throws(() => editor.addSpriteSegment(sprite()), /30,000/); assert.equal(editor.figure.segments.length, 30000);
+  const full = fixture({plain: true}); // session gap: a figure of 30000 segments over poses of ten angles is not a document the engine opens, so it is set in the editor
+  full.figure.segments = Array.from({length: 30000}, (_, index) => ({...clone(full.figure.segments[0]), segment_id: index + 1, parent_id: 0}));
+  assert.throws(() => full.addSpriteSegment(sprite()), /30,000/); assert.equal(full.figure.segments.length, 30000);
 });
 
 test('signed 32-bit anchor extremes are accepted when distinct and stay finite', () => {
@@ -180,9 +187,8 @@ test('signed 32-bit anchor extremes are accepted when distinct and stay finite',
 });
 
 test('attached sprites round-trip through actual native PIV and STK writers with integer anchors and PNG bytes', async () => {
-  const editor = fixture({frames: 2});
   // Sparse native draw orders near the uint16 limit must leave room for another image.
-  editor.figure.segments.forEach((segment,index)=>segment.z_order=65526+index);
+  const editor = fixture({frames: 2, prepare: report => report.figure_types[0].segments.forEach((segment,index)=>{segment.z_order=65526+index;})});
   const priorOrder=builderDrawables(editor.figure).map(entry=>entry.item.segment_id),before=editor.serialize();
   editor.addSpriteSegment(sprite());
   assert.deepEqual(builderDrawables(editor.figure).slice(0,-1).map(entry=>entry.item.segment_id),priorOrder);

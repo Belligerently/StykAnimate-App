@@ -7,6 +7,8 @@ import {buildGeometry, evaluatedFrame, evaluatedNativeFrame, nativeTimeline} fro
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {roundTrip} from './support/codec.mjs';
 
+// session gap: insertInbetweenFrames has no session command (the engine plans in-betweens on its workers), and what the editor runs of it does not match the session's document when the owner writes it back.
+
 Object.assign(Editor.prototype, editorInbetweenMethods);
 const clone = value => structuredClone(value);
 function fixture({durations = [6, 4, 3, 9], easing = false, version = 5} = {}) {

@@ -8,13 +8,17 @@ import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {planFigureFrameOperation} from '../src/range-figure-operations.mjs';
+import {ownedScope} from './support/owned-scope.mjs';
 
-function fixture({version=5,raw=0,layerTimeline=true,propertyChannels=true}={}){
+const open = ownedScope();
+
+function fixture({version=5,raw=0,layerTimeline=true,propertyChannels=true,prepare=null}={}){
   const report=emptyDocument();report.version=version;report.frame_delay_ms=40;
   const figure=report.figure_types[0];figure.segments=figure.segments.slice(0,4).map((s,i)=>({...s,segment_id:i+1,parent_id:i,length:40,thickness:5,primitive_code:0,segment_type:'line',segment_kind:'line',color_rgb:i===2?[10,20,30]:[200,40,50],secondary:null,paint:undefined}));
   delete figure.segment_decode;figure.polyfills=[];
   report.keyframes=[0,1,2].map(i=>createFrame([createObject(figure,1,100+i*10,200,{color_override_raw:raw}),createObject(figure,2,250,200,{color_override_raw:raw})],10));
-  const e=new Editor({demo:false,layerTimeline,propertyChannels}).load(report);e.select(1);return e;
+  prepare?.(report);
+  const e=open({demo:false,layerTimeline,propertyChannels}, report);e.select(1);return e;
 }
 const palette=e=>e.figurePalette().map(p=>[p.color,p.segments.length]);
 const colors=e=>buildGeometry(e.report,e.evaluatedFrame).objects.get(e.selectedSlot).segments.map(s=>s.rgb);
@@ -32,7 +36,7 @@ for(const settings of [{layerTimeline:true},{layerTimeline:false,propertyChannel
     createObject(child,4,300,200),
   ],10));
   delete report._styk;
-  const e=new Editor({demo:false,...settings}).load(report);e.select(1);
+  const e=open({demo:false,...settings}, report);e.select(1);
   assert.deepEqual(palette(e),[['#0a141e',9],['#c82832',5]]);
   const entry=e.figurePalette().find(row=>row.color==='#c82832');
   assert.equal(entry.polygons.length,2);
@@ -86,11 +90,13 @@ test('partial tint is baked once; other segment colors and alpha remain exact',(
 });
 
 test('all gradient stops and fills participate; each segment counts once per color',()=>{
-  const e=fixture(),fig=e.figure;
-  fig.segments[0].secondary={rgb:[10,20,30],a:77};
-  fig.segments[1].paint={type:'radial',angle:25,stops:[{offset:0,color:[200,40,50],opacity:1},{offset:.5,color:[10,20,30],opacity:.5},{offset:1,color:[200,40,50],opacity:.7}]};
-  fig.segments[1].secondary={rgb:[200,40,50],a:77};
-  fig.polyfills=[{polyfill_id:7,segment_ids:[0,1,2],color_rgb:[10,20,30],alpha_raw:33,z_order:1}];
+  const e=fixture({prepare:report=>{
+    const fig=report.figure_types[0];
+    fig.segments[0].secondary={rgb:[10,20,30],a:77};
+    fig.segments[1].paint={type:'radial',angle:25,stops:[{offset:0,color:[200,40,50],opacity:1},{offset:.5,color:[10,20,30],opacity:.5},{offset:1,color:[200,40,50],opacity:.7}]};
+    fig.segments[1].secondary={rgb:[200,40,50],a:77};
+    fig.polyfills=[{polyfill_id:7,segment_ids:[0,1,2],color_rgb:[10,20,30],alpha_raw:33,z_order:1}];
+  }}),fig=e.figure;
   const entries=figurePalette(e.report,fig,e.object),entry=entries.find(row=>row.color==='#0a141e');
   assert.equal(entry.segments.length,3);assert.deepEqual(entry.polygons,[7]);
   e.replaceFigureColor(entry.color,'#778899');
@@ -106,7 +112,7 @@ test('a picker retains its original segments after colors merge',()=>{
 });
 
 test('clearing a full figure override does not reveal hidden gradient transparency',()=>{
-  const e=fixture({raw:0xff663322});e.figure.segments[2].secondary={rgb:[255,255,255],a:255};
+  const e=fixture({raw:0xff663322,prepare:report=>{report.figure_types[0].segments[2].secondary={rgb:[255,255,255],a:255};}});
   assert.equal(e.figurePalette().length,1);e.select(1,0);e.updateBuilderSegmentStyle({color:'#aabbcc'});
   const resolved=resolveInstanceFigure(e.figure,e.object);assert.equal(resolved.segments[2].secondary,null);
   assert.deepEqual(resolved.segments[2].color_rgb,[34,51,102]);assert.equal(resolved.segments[2].transparency,0);
