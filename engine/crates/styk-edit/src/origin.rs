@@ -7,30 +7,8 @@ use styk_doc::{Obj, Value};
 use crate::record::{num, uid};
 use crate::{EditError, Editor};
 
-pub(crate) fn recorded_call(method: &str) -> bool {
-    gesture_call(method) || choice_call(method) || posing_call(method) || constraint_call(method) || rig_tool_call(method) || rig_pose_call(method) || property_call(method) || range_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
-        "commitDrag" | "cancelDrag" | "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" |
-        "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" | "setOrigin" | "mirrorSegment" | "mirrorSegmentBranch" | "splitSegment" | "splitSegmentBranch" | "splitBuilderSegments" | "unsplitSegment" |
-        "deleteSingleSegment" | "deleteSegment" | "addSegment" | "addSegments" | "addSpriteSegment" | "changeBranchThickness" | "moveBuilderSegment" | "duplicateSegment" | "duplicateSegmentBranch" | "replaceFigureDefinition" | "undo" | "redo")
-}
-
 pub(crate) fn property_call(method: &str) -> bool {
     matches!(method, "beginAnimationEdit" | "previewAnimationEdit" | "commitAnimationEdit" | "cancelAnimationEdit" | "addAnimationKey" | "addAnimationKeys")
-}
-
-pub(crate) fn motion_call(method: &str) -> bool {
-    matches!(method, "beginMotionPathEdit" | "updateMotionPathEdit" | "commitMotionPathEdit" | "cancelMotionPathEdit" | "setMotionPathFalloff" | "motionPathFalloff")
-}
-
-pub(crate) fn recorded_channel_call(method: &str) -> bool {
-    gesture_call(method) || choice_call(method) || constraint_call(method) || property_call(method) || range_call(method) || rig_tool_call(method) || rig_pose_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" | "commitDrag" | "cancelDrag" |
-        "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" | "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" |
-        "poseJoint" | "rotateJoint" | "bendJoint" | "undo" | "redo")
-}
-
-pub(crate) fn range_call(method: &str) -> bool {
-    matches!(method, "rotateFiguresInFrames" | "mirrorFiguresInFrames" | "scaleFiguresInFrames" | "resetPoseInFrames" | "centerFiguresInFrames" |
-        "detachFiguresInFrames" | "joinFiguresInFrames" | "moveSelectionInFrames" | "joinTo" | "unjoinFigure" | "joinFigure" | "addFigure" | "deleteSelection" | "deleteFigure")
 }
 
 pub(crate) fn posing_call(method: &str) -> bool {
@@ -49,9 +27,6 @@ pub(crate) fn gesture_call(method: &str) -> bool {
 pub(crate) fn constraint_call(method: &str) -> bool {
     matches!(method, "setAngleLock" | "setSecondaryAngleReference" | "setRigBehavior")
 }
-
-#[derive(Clone, Copy, PartialEq)]
-enum RigScope { Plain, Pose, Angle }
 
 pub(crate) fn rig_tool_call(method: &str) -> bool {
     matches!(method, "beginRigDrag" | "editRigJoint" | "commitRigDrag" | "cancelRigDrag")
@@ -121,10 +96,12 @@ pub(crate) fn reset_support(figure: &Value, object: &mut Obj) {
 }
 
 impl Editor {
-    /// Only the ordinary 2D and retained-support definitions in the posing
-    /// recordings are admitted. Reuse the gesture owner's affected slots.
+    /// Posing figures in a document with animation origins: the pose command is the ordinary one and its
+    /// commit synchronizes the pivots of the origin figures it moved. Reuse the gesture owner's affected slots.
     pub(crate) fn origin_pose_gate(&self) -> Result<(), EditError> {
-        self.origin_plain_targets(&self.selection.uids)
+        let objects = self.selection_frame()?;
+        let slots = Self::ik_pose_slots(&objects, crate::select::resolve_join_selection(&objects, &self.selection.uids, false)?);
+        self.origin_component_gate(&objects, &slots)
     }
 
     /// The tweener blends, and the duplicate drag copies and moves, whole connected figures; neither
@@ -147,10 +124,9 @@ impl Editor {
         Ok(())
     }
 
-    /// The Rig tool's recorded 2D lifecycle reuses pose admission
-    /// and the topology owner's typed origin validation before starting a gesture.
+    /// The Rig tool: the pose admission, and the typed origin validation of the selected figures.
     pub(crate) fn origin_rig_gate(&self) -> Result<(), EditError> {
-        self.origin_rig_pose_gate("beginRigDrag", false)?;
+        self.origin_pose_gate()?;
         for object in self.selected_objects()? {
             if let Some(figure) = self.figure_of(&object).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some()) {
                 self.origin_figure(&figure)?;
@@ -159,78 +135,41 @@ impl Editor {
         Ok(())
     }
 
-    /// Recorded 2D stretch/follow/world-lock/connector definitions use the same
-    /// pose owners; other rig relationships and rig/IK combinations stay refused.
-    pub(crate) fn origin_rig_pose_gate(&self, method: &str, saved_channels: bool) -> Result<(), EditError> {
-        let objects = self.selection_frame()?;
-        let slots = Self::ik_pose_slots(&objects, crate::select::resolve_join_selection(&objects, &self.selection.uids, false)?);
-        let has_rig = self.origin_plain_slots_with_rig(&objects, &slots, RigScope::Pose)?;
-        if has_rig && slots.iter().any(|&slot| objects[slot].get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| !controllers.is_empty())) {
-            return Err(EditError::Unported("an unrecorded animation-origin rig with IK controllers".into()));
-        }
-        if !has_rig && saved_channels && matches!(method, "beginFigureHandleDrag" | "transformFigureHandle" | "commitFigureHandleDrag" | "cancelFigureHandleDrag") {
-            return Err(EditError::Unported("an unrecorded saved-origin channel figure-handle gesture without a 2D rig".into()));
-        }
-        Ok(())
-    }
-
-    /// The recorded spatial visibility/preset owner has its own narrow admission;
-    /// it does not admit other spatial gestures, IK, meshes or saved channels.
+    /// Changing the pose choice of the selected figure: the choice schema must be valid, a gesture of another
+    /// kind must not be live, and the origin figures it moves (the selected one and what is joined to it) must decode.
     pub(crate) fn origin_choice_gate(&self) -> Result<(), EditError> {
-        if self.selection.uids.len() != 1 || self.selection.joint >= 0 ||
-            self.selection_metadata.polygon.is_some() || self.selection_metadata.segments.is_some() || self.selection_metadata.branch.is_some() ||
-            (!self.sheet() && (self.options.property_channels || self.options.layer_timeline)) ||
-            self.report.path(&["_styk", "simpleFrameDraft"]).is_some() ||
-            self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).is_some_and(|n| n > 0) ||
-            self.report.path(&["_styk", "layerSheet", "legacyAnimation", "channels"]).and_then(Value::array_len).is_some_and(|n| n > 0) {
-            return Err(EditError::Unported("an unrecorded origin pose-choice selection or saved channels".into()));
-        }
         if self.drag.as_ref().is_some_and(|drag| drag.translation || drag.handle_edit.is_some() || drag.figure_handle.is_some() || drag.segment_value_options.is_some() || drag.camera.is_some() || drag.rig.is_some() || drag.motion_path.is_some()) {
             return Err(EditError::Unported("an origin pose choice during an unrecorded gesture".into()));
         }
         let objects = self.selection_frame()?;
         let slots = crate::select::resolve_join_selection(&objects, &self.selection.uids, true)
             .map_err(|_| EditError::Unported("an invalid origin pose-choice hierarchy".into()))?;
+        self.origin_component_gate(&objects, &slots)?;
         let selected = self.object()?.and_then(|(_, object)| crate::record::uid(&object));
         for slot in slots {
             let object = &objects[slot];
-            if object.get("_stykSpatial").is_some_and(Value::truthy) || object.get("_stykIK").filter(|controllers| controllers.truthy()).is_some_and(|controllers| !controllers.as_obj().is_some_and(|controllers| controllers.is_empty())) {
-                return Err(EditError::Unported("an unrecorded projected or IK origin pose choice".into()));
-            }
             let Some(figure) = self.figure_of(object) else { return Err(EditError::Unported("an origin pose choice without a figure".into())) };
-            if ["spatialMesh", "drawing", "movieclip"].iter().any(|key| figure.path(&["_styk", key]).is_some_and(Value::truthy)) {
-                return Err(EditError::Unported("an unrecorded origin pose-choice mesh, drawing or movieclip".into()));
-            }
-            if selected != crate::record::uid(object) {
-                self.origin_plain_slots_in(&objects, &[slot])?;
-            } else {
+            if selected == crate::record::uid(object) {
                 let segments = crate::topology::validate_definition(&figure)
                     .map_err(|error| EditError::Unported(format!("an invalid origin pose-choice definition: {error}")))?;
-                if segments.iter().any(|segment| segment.get("_stykRig").is_some_and(|rig| !rig.as_obj().is_some_and(|rig|
-                    !rig.is_empty() && rig.keys().all(|key| key.as_ref() == "spatial") && rig.get("spatial").is_some_and(|spatial|
-                        spatial.get("origin").is_some_and(Value::truthy) && spatial.get("bindings").is_none() && spatial.get("motion").is_none())))) {
-                    return Err(EditError::Unported("an unrecorded origin pose-choice rig relationship".into()));
-                }
                 crate::pose_choice::validate_choices(&figure, &segments)
                     .map_err(|error| EditError::Unported(format!("an invalid origin pose-choice schema: {error}")))?;
             }
             if figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy) {
                 self.origin_figure(&figure)?;
                 if !object.get("_stykAnimationOrigin").is_some_and(Value::truthy) {
-                    return Err(EditError::Unported("an unrecorded origin pose choice without a pivot".into()));
+                    return Err(EditError::Unported("an origin pose choice without a pivot".into()));
                 }
             }
         }
         Ok(())
     }
 
-    /// A sparse definition change reuses the selected component, strict typed rig
-    /// validation and typed origin owner before its existing history body may commit
-    /// a translation. Figure/parent locks do not open the separate posing gate.
+    /// An angle lock reads the figure's rotation, so the origin figures of the selected component must decode
+    /// and hold their pivots. Any other rig patch is a definition-only edit that touches no pose.
     pub(crate) fn origin_constraint_gate(&self, method: &str, args: &[Value]) -> Result<(), EditError> {
-        if method == "setRigBehavior" && !args.first().and_then(Value::as_obj).is_some_and(|patch|
-            !patch.is_empty() && patch.keys().all(|key| key.as_ref() == "angleLock")) {
-            return Err(EditError::Unported("an unrecorded animation-origin rig behavior patch".into()));
+        if method == "setRigBehavior" && !args.first().and_then(Value::as_obj).is_some_and(|patch| patch.get("angleLock").is_some()) {
+            return Ok(());
         }
         if self.drag.as_ref().is_some_and(|drag| !drag.translation) {
             return Err(EditError::Unported("an animation-origin constraint change during an unrecorded gesture".into()));
@@ -238,48 +177,39 @@ impl Editor {
         let objects = self.selection_frame()?;
         let slots = crate::select::resolve_join_selection(&objects, &self.selection.uids, true)
             .map_err(|_| EditError::Unported("an invalid animation-origin constraint hierarchy".into()))?;
-        self.origin_plain_slots_with_rig(&objects, &slots, RigScope::Angle)?;
         for slot in slots {
             let object = &objects[slot];
-            if object.get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| !controllers.is_empty()) {
-                return Err(EditError::Unported("an unrecorded animation-origin constraint with IK controllers".into()));
-            }
             if let Some(figure) = self.figure_of(object).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
                 self.origin_figure(&figure)?;
                 if !object.get("_stykAnimationOrigin").is_some_and(Value::truthy) {
-                    return Err(EditError::Unported("an unrecorded animation-origin constraint pose without a pivot".into()));
+                    return Err(EditError::Unported("an animation-origin constraint pose without a pivot".into()));
                 }
             }
         }
         Ok(())
     }
 
-    /// The recorded sheet property subset, validated before a property begin
-    /// could commit a live gesture. Other targets/properties stay with the editor.
+    /// A key of a figure's pose properties moves what the pivots follow, so the component it poses must be
+    /// one the synchronization reads. Every other property (colour, opacity, the camera, the scene, a layer)
+    /// leaves the poses alone, and a figure the frame at the tick does not hold has no pose to move.
     pub(crate) fn origin_property_gate(&self, method: &str, args: &[Value]) -> Result<(), EditError> {
         let take = |target: Option<&Value>, property: Option<&Value>, tick: Option<&Value>| -> Result<(), EditError> {
             if target.and_then(|target| target.get("kind")).and_then(Value::as_str) != Some("figure") ||
-                !property.and_then(Value::as_str).is_some_and(|property| ["x", "y", "scale", "rotation"].contains(&property)) {
-                return Err(EditError::Unported("an unrecorded origin property target or property".into()));
+                !property.and_then(Value::as_str).is_some_and(|property| ["x", "y", "scale", "rotation", "pose"].contains(&property)) {
+                return Ok(());
             }
-            let target = crate::property_edit::normalize_target(target.unwrap()).map_err(|_| EditError::Unported("an unrecorded origin property target".into()))?;
+            // A target the ordinary path cannot read raises its own error there.
+            let Ok(target) = crate::property_edit::normalize_target(target.unwrap()) else { return Ok(()) };
             let uid = num(&target, "uid").unwrap() as u32;
             let fallback = Value::Num(self.tick);
             let at = tick.filter(|tick| !tick.is_null()).unwrap_or(&fallback);
             // Keys use the sheet owner's tick check; a begin reads the current property view.
             let at = if method == "beginAnimationEdit" { at.clone() } else if self.sheet() { Value::Num(crate::property_edit::checked_tick(at)?) } else { at.clone() };
             let frame = self.animation_frame_at(&at)?;
-            let mut objects = crate::frame::objects_of(&frame);
-            let has_target = |objects: &[Value]| objects.iter().any(|object| crate::record::uid(object) == Some(uid));
-            if !has_target(&objects) {
-                // Recorded explicit keys past an exposure's end write an empty cell.
-                // Admit that no-target path only for a proven ordinary target on show.
-                objects = if method == "beginAnimationEdit" { Vec::new() } else { self.selection_frame()? };
-                if !has_target(&objects) {
-                    return Err(EditError::Unported("an absent origin property target at the edited tick".into()));
-                }
-            }
-            self.origin_plain_targets_in(&objects, &[uid], matches!(property.and_then(Value::as_str), Some("x" | "y")))
+            let objects = crate::frame::objects_of(&frame);
+            if !objects.iter().any(|object| crate::record::uid(object) == Some(uid)) { return Ok(()); }
+            let slots = Self::ik_pose_slots(&objects, crate::select::resolve_join_selection(&objects, &[uid], matches!(property.and_then(Value::as_str), Some("x" | "y")))?);
+            self.origin_component_gate(&objects, &slots)
         };
         match method {
             "beginAnimationEdit" => take(args.first(), args.get(1), None),
@@ -294,26 +224,32 @@ impl Editor {
         }
     }
 
+    /// Selecting a polygon, segments or a branch of a figure keeps the figure's definition out of the
+    /// pose owners' reach: a rig, a pose choice, a 3D pose, a mesh, a movieclip or a drawing is refused.
     pub(crate) fn origin_plain_targets(&self, uids: &[u32]) -> Result<(), EditError> {
-        self.origin_plain_targets_in(&self.selection_frame()?, uids, false)
-    }
-
-    fn origin_plain_targets_in(&self, objects: &[Value], uids: &[u32], ancestors: bool) -> Result<(), EditError> {
-        let slots = Self::ik_pose_slots(objects, crate::select::resolve_join_selection(objects, uids, ancestors)?);
-        self.origin_plain_slots_in(objects, &slots)
-    }
-
-    fn origin_plain_slots_in(&self, objects: &[Value], slots: &[usize]) -> Result<(), EditError> {
-        self.origin_plain_slots_with_rig(objects, slots, RigScope::Plain).map(|_| ())
+        let objects = self.selection_frame()?;
+        let slots = Self::ik_pose_slots(&objects, crate::select::resolve_join_selection(&objects, uids, false)?);
+        for slot in slots {
+            let object = &objects[slot];
+            let figure = self.report.get("figure_types").and_then(Value::elements).and_then(|figures| figures.iter().find(|figure| num(figure, "figure_type_id") == num(object, "figure_type_id")));
+            let complex = figure.as_ref().is_some_and(|figure|
+                ["poseChoices", "spatialMesh", "movieclip", "drawing"].iter().any(|key| figure.path(&["_styk", key]).is_some_and(Value::truthy)) ||
+                figure.get("segments").and_then(Value::elements).is_some_and(|segments| segments.iter().any(|segment|
+                    segment.get("_stykRig").is_some_and(Value::truthy) || segment.get("_stykPoseChoice").is_some_and(Value::truthy)))) ||
+                object.get("_stykSpatial").is_some_and(Value::truthy) ||
+                object.get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| controllers.iter().any(|(_, controller)| controller.get("spatialTarget").is_some_and(Value::truthy)));
+            if complex { return Err(EditError::Unported("origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition".into())); }
+        }
+        Ok(())
     }
 
     /// Motion edits resolve their component in the remote frame, not the current
-    /// selection. The same definition and typed-origin owners validate that view.
+    /// selection. The same component and typed-origin owners validate that view.
     pub(crate) fn origin_motion_gate(&self, objects: &[Value], slots: &[usize]) -> Result<(), EditError> {
         let ids = slots.iter().filter_map(|&slot| uid(&objects[slot])).collect::<Vec<_>>();
         let slots = crate::select::resolve_join_selection(objects, &ids, true)
             .map_err(|_| EditError::Unported("an unrecorded invalid animation-origin motion hierarchy".into()))?;
-        self.origin_plain_slots_in(objects, &slots)?;
+        self.origin_component_gate(objects, &slots)?;
         for slot in slots {
             if let Some(figure) = self.figure_of(&objects[slot]).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
                 self.origin_figure(&figure)?;
@@ -322,51 +258,42 @@ impl Editor {
         Ok(())
     }
 
-    fn origin_plain_slots_with_rig(&self, objects: &[Value], slots: &[usize], scope: RigScope) -> Result<bool, EditError> {
-        let mut has_rig = false;
+    /// What the pivot synchronization of a pose edit cannot read. The figures of a component that are not origin
+    /// figures are posed as in a document without origins. An origin figure must not hold a 3D pose, a mesh, a
+    /// movieclip or a drawing, and its 2D rig relationships must validate (other rig families have their own owners).
+    pub(crate) fn origin_component_gate(&self, objects: &[Value], slots: &[usize]) -> Result<(), EditError> {
+        let figures = self.report.get("figure_types");
+        let figure_of = |object: &Value| figures.as_ref().and_then(|figures| figures.elements()).and_then(|figures| figures.iter().find(|figure| num(figure, "figure_type_id") == num(object, "figure_type_id")));
         let mut validated = std::collections::HashSet::new();
         for &slot in slots {
             let object = &objects[slot];
-            let figure = self.report.get("figure_types").and_then(Value::elements).and_then(|figures| figures.iter().find(|figure| num(figure, "figure_type_id") == num(object, "figure_type_id")));
-            let mut figure_has_rig = false;
-            let complex = figure.as_ref().is_some_and(|figure|
-                ["poseChoices", "spatialMesh", "movieclip", "drawing"].iter().any(|key| figure.path(&["_styk", key]).is_some_and(Value::truthy)) ||
-                figure.get("segments").and_then(Value::elements).is_some_and(|segments| segments.iter().any(|segment| {
-                    let rig = segment.get("_stykRig").filter(|rig| rig.truthy());
-                    figure_has_rig |= rig.is_some();
-                    has_rig |= rig.is_some();
-                    let unrecorded = rig.is_some_and(|rig| scope == RigScope::Plain || !rig.as_obj().is_some_and(|rig| !rig.is_empty() &&
-                        rig.keys().all(|key| if scope == RigScope::Angle { key.as_ref() == "angleLock" } else { ["stretch", "follow", "angleLock", "connector"].contains(&key.as_ref()) }) &&
-                        rig.get("follow").is_none_or(|follow| follow.get("mode").and_then(Value::as_str) == Some("stretch")) &&
-                        rig.get("angleLock").is_none_or(|lock| lock.get("mode").and_then(Value::as_str).is_some_and(|mode| if scope == RigScope::Angle { ["world", "figure", "parent"].contains(&mode) } else { mode == "world" }))));
-                    unrecorded || segment.get("_stykPoseChoice").is_some_and(Value::truthy)
-                }))) ||
+            let Some(figure) = figure_of(object).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) else { continue };
+            if ["spatialMesh", "movieclip", "drawing"].iter().any(|key| figure.path(&["_styk", key]).is_some_and(Value::truthy)) ||
                 object.get("_stykSpatial").is_some_and(Value::truthy) ||
-                object.get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| controllers.iter().any(|(_, controller)| controller.get("spatialTarget").is_some_and(Value::truthy)));
-            if complex { return Err(EditError::Unported("origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition".into())); }
-            if scope != RigScope::Plain && figure_has_rig && let Some(figure) = figure
-                && validated.insert(num(&figure, "figure_type_id").unwrap_or(f64::NAN).to_bits())
-            {
-                styk_eval::rig::validate_2d(&figure).map_err(|error| EditError::Unported(format!("an animation-origin rig unavailable for editing: {error}")))?;
+                object.get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| controllers.iter().any(|(_, controller)| controller.get("spatialTarget").is_some_and(Value::truthy))) {
+                return Err(EditError::Unported("an animation-origin figure with a 3D pose, mesh, movieclip or drawing".into()));
+            }
+            let rigged = figure.get("segments").and_then(Value::elements).is_some_and(|segments| segments.iter().any(|segment| segment.get("_stykRig").is_some_and(Value::truthy)));
+            if rigged && validated.insert(num(&figure, "figure_type_id").unwrap_or(f64::NAN).to_bits()) {
+                match styk_eval::rig::validate_2d(&figure) {
+                    Err(styk_eval::rig::UNAVAILABLE) | Ok(()) => {}
+                    Err(error) => return Err(EditError::Unported(format!("an animation-origin rig unavailable for editing: {error}"))),
+                }
             }
         }
-        Ok(has_rig)
+        Ok(())
     }
 
     /// Range admission follows the actual planned frame, including attachments and
-    /// a join destination. IK combinations stay refused until range recordings prove them.
+    /// a join destination.
     pub(crate) fn origin_range_gate(&self, objects: &[Value], uids: &[u32], target: Option<u32>) -> Result<(), EditError> {
         let mut affected = uids.to_vec();
         if let Some(target) = target { affected.push(target); }
         let slots = crate::select::resolve_join_selection(objects, &affected, true)
             .map_err(|_| EditError::Unported("an unrecorded invalid animation-origin range hierarchy".into()))?;
-        self.origin_plain_slots_in(objects, &slots)?;
+        self.origin_component_gate(objects, &slots)?;
         for slot in slots {
-            let object = &objects[slot];
-            if object.get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| !controllers.is_empty()) {
-                return Err(EditError::Unported("an unrecorded animation-origin range with IK controllers".into()));
-            }
-            if let Some(figure) = self.figure_of(object).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
+            if let Some(figure) = self.figure_of(&objects[slot]).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
                 self.origin_figure(&figure)?;
             }
         }
@@ -425,8 +352,11 @@ impl Editor {
 
     /// `touch` and both commit paths synchronize only the gesture's captured poses.
     /// Pointer return preserves the exact original pivot metadata instead of rounding it again.
-    pub(crate) fn synchronize_origins(&mut self, before: &[Value]) -> Result<(), EditError> {
-        for (slot, updated) in self.origin_updates(&self.frame_objects(), before, false, &[])? {
+    pub(crate) fn synchronize_origins(&mut self, before: &[Value]) -> Result<(), EditError> { self.synchronize_origins_with(before, false) }
+
+    /// A command's own draft (`transaction`) also finds the pivots of the figures it added.
+    pub(crate) fn synchronize_origins_with(&mut self, before: &[Value], include_new: bool) -> Result<(), EditError> {
+        for (slot, updated) in self.origin_updates(&self.frame_objects(), before, include_new, &[])? {
             self.frame_object_mut(slot).unwrap().set("_stykAnimationOrigin", updated);
         }
         Ok(())
@@ -486,10 +416,10 @@ mod tests {
     }
 
     #[test]
-    fn unrecorded_rig_relationships_and_ik_refuse_before_committing_a_drag() {
+    fn malformed_rig_relationships_refuse_before_committing_a_drag() {
         let bytes = fixture_bytes("origin-rig-pose-support-sheet.document.json");
         let mut refused = 0;
-        for feature in ["spatial", "weighted", "anglePath", "futureRelationship", "follow-mode", "angle-lock-mode", "ik"] {
+        for feature in ["futureRelationship", "follow-mode", "angle-lock-mode"] {
             let mut editor = Editor::new(styk_doc::json::parse(&bytes).unwrap(), crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
             editor.call("select", &[Value::Num(1.0), Value::Num(2.0)]).unwrap();
             editor.call("beginTranslationDrag", &[]).unwrap();
@@ -522,28 +452,28 @@ mod tests {
                 assert_eq!(snapshot(&editor), before, "{feature} {method} changed the live drag");assert!(editor.take_events().is_empty());refused += 1;
             }
         }
-        assert_eq!(refused, 91);
+        assert_eq!(refused, 39);
     }
 
     #[test]
-    fn origin_rig_range_join_and_property_admission_is_unchanged() {
+    fn origin_rig_range_join_and_property_edits_are_admitted() {
         let bytes = fixture_bytes("origin-rig-pose-support-sheet.document.json");
         let mut editor = Editor::new(styk_doc::json::parse(&bytes).unwrap(), crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
         editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();editor.call("beginTranslationDrag", &[]).unwrap();editor.call("moveSelection", &[Value::Num(5.125), Value::Num(-2.75)]).unwrap();editor.take_events();
-        let snapshot = |editor: &Editor| (editor.report_json(), editor.state(), editor.drag_value(), styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&editor.shown_frame().unwrap())));
-        let before = snapshot(&editor);
         let mut target = Obj::new();target.set("kind", Value::str("figure"));target.set("uid", Value::Num(1.0));
+        // A valid 2D rig on an origin figure is posed by the ordinary owners, whose commit finds the pivots again.
         for (method, args) in [("rotateFiguresInFrames", vec![Value::Num(0.17)]), ("joinTo", vec![Value::Num(2.0), Value::Num(22.0)]), ("beginAnimationEdit", vec![Value::object(target), Value::str("rotation")])] {
-            assert!(matches!(editor.call(method, &args), Err(EditError::Unported(_))), "{method}");
-            assert_eq!(snapshot(&editor), before, "{method} changed the live drag");assert!(editor.take_events().is_empty());
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| editor.call(method, &args)));
+            // (a join under its own child is an ordinary error of the command, not a refusal)
+            assert!(matches!(result, Ok(Ok(_) | Err(EditError::Invalid(_)))), "{method}: {result:?}");
         }
     }
 
     #[test]
-    fn ordinary_rig_gate_refuses_complex_or_malformed_origins_without_committing_a_drag() {
+    fn rig_tool_refuses_malformed_or_3d_origin_figures_without_committing_a_drag() {
         let bytes = fixture_bytes("origin-rig-support-sheet.document.json");
         let mut refused = 0;
-        for feature in ["rig", "pose-choice", "mesh", "movieclip", "drawing", "spatial", "invalid-origin"] {
+        for feature in ["rig", "mesh", "movieclip", "drawing", "spatial", "invalid-origin"] {
             let report = styk_doc::json::parse(&bytes).unwrap();
             let mut editor = Editor::new(report, crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
             editor.call("select", &[Value::Num(1.0), Value::Num(3.0)]).unwrap();
@@ -551,9 +481,9 @@ mod tests {
             editor.call("moveSelection", &[Value::Num(5.125), Value::Num(-2.75)]).unwrap();
             let figure = editor.report.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()[0].make_obj().unwrap();
             match feature {
-                "rig" | "pose-choice" => {
+                "rig" => {
                     let segment = figure.get_mut("segments").unwrap().make_arr().unwrap()[0].make_obj().unwrap();
-                    segment.set(if feature == "rig" { "_stykRig" } else { "_stykPoseChoice" }, Value::Bool(true));
+                    segment.set("_stykRig", Value::Bool(true));
                 }
                 "spatial" => {
                     editor.authored.as_mut().unwrap().frame.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap()[0].make_obj().unwrap().set("_stykSpatial", Value::Bool(true));
@@ -574,50 +504,7 @@ mod tests {
                 refused += 1;
             }
         }
-        assert_eq!(refused, 28);
-    }
-
-    #[test]
-    fn future_or_absent_property_refusal_preserves_the_shown_frame() {
-        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
-        let plain = std::fs::read(fixtures.join("origin-future-rig-sheet.document.json")).unwrap();
-        let joined = std::fs::read(fixtures.join("origin-future-rig-joined-sheet.document.json")).unwrap();
-        let changing = std::fs::read(fixtures.join("origin-changing-rig-sheet.document.json")).unwrap();
-        for (document, id, property, begin) in [(plain.as_slice(), 3.0, "rotation", true), (plain.as_slice(), 77.0, "rotation", true), (joined.as_slice(), 2.0, "x", false), (changing.as_slice(), 3.0, "rotation", false)] {
-            let report = styk_doc::json::parse(document).unwrap();
-            let mut editor = Editor::new(report, crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
-            editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();
-            editor.call("beginTranslationDrag", &[]).unwrap();
-            editor.call("moveSelection", &[Value::Num(7.25), Value::Num(-3.5)]).unwrap();
-            editor.take_events();
-            let snapshot = |editor: &Editor| (editor.report_json(), editor.state(), editor.drag_value(), styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&editor.shown_frame().unwrap())));
-            let before = snapshot(&editor);
-            let mut target = Obj::new();target.set("kind", Value::str("figure"));target.set("uid", Value::Num(id));let target = Value::object(target);
-            let mut entry = Obj::new();entry.set("target", target.clone());entry.set("property", Value::str(property));entry.set("tick", Value::Num(8.0));entry.set("value", Value::Num(0.47));
-            let mut calls = vec![("addAnimationKey", vec![target.clone(), Value::str(property), Value::Num(8.0), Value::Num(0.47)]), ("addAnimationKeys", vec![Value::array(vec![Value::object(entry)])])];
-            if begin { calls.push(("beginAnimationEdit", vec![target, Value::str(property)])); }
-            for (method, args) in calls {
-                assert!(matches!(editor.call(method, &args), Err(EditError::Unported(_))), "{id} {property} {method}");
-                assert_eq!(snapshot(&editor), before, "{id} {property} {method} changed the shown frame or editor on refusal");
-                assert!(editor.take_events().is_empty(), "{id} {property} {method} emitted on refusal");
-            }
-        }
-    }
-
-    #[test]
-    fn future_complex_range_refusal_preserves_the_shown_frame() {
-        for (document, id) in [(fixture_bytes("origin-future-rig-sheet.document.json"), 3.0), (fixture_bytes("origin-future-rig-joined-sheet.document.json"), 2.0), (fixture_bytes("origin-changing-rig-sheet.document.json"), 3.0)] {
-            let mut editor = Editor::new(styk_doc::json::parse(&document).unwrap(), crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
-            editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();editor.call("beginTranslationDrag", &[]).unwrap();editor.call("moveSelection", &[Value::Num(7.25), Value::Num(-3.5)]).unwrap();editor.take_events();
-            let snapshot = |editor: &Editor| (editor.report_json(), editor.state(), editor.drag_value(), styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&editor.shown_frame().unwrap())));
-            let before = snapshot(&editor);
-            let mut options = Obj::new();options.set("uids", Value::array(vec![Value::Num(id)]));options.set("ticks", Value::array(vec![Value::Num(8.0)]));
-            assert!(matches!(editor.call("rotateFiguresInFrames", &[Value::Num(0.27), Value::Null, Value::object(options)]), Err(EditError::Unported(_))));
-            assert_eq!(snapshot(&editor), before);assert!(editor.take_events().is_empty());
-            let mut indices = Obj::new();indices.set("@array", Value::array(vec![Value::Num(1.0)]));indices.set("sheetTicks", Value::array(vec![Value::Num(8.0)]));
-            assert!(matches!(editor.call("joinFiguresInFrames", &[Value::Num(id), Value::Num(22.0), Value::object(indices)]), Err(EditError::Unported(_))));
-            assert_eq!(snapshot(&editor), before);assert!(editor.take_events().is_empty());
-        }
+        assert_eq!(refused, 24);
     }
 
     #[test]

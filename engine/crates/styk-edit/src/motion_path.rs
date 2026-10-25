@@ -776,8 +776,8 @@ impl Editor {
         if !self.sheet() && !saved && self.unported_document() != Some("with animation origins") {
             return Err(EditError::Unported("a native motion-path document outside its origin recordings".into()));
         }
-        if (!self.sheet() && (self.drag.is_some() || self.property_edit.is_some())) || (self.drag.is_some() && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels"))) {
-            return Err(EditError::Unported("an origin motion-path begin during another live gesture".into()));
+        if !self.sheet() && (self.drag.is_some() || self.property_edit.is_some()) {
+            return Err(EditError::Unported("a native motion-path begin during another live gesture".into()));
         }
         if !self.sheet() && !saved && self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) != 0 {
             return Err(EditError::Unported("an authored native motion-path edit".into()));
@@ -794,9 +794,6 @@ impl Editor {
         let label = label.unwrap_or_else(|| if falloff.is_some() { "Reshape motion path" } else { "Edit motion path" }.to_string());
         let mut target = Target::parse(target)?;
         if target.camera && !self.sheet() { return Err(EditError::Unported("an unrecorded native camera motion-path edit".into())); }
-        if target.camera && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels")) {
-            return Err(EditError::Unported("an unrecorded camera motion-path edit on an origin document".into()));
-        }
         if self.drag.is_some() {
             self.commit_drag()?;
         }
@@ -1106,6 +1103,12 @@ impl Editor {
         result
     }
 
+    /// `_synchronizeAnimationOrigins(sub.working, sub.baseline.length ? sub.baseline : sub.source.objects)`: a camera edit has no baseline.
+    fn synchronize_origin_posed(&self, posed: &mut Posed) -> Result<(), EditError> {
+        let before = if posed.baseline.is_empty() { objects_of(&posed.source) } else { posed.baseline.clone() };
+        self.synchronize_origin_frame(&mut posed.working, &before, false)
+    }
+
     fn take_motion_path(&mut self) -> Session {
         *self.drag.as_mut().and_then(|d| d.motion_path.take()).expect("an open motion-path edit")
     }
@@ -1125,7 +1128,7 @@ impl Editor {
         session.moved = true;
         let posed = &mut session.posed[0];
         posed.moved = true;
-        self.synchronize_origin_frame(&mut posed.working, &posed.baseline, false)?;
+        self.synchronize_origin_posed(posed)?;
         if target.camera {
             posed.camera_changed = true;
         }
@@ -1167,7 +1170,7 @@ impl Editor {
             let moved = matches!(applied, Ok(true));
             if moved {
                 posed.moved = true;
-                self.synchronize_origin_frame(&mut posed.working, &posed.baseline, false)?;
+                self.synchronize_origin_posed(&mut posed)?;
                 if target.camera {
                     posed.camera_changed = true;
                 }

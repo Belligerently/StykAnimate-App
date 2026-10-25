@@ -13,7 +13,7 @@ const EPS: f64 = 1e-8;
 const SPATIAL_EPS: f64 = 1e-9;
 
 mod validation;
-pub use validation::validate_2d;
+pub use validation::{validate_2d, UNAVAILABLE};
 
 #[derive(Clone, Debug)]
 pub struct Connector {

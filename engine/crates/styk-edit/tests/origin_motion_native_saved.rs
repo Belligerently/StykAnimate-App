@@ -173,7 +173,7 @@ fn saved_native_live_invalid_and_unrecorded_calls_preserve_both_views() {
 fn saved_native_future_retained_complex_poses_refuse_before_live_commit() {
     use styk_doc::Value;
     use styk_edit::{EditError, Editor, Options};
-    for kind in ["rig", "drawing", "spatialMesh", "poseChoices", "movieclip"] {
+    for kind in ["rig", "drawing", "spatialMesh", "movieclip"] {
         let mut report = document();
         let mut figure = report.get("figure_types").unwrap().item(0).unwrap();
         figure

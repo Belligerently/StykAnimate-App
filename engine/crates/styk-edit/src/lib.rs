@@ -796,17 +796,10 @@ impl Editor {
         self.selection_metadata_gate(method)?;
         self.native_transform_gate(method, args, projected_native)?;
         if let Some(reason) = self.unported_document() {
-            let recorded = match reason {
-                "with animation origins" => origin::recorded_call(method) || select::metadata_recorded_call(method),
-                "with animation origins and property channels" => origin::recorded_channel_call(method) || select::metadata_recorded_call(method),
-                _ => self.recorded_native_movieclip_call(method, args, reason) || self.recorded_native_transform_call(method) || self.recorded_native_motion_call(method) || projected_native || self.recorded_native_draw_call(method, reason),
-            };
-            if !recorded {
+            // A document with animation origins runs every command: the ones that pose figures synchronize the pivots.
+            if !reason.starts_with("with animation origins")
+                && !(self.recorded_native_movieclip_call(method, args, reason) || self.recorded_native_transform_call(method) || self.recorded_native_motion_call(method) || projected_native || self.recorded_native_draw_call(method, reason)) {
                 return Err(EditError::Unported(format!("{method} {reason}")));
-            }
-            // Branch mirrors enter topology/range paths, outside this gesture milestone.
-            if matches!(method, "mirrorSelection" | "mirrorFigure") && self.selection.joint >= 0 && self.selected_objects()?.len() == 1 {
-                return Err(EditError::Unported(format!("{method} of an origin branch")));
             }
             if method == "moveSelectionInFrames" && !self.sheet() {
                 return Err(EditError::Unported("moving animation-origin figures across native keyframes".into()));
@@ -816,8 +809,7 @@ impl Editor {
             }
             if origin::choice_call(method) { self.origin_choice_gate()?; }
             if origin::constraint_call(method) { self.origin_constraint_gate(method, args)?; }
-            if origin::rig_pose_call(method) { self.origin_rig_pose_gate(method, reason == "with animation origins and property channels")?; }
-            else if origin::posing_call(method) { self.origin_pose_gate()?; }
+            if origin::posing_call(method) || origin::rig_pose_call(method) { self.origin_pose_gate()?; }
             if origin::gesture_call(method) { self.origin_gesture_gate(method)?; }
             if origin::rig_tool_call(method) { self.origin_rig_gate()?; }
             if origin::property_call(method) { self.origin_property_gate(method, args)?; }

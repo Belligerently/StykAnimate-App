@@ -16,7 +16,7 @@ fn origin_pose_matches_every_recorded_step() {
 }
 
 #[test]
-fn unrecorded_complex_origin_pose_branches_refuse_atomically() {
+fn origin_figures_the_pivots_cannot_follow_refuse_atomically_and_other_definitions_never_panic() {
     use styk_doc::{Obj, Value};
     let document = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/origin-gestures-layout-native.document.json")).unwrap();
     for kind in ["poseChoices", "spatialMesh", "movieclip", "drawing", "rig", "poseChoiceSegment", "spatialPose", "spatialIK", "joinedRig"] {
@@ -42,9 +42,15 @@ fn unrecorded_complex_origin_pose_branches_refuse_atomically() {
         editor.call("select", &[Value::Num(1.0), Value::Num(0.0)]).unwrap();
         editor.call("beginDrag", &[]).unwrap();
         let before = (editor.report_json(), editor.state());
+        // A 3D pose, a mesh, a movieclip and a drawing on an origin figure are the editor's; a rig or a pose choice is posed as in any document.
+        let refused = ["spatialMesh", "movieclip", "drawing", "spatialPose", "spatialIK"].contains(&kind);
         for method in ["poseJoint", "rotateJoint", "bendJoint", "beginHandleEditDrag", "editHandlePosition", "commitHandleEditDrag", "cancelHandleEditDrag", "beginFigureHandleDrag", "transformFigureHandle", "commitFigureHandleDrag", "cancelFigureHandleDrag"] {
-            assert!(matches!(editor.call(method, &[]), Err(styk_edit::EditError::Unported(_))), "{kind} {method}");
-            assert_eq!((editor.report_json(), editor.state()), before, "{kind} {method} changed state on refusal");
+            if refused {
+                assert!(matches!(editor.call(method, &[]), Err(styk_edit::EditError::Unported(_))), "{kind} {method}");
+                assert_eq!((editor.report_json(), editor.state()), before, "{kind} {method} changed state on refusal");
+            } else {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| editor.call(method, &[]))).unwrap_or_else(|_| panic!("{kind} {method} panicked")).ok();
+            }
         }
     }
 }

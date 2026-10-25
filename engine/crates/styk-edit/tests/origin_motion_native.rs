@@ -53,7 +53,7 @@ fn native_property_projection_camera_and_optional_metadata_remain_atomic_refusal
 #[test]
 fn native_remote_complex_definitions_refuse_before_idle_or_live_commit() {
     use styk_edit::{EditError, Editor, Options}; use styk_doc::{Obj, Value};
-    for kind in ["rig", "drawing", "spatialMesh", "poseChoices", "movieclip"] {
+    for kind in ["rig", "drawing", "spatialMesh", "movieclip"] {
         let mut document = report("origin-motion-layout-native");
         let mut future = document.get("figure_types").unwrap().item(0).unwrap().as_obj().unwrap().clone();
         future.set("figure_type_id", Value::Num(9.0));

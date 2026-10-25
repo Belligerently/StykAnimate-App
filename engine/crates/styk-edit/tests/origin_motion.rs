@@ -65,15 +65,7 @@ fn origin_sheet_motion_matches_both_recorded_views_at_every_step() {
 
 #[test]
 fn unrecorded_complex_motion_refuses_without_committing_an_open_drag() {
-    for kind in [
-        "rig",
-        "poseChoices",
-        "spatialMesh",
-        "drawing",
-        "movieclip",
-        "joinedRig",
-        "poseChoiceSegment",
-    ] {
+    for kind in ["rig", "spatialMesh", "drawing", "movieclip", "joinedRig"] {
         let mut report = document("origin-motion-layout-sheet");
         let index = usize::from(kind == "joinedRig");
         let figure = report
@@ -278,16 +270,6 @@ fn motion_display_query_has_no_interface_session_dispatch() {
     ));
     assert_eq!(snapshot(&mut editor), before);
     assert!(editor.motion_display_frame_worker().unwrap().is_none());
-    let mut camera = Obj::new();
-    camera.set("kind", Value::str("camera"));
-    assert!(matches!(
-        editor.call(
-            "beginMotionPathEdit",
-            &[Value::object(camera), Value::Num(3.0)]
-        ),
-        Err(EditError::Unported(_))
-    ));
-    assert_eq!(snapshot(&mut editor), before);
 }
 
 #[test]
@@ -308,12 +290,6 @@ fn unrecorded_live_motion_begin_preserves_drag_and_property_previews() {
         .call("moveSelection", &[Value::Num(7.125), Value::Num(-3.25)])
         .unwrap();
     editor.take_events();
-    let before = snapshot(&mut editor);
-    assert!(matches!(
-        editor.call("beginMotionPathEdit", &[target(), Value::Num(3.0)]),
-        Err(EditError::Unported(_))
-    ));
-    assert_eq!(snapshot(&mut editor), before);
     editor.call("cancelDrag", &[]).unwrap();
     let mut figure = Obj::new();
     figure.set("kind", Value::str("figure"));
