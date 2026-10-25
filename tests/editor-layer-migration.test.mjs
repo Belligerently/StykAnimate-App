@@ -5,9 +5,9 @@ import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {planLayerMembershipMigration, migrationPlanPayload, LAYER_MIGRATION_LIMITS} from '../src/editor-layer-migration.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 function fixture({joined = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];

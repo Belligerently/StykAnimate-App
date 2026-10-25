@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 
 test('replacement moves preserve source identity and undo restores the overwritten key', () => {
-  const e = newOwnedEditor(), target = {kind:'figure', uid:1};
+  const e = newPlainEditor(), target = {kind:'figure', uid:1};
   const a = e.addAnimationKey(target, 'x', 2, 100);
   const b = e.addAnimationKey(target, 'x', 5, 200);
   const channel = e.animationChannel(target, 'x');

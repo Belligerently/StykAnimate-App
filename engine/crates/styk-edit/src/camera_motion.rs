@@ -272,11 +272,16 @@ impl Editor {
     /// `setCameraMotion(id, patch)`: a clip's start, duration, switch, parameters or
     /// followed figures.
     pub(crate) fn set_camera_motion(&mut self, id: &Value, patch: &Value) -> Result<bool, EditError> {
+        let list = self.camera_motion_after(self.camera_clips(), id, patch)?;
+        self.publish_camera(list, "Edit camera motion")
+    }
+
+    /// The clips with `patch` applied to the clip `id`, as `setCameraMotion` makes them.
+    pub(crate) fn camera_motion_after(&self, clips: Vec<Value>, id: &Value, patch: &Value) -> Result<Vec<Value>, EditError> {
         let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();
         if entries.iter().any(|(k, _)| !["start", "duration", "enabled", "params", "targets"].contains(&k.as_str())) {
             return Err(invalid("errors.editorCameraMotion.unsupportedCameraMotionProperty"));
         }
-        let clips = self.camera_clips();
         let Some(at) = clips.iter().position(|c| c.get("id") == Some(id)) else { return Err(invalid("errors.editorCameraMotion.selectACameraMotionClip")) };
         let old = clips[at].clone();
         let given = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).filter(|v| !v.is_null());
@@ -299,7 +304,7 @@ impl Editor {
         next.set("params", Value::object(params));
         let mut list = clips;
         list[at] = Value::object(next);
-        self.publish_camera(list, "Edit camera motion")
+        Ok(list)
     }
 
     /// `copyCameraMotion(id)`: a clip kept for pasting.

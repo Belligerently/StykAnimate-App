@@ -8,13 +8,13 @@ import {validateAnimationDocument,validateAnimationValue} from '../src/animation
 import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit,cancelNativePropertyEdit,getNativePropertyValue} from '../src/native-property-edit.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 function fixture(layerTimeline, owned = true) {
   const report=emptyDocument(),figure=report.figure_types[0];
   figure.polyfills=[{polyfill_id:1,segment_ids:[0,1,2],color_rgb:[255,0,0],color_alpha:1,z_order:1.5}];
   report.keyframes=[0,1,2].map(()=>createFrame([1,2].map(uid=>createObject(figure,uid,uid*200,200)),10));
-  const e=owned?ownedEditorFor({demo:false,propertyChannels:true,layerTimeline}, report):new Editor({demo:false,propertyChannels:true,layerTimeline}).load(report);
+  const e=owned?plainEditorFor({demo:false,propertyChannels:true,layerTimeline}, report):new Editor({demo:false,propertyChannels:true,layerTimeline}).load(report);
   e.select(1,0);return e;
 }
 const frameAt=(report,tick)=>{const row=timeline(report).findLast(row=>row.start<=tick);return evaluatedFrame(report,row.index,(tick-row.start)/row.count,tick);};

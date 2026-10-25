@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {newOwnedEditor} from './support/owned-editor.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {connectedTimelineGroups} from './helpers/legacy-connected-timeline.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
@@ -12,7 +12,7 @@ function fixture({connected=false}={}) {
     createObject(figure,1,x,200),
     ...(connected?[createObject(figure,2,x,200,{join:{target_object_slot:0,target_unique_id:1,target_handle_id:1}})]:[]),
   ],10));
-  return newOwnedEditor({demo:false,propertyChannels:true}).load(report);
+  return newPlainEditor({demo:false,propertyChannels:true}).load(report);
 }
 const projection=e=>buildChannelTimelineTracks(e.layers,e.animationChannels,e.report,new Set(),{figurePoses:true,nativePoseChannel:t=>e.nativePoseChannel(t)});
 const pose=(e,tick)=>{e.seek(tick);return e.evaluatedFrame.objects.map(o=>({uid:o.unique_id,x:o.root_x,join:o.join}));};
@@ -27,7 +27,7 @@ for(const connected of [false,true])test(`inserting and moving ${connected?'conn
   assert.equal(pose(e,4)[0].x,2.5);
   assert.equal(pose(e,9)[0].x,7.5);
   for(let tick=0;tick<30;tick++)assert.deepEqual(pose(e,tick).map(o=>o.uid),uids);
-  const reopened=newOwnedEditor({demo:false,propertyChannels:true}).load(e.serialize());
+  const reopened=newPlainEditor({demo:false,propertyChannels:true}).load(e.serialize());
   assert.deepEqual(pose(reopened,9),pose(e,9));
   e.undo();e.undo();assert.deepEqual(e.serialize().keyframes,before.keyframes);assert.equal(e.animationChannels.length,0);
   for(let tick=0;tick<=20;tick++)assert.equal(pose(e,tick)[0].x,tick);
@@ -54,7 +54,7 @@ test('figure markers describe its own lifetime and do not advertise absent poses
 });
 
 test('new figures invalidate cached native lifetime projections without a timing change',()=>{
-  const e=newOwnedEditor({demo:false,propertyChannels:true});e.addFigure();
+  const e=newPlainEditor({demo:false,propertyChannels:true});e.addFigure();
   e.nativePoseChannel({kind:'figure',uid:e.selectedUid});
   e.addFigure();const uid=e.selectedUid;
   assert.equal(e.nativePoseChannel({kind:'figure',uid}).keys.length,1);

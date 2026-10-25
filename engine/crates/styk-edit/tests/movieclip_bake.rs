@@ -238,3 +238,23 @@ fn canonical_replay_validates_interleaving_metadata_and_accepts_empty_arrays() {
     assert!(outcome.mismatches.is_empty(), "{:?}", outcome.mismatches);
     assert_eq!((outcome.matched,outcome.steps),(5,5));
 }
+
+/// The interface's call (`bakeMovieclip` through `Editor::call`, which the owner sends to its session) runs the same bake as the worker
+/// entry: the same document, state and events, as one entry, and its gestures are ended first.
+#[test]
+fn the_interface_call_bakes_as_the_worker_entry_does() {
+    for name in ["bake-native-live", "bake-sheet-live"] {
+        let mut worker = live(name);
+        worker.call_movieclip_timeline_worker("bakeMovieclip", &[], &mut TimelineWorker {
+            max_source_bytes: 128 * 1024 * 1024, check: &mut || Ok(()), progress: &mut |_| {}, clock: || 0.0,
+        }).unwrap();
+        let mut called = live(name);
+        let depth = called.state_value().get("undoLabel").cloned();
+        called.call("bakeMovieclip", &[]).unwrap();
+        assert_eq!(called.report_json(), worker.report_json(), "{name}: the same document");
+        assert_eq!(called.state_value(), worker.state_value(), "{name}: the same state");
+        assert_eq!(called.take_events(), worker.take_events(), "{name}: the same events");
+        assert_ne!(called.state_value().get("undoLabel").cloned(), depth, "{name}: an entry of its own");
+        assert_eq!(called.state_value().get("undoLabel").and_then(Value::as_str), Some("Bake animation"));
+    }
+}

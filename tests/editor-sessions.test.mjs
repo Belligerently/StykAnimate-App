@@ -4,8 +4,10 @@ import {isSharedEditorKey} from '../src/editor-sessions.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
 const open = ownedScope();
+const openPlain = plainScope();
 
 const application = () => open({demo: false, propertyChannels: true, layerTimeline: true}).newDocument();
 function scene(count = 3, objects = 2) {
@@ -181,7 +183,7 @@ test('a load whose receiver fails leaves the open project in place', async () =>
 });
 
 test('the Simple timeline working frame follows the project, and the mode follows the editor', () => {
-  const editor = open({demo: false}).load(scene(), 'First');
+  const editor = openPlain({demo: false}).load(scene(), 'First');
   editor.enableFrameDrafts();
   setX(editor, 91);
   assert.equal(editor.frameDraft.dirty, true);

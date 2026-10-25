@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 test('polygon duplicates compare cyclic connections in either direction, independently of style', () => {
   const editor = open({demo: false}); editor.addFigure(); editor.select(editor.selectedUid);

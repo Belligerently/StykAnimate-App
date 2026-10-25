@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
@@ -28,7 +28,7 @@ function rig(joined = true, {constructionPivot = false, alone = false, ...option
   if (joined) for (const [slot, parent, handle] of [[1,0,11],[2,1,constructionPivot ? 23 : 22],[3,1,22]])
     objects[slot].join = {target_object_slot:parent,target_unique_id:parent+1,target_handle_id:handle};
   document.keyframes = [createFrame(objects,8)];
-  const e = alone ? new Editor({demo:false, ...options}).load(document) : engineEditor({demo:false, ...options}, document); e.select(joined ? 2 : 1, joined ? 0 : 2); return e;
+  const e = alone ? new Editor({demo:false, ...options}).load(document) : plainEditorFor({demo:false, ...options}, document); e.select(joined ? 2 : 1, joined ? 0 : 2); return e;
 }
 function shapes(e) {return new Map([...e.geometry.objects.values()].flatMap(g => g.segments.map(s => [s.seg.segment_id,s])));}
 function sameRig(a,b) {
@@ -136,7 +136,7 @@ test('a polygon foot keeps every vertex distance with legacy partial follower ta
     c.followers = joined ? {} : {33:0}; c.joinedFollowers = joined ? {3:{33:0}} : {};
     // Metadata from the rejected attachment heuristic must not split this foot.
     c.attachmentOffsets = {24:-.9,35:-.5}; c.joinedAttachmentOffsets = {3:{35:-.5},4:{41:-.9}};
-    const e = engineEditor({demo:false}, legacy.serialize()); e.select(joined ? 2 : 1, joined ? 0 : 2);
+    const e = plainEditorFor({demo:false}, legacy.serialize()); e.select(joined ? 2 : 1, joined ? 0 : 2);
     const vertices = [22,33,34,35], points = () => vertices.map(id=>shapes(e).get(id).end);
     const distances = values => values.flatMap((a,i)=>values.slice(i+1).map(b=>Math.hypot(a.x-b.x,a.y-b.y)));
     const before = distances(points());
@@ -338,7 +338,7 @@ test('joined IK interpolation is identical to a monolithic rig and independent o
   const [joined,single]=[rig(),rig(false)].map(e=>{
     e.setNodeIK({enabled:true}); e.poseJoint(360,260); const a=structuredClone(e.frame); delete a._styk;
     e.select(1,-1); e.moveSelection(20,-10); const b=structuredClone(e.frame); delete b._styk;
-    return engineEditor({demo:false},{...e.serialize(),keyframes:[a,b]});
+    return plainEditorFor({demo:false},{...e.serialize(),keyframes:[a,b]});
   });
   for (const t of [.7,.1,.9,.5]) {
     const a=buildGeometry(joined.report,evaluatedFrame(joined.report,0,t)), b=buildGeometry(single.report,evaluatedFrame(single.report,0,t));

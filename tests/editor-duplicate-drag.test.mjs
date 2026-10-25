@@ -4,9 +4,9 @@ import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {normalizeEditorSettings} from '../src/settings.mjs';
 import {snapshotPoseObject} from '../src/pose-snapshot.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 /** `prepare` changes the document before it opens; `plain`: the editor alone, for what the session cannot be asked. */
 function fixture(mode = 'native', joined = false, {prepare = null, plain = false} = {}) {

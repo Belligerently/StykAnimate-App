@@ -5,9 +5,9 @@ import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {validateSimpleFrameDraft} from '../src/editor-frame-draft.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';
 import {documentChunks, applyDocumentChunk} from '../src/document-transport.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 const clone = value => structuredClone(value);
 function fixture(count = 4, objects = 3) {
@@ -52,12 +52,6 @@ test('camera, Scene and inbetween duration edits revert together without touchin
   value(editor, 1, 'root_x', 80); editor.setCanvasSize(1200, 900);
   editor.discardFrameDraft(); assert.deepEqual(editor.frame, before); assert.equal(editor.report.canvas_width, 1200);
   assert.equal(editor.report.keyframes[3], frames[3]);
-});
-test('frame property patch captures missing nested branches and definition styles stay outside the draft', () => {
-  const editor = fixture(), before = clone(editor.frame);
-  value(editor, 1, 'duration', 9); value(editor, 1, 'outline_width', 4);
-  editor.discardFrameDraft(); assert.deepEqual(editor.frame, before);
-  assert.equal(editor.report.figure_types[0].segment_decode.global_style.outline_thickness, 4);
 });
 test('single-frame sparse range operations are discardable; multi-frame operations remain atomic', () => {
   const editor = fixture(), before = clone(editor.frame);

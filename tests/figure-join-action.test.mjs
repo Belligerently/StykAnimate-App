@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {figureJoinAction, joinTargetUids} from '../src/figure-join-action.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 function fixture({prepare = null} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];

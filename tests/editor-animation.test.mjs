@@ -30,7 +30,7 @@ test('bulk key insertion is one undo operation and never modifies native frame d
 });
 
 test('moving one property key changes only its curve, collision rejection is atomic', () => {
-  const editor = fixture();
+  const editor = fixture({owned: false});
   editor.addAnimationKeys([{target: figureTarget, property: 'x', tick: 0, value: 0, interpolation: 'linear'}, {target: figureTarget, property: 'x', tick: 10, value: 100},
     {target: figureTarget, property: 'y', tick: 0, value: 200, interpolation: 'linear'}, {target: figureTarget, property: 'y', tick: 10, value: 300}]);
   const x = editor.animationChannel(figureTarget, 'x'), y = editor.animationChannel(figureTarget, 'y');
@@ -64,7 +64,7 @@ test('camera/scene and extended-duration keys evaluate through the common editor
 });
 
 test('native layer pose-key mutation adopts real source references in the same history operation', () => {
-  const editor = fixture(), layer = editor.layers.find(layer => layer.kind === 'layer' || layer.kind === 'user'), target = {kind: 'layer', id: layer.id};
+  const editor = fixture({owned: false}), layer = editor.layers.find(layer => layer.kind === 'layer' || layer.kind === 'user'), target = {kind: 'layer', id: layer.id};
   const native = editor.nativePoseChannel(target), frames = editor.report.keyframes;
   assert.equal(native.source, 'native'); assert.equal(native.keys.length, 3); assert.ok(native.keys.every(key => editor.getFrameById(key.value.frameId)));
   assert.equal(native.keys[0].interpolation, 'linear'); const count = editor._undo.length;
@@ -126,7 +126,7 @@ test('property drags preserve hold interpolation and returning to an unkeyed val
 });
 
 test('large scalar key selections and bulk insertions retain atomic history and stable key identities', () => {
-  const editor = fixture(), count = 10000;
+  const editor = fixture({owned: false}), count = 10000;
   const keys = editor.addAnimationKeys(Array.from({length: count}, (_, index) => ({target: figureTarget, property: 'x', tick: index * 2, value: index})));
   const id = animationChannelId(figureTarget, 'x');
   assert.equal(editor.animationChannel(figureTarget, 'x').keys.length, count); assert.equal(editor._undo.length, 1);

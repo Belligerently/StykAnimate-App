@@ -18,7 +18,7 @@ function instance(t, os) {
   const native = new NativeClipboard(os); t.after(() => native.dispose());
   const editor = new Editor({propertyChannels: true, layerTimeline: true});
   const owner = installEngineOwner(editor);
-  t.after(() => { const {fallback, refused} = owner; owner.release(); assert.deepEqual(Object.keys(refused), [], 'the session refused nothing'); assert.equal(fallback, 0, 'no call ran in the editor'); });
+  t.after(() => { const {refused} = owner; owner.release(); assert.deepEqual(Object.keys(refused), [], 'the session refused nothing'); });
   assert.ok(owner.ready(), 'the document has its session');
   const desktop = Object.fromEntries([['beginSharedClipboardWrite','beginWrite'],['writeSharedClipboardChunk','write'],['finishSharedClipboardWrite','finish'],['beginSharedClipboardRead','beginRead'],['readSharedClipboardChunk','read'],['cancelSharedClipboardTransfer','cancel']].map(([name, method]) => [name, async (...args) => native[method](...args)]));
   return {editor, clipboard: new SharedClipboard(editor, desktop), native};
@@ -73,12 +73,15 @@ test('filmstrip paste creates missing layers and restores all animation in one u
 
 test('wire transfers embedded media and movieclip definitions without dropping bytes', async t => {
   const os = systemClipboard(), a = instance(t, os), b = instance(t, os);
-  a.editor.select(1); a.editor.createMovieclip({start: 0, end: 12});
-  a.editor.figure._styk.testAsset = 'data:image/png;base64,' + 'ABCD'.repeat(90000); a.editor._drawingPublished(a.editor.figure);
+  a.editor.select(1); const clip = a.editor.createMovieclip({start: 0, end: 12});
+  // The clip's definition carries a large asset of its own, as a document that embeds media does.
+  const asset = 'data:image/png;base64,' + 'ABCD'.repeat(90000), document = a.editor.serialize();
+  document.figure_types.find(figure => figure.figure_type_id === clip.figure_type_id)._styk.testAsset = asset;
+  a.editor.load(document); a.editor.select(a.editor.evaluatedFrame.objects.find(object => object.figure_type_id === clip.figure_type_id).unique_id);
   await a.clipboard.copy('figures', () => a.editor.copySelection());
   await b.clipboard.paste('figures', () => b.editor.pasteSelection());
   assert.equal(b.editor.figure._styk.movieclip.duration, 12);
-  assert.equal(b.editor.figure._styk.testAsset, a.editor.figure._styk.testAsset);
+  assert.equal(b.editor.figure._styk.testAsset, asset);
 });
 
 test('whole-scene paste shifts surplus destination layers and keeps their artwork outside the inserted frames', async t => {

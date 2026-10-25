@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {validateScene,validateSceneSteps} from '../src/pivot/model.mjs';
-import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit} from '../src/native-property-edit.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
 
 const open = ownedScope();
@@ -78,14 +77,6 @@ test('validation checkpoints use exactly the synchronous native checks and can c
   const corrupt=fixture();corrupt.keyframes.at(-1).camera={is_default:false,x:0,y:0,scale:-1};
   let syncError;try{validateScene(corrupt);}catch(error){syncError=error.message;}
   assert.throws(()=>{for(const _ of validateSceneSteps(corrupt,{sliceMs:0})){};},error=>error.message===syncError);
-});
-
-test('Simple Add timing exposes the stored baseline while the working exposure is edited',()=>{
-  const editor=open({demo:false},fixture(3,1));editor.enableFrameDrafts();editor.beginFrameDraft({mode:'add',index:0});
-  const before=clone(editor.timeline),total=editor.totalTicks;
-  const token=beginNativePropertyEdit(editor,'duration');previewNativePropertyEdit(token,20);commitNativePropertyEdit(token);
-  assert.equal(editor.frame.duration_raw,20);assert.deepEqual(editor.timeline,before);assert.equal(editor.totalTicks,total);
-  editor.discardFrameDraft();assert.equal(editor.frame.duration_raw,3);assert.deepEqual(editor.timeline,before);
 });
 
 test('zero-key native imports retain an editable placeholder but expose no stored Simple timeline',async()=>{

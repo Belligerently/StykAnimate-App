@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {createDemo} from '../src/demo.mjs';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {buildGeometry, evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
 import {buildContainerV2, decodeDocument} from './support/native-files.mjs';
@@ -38,7 +38,7 @@ function movieclipFixture({nested = false} = {}) {
   const base = new Editor({propertyChannels: true}); base.report._stykSource = source;
   base.report.figure_types[0].image_assets = [{name: 'Retained bitmap', data_base64: 'AQID',
     future: {_stykSource: 'retain this opaque asset field'}}];
-  const editor = engineEditor({propertyChannels: true}, base.serialize());
+  const editor = plainEditorFor({propertyChannels: true}, base.serialize());
   editor.selectMany([1, 2]); editor.beginTranslationDrag(); editor.moveSelection(10, 5); editor.commitDrag();
   const figure = editor.createMovieclip({start: 3, end: 24}), uid = editor.selectedUid;
   if (nested) {
@@ -69,7 +69,7 @@ test('native figure keeps the evaluated pose, precise style and assets without t
   assert.equal(output._stykSource, undefined);
   assert.deepEqual(output.backgrounds, []);
   assert.deepEqual(report, before);
-  const editor = engineEditor({demo: false});
+  const editor = plainEditorFor({demo: false});
   const name = editor.name, count = editor.frame.objects.length;
   editor.importFigure(output);
   assert.equal(editor.name, name);
@@ -83,7 +83,7 @@ test('missing selection fails rather than exporting a different figure', () => {
 });
 
 test('authored channels are captured at the selected tick without retaining the animation', () => {
-  const editor = engineEditor(undefined, createDemo());
+  const editor = plainEditorFor(undefined, createDemo());
   editor.addAnimationKeys([
     {target: {kind: 'figure', uid: 1}, property: 'x', tick: 0, value: 110},
     {target: {kind: 'figure', uid: 1}, property: 'x', tick: 12, value: 290},

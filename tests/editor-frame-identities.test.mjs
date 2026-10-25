@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {validateFrameIdentities} from '../src/editor-frames.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 const clone = value => structuredClone(value);
 const ids = editor => editor.report.keyframes.map((_, index) => editor.getFrameId(index));

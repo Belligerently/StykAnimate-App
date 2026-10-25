@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {createDemo} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
-const fresh=()=>engineEditor({demo:false},createDemo());
+const fresh=()=>plainEditorFor({demo:false},createDemo());
 // The editor alone: `_setFrameDurations` is a private helper of the JavaScript editor with no command in the session.
 const alone=()=>new Editor({demo:false}).load(createDemo());
 const exact=e=>assert.deepEqual(e.geometry.drawables,buildGeometry(e.report,e.evaluatedFrame).drawables);

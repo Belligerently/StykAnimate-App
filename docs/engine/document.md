@@ -65,10 +65,11 @@ documents of one editor, so `holdsRevision` (the document identity the engine re
 engine holds a given document at a given state; the stage never brings the engine up to date itself.
 A document in a background tab keeps its session; coming to the front activates it again.
 
-Edits the editor makes outside the session's calls reach the session too, once the code that made them
-has finished (`settle` in `engine-owner.mjs`, at the editor's revision): a document marked as changed
-(a new revision with the tree untouched, published without converting anything), and the encoded tiles of a drawing
-attached to its definition in place (a derived publication, `DrawingResources.onPublished`; the revision does not move). A frame the stage
+Nothing but the session changes the document. Two things the interface does outside a command are told to it at once, by the
+owner (`owner.rs`, [editing.md](editing.md#phase-3-the-engine-owns-the-document), "Bookkeeping"): a document marked as changed
+(`editor.dirty = true`: `@touch`, a new revision with the tree untouched, published without converting anything), and the
+encoded tiles of a drawing attached to its definition (a derived publication, `DrawingResources.onPublished`:
+`@publishCel`; the revision does not move). A frame the stage
 draws of a cel that only a gesture's draft holds goes through `EngineHandle.set_draft`
 ([drawing.md](drawing.md#live-cels)).
 

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {createFigureHandleTransform, figureHandleTransform, editorFigureTransformMethods} from '../src/editor-figure-transform.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 Object.assign(Editor.prototype, editorFigureTransformMethods);
 const near = (a,b) => assert.ok(Math.abs(a-b)<2e-4, `${a} != ${b}`);
 const pointNear = (a,b) => { near(a.x,b.x); near(a.y,b.y); };

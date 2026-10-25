@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument,createObject,createFrame,defaultFigure} from '../src/demo.mjs';
 import {animationChannelId} from '../src/animation-channels.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 const target=handleId=>({kind:'segment',uid:1,handleId});
 function fixture(){
@@ -10,7 +10,7 @@ function fixture(){
   report.figure_types.push(defaultFigure(2));
   report.keyframes=[0,1].map(i=>createFrame([createObject(figure,1,200+i*20,240),createObject(report.figure_types[1],2,420,250)],i?1:4));
   for(const frame of report.keyframes)frame.objects[0]._stykStyle={outlineOpacity:.7,segments:{7:{opacity:.25},8:{opacity:.55,gradientOpacity:.35},9:{opacity:.8}}};
-  const editor=ownedEditorFor({demo:false}, report);editor.captureFrameSource(editor.report.keyframes[1]);
+  const editor=plainEditorFor({demo:false}, report);editor.captureFrameSource(editor.report.keyframes[1]);
   editor.addAnimationKeys([
     ...[7,8,9].flatMap(handleId=>[{target:target(handleId),property:'opacity',tick:0,value:handleId/10},{target:target(handleId),property:'opacity',tick:4,value:.1}]),
     {target:target(8),property:'gradientOpacity',tick:0,value:.4},{target:target(8),property:'gradientOpacity',tick:4,value:.9},
