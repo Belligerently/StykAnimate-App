@@ -272,3 +272,18 @@ test('closing a project ends the sessions it holds, those of the movieclips it w
     assert.equal(editor.undoLabel !== '', true, 'and it edits');
   } finally { owner.release(); }
 });
+
+// A movieclip made inside an entered movieclip retains the poses it was made from, which the clip it was made in
+// retains too: those are cut down to the figures the new clip holds, as the editor alone does.
+test('a movieclip made inside another keeps only its own figures in the poses it retains', {skip: !engineBuilt}, async () => {
+  await bothWays(recordedDocument('origin-future-rig-joined-sheet'), (editor, mark) => {
+    editor.select(firstFigure(editor), -1);
+    const clip = editor.createMovieclip({start: 0, end: 4});
+    mark('outer made');
+    editor.enterMovieclip(clip.figure_type_id);
+    const inner = editor.createMovieclip();
+    mark('inner made');
+    editor.leaveMovieclip();
+    return inner.figure_type_id;
+  }, {options: sheet, expectEntries: 2});
+});

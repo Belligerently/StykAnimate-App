@@ -10,7 +10,9 @@
  *
  * The drawing pixels the Draw tool copies are not here: they are the interface's alone (the session never sees pixels). An
  * audio clip's recording can be megabytes, so the editor shows only that a clip was copied; the recording stays in the session
- * that copied it and moves to the one that pastes it, read from the first (`lazy`).
+ * that copied it and moves to the one that pastes it, read from the first (`lazy`). A session that is about to be freed
+ * (its project closes, its movieclip is left) hands the recording over first (`surrender`): no clipboard names a session
+ * once it is gone.
  */
 
 /** What the editor shows of a copied audio clip, which the session holds: the interface asks only whether there is one. */
@@ -64,8 +66,9 @@ const isEmpty = (kind, value) => KINDS[kind].empty ? KINDS[kind].empty(value) : 
  * @param {() => unknown} token the document the editor shows
  */
 export function createClipboards(editor, layer, token) {
-  /** kind -> {value, holder: the session whose clipboard it is, pending: the interface wrote it since the session had it}. */
-  const mirror = new Map(Object.keys(KINDS).map(kind => [kind, {value: undefined, holder: null, pending: false}]));
+  /** kind -> {value, holder: the session whose clipboard it is, pending: the interface wrote it since the session had it,
+   * taken: what a lazy kind's session handed over when it ended, until another session has it}. */
+  const mirror = new Map(Object.keys(KINDS).map(kind => [kind, {value: undefined, holder: null, pending: false, taken: undefined}]));
 
   for (const [kind, {fields, parts}] of Object.entries(KINDS)) {
     const entry = mirror.get(kind);
@@ -83,7 +86,7 @@ export function createClipboards(editor, layer, token) {
         get: () => part ? entry.value?.[part] : entry.value,
         set(value) {
           entry.value = part ? {...entry.value, [part]: value} : value;
-          entry.pending = true;
+          entry.pending = true; entry.taken = undefined;
         },
       });
     });
@@ -94,7 +97,7 @@ export function createClipboards(editor, layer, token) {
     adopt({kind, data}, session) {
       const entry = mirror.get(kind), {read} = KINDS[kind];
       entry.value = read ? read(data, token()) : data;
-      entry.holder = session; entry.pending = false;
+      entry.holder = session; entry.pending = false; entry.taken = undefined;
       // Copying figures leaves no single figure copied (`copySelection`).
       if (kind === 'figures') editor._figureClipboard = null;
     },
@@ -111,18 +114,29 @@ export function createClipboards(editor, layer, token) {
         const held = !isEmpty(kind, entry.value);
         if (!entry.pending && (!held || entry.holder === session)) continue;
         if (lazy && !entry.pending) {
-          // Nobody holds it any more (the project it was copied in is closed): there is nothing to hand over.
-          if (!entry.holder) continue;
-          send(kind, fetch(entry.holder, kind), true);
+          // The session that copied it, or what it handed over when it ended. Nobody has it (the owner was released): nothing to hand over.
+          const data = entry.holder ? fetch(entry.holder, kind) : entry.taken;
+          if (data === undefined) continue;
+          send(kind, data, true);
         } else send(kind, held ? (write ? write(entry.value) : entry.value) : null, held && Boolean(source) && source(entry.value) !== token());
-        entry.holder = session; entry.pending = false;
+        entry.holder = session; entry.pending = false; entry.taken = undefined;
       }
     },
     /** The editor ran a call that pastes: it may have changed the clipboard in place, so the session has it again before its next. */
     edited(name) {
       for (const kind of READS[name] ?? []) if (!KINDS[kind].lazy) mirror.get(kind).holder = null;
     },
+    /** `session` is about to be freed: what it holds of a lazy clipboard (a copied audio clip's recording) is read from it
+     * now and kept, and none names it afterwards. `fetch(session, kind)` is the read `handOver` takes. */
+    surrender(session, fetch) {
+      for (const [kind, entry] of mirror) {
+        if (entry.holder !== session) continue;
+        entry.holder = null;
+        // What the interface wrote since is the whole value already; a clipboard the session does not hold is the editor's alone.
+        if (KINDS[kind].lazy && !entry.pending && !isEmpty(kind, entry.value)) entry.taken = fetch(session, kind);
+      }
+    },
     /** The sessions are gone. */
-    release() { for (const entry of mirror.values()) entry.holder = null; },
+    release() { for (const entry of mirror.values()) { entry.holder = null; entry.taken = undefined; } },
   };
 }

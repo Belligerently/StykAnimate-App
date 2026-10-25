@@ -197,6 +197,52 @@ pub(crate) fn filtered_frame(frame: &Value, selected: &HashSet<u32>) -> Value {
     Value::object(result)
 }
 
+/// The imported animation of a clip keeps the channels of the figures it holds and of the layers they are on.
+fn keep_channels(animation: &mut Obj, selected: &HashSet<u32>, layers: &HashSet<String>) {
+    let channels = items(animation.get("channels"))
+        .into_iter()
+        .filter(|c| match c.path(&["target", "kind"]).and_then(Value::as_str) {
+            Some("figure" | "segment" | "polygon") => c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| selected.contains(&(u as u32))),
+            Some("layer") => c.path(&["target", "id"]).and_then(Value::as_str).is_some_and(|id| layers.contains(id)),
+            _ => false,
+        })
+        .collect();
+    animation.set("channels", Value::array(channels));
+}
+/// The effect clips of a clip are those on the figures it holds (none on the scene).
+fn keep_vfx_clips(vfx: &mut Obj, selected: &HashSet<u32>) {
+    let clips = items(vfx.get("clips"))
+        .into_iter()
+        .filter(|c| c.path(&["target", "kind"]).and_then(Value::as_str) != Some("scene") && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| selected.contains(&(u as u32))))
+        .collect();
+    vfx.set("clips", Value::array(clips));
+}
+/// `captureMovieclip`'s `prune`: a clip made inside a movieclip retains the scene the outer clip retains (a chain of `movieclipSource`
+/// documents), cut down to the figures the new clip holds: their poses, effect clips and imported animation.
+fn prune_retained(document: &mut Value, selected: &HashSet<u32>, layers: &HashSet<String>) {
+    let Some(document) = document.make_obj() else { return };
+    if let Some(frames) = document.get("keyframes") {
+        let frames = items(Some(frames)).iter().map(|frame| filtered_frame(frame, selected)).collect();
+        document.set("keyframes", Value::array(frames));
+    }
+    let Some(styk) = document.get_mut("_styk").and_then(Value::make_obj) else { return };
+    if let Some(vfx) = styk.get_mut("vfxClips").filter(|v| v.truthy()).and_then(Value::make_obj) {
+        keep_vfx_clips(vfx, selected);
+    }
+    if let Some(sources) = styk.get_mut("frameSources").filter(|v| v.truthy()).and_then(Value::make_obj) {
+        let filtered: Vec<(String, Value)> = sources.iter().map(|(id, frame)| (id.to_string(), filtered_frame(frame, selected))).collect();
+        for (id, frame) in filtered {
+            sources.set(&id, frame);
+        }
+    }
+    if let Some(animation) = styk.get_mut("animation").filter(|v| v.truthy()).and_then(Value::make_obj) {
+        keep_channels(animation, selected, layers);
+    }
+    if let Some(retained) = styk.get_mut("movieclipSource").filter(|v| v.truthy()).and_then(Value::make_obj).and_then(|source| source.get_mut("document")) {
+        prune_retained(retained, selected, layers);
+    }
+}
+
 fn materialize_error(error: styk_eval::records::Error) -> EditError {
     match error {
         styk_eval::records::Error::Unported(reason) => EditError::Unported(reason),
@@ -439,18 +485,14 @@ impl Editor {
         if animation.get("nextKeyId").is_none() {
             animation.set("nextKeyId", Value::Num(1.0));
         }
-        let channels = items(animation.get("channels"))
-            .into_iter()
-            .filter(|c| match c.path(&["target", "kind"]).and_then(Value::as_str) {
-                Some("figure" | "segment" | "polygon") => c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| selected.contains(&(u as u32))),
-                Some("layer") => c.path(&["target", "id"]).and_then(Value::as_str).is_some_and(|id| selected_layers.contains(id)),
-                _ => false,
-            })
-            .collect();
-        animation.set("channels", Value::array(channels));
+        keep_channels(&mut animation, &selected, &selected_layers);
         metadata.set("animation", Value::object(animation));
         metadata.set("frameSources", Value::object(source_table));
         metadata.remove("simpleFrameDraft");
+        // What the clip it is made in retains is cut down to its figures too.
+        if let Some(retained) = metadata.get_mut("movieclipSource").and_then(Value::make_obj).and_then(|source| source.get_mut("document")) {
+            prune_retained(retained, &selected, &selected_layers);
+        }
         if let Some(layers) = metadata.get_mut("layers").and_then(Value::make_obj) {
             if let Some(assignments) = layers.get_mut("assignments").and_then(Value::make_obj) {
                 let removed = assignments.iter().filter(|(u, _)| u.parse::<u32>().ok().is_none_or(|u| !selected.contains(&u))).map(|(u, _)| u.to_string()).collect::<Vec<_>>();
@@ -460,17 +502,7 @@ impl Editor {
             }
         }
         if let Some(vfx) = metadata.get_mut("vfxClips").and_then(Value::make_obj) {
-            vfx.set(
-                "clips",
-                Value::array(
-                    items(vfx.get("clips"))
-                        .into_iter()
-                        .filter(|c| {
-                            c.path(&["target", "kind"]).and_then(Value::as_str) != Some("scene") && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| selected.contains(&(u as u32)))
-                        })
-                        .collect(),
-                ),
-            );
+            keep_vfx_clips(vfx, &selected);
         }
         let mut source = self.report.as_obj().cloned().unwrap();
         source.set("figure_types", Value::array(figures));

@@ -15638,7 +15638,7 @@
   "errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip": {
     "locations": [
       "src/editor-movieclips.mjs:265",
-      "src/engine/engine-owner.mjs:788"
+      "src/engine/engine-owner.mjs:798"
     ],
     "context": "if(drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), \"errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMoviecl"
   },
@@ -16377,13 +16377,13 @@
   },
   "errors.engineOwner.invalidValue": {
     "locations": [
-      "src/engine/engine-owner.mjs:1170"
+      "src/engine/engine-owner.mjs:1187"
     ],
     "context": "if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error}"
   },
   "errors.engineOwner.notSupported": {
     "locations": [
-      "src/engine/engine-owner.mjs:1177"
+      "src/engine/engine-owner.mjs:1194"
     ],
     "context": "const error = messageError(new Error(''), 'errors.engineOwner.notSupported', {});"
   },
@@ -39106,7 +39106,7 @@
   },
   "vfxChannels.enabled": {
     "locations": [
-      "src/engine/engine-owner.mjs:1157",
+      "src/engine/engine-owner.mjs:1174",
       "src/vfx-clip-inspector.mjs:63",
       "src/vfx-localization.mjs:9",
       "src/vfx.mjs:25"
