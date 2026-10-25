@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 29 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 28 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
-| `styk-edit` | 92 | 627 KiB | 23 | 12 | 1 | 4 | 52 | 65 % | 12 % | 60 % |
-| `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
-| `styk-eval` | 80 | 651 KiB | 16 | 45 | 9 | 0 | 10 | 20 % | 72 % | 2 % |
+| `styk-edit` | 92 | 615 KiB | 23 | 11 | 1 | 4 | 53 | 66 % | 11 % | 61 % |
+| `styk-engine` | 24 | 31 KiB | 6 | 0 | 0 | 0 | 18 | 56 % | 0 % | 56 % |
+| `styk-eval` | 80 | 506 KiB | 12 | 41 | 6 | 0 | 21 | 23 % | 68 % | 3 % |
 | `styk-export` | 14 | 63 KiB | 8 | 2 | 0 | 0 | 4 | 0 % | 10 % | 0 % |
-| `styk-formats` | 56 | 742 KiB | 22 | 7 | 1 | 22 | 4 | 65 % | 11 % | 7 % |
+| `styk-formats` | 56 | 741 KiB | 22 | 7 | 1 | 22 | 4 | 65 % | 11 % | 7 % |
 | `styk-render` | 51 | 95 KiB | 4 | 1 | 2 | 0 | 44 | 48 % | 23 % | 27 % |
-| **Total** | 355 | 2419 KiB | 90 | 75 | 21 | 26 | 143 | 47 % | 29 % | 20 % |
+| **Total** | 355 | 2251 KiB | 85 | 70 | 18 | 26 | 156 | 49 % | 25 % | 22 % |
 
 ## Engine modules
 
@@ -76,7 +76,7 @@ Engine logic: ported to Rust.
 | `src/clipboard-worker-plan.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its worker pipeline) (7402 bytes) |
 | `src/clipboard-worker.mjs` | `styk-edit` | removed | deleted with the native frame clipboard (its worker pipeline) (8566 bytes) |
 | `src/demo.mjs` | `styk-edit` | js |  |
-| `src/editor-animation.mjs` | `styk-edit` | partial | Rust: every edit of the authored animation, the camera motion and the motion path, and the reads the session answers (animationValue, segmentAnimationTarget); the editor keeps the channel reads, the camera-motion clips, the motion-path gesture state the owner mirrors and the native channel projection (nativePropertyChannel, nativePoseChannel) that the branch and builder order previews of native-property-edit.mjs still build on |
+| `src/editor-animation.mjs` | `styk-edit` | partial | Rust: every edit of the authored animation, the camera motion and the motion path, and the reads the session answers (animationValue, segmentAnimationTarget); the editor keeps the channel reads, the camera-motion clips and the motion-path gesture state the owner mirrors |
 | `src/editor-audio.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the session (styk-edit/src/audio.rs) is the only implementation |
 | `src/editor-authored-pose.mjs` | `styk-edit` | removed | deleted: the pose gestures and whole-frame transactions are commands of the engine session (styk-edit authored.rs) (10860 bytes) |
 | `src/editor-branch-style.mjs` | `styk-edit` | partial | Rust: the animation edit of several targets (beginAnimationEdit([targets], property): styk-edit/src/property_edit.rs) and the branch style commands (styk-edit/src/builder.rs). Left in JavaScript: branchOpacityPlan, the interface's choice of the targets of a branch edit; the JavaScript edit (begin, preview, commit and cancel of the branch keys) is deleted |
@@ -100,7 +100,7 @@ Engine logic: ported to Rust.
 | `src/editor-frames.mjs` | `styk-edit` | js | the check of the frame identities a document stores, getFrameId, getFrameById and the identity assignment the native channel projection uses; frame edits are the engine session's |
 | `src/editor-handle-commands.mjs` | `styk-edit` | partial | Rust: the segment-value clipboard and the handle commands (styk-edit/src/handle_commands.rs). Left in JavaScript: the segmentValues read and the dialog's parseSegmentValues and formatSegmentValues |
 | `src/editor-handle-edit.mjs` | `styk-edit` | removed | deleted: Handle Edit Mode is a session command (styk-edit/src/handle_edit.rs) |
-| `src/editor-ik.mjs` | `styk-edit` | partial | Rust: poseIKTarget and the IK settings, also across joined figures (styk-edit/src/ik.rs, ik_settings.rs). Left in JavaScript: getIKSettings (the owner installs the session's read over it) and the helpers the pose bodies of editor.mjs and the motion-path editor still call |
+| `src/editor-ik.mjs` | `styk-edit` | removed | deleted: getIKSettings is a read the session answers (styk-edit/src/ik_settings.rs); the editor holds no body of it |
 | `src/editor-inbetween-async.mjs` | `styk-edit` | removed | deleted with the Insert Inbetween dialog, which nothing opened any more: the asynchronous insertion and its planner on the engine's workers (10327 bytes) |
 | `src/editor-inbetween.mjs` | `styk-edit` | removed | deleted with the Insert Inbetween dialog, which nothing opened any more: the planner and insertInbetweenFrames; the in-between preview samples went with it (16274 bytes) |
 | `src/editor-layer-async.mjs` | `styk-edit` | removed | deleted: the awaitable layer commands moved to src/editor-layers.mjs (893 bytes) |
@@ -121,13 +121,13 @@ Engine logic: ported to Rust.
 | `src/editor-selection.mjs` | `styk-edit` | partial | Rust: selection order and metadata, branch copy, order and alignment commands (styk-edit). Left in JavaScript: the view calls (select, toggle, marquee, branch) and two stored reads (canDisconnectSegment, figurePalette) |
 | `src/editor-sessions.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-spatial-shape.mjs` | `styk-edit` | removed | deleted: setSpatialCamera and setSpatialProportions are session commands (styk-edit/src/spatial_shape.rs); the two reads moved to editor-spatial.mjs |
-| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: every spatial command (styk-edit/src/spatial.rs, spatial_ik.rs, spatial_shape.rs, pose_choice.rs). Left in JavaScript: the reads getSpatialCamera, getSpatialProportions, getSpatialPose and getSpatialMotion, and the posing helpers poseJoint, bendJoint and rotateJoint of editor.mjs still call (poseSpatialJoint, twistSpatialJoint, poseSpatialIKDepth, setSpatialPose and what they use) |
+| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: every spatial command (styk-edit/src/spatial.rs, spatial_ik.rs, spatial_shape.rs, pose_choice.rs) and the reads getSpatialPose and getSpatialMotion. Left in JavaScript: the stored-data reads getSpatialCamera and getSpatialProportions, and the posing helpers poseJoint, bendJoint and rotateJoint of editor.mjs still call (poseSpatialJoint, twistSpatialJoint, poseSpatialIKDepth, setSpatialPose and what they use) |
 | `src/editor-sprite-segment.mjs` | `styk-edit` | removed | deleted: addSpriteSegment is a session command (styk-edit/src/topology/sprite.rs) |
 | `src/editor-style-topology.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the session repairs styles as it edits topology (styk-edit/src/topology.rs) |
 | `src/editor-tweener.mjs` | `styk-edit` | removed | deleted: beginTween and updateTween are the engine session's (styk-edit tweener.rs) (10194 bytes) |
 | `src/editor-vfx-clips.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the reads moved to src/editor-vfx.mjs, the commands are the session's (styk-edit/src/vfx_clips.rs) |
-| `src/editor-vfx.mjs` | `styk-edit` | verified | The effect and effect-clip commands are the session's (styk-edit/src/vfx.rs, vfx_clips.rs); the module keeps the reads the interface shows (the stack of a target, the clips, a clip's sample) |
-| `src/editor.mjs` | `styk-edit` | verified | The app runs on the Rust owner (D19): every command is the session's and the editor holds no body of them. The module keeps the interface's read view of the document, its selection, playhead and layers, the document's load and publication, and `transaction` with its history record until the inspector bindings move to the session |
+| `src/editor-vfx.mjs` | `styk-edit` | verified | The effect and effect-clip commands and the reads of an effect stack and a clip's sample are the session's (styk-edit/src/vfx.rs, vfx_clips.rs, interface.rs); the module keeps the clips a document stores |
+| `src/editor.mjs` | `styk-edit` | verified | The app runs on the Rust owner (D19): every command is the session's and the editor holds no body of them or of an evaluation. The module keeps the interface's read view of the document, its selection, playhead and layers, the document's load and publication, the frame, geometry and timeline it reads from the session, and `transaction` with its history record until the inspector bindings move to the session |
 | `src/figure-colors.mjs` | `styk-edit` | partial | Rust: validateRecolor, recolorObject, figurePalette, attachedFigurePalette, displayedColor, displayedSegmentPaint (styk-edit/src/recolor.rs, for recolouring); the inspector reads them in JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | removed | deleted: only the editor's frame-draft planning used it (16602 bytes) |
 | `src/frame-draft-animation.mjs` | `styk-edit` | removed | deleted: only the editor's frame-draft bodies used it (6555 bytes) |
@@ -160,7 +160,7 @@ Engine logic: ported to Rust.
 | `src/playback-bitmap-pool.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-budget.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-cadence.mjs` | `styk-engine::playback` | js | scheduling, budgets |
-| `src/playback-geometry-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
+| `src/playback-geometry-cache.mjs` | `styk-engine::playback` | removed | deleted: the editor retained geometry by itself; the session sends the groups that changed (engine-shown.mjs) |
 | `src/playback-metrics.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-patch.mjs` | `styk-engine::playback` | removed | deleted: the playback worker it patched is gone (4600 bytes) |
 | `src/playback-planning.mjs` | `styk-engine::playback` | removed | deleted: the layer-move planning job went too; the session plans a layer move itself (styk-edit layer_membership) |
@@ -192,37 +192,37 @@ Engine logic: ported to Rust.
 | `src/layer-sheet.mjs` | `styk-eval` | partial | Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS |
 | `src/layers.mjs` | `styk-eval` | partial | Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS |
 | `src/native-pose-projection.mjs` | `styk-eval` | js |  |
-| `src/native-property-projection.mjs` | `styk-eval` | partial | Rust: private native scalar adoption through same marker, Draft, Records and typed sampler; 204 exact recorded curves/200 missing first writes; authored propertyChannels:true command publication and app adoption remain guarded |
+| `src/native-property-projection.mjs` | `styk-eval` | removed | deleted: nothing called it once the editor stopped projecting native property channels |
 | `src/object-identity.mjs` | `styk-eval` | js |  |
 | `src/paint.mjs` | `styk-eval` | partial | Rust: segment paints and gradients in draw lists; normalizePaint, segmentPaint, samplePaint, parseColor and hexColor for recolouring (styk-edit/src/recolor.rs); CSS and SVG helpers still JS |
 | `src/pivot/background.mjs` | `styk-eval` | partial | Rust: background tween and colour key; painting still JS |
-| `src/pivot/geometry-definition.mjs` | `styk-eval` | js | evaluation and world geometry |
-| `src/pivot/geometry-order.mjs` | `styk-eval` | js | evaluation and world geometry |
-| `src/pivot/geometry-pose.mjs` | `styk-eval` | js | evaluation and world geometry |
-| `src/pivot/geometry.mjs` | `styk-eval` | partial | Rust: the interface's frame, geometry and timeline from the session (styk-edit/src/interface.rs, styk_eval::geometry::build_shapes; the editor reads them, src/engine/engine-shown.mjs); evaluated records/world geometry, distinct native held shown/raw fractional views, prepared native handle/body/snap queries and per-clip/aggregate-lineage scene cache limits; app actual-shown query preparation and Canvas paths still JS; B8 ordinary shape queries omit unused render output through the same geometry owner; rich/ancestor numeric and full-output controls pass, additive platform-neutral build_only_for_shape API; full figures cost and default gate remain pending; B9 selected-joint query retains ancestors and full complex/joined/pinned/ambiguous/nonfinite fallbacks; coherent raw/typed pair reuses unchanged IK table; verified392Rust/36CLI1668/70JS/check, shippingb9cf70669501/10,240,701B; additive portable build_joint_for_shape and edit_frame_reusing_ik APIs; full figures cost/checkpoint/default gate still pending; B11 eligible ordinary selected-joint query skips unused join-order construction, original warnings/publication/fallbacks exact; verified394Rust/15CLI576/82JS/check, shipping15cbbdc513ea/10,241,300B; no API/math/schema change or measured B11 gain; B10 full cost all FAIL, figures gate stays closed; B12 no-frame-pins selected-joint query narrows joined selected segments while retaining full parents/topology/warnings/publication; verified396Rust/16CLI591/82JS/check, shippingb65ff69acb49/10,241,354B; existing portable query semantic scope extended, signatures/math/schema unchanged; accepted full joined36 instrumented B11 diagnostic305.950/280.750ms (not gate/gain); fresh full figures cost/checkpoint/default adoption next; B14 bounded ordinary same-Shape/nonpose-node conversion reuses existing typed fields, preserving changed pose conversion, metadata and rich/diagnostic fallbacks; verified405Rust/28CLI942/40guards/fivecontrols/82JS/check, shipping10b6b47a17ed/10,243,996B; existing portable Loader signatures/types/math/schema unchanged; completed B13 full cost FAIL/FAIL/PASS, fresh figures cost/checkpoint/default adoption next |
+| `src/pivot/geometry-definition.mjs` | `styk-eval` | removed | deleted: the interface evaluates nothing; the frame, geometry and timeline are the session's (engine-shown.mjs) |
+| `src/pivot/geometry-order.mjs` | `styk-eval` | removed | deleted: the interface evaluates nothing; the frame, geometry and timeline are the session's (engine-shown.mjs) |
+| `src/pivot/geometry-pose.mjs` | `styk-eval` | removed | deleted: the interface evaluates nothing; the frame, geometry and timeline are the session's (engine-shown.mjs) |
+| `src/pivot/geometry.mjs` | `styk-eval` | removed | deleted: the editor evaluates nothing; the frame on show, its geometry and the timeline are the session's (styk-edit/src/interface.rs, src/engine/engine-shown.mjs); the timeline rows a document starts on are src/pivot/read-view.mjs |
 | `src/pivot/raster-clip.mjs` | `styk-eval` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/pose-snapshot.mjs` | `styk-eval` | partial | Rust: snapshotPoseFrame, poseObjectSignature (styk-eval records, styk-edit); snapshotPoseObject still JS |
-| `src/structural-equality.mjs` | `styk-eval` | js |  |
+| `src/structural-equality.mjs` | `styk-eval` | removed | deleted: the retained-geometry and tween caches that compared poses with it are gone (the session sends the groups that changed) |
 | `src/camera-bake-authored.mjs` | `styk-eval::camera` | removed | deleted: only the editor's applyCameraToFigures body used it; the session bakes the camera (styk-edit camera_bake.rs) (9902 bytes) |
 | `src/camera-motion-bake-client.mjs` | `styk-eval::camera` | removed | deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs) |
 | `src/camera-motion-bake-worker.mjs` | `styk-eval::camera` | removed | deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs) |
 | `src/camera-motion-bake.mjs` | `styk-eval::camera` | removed | deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs) |
-| `src/camera-motion.mjs` | `styk-eval::camera` | partial | Rust: presets, cameraTravelAt, cameraAtTime incl. edit frames and follow clips; creation and validation still JS |
+| `src/camera-motion.mjs` | `styk-eval::camera` | partial | Rust: presets, travel and the shot incl. edit frames and follow clips (styk_eval::camera, follow; the interface reads the shot); creation and validation still JS |
 | `src/animation-channels.mjs` | `styk-eval::channels` | partial | Rust: reading channels, sampleAnimationChannel, composeAnimationChannels, animationEndTick (styk_eval::channels); composeAnimationChannels and animationPropertyValue on records (styk_eval::records); animationChannelId, normalizeAnimationTarget and validateAnimationValue for property edits (styk-edit/src/property_edit.rs); document validation and native-timeline authoring still JS |
 | `src/animation-properties.mjs` | `styk-eval::channels` | partial | Rust: property vocabulary, discrete and colour properties; validation and names still JS |
 | `src/animation-style.mjs` | `styk-eval::channels` | partial | Rust: style overlays and style channels (setAnimationStyle, applicability); resolveInstanceFigure's segment and polygon overlays, styleColor and meshPaletteColor for recolouring (styk-edit/src/recolor.rs); validation still JS |
 | `src/native-property-curve.mjs` | `styk-eval::channels` | partial | Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor |
-| `src/camera-follow.mjs` | `styk-eval::follow` | partial | Rust: typed follow sampling and V8-exact logarithm for native edit read/bake; WeakMap geometry/epoch invalidation fixed in JS; a session shapes the path of each revision it makes through the frame on show, incremental resampling across edits still JS; the inspector's framing offset is styk_eval::follow::framing_offset |
+| `src/camera-follow.mjs` | `styk-eval::follow` | partial | Rust: the follow solver (styk_eval::follow) and the inspector's framing offset (framing_offset); the JavaScript keeps the limits, defaults and validation of a follow clip's targets |
 | `src/movieclip-drawings.mjs` | `styk-eval::movieclips` | partial | Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS |
-| `src/movieclip-geometry.mjs` | `styk-eval::movieclips` | partial | Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS |
-| `src/movieclip-materialize.mjs` | `styk-eval::movieclips` | partial | Rust: shared recorded materializer/source clocks and native/sheet Bake capture; portable effect remapping shared with topology/clipboard; figures with IK limbs (as solved), rigs, origins and 3D poses expand like the editor's; meshes (bake_mesh) and turning drawings expand in the session too |
-| `src/movieclip-membership.mjs` | `styk-eval::movieclips` | partial | Rust: recorded native document/presence clocks, restart and source membership across frames with retained VFX clocks; remaining unrecorded combinations and app adoption pending |
-| `src/movieclip-mesh-materialize.mjs` | `styk-eval::movieclips` | ported | Rust: bake_mesh (styk_eval::materialize): a 3D mesh clip as a figure of depth-tested fills, in the session's break apart and bake; still imported by the JavaScript materializer, which the editor runs only for a call the session refuses |
-| `src/movieclip-presence.mjs` | `styk-eval::movieclips` | partial | Rust: presence clock and continuations; editing still JS |
-| `src/movieclips.mjs` | `styk-eval::movieclips` | partial | Rust: movieclipTime and clip sampling; capture and editing still JS |
+| `src/movieclip-geometry.mjs` | `styk-eval::movieclips` | removed | deleted: a movieclip is its handle in the interface's groups; the stage draws what it holds (styk_eval::movieclips) |
+| `src/movieclip-materialize.mjs` | `styk-eval::movieclips` | removed | deleted: only tests called it; the materialization is the engine's (styk_eval::materialize, the Pivot export) |
+| `src/movieclip-membership.mjs` | `styk-eval::movieclips` | removed | deleted: the presence clocks are the engine's (styk_eval::records) |
+| `src/movieclip-mesh-materialize.mjs` | `styk-eval::movieclips` | removed | deleted with movieclip-materialize.mjs: the materialization is the engine's (styk_eval::materialize bake_mesh) |
+| `src/movieclip-presence.mjs` | `styk-eval::movieclips` | partial | Rust: presence clock and continuations (styk_eval::records); the JavaScript keeps the stored continuations and their validation |
+| `src/movieclips.mjs` | `styk-eval::movieclips` | partial | Rust: movieclipTime and clip sampling; the JavaScript keeps the stored assets, playback settings and their validation |
 | `src/animation-origin-support.mjs` | `styk-eval::origin` | partial | Rust: support-graph origins/ghost corrections and recorded whole/joint/handle/range/join/2D-rig synchronization; an origin figure with a 3D pose, mesh, movieclip or drawing runs in the editor |
 | `src/animation-origin.mjs` | `styk-eval::origin` | partial | Rust: layout origins, offsets, corrected roots, in-between tweens, the rotation figure_angle uses (styk_eval::origin); evaluated records and scalar property previews byte-exact; most origin editing still JS |
-| `src/layer-parallax.mjs` | `styk-eval::parallax` | partial | Rust: parallaxResolver, per-slot offsets against camera travel (styk_eval::parallax); validation and translatedPlan still JS |
+| `src/layer-parallax.mjs` | `styk-eval::parallax` | partial | Rust: per-slot offsets against camera travel (styk_eval::parallax); validation still JS |
 | `src/builder-construction.mjs` | `styk-eval::picking` | partial | Rust: native gesture-local ConstructionIndex, segment picking and exact snap priority/latch; app query preparation, actual-shown order and overlay still JS |
 | `src/builder-fill.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
 | `src/camera-overlay.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
@@ -239,11 +239,11 @@ Engine logic: ported to Rust.
 | `src/rig-control-details.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
 | `src/rig-weighted.mjs` | `styk-eval::rig` | partial | Rust: weighted joints and bindings (styk_eval::rig); validateWeightedJoint (styk-edit/src/rig_behavior.rs); authoring still JS |
 | `src/spatial-mesh-legacy.mjs` | `styk-eval::rig` | js | Kept: the converter behind scripts/convert-spatial-meshes.mjs (docs/SPATIAL-MESHES.md); the app does not run it on open |
-| `src/movieclip-mesh.mjs` | `styk-eval::spatial` | partial | Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS |
-| `src/pivot/surfaces.mjs` | `styk-eval::spatial` | ported | Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer |
+| `src/movieclip-mesh.mjs` | `styk-eval::spatial` | partial | Rust: meshes attached to spatial bones (styk_eval::spatial); the JavaScript validates what a clip stores of them (validateMovieclipMeshes) |
+| `src/pivot/surfaces.mjs` | `styk-eval::spatial` | partial | Rust: one-sided surfaces, culling and depth (styk_eval::spatial); the JavaScript validates what a polygon stores of its surface (validateSurface) |
 | `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation and ordinary choice/group/preset editing; 24 recorded spatial-origin visibility/preset/mixed tapes/2724 steps including joins; origin instances admitted with a joint, several figures or IK limbs; additional spatial/native-projection cases and panel validation/adoption remain guarded |
 | `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames, 3D pose tweens, quaternionPose (rig.rs, styk_eval::spatial); validateSpatial (styk-edit/src/rig_behavior.rs); authoring still JS |
-| `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS |
+| `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); the JavaScript validates what a figure stores of a mesh (validateSpatialMesh) |
 | `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |
 | `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | Rust: clip sampling, keys, fades, composition and strict edit validation including paints/attached scopes; remaining JS model callers preserved |
 | `src/vfx-connected.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS |
@@ -255,7 +255,7 @@ Engine logic: ported to Rust.
 | `src/vfx-registry.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags) |
 | `src/vfx-user-presets.mjs` | `styk-eval::vfx` | partial | Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS |
 | `src/vfx.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS; B13 coherent edit-frame conversion reuses unchanged warning-free effect tables, retaining original diagnostics and identity/lineage fallbacks; verified400Rust/27CLI925/82JS/check; existing portable Loader API, stored fields/math/schema unchanged; fresh figures cost/checkpoint/default gate pending |
-| `src/vfx-generator-anchors.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-anchors.mjs` | `styk-eval::vfx::generated` | removed | deleted: the generated effects are the engine's (styk_eval::vfx::generated) |
 | `src/vfx-generator-frame.mjs` | `styk-eval::vfx::generated` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |

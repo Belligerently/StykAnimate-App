@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {importStickNodes} from '../src/sticknodes/adapter.mjs';
 import {prepareLoadNow} from '../src/engine/engine-open.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
-import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {geometryOfDocument} from './support/engine-geometry.mjs';
 import {movieclipTime,movieclipAsset} from '../src/movieclips.mjs';
 import {sticknodesDrawables,sticknodesSpriteAsset} from '../src/sticknodes/geometry.mjs';
 import {synchronizeExistingDerived} from '../src/document-normalize.mjs';
@@ -20,7 +20,8 @@ export function syntheticNodes(){
  const node=(root)=>Buffer.concat([Buffer.from([root?255:0]),i(root?0:7),Buffer.from([0,0,1,0]),f(0),f(0),f(1),f(root?0:80),f(root?0:80),i(4),i(4),f(root?0:30),color,i(root?1:0)]);
  return Buffer.concat([i(160),f(1),color,node(true),node(false)]);
 }
-const geometry=doc=>buildGeometry(doc,evaluatedFrame(doc,0,0,0));
+// What the engine draws of the first pose (a movieclip's own contents are the stage's, not the interface's groups).
+const geometry=doc=>geometryOfDocument(doc,doc.keyframes[0]);
 test('invalid and cancelled imports reject before changing an editor',async()=>{
  await assert.rejects(importStickNodes(syntheticNodes().subarray(0,30),{filename:'broken.nodes'}));
  const controller=new AbortController();controller.abort();await assert.rejects(importStickNodes(syntheticNodes(),{signal:controller.signal}),{name:'AbortError'});
@@ -50,7 +51,7 @@ test('source shape primitives use shared geometry and preserve transparent circl
  const a=sticknodesSpriteAsset({width:40,height:20},{_sticknodesSprite:{ratio:3,pivotX:.25,pivotY:.75}});assert.equal(a.display_height,60);assert.deepEqual(a.anchor_start,{x:10,y:15});
 });
 test('imported figure normalization preserves its artwork',async()=>{
- const {document:doc}=await importStickNodes(syntheticNodes(),{filename:'rig.nodes'});const artwork=()=>JSON.stringify(buildGeometry(doc,doc.keyframes[0]).drawables.map(d=>[d.type,d.start,d.end,d.points]));const before=artwork();synchronizeExistingDerived(doc);assert.equal(artwork(),before);assert.ok(JSON.parse(before).length>0);
+ const {document:doc}=await importStickNodes(syntheticNodes(),{filename:'rig.nodes'});const artwork=()=>JSON.stringify(geometry(doc).drawables.map(d=>[d.type,d.start,d.end,d.points]));const before=artwork();synchronizeExistingDerived(doc);assert.equal(artwork(),before);assert.ok(JSON.parse(before).length>0);
 });
 test('native clip engine retains source FPS, loop, single and hold semantics',()=>{
  const asset={duration:20,document:{fps:10}},settings={start:5,offset:2,speed:1,mode:'loop'};
@@ -108,14 +109,16 @@ test('rig duplication, deletion and undo keep per-pose imported shape metadata a
 
 test('Set Origin preserves imported asymmetric artwork, curves and per-pose shapes',async()=>{
  const shapes=[{kind:'triangle',right_triangle_direction:1},{kind:'ellipse',half_arc:true},{kind:'trapezoid',sagitta:15,trapezoid_is_rounded_start:true},{kind:'rounded-segment',sagitta:20},{kind:'segment',connector:true,drawRatio:1.5,drawLength:120}];
- const points=doc=>geometry(doc).drawables.flatMap(d=>d.points.map(p=>[Math.round(p.x*1000),Math.round(p.y*1000)])).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+ // The drawn points in a stable order; re-rooting rounds a root to a float32, so they agree to a thousandth of a unit.
+ const points=doc=>geometry(doc).drawables.flatMap(d=>d.points.map(p=>[p.x,p.y])).sort((a,b)=>Math.round(a[0]*100)-Math.round(b[0]*100)||Math.round(a[1]*100)-Math.round(b[1]*100));
+ const same=(actual,expected,message)=>{assert.equal(actual.length,expected.length,message);actual.forEach((p,i)=>p.forEach((v,k)=>assert.ok(Math.abs(v-expected[i][k])<.002,`${message} ${i}/${k}: ${v} vs ${expected[i][k]}`)));};
  for(const shape of shapes)for(const override of [false,true]){
   const {document:doc}=await importStickNodes(syntheticNodes(),{filename:'rig.nodes'}),seg=doc.figure_types[0].segments[0];
   seg.primitive_code=shape.kind==='rounded-segment'?0:shape.kind==='segment'?6:3;seg._sticknodes=shape;
   if(override)doc.keyframes[0].objects[0]._sticknodesShapes={1:{...shape,sagitta:shape.sagitta?shape.sagitta*2:undefined}};
   const editor=newOwnedEditor();editor.load(doc);editor.select(1,0);const before=points(editor.report);editor.setOrigin(1);
-  assert.deepEqual(points(editor.report),before,`${shape.kind}, override=${override}`);prepareEditorLoad(editor.report);
-  editor.undo();assert.deepEqual(points(editor.report),before);editor.redo();assert.deepEqual(points(editor.report),before);
+  same(points(editor.report),before,`${shape.kind}, override=${override}`);prepareEditorLoad(editor.report);
+  editor.undo();same(points(editor.report),before,'undo');editor.redo();same(points(editor.report),before,'redo');
  }
 });
 

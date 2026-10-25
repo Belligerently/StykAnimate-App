@@ -2,8 +2,10 @@
 
 How the engine turns a document and a tick into world-space geometry and a
 draw list (`engine/crates/styk-eval`). The JavaScript editor's evaluation
-(`src/pivot/geometry.mjs`, `src/layer-sheet.mjs`, `src/animation-pose.mjs`, …)
-is what the recorded fixtures were made from ([README](README.md#fixtures)); the recordings are frozen and are the oracle now.
+(`geometry.mjs`, `layer-sheet.mjs`, `animation-pose.mjs`, …) is what the recorded fixtures were made from
+([README](README.md#fixtures)); the recordings are frozen and are the oracle now. The interface evaluates nothing:
+`src/pivot/geometry.mjs` and the geometry modules around it (`geometry-pose`, `geometry-definition`, `geometry-order`,
+`movieclip-geometry`, `playback-geometry-cache`, and the evaluation in `spatial-mesh`, `movieclip-mesh`, `surfaces`) are deleted.
 
 ## Contract
 
@@ -28,7 +30,7 @@ is what the recorded fixtures were made from ([README](README.md#fixtures)); the
 
 ## Order of evaluation
 
-1. Native keyframes tween with Pivot's rules (`evaluatedNativeFrame`): easing,
+1. Native keyframes tween with Pivot's rules: easing,
    Auto curves, colour and background transitions, IK controllers. Property
    channels then apply ([below](#property-channels)).
 2. A layer sheet samples each layer's own pose track (`sampleLayerSheet`),
@@ -37,8 +39,7 @@ is what the recorded fixtures were made from ([README](README.md#fixtures)); the
    sheet's `legacyAnimation` channels; when every layer, the scene and the camera
    share one native sample (or a layer has nothing), that sample is the frame,
    slots and all, as the editor returns its one object.
-3. Movieclip instances choose their local time (`sampleMovieclipObjects`),
-   layers order the draw order (`applyLayerOrder`).
+3. Movieclip instances choose their local time, layers order the draw order (`applyLayerOrder`).
 4. The scene camera ([below](#the-scene-camera)): where it travels moves parallax
    layers, then camera-motion impulses shake the shot.
 5. Effects resolve per object and for the scene.
@@ -187,16 +188,16 @@ when the reference has them.
 
 What the camera does when the scene is seen through it: prepared playback frames
 always, edit frames only in the camera preview (`cameraEnabled`). The editor applies
-both at render time (`cameraAtTime`, `parallaxResolver`); the engine works them out
-with the frame and draws them.
+both at render time; the engine works them out with the frame and draws them, and the interface reads the camera a frame is shot through
+as the session's `shot`.
 
-- **Travel** (`cameraTravelAt`, `Prepared::travel`) is where the camera is: the
+- **Travel** (`Prepared::travel`) is where the camera is: the
   authored camera, tweened with its baked camera-motion offset (`_parallaxMotionOffset`,
   tweened when either key has one, like the other camera channels), moved by the follow
   clips active at the frame's time.
-- **Follow clips** (`styk_eval::follow`, `camera-follow.mjs`): per tick the followed
+- **Follow clips** (`styk_eval::follow`): per tick the followed
   figures are evaluated in a projection of the document holding only them, the figures
-  they hang from and the camera (`followSamplingReport`), and measured from their
+  they hang from and the camera, and measured from their
   geometry (`ObjectGeometry::extent`, `figureBounds`: visible segments with half their
   stroke, circles by radius, curves by their points, every polygon including culled
   surfaces, a movieclip's handle). A forward pass shapes the samples per clip frame
@@ -217,10 +218,10 @@ with the frame and draws them.
   list takes as one more per-object translation after a drag's
   (`Parallax::translations`); geometry, records and editing never see it. Onion skins
   take none: the editor shows them only with the camera off.
-- **Impulses** (`camera::at_time`, `sampleCameraMotion`) shake the shot from the
+- **Impulses** (`camera::at_time`) shake the shot from the
   travelled camera.
-- **Edit frames** carry their time on the camera-motion clips (`_cameraMotionTick`); in
-  the camera preview the stage draws them through `cameraAtTime` worked out against the
+- **Edit frames** carry their time on the camera-motion clips (`_cameraMotionTick`, in the pose records the session gives the stage); in
+  the camera preview the stage draws them through the camera worked out against the
   published generation (a follow path reflects an edit once the session publishes it).
 
 ## Retained movieclip sources
@@ -260,8 +261,8 @@ A gesture commits by storing the frame the editor shows: `snapshotPoseFrame(
 editor.evaluatedFrame)` becomes a pose source. `styk_eval::records` produces that record,
 byte for byte, so the commit can run in the engine ([editing.md](editing.md)). It mirrors
 the record-level shape of the editor's evaluation (which record a pose comes from, which
-keys a tween writes and in which order: `sampleLayerSheet`, `evaluatedNativeFrame`,
-`buildVirtualPoseTrack`, `sampleMovieclipObjects`, `applyLayerOrder`,
+keys a tween writes and in which order: `sampleLayerSheet`, the native tween,
+`buildVirtualPoseTrack`, `applyLayerOrder`,
 `snapshotPoseFrame`) and takes every interpolated number from the typed evaluator, so the
 arithmetic has one implementation. Frames it does not produce yet answer `Unported` with
 the reason.
@@ -317,9 +318,9 @@ selection is the editor's to tell with a call, and the frame does not depend on 
 
 - `frame` is `Editor::shown_frame()` as JSON: the sheet property preview, the gesture's draft, the frame a commit
   keeps on show, else the document at the playhead (`Records::evaluated_editor_with`). `document` is the document's
-  own frame under any of them, the base a gesture's draft is composed on. The editor adds the times the effect and
-  camera-motion clips are read at (`_vfxTimelineTick`, `_vfxTimelineScene`, `_cameraMotionTick`: `frameWithVfxTime`,
-  `frameWithCameraTime`), which the interface's gizmos and inspectors read.
+  own frame under any of them, the base a gesture's draft is composed on. Each carries the time the document's effect clips are
+  read at when it has any (`_vfxTimelineTick`, the playhead), which the effect gizmos compose the figures' effects at. The camera is read as the
+  shot (`shot` below), not from a time on the frame.
 - `motion` is the pose a motion-path edit shows at the playhead while it changes it
   (`Editor::motion_display_frame_worker`), `null` outside the ticks it changes.
 - `timeline` is the rows (`[[start, count], …]`, `timeline::rows`).
@@ -341,9 +342,9 @@ selection is the editor's to tell with a call, and the frame does not depend on 
 - The values the interface shows of the frame (`animationValue`, `vfxEffects`, `segmentAnimationTarget`,
   `getIKSettings`, `getSpatialPose` and `getSpatialMotion` of the selected 3D bone, `sampleVfxClip`: an effect clip's
   effects with their keys sampled at a tick) are the session's reads too (`Editor::interface_query`, at the editor's
-  whole view): a document the session does not answer them for (one that is not on a layer sheet) is read by the
-  editor from the frame and geometry the engine gave it (`unported: …`). The other queries the owner leaves to the editor
-  (`animationChannel`, `nativePoseChannel`, `getSpatialCamera`, `resolveTranslationSelection`, …) read stored
+  whole view): a document the session does not answer them for (one that is not on a layer sheet, which the app never opens) raises the
+  session's refusal (`unported: …`); the editor holds no body of these reads. The other queries the owner leaves to the editor
+  (`animationChannel`, `getSpatialCamera`, `resolveTranslationSelection`, …) read stored
   records and the engine's frame and geometry; none evaluates a pose at the playhead.
 - A read the session refuses (`figureDocument` of nothing to export, `sampleVfxClip` of a clip that is not there) reaches the
   interface as the localized error a refused call is: the session raises the message key, with the values the message
@@ -357,8 +358,7 @@ selection is the editor's to tell with a call, and the frame does not depend on 
   record, with its `tick` (and the camera-motion tick), is read against the open document with the effect clips sampled at
   the tick, as a prepared frame's are.
 
-The editor evaluates the frame itself where the engine does not hold its document (a document the session answers
-`unported: …` for). A movieclip being edited is a
+An editor the engine does not own has no frame, geometry or timeline: the reads raise `EngineUnavailable`. A movieclip being edited is a
 document of the engine like any other: it has a session, and the frame, geometry, onion skins and trails are its.
 
 ## The interface's views

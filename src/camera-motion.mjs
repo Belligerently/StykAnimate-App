@@ -1,10 +1,10 @@
 import {messageError} from './localized-error.mjs';
 import {motionParameterMessages} from './camera-motion-localization.mjs';
-import {FOLLOW_DEFAULTS,FOLLOW_FRAME_LIMIT,sampleFollow,validateFollowTargets} from './camera-follow.mjs';
-/** Saved camera motion is small, immutable and sampled by timeline time only.
- * No renderer state, random generator state, or per-tick pose allocation lives here.
- * Follow clips move the camera itself (travel, which drives parallax); the other
- * presets add an impulse to the finished shot. */
+import {FOLLOW_DEFAULTS,FOLLOW_FRAME_LIMIT,validateFollowTargets} from './camera-follow.mjs';
+/** Saved camera motion is small and immutable: the clips a document stores, and what the interface checks of them. The engine
+ * samples them (`styk_eval::camera`, `styk_eval::follow`): follow clips move the camera itself (travel, which drives parallax),
+ * the other presets add an impulse to the finished shot; the interface reads the camera a frame is shot through as the
+ * session's `shot` (docs/engine/evaluation.md). */
 export const CAMERA_MOTION_LIMIT = 256;
 export const CAMERA_MOTION_TYPES = Object.freeze({follow:'Follow',shake:'Shake',handheld:'Handheld',wobble:'Wobble',impact:'Impact punch',pulse:'Zoom pulse'});
 const defaults = Object.freeze({strength:1,moveX:12,moveY:12,roll:1,zoom:0,frequency:8,roughness:.5,direction:0,recovery:5,phase:0,fadeIn:2,fadeOut:4,seed:1});
@@ -45,44 +45,3 @@ export function validateCameraMotion(state) {
     }
   }
 }
-const smooth=t=>t*t*(3-2*t);
-function hash(n,seed){let x=(n|0)^seed;x=Math.imul(x^(x>>>16),0x45d9f3b);x=Math.imul(x^(x>>>16),0x45d9f3b);return ((x^(x>>>16))>>>0)/2147483647.5-1;}
-function noise(t,seed){const i=Math.floor(t);return hash(i,seed)+(hash(i+1,seed)-hash(i,seed))*smooth(t-i);}
-/** The additive impulse of the non-follow presets, in output pixels, radians and zoom. */
-export function sampleCameraMotion(state,tick,fps=24) {
-  let x=0,y=0,rotation=0,logZoom=0;
-  for(const clip of state?.clips??[]){
-    const age=tick-clip.start;if(clip.type==='follow'||!clip.enabled||age<0||age>=clip.duration||clip.mutedRanges?.some(r=>tick>=r.start&&tick<r.end))continue;
-    const p=clip.params,u=age/clip.duration,time=age/fps,phase=p.phase*Math.PI/180;
-    const envelope=p.strength*Math.min(p.fadeIn?smooth(Math.min(1,age/p.fadeIn)):1,p.fadeOut?smooth(Math.min(1,(clip.duration-age)/p.fadeOut)):1);
-    let nx,ny,nr,nz;
-    if(clip.type==='impact'){
-      // The final smooth taper returns exactly to neutral at the boundary.
-      const kick=Math.cos(time*p.frequency*2*Math.PI)*Math.exp(-p.recovery*u)*(1-smooth(u));
-      nx=kick*Math.cos(p.direction*Math.PI/180);ny=kick*Math.sin(p.direction*Math.PI/180);nr=kick;nz=kick;
-    }else if(clip.type==='pulse'){nx=ny=nr=0;nz=Math.sin(Math.PI*u)**2;}
-    else if(clip.type==='wobble'){const a=time*p.frequency*2*Math.PI+phase;nx=Math.sin(a);ny=Math.sin(a+Math.PI/2);nr=Math.sin(a);nz=Math.sin(a);}
-    else {const a=time*p.frequency+phase/(2*Math.PI),sample=seed=>(noise(a,seed)+p.roughness*.5*noise(a*2.17,seed+91))/(1+p.roughness*.5);nx=sample(p.seed);ny=sample(p.seed+17);nr=sample(p.seed+43);nz=sample(p.seed+71);}
-    x+=envelope*p.moveX*nx;y+=envelope*p.moveY*ny;rotation+=envelope*p.roll*Math.PI/180*nr;
-    logZoom+=envelope*Math.log1p(p.zoom)*nz;
-  }
-  return {x,y,rotation,zoom:Math.exp(Math.max(-8,Math.min(8,logZoom)))};
-}
-/** Authored camera plus follow travel: where the camera actually is, which parallax layers respond to. */
-export function cameraTravelAt(report,frame) {
-  const base=frame?.camera,clips=report?._styk?.cameraMotion?.clips;
-  if(frame?._cameraMotionTick===undefined||!clips?.some(c=>c.type==='follow'))return base;
-  const f=sampleFollow(report,clips,frame._cameraMotionTick);if(!f.x&&!f.y&&!f.zoom)return base;
-  const c=base?.is_default?{}:base??{},scale=c.scale??1,angle=c.angle_rad??0,cos=Math.cos(angle),sin=Math.sin(angle);
-  return {...c,is_default:false,x:(c.x??0)+scale*(cos*f.x-sin*f.y),y:(c.y??0)+scale*(sin*f.x+cos*f.y),scale:scale*Math.exp(f.zoom),angle_rad:angle};
-}
-export function cameraAtTime(report,frame) {
-  if(frame?._cameraMotionTick===undefined||!report?._styk?.cameraMotion?.clips.length)return frame?.camera;
-  const travel=cameraTravelAt(report,frame);
-  const d=sampleCameraMotion(report._styk.cameraMotion,frame._cameraMotionTick,report.fps),c=travel?.is_default?{}:travel??{};
-  if(!d.x&&!d.y&&!d.rotation&&d.zoom===1)return travel;
-  const scale=(c.scale??1)/d.zoom,angle=(c.angle_rad??0)+d.rotation;
-  // Output pixel displacement is converted through the final inverse camera.
-  return {...c,is_default:false,scale,x:(c.x??0)+scale*(Math.cos(angle)*d.x-Math.sin(angle)*d.y),y:(c.y??0)+scale*(Math.sin(angle)*d.x+Math.cos(angle)*d.y),angle_rad:angle};
-}
-export function frameWithCameraTime(report,frame,tick){return report._styk?.cameraMotion?.clips.length?{...frame,_cameraMotionTick:tick}:frame;}

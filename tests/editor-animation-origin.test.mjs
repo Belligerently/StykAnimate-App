@@ -2,14 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {readFileSync} from 'node:fs';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
-import {timeline} from '../src/pivot/read-view.mjs';
 import {missingFixture} from './helpers/local-fixtures.mjs';
 import {roundTrip, exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
-import {pivotDocument, keepsStoredFrames} from './support/engine-export.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 const clone=structuredClone;
 /** `change(report)` writes into the document before it opens. */
 function fixture({authored=true,easing=false,joined=true,change}={}){
@@ -30,25 +27,8 @@ function fixture({authored=true,easing=false,joined=true,change}={}){
   ]);
   editor.select(1,0);return editor;
 }
-function sample(report,tick){const rows=timeline(report);let index=0;while(index+1<rows.length&&rows[index+1].start<=tick)index++;return evaluatedFrame(report,index,rows[index].count?(tick-rows[index].start)/rows[index].count:0,tick);}
-function shape(report,tick){const frame=sample(report,tick);return {frame,geometry:buildGeometry(report,frame)};}
-function equalWorld(expected,actual,tolerance=.00015){
-  assert.equal(actual.geometry.objects.size,expected.geometry.objects.size);
-  for(const [slot,object]of expected.geometry.objects){
-    const result=actual.geometry.objects.get(slot);assert.equal(result.segments.length,object.segments.length);
-    const unmatched=new Set(result.segments);
-    object.segments.forEach((segment,i)=>{
-      let best,minimum=Infinity;
-      for(const other of unmatched){
-        if(other.points.length!==segment.points.length)continue;
-        const error=reverse=>Math.max(...segment.points.map((point,j)=>Math.hypot(point.x-other.points[reverse?other.points.length-1-j:j].x,point.y-other.points[reverse?other.points.length-1-j:j].y)));
-        const distance=Math.min(error(false),error(true));if(distance<minimum){minimum=distance;best=other;}
-      }
-      assert.ok(minimum<tolerance,`slot${slot} segment${i}: ${minimum}`);unmatched.delete(best);
-    });
-  }
-  for(const key of ['x','y','scale','angle_rad'])assert.ok(Math.abs(actual.frame.camera[key]-expected.frame.camera[key])<1e-5);
-}
+/** The colours the engine paints the first figure's parts in, back to front. */
+function drawn(editor,tick=0){editor.seek(tick);return editor.geometry.objects.get(0).drawables.map(item=>item.rgb);}
 function roundtrip(document,format){
   return roundTrip({document,format});
 }
@@ -58,9 +38,9 @@ test('native PIV retains tied segment and polygon paint order through required t
     figure.segments.forEach((segment,i)=>{segment.z_order=1;segment.color_rgb=[30+i*70,50,190];});
     figure.polyfills=[{polyfill_id:1,segment_ids:[0,7,99],color_rgb:[240,10,80],alpha_raw:0,z_order:1}];
   }});
-  const expected=shape(editor.report,0).geometry.objects.get(0).drawables.map(item=>item.rgb);
+  const expected=drawn(editor);
   editor.setOrigin(99);const native=await roundtrip(pivotDocument(editor.report),'piv');
-  assert.deepEqual(shape(native,0).geometry.objects.get(0).drawables.map(item=>item.rgb),expected);
+  assert.deepEqual(drawn(ownedEditorFor({demo:false},native)),expected);
 });
 test('native writer changes keep untouched source PIV bytes identical',{skip:missingFixture('../Pivot Animator v5/Animations/tween_camera.piv')},async()=>{
   const codec=nodeCodec(),source=readFileSync(fileURLToPath(new URL('../../Pivot Animator v5/Animations/tween_camera.piv',import.meta.url)));

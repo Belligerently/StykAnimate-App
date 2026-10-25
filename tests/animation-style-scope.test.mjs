@@ -1,18 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument, defaultFigure, createObject, createFrame} from '../src/demo.mjs';
-import {animationChannelId, normalizeAnimationTarget, findAnimationChannel, composeAnimationChannels,
-  animationPropertyValue, validateAnimationDocument, sampleAnimationChannel} from '../src/animation-channels.mjs';
-import {animationStyleValue, setAnimationStyle, resolveInstanceFigure} from '../src/animation-style.mjs';
-import {evaluatedFrame} from '../src/pivot/geometry.mjs';
-import {timeline} from '../src/pivot/read-view.mjs';
-import {roundTrip} from './support/codec.mjs';
+import {animationChannelId, normalizeAnimationTarget, findAnimationChannel, composeAnimationChannels, validateAnimationDocument} from '../src/animation-channels.mjs';
+import {animationStyleValue, setAnimationStyle} from '../src/animation-style.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
-import {pivotDocument} from './support/engine-export.mjs';
 
 const globalTarget = {kind:'segment',uid:7,handleId:1};
 const targetA = {...globalTarget,figureTypeId:1}, targetB = {...globalTarget,figureTypeId:2};
-const near = (a,b) => assert.ok(Math.abs(a-b)<1e-9, `${a} != ${b}`);
 function fixture() {
   const report = emptyDocument(); report.figure_types.push(defaultFigure(2));
   for (const figure of report.figure_types) {
@@ -35,17 +29,6 @@ function curves() {
     channel(targetB,'opacity',[[0,.2],[10,.8]]),channel(targetB,'gradientOpacity',[[0,.8],[10,.2]])];
 }
 function setChannels(report,channels) { report._styk.animation = {version:1,nextKeyId:100,channels}; return report; }
-function sample(report,tick) {
-  const rows = timeline(report); let index=0;
-  while(index+1<rows.length && rows[index+1].start<=tick) index++;
-  return evaluatedFrame(report,index,rows[index].count?(tick-rows[index].start)/rows[index].count:0,tick);
-}
-function styleBytes(report,frame) {
-  return frame.objects.map(object => {
-    const figure = resolveInstanceFigure(report.figure_types.find(figure=>figure.figure_type_id===object.figure_type_id),object);
-    return [figure.segments[0].transparency,figure.segments[0].secondary.a];
-  });
-}
 
 test('segment definition scopes preserve legacy identities and exact independent channel lookup', () => {
   assert.deepEqual(normalizeAnimationTarget(targetA),targetA);
@@ -74,54 +57,6 @@ test('malformed, non-segment and missing figure scopes reject before replacing a
   assert.throws(()=>editor.load(missing),error=>error.messageKey==='errors.animationChannels.animationSegmentScopeReferencesMissingFigureDefinition'); assert.equal(editor.report,original);
 });
 
-test('native poses sharing a UID use independent continuous primary and gradient scope curves', () => {
-  const report=setChannels(fixture(),curves()), before=structuredClone(report.keyframes);
-  for(const tick of [0,2.5,5,7.5,10]) {
-    const frame=sample(report,tick), object=frame.objects[0], target=object.figure_type_id===1?targetA:targetB;
-    const other=target===targetA?targetB:targetA;
-    assert.equal(object.figure_type_id,tick>=5&&tick<10?2:1);
-    for(const property of ['opacity','gradientOpacity']) {
-      near(animationPropertyValue(report,frame,target,property),sampleAnimationChannel(findAnimationChannel(report,target,property),tick));
-      assert.equal(animationPropertyValue(report,frame,other,property),undefined);
-    }
-    assert.equal(frame.objects[1]._stykStyle,undefined,'Other figure identities retain native styles');
-  }
-  assert.deepEqual(report.keyframes,before);
-});
-
-test('retimed authored and retained poses select scope by displayed definition instead of native time', () => {
-  const report=fixture(), retained=structuredClone(report.keyframes[1]); retained._styk.frameId='retained-b';
-  retained.objects[0]._stykStyle={segments:{1:{opacity:.99,gradientOpacity:.98}}};
-  report._styk.frameSources={'retained-b':retained};
-  const editor=ownedEditorFor({demo:false}, report), layer=editor.layers.find(layer=>['layer','user'].includes(layer.kind));
-  editor.addAnimationKeys([
-    {target:{kind:'layer',id:layer.id},property:'pose',tick:0,value:{frameId:'retained-b'},interpolation:'hold'},
-    {target:{kind:'layer',id:layer.id},property:'pose',tick:5,value:{frameId:'source-0'},interpolation:'hold'},
-    ...curves().flatMap(value=>value.keys.map(key=>({target:value.target,property:value.property,...key}))),
-  ]);
-  for(const [tick,id] of [[2.5,2],[7.5,1]]) {
-    const frame=sample(editor.report,tick), target=id===1?targetA:targetB;
-    assert.equal(frame.objects.find(object=>object.unique_id===7).figure_type_id,id);
-    for(const property of ['opacity','gradientOpacity']) near(animationPropertyValue(editor.report,frame,target,property),sampleAnimationChannel(findAnimationChannel(editor.report,target,property),tick));
-  }
-  assert.equal(retained.objects[0]._stykStyle.segments[1].opacity,.99,'Retained pose overlays remain immutable');
-  assert.equal(validateAnimationDocument(editor.report),editor.report);
-});
-
-test('applicable scopes override global styles in either order while dormant scopes preserve fallback', () => {
-  const scoped=channel(targetA,'opacity',[[0,.2],[10,.8]]), global=channel(globalTarget,'opacity',[[0,.9]]);
-  for(const channels of [[scoped,global],[global,scoped]]) {
-    const report=setChannels(fixture(),channels);
-    near(animationPropertyValue(report,sample(report,2.5),targetA,'opacity'),.35);
-    near(animationPropertyValue(report,sample(report,7.5),targetB,'opacity'),.9);
-  }
-  for(const scoped of [channel(targetA,'opacity',[[4,.2]]),
-    {...channel(targetA,'opacity',[[0,.2]]),keys:[{id:'gap',tick:0,value:.2,passthrough:true}]}]) {
-    const report=setChannels(fixture(),[scoped,global]);
-    near(animationPropertyValue(report,sample(report,2),targetA,'opacity'),.9);
-  }
-});
-
 test('direct style reads, writes and dormant composition never touch a mismatched definition', () => {
   const report=fixture(), frame=report.keyframes[1], object=frame.objects[0], before=structuredClone(object);
   for(const property of ['opacity','gradientOpacity']) {
@@ -133,10 +68,3 @@ test('direct style reads, writes and dormant composition never touch a mismatche
   assert.equal(composeAnimationChannels(report,frame,6),frame);
 });
 
-test('scoped curves materialize into actual PIV primary and gradient alpha without cross-definition leakage', async () => {
-  const report=setChannels(fixture(),curves()), original=structuredClone(report), output=pivotDocument(report);
-  const native=await roundTrip({document:output,format:'piv'});
-  assert.equal(output._styk.animation,undefined);
-  for(let tick=0;tick<11;tick++) assert.deepEqual(styleBytes(native,sample(native,tick)),styleBytes(report,sample(report,tick)),`Frame ${tick}`);
-  assert.deepEqual(report,original);
-});

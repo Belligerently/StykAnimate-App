@@ -147,7 +147,7 @@ function hydrate(raw, slot, frame, report, defs) {
 /**
  * @param {{ask(kind: string, args: object): (string|null), source(motion: boolean): (object|null), report(): object}} owner
  *   `ask` reads the session (flushing the editor's pending edits first) and answers JSON text, `null` where the
- *   engine does not hold the document (a call the editor is running); `source` gives
+ *   engine does not hold the document (no session runs it); `source` gives
  *   the stage what it draws from.
  */
 export function createShown(owner) {
@@ -157,25 +157,30 @@ export function createShown(owner) {
     const text = owner.ask(kind, args);
     return text === null ? null : JSON.parse(text);
   };
+  /** A read of the frame on show, which the interface cannot go without: the session answers or the document is not open. */
+  const required = (kind, args = {}) => {
+    const text = owner.ask(kind, args);
+    if (text === null) throw Object.assign(new Error('The engine does not hold this document.'), {name: 'EngineUnavailable'});
+    return JSON.parse(text);
+  };
   return {
     /** Whether the engine answers (the session holds the open document). */
     get active() { return owner.ask('active', {}) !== null; },
-    frame: () => read('frame'),
-    documentFrame: () => read('document'),
+    frame: () => required('frame'),
+    documentFrame: () => required('document'),
     /** The motion-path edit's display frame, or `null` where it shows the document. */
     motionFrame: () => read('motion'),
     /** `editor.timeline`: one `{index, start, count}` per row. */
     timeline() {
-      const rows = read('timeline');
-      return rows && rows.map(([start, count], index) => ({index, start, count}));
+      return required('timeline').map(([start, count], index) => ({index, start, count}));
     },
     /**
      * The geometry of `frame` (what `frame` is on show, or the motion-path display with `motion`): the groups the
-     * session sent over the ones held. `null` where the engine does not answer (or shows nothing, for the motion display).
+     * session sent over the ones held. `null` for the motion display where it shows nothing.
      */
     geometry(frame, {motion = false} = {}) {
       const previous = held[+motion];
-      const answer = read('geometry', {since: previous?.read ?? null, motion});
+      const answer = (motion ? read : required)('geometry', {since: previous?.read ?? null, motion});
       if (!answer) return null;
       const report = owner.report(), defs = definitions(report);
       const groups = answer.full || !previous ? new Map() : new Map(previous.geometry.objects);

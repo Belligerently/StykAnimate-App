@@ -1,17 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {animationRotation,synchronizeAnimationOrigin} from '../src/animation-origin.mjs';
-import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
+import {geometryOfDocument,geometryOfFrame} from './support/engine-geometry.mjs';
 
 const open = ownedScope();
 
 const clone=structuredClone;
 const near=(a,b,tolerance=1e-9)=>assert.ok(Math.abs(a-b)<tolerance,`${a} != ${b}`);
-function fixture({joined=false,plain=false}={}) {
+function fixture({joined=false}={}) {
   const report=emptyDocument(),figure=report.figure_types[0],base=figure.segments[0];
   figure.segments=[7,99,301,502].map((id,index)=>({...clone(base),segment_id:id,parent_id:[0,7,7,301][index],
     length:[78,43,31,26][index],angle_rad:[-.8,.5,-1.2,.2][index],bend_rad:[.2,-.3,.1,-.25][index],z_order:index}));
@@ -35,7 +33,7 @@ function fixture({joined=false,plain=false}={}) {
     objects[2].join={target_object_slot:1,target_unique_id:2,target_handle_id:301};
     objects[3].join={target_object_slot:0,target_unique_id:1,target_handle_id:7};
     Object.assign(frame,createFrame(objects,frame.duration_raw));
-    const geometry=buildGeometry(document,frame);
+    const geometry=geometryOfDocument(document,frame);
     for(const object of objects) {
       const root=geometry.objects.get(object.object_slot).root;object.root_x=root.x;object.root_y=root.y;
       synchronizeAnimationOrigin(definition,object);
@@ -43,7 +41,7 @@ function fixture({joined=false,plain=false}={}) {
   }
   const retained=clone(document.keyframes[0]);retained._styk={...retained._styk,frameId:'retained-support-pose'};
   document._styk.frameSources={'retained-support-pose':retained};
-  const result=plain?new Editor({demo:false}):editor;result.load(document);result.select(1,0);result.markSaved();return result;
+  editor.load(document);editor.select(1,0);editor.markSaved();return editor;
 }
 const ghosts=object=>object._stykAnimationOrigin.ghosts;
 function checkGhosts(actual,before,transform) {
@@ -69,11 +67,12 @@ function checkUndo(editor,before) {
   assert.equal(editor._undo.length,before.history+1);const after=editor.serialize();
   editor.undo();assert.deepEqual(editor.serialize(),before.document);editor.redo();assert.deepEqual(editor.serialize(),after);
 }
-function points(editor,index=0,{evaluated=true,projected=false}={}) {
-  const raw=editor.report.keyframes[index],frame=evaluated?evaluatedFrame(editor.report,index,0,editor.timeline[index].start):raw;
-  const matrix=projected?cameraMatrix({report:editor.report,frame}):[1,0,0,1,0,0];
-  return [...buildGeometry(editor.report,frame).objects.values()].flatMap(object=>[...object.joints].map(([handle,p])=>
-    [object.obj.unique_id,handle,matrix[0]*p.x+matrix[2]*p.y+matrix[4],matrix[1]*p.x+matrix[3]*p.y+matrix[5]]));
+/** Where the engine puts every joint at keyframe `index`: as it evaluates the frame on show there, or (`evaluated: false`) as the stored keyframe stands. */
+function points(editor,index=0,{evaluated=true}={}) {
+  let geometry;
+  if(evaluated){editor.seek(editor.timeline[index].start);geometry=editor.geometry;}
+  else geometry=geometryOfFrame(editor,editor.report.keyframes[index]);
+  return [...geometry.objects.values()].flatMap(object=>[...object.joints].map(([handle,p])=>[object.obj.unique_id,handle,p.x,p.y]));
 }
 function closePoints(actual,expected) {
   assert.equal(actual.length,expected.length);

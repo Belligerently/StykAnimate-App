@@ -4,7 +4,6 @@ import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {animationChannelId, composeAnimationChannels, animationPropertyValue, validateAnimationDocument, validateAnimationValue} from '../src/animation-channels.mjs';
 import {resolveInstanceFigure, animationStyleValue} from '../src/animation-style.mjs';
 import {validateObjectChanges} from '../src/pivot/model.mjs';
-import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const figureTarget = {kind: 'figure', uid: 1};
@@ -47,17 +46,6 @@ test('independent opacity curves only copy selected instance and touched segment
   assert.equal(validateAnimationDocument(report), report);
 });
 
-test('geometry uses resolved style and preserves interpolated runtime segment pose for style-only edits', () => {
-  const report = fixture(), frame = report.keyframes[0];
-  frame.objects[0].runtime_segments = [{length: 114, bend_rad: .4}];
-  set(report, [channel(segmentTarget, 'opacity', [[0, .2]])]);
-  const composed = composeAnimationChannels(report, frame, 0), geometry = buildGeometry(report, composed);
-  const item = geometry.objects.get(0).segments.find(item => item.index === 0);
-  assert.equal(composed.objects[0].runtime_segments, frame.objects[0].runtime_segments);
-  assert.equal(item.length, 114); assert.equal(item.bend, .4); assert.ok(Math.abs(item.alpha - .2) < 1e-9);
-  assert.equal(geometry.objects.get(1).segments.find(item => item.index === 0).alpha, 1);
-});
-
 test('handle-targeted styles survive segment table reordering and remain dormant for missing handles', () => {
   const report = fixture(), figure = report.figure_types[0];
   figure.segments.reverse();
@@ -86,22 +74,6 @@ test('unchanged alpha bytes reuse native definition and subsequent shared native
   figure.segments[0].color_rgb = [10, 20, 30];
   resolved = resolveInstanceFigure(figure, object); assert.deepEqual(resolved.segments[0].color_rgb, [10, 20, 30]);
   assert.equal(resolved.segments[0].secondary, figure.segments[0].secondary);
-});
-
-test('style channels on a joined child preserve the complete attachment pose', () => {
-  const report = fixture(), frame = report.keyframes[0]; frame.objects[1].join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 1};
-  const before = buildGeometry(report, frame);
-  set(report, [channel({...segmentTarget, uid: 2}, 'opacity', [[0, 0]])]);
-  const composed = composeAnimationChannels(report, frame, 0), after = buildGeometry(report, composed);
-  assert.equal(composed.objects[0], frame.objects[0]); assert.deepEqual(after.objects.get(1).root, before.objects.get(1).root);
-  assert.deepEqual([...after.objects.get(1).joints], [...before.objects.get(1).joints]);
-});
-
-test('native document JSON save/reopen keeps all three style keys without materialized type duplication', () => {
-  const report = fixture(); set(report, [channel(figureTarget, 'outlineOpacity', [[0, .5]]), channel(segmentTarget, 'opacity', [[0, .25]]), channel(segmentTarget, 'gradientOpacity', [[0, .75]])]);
-  const reopened = JSON.parse(JSON.stringify(report)); validateAnimationDocument(reopened);
-  const output = evaluatedFrame(reopened, 0, 0, 0), figure = resolveInstanceFigure(reopened.figure_types[0], output.objects[0]);
-  assert.equal(reopened.figure_types.length, 1); assert.equal(figure.segment_decode.global_style.u30, 128); assert.equal(figure.segments[0].transparency, 191); assert.equal(figure.segments[0].secondary.a, 64);
 });
 
 test('captured style validation rejects malformed data before replacing the open document', () => {

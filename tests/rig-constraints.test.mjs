@@ -1,10 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {RIG_EXAMPLES,rigExampleDocument} from '../src/rig-examples.mjs';
-import {rigConstraintPlan} from '../src/rig-constraints.mjs';
-import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {geometryOfDocument,evaluatedAt} from './support/engine-geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {getPivotHandles} from '../src/canvas-interactions.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
@@ -38,7 +36,7 @@ test('connector follows independent anchors and attached parts rotate with it',(
 test('nested connectors evaluate in dependency order, independently of record order',()=>{
   const doc=rigExampleDocument('nested-curve-controls'),fig=doc.figure_types[0],o=doc.keyframes[0].objects[0];
   o.len_flag=1;o.lengths=fig.segments.map(s=>s.length);o.lengths[3]=.2;o.lengths[4]=.8;o.lengths[5]=.3;
-  const sample=()=>buildGeometry(doc,doc.keyframes[0]).objects.get(0),expected=sample(),old=fig.segments.slice();
+  const sample=()=>geometryOfDocument(doc).objects.get(0),expected=sample(),old=fig.segments.slice();
   const indices=[6,5,4,3,2,1,0];fig.segments=indices.map(i=>old[i]);o.angles=indices.map(i=>o.angles[i]);o.lengths=indices.map(i=>o.lengths[i]);
   const scene=sample();for(const [id,p] of expected.joints)point(scene.joints.get(id),p);
   const a=scene.joints.get(4),b=scene.joints.get(5);point(scene.joints.get(6),{x:a.x*.7+b.x*.3,y:a.y*.7+b.y*.3});
@@ -97,7 +95,7 @@ test('slider channels tween and recompute dependent connectors at inbetween tick
   const doc=rigExampleDocument('sliding-carriage'),a=doc.keyframes[0],b=structuredClone(a);
   a.duration_raw=10;b.keyframe_index=1;doc.keyframes.push(b);
   for(const [frame,t] of [[a,0],[b,1]]){const o=frame.objects[0];o.len_flag=1;o.lengths=doc.figure_types[0].segments.map(s=>s.length);o.lengths[2]=t;}
-  const scene=buildGeometry(doc,evaluatedFrame(doc,0,.25,2.5)).objects.get(0),left=scene.joints.get(1),right=scene.joints.get(2);
+  const scene=geometryOfDocument(doc,evaluatedAt(doc,2.5)).objects.get(0),left=scene.joints.get(1),right=scene.joints.get(2);
   point(scene.joints.get(3),{x:left.x*.75+right.x*.25,y:left.y});
 });
 test('duplicate branches remap internal anchors and preserve explicit external anchors',()=>{
@@ -112,11 +110,6 @@ test('direct posing in stretched and connector-relative space reaches the cursor
   const start=g(e).segments[1].start,target={x:start.x-110,y:start.y+30};e.poseJoint(target.x,target.y,{stretch:true,snap:false,isolate:true});point(g(e).segments[1].end,target);
   const p=editorFor('articulated-piston');select(p,2);p.rotateJoint(.9);select(p,4);const a=g(p).segments[3].start,b={x:a.x+25,y:a.y+45};p.poseJoint(b.x,b.y,{stretch:true,snap:false,isolate:true});point(g(p).segments[3].end,b);
 });
-// session gap: a negative figure scale is not a state the engine opens (the test sets it in place)
-test('negative scale preserves connector attachment orientation and thickness',()=>{
-  const e=new Editor({demo:false});e.load(rigExampleDocument('articulated-piston'));e.select(1);e.frame.objects[0].scale=-2;e._invalidate();const scene=g(e),c=scene.segments[2],s=scene.segments[3];
-  point(s.start,c.handle);near(Math.atan2(s.end.y-s.start.y,s.end.x-s.start.x),c.angle);near(Math.hypot(s.end.x-s.start.x,s.end.y-s.start.y),96);
-});
 test('joined figures follow sliding joints',()=>{
   const e=editorFor('articulated-piston',{layerTimeline:true});select(e,2);e.rotateJoint(.9);
   const extra=e.importFigure(rigExampleDocument('sliding-carriage'));e.select(extra.unique_id);e.joinFigure(1,3);
@@ -128,12 +121,12 @@ test('IK drives ordinary anchors; derived controls reject conflicting IK and uns
   select(e,3);assert.throws(()=>e.setNodeIK({enabled:true}),/derived|driving/);
   assert.throws(()=>pivotDocument(e.serialize()),/Pivot cannot preserve/);
 });
-test('deep dependency chains compile and evaluate without recursive stack growth',()=>{
+test('deep dependency chains evaluate without recursive stack growth',()=>{
   const doc=rigExampleDocument('nested-curve-controls'),fig=doc.figure_types[0],template=fig.segments[3],count=5000;
   fig.segments=fig.segments.slice(0,3);
   for(let i=4;i<=count;i++)fig.segments.push({...template,segment_id:i,parent_id:0,_stykRig:{connector:{start:i===4?1:i-1,end:3,restLength:120}}});
-  const o=doc.keyframes[0].objects[0];o.angles=fig.segments.map(s=>s.angle_rad);rigConstraintPlan(fig);
-  const scene=buildGeometry(doc,doc.keyframes[0]);assert.equal(scene.objects.get(0).segments.length,count);assert.ok(Number.isFinite(scene.objects.get(0).joints.get(count).x));
+  const o=doc.keyframes[0].objects[0];o.angles=fig.segments.map(s=>s.angle_rad);
+  const scene=geometryOfDocument(doc);assert.equal(scene.objects.get(0).segments.length,count);assert.ok(Number.isFinite(scene.objects.get(0).joints.get(count).x));
 });
 test('polygon edges terminate at a curved connector’s sliding joint',()=>{
   const e=editorFor('sliding-carriage');select(e,3);e.updateSegment({bend_rad:1});e.addPolygon([1,3,4]);
@@ -215,9 +208,9 @@ for(const rig of RIG_EXAMPLES)test(`${rig.name}: native project and reusable fig
   const e=editorFor(rig.id);select(e,rig.control);
   if(e.figure.segments[e.selectedJoint]._stykRig?.connector)e.setConnectorPosition(.7);else e.rotateJoint(.2);
   const report=e.serialize(),baseline=poseSignature(e.geometry),container=await buildContainerV2(report,'styk'),decoded=(await decodeDocument(container,'styk')).document;
-  validateScene(decoded);point(buildGeometry(decoded,decoded.keyframes[0]).objects.get(0).root,g(e).root);
-  assert.deepEqual(poseSignature(buildGeometry(decoded,decoded.keyframes[0])),baseline);
+  validateScene(decoded);point(geometryOfDocument(decoded).objects.get(0).root,g(e).root);
+  assert.deepEqual(poseSignature(geometryOfDocument(decoded)),baseline);
   const reusable=figureDocument(report,{figureUid:1});const file=await buildContainerV2(reusable,'stkz'),saved=(await decodeDocument(file,'stkz')).document;
-  assert.deepEqual(poseSignature(buildGeometry(saved,saved.keyframes[0])),baseline);
+  assert.deepEqual(poseSignature(geometryOfDocument(saved)),baseline);
   });
 

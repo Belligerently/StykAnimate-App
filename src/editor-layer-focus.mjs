@@ -21,7 +21,6 @@ const layerTable = report => report._styk?.layers?.byId;
 
 function changed(editor, {notify = true} = {}) {
   editor._layerDescriptors = null;
-  editor._nativeAnimationChannels = null;
   editor._layerFocusRevision = (editor._layerFocusRevision ?? 0) + 1; // the focus's own count: `layerRevision` is the engine session's alone
   const focus = focusByReport.get(editor.report);
   if (focus) focus.layers = layerTable(editor.report);

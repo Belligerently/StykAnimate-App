@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
-import {sampleSheet} from './helpers/sheet-samples.mjs';
+import {sceneAt} from './support/engine-geometry.mjs';
 
 function fixture({frames=80,neighbors=1,duration=1}={}){
   const document=emptyDocument(),figure=document.figure_types[0];
@@ -13,7 +12,8 @@ function fixture({frames=80,neighbors=1,duration=1}={}){
   ],duration));
   return ownedEditorFor({demo:false,layerTimeline:true}, document);
 }
-const shapes=(report,tick)=>buildGeometry(report,sampleSheet(report,tick)).drawables.map(d=>({type:d.type,rgb:d.rgb,alpha:d.alpha,points:d.points.map(p=>[p.x,p.y])}));
+// The scene the engine draws at a whole tick, movieclip contents included (engine-geometry.mjs).
+const shapes=(source,tick)=>sceneAt(source,tick).drawables.map(d=>({type:d.type,rgb:d.rgb,alpha:d.alpha,points:d.points.map(p=>[p.x,p.y])}));
 function close(actual,expected){
   assert.equal(actual.length,expected.length);
   actual.forEach((a,i)=>{
@@ -22,17 +22,17 @@ function close(actual,expected){
   });
 }
 
-test('conversion boundaries preserve fractional eased poses, stacking, reopen and exact undo',()=>{
+test('conversion boundaries preserve eased poses, stacking, reopen and exact undo',()=>{
   const e=fixture({frames:4,neighbors:2,duration:10});
   e.sheetSetEasing(['layer-1'],0,39,{interpolation:'bezier',bezier:[.15,.8,.6,.2]});
   e.seek(10);e.select(2);e.moveSelection(-35,12);
-  const before=e.serialize(),samples=Array.from({length:e.totalTicks*4},(_,i)=>shapes(e.report,i/4));
+  const before=e.serialize(),samples=Array.from({length:e.totalTicks},(_,tick)=>shapes(e,tick));
   e.seek(3);e._selectIds([1,2]);e.createMovieclip({start:3,end:24});
-  for(let i=0;i<samples.length;i++)close(shapes(e.report,i/4),samples[i]);
+  for(let tick=0;tick<samples.length;tick++)close(shapes(e,tick),samples[tick]);
   const reopened=ownedEditorFor({demo:false,layerTimeline:true},e.serialize());
-  for(let i=0;i<samples.length;i++)close(shapes(reopened.report,i/4),samples[i]);
+  for(let tick=0;tick<samples.length;tick++)close(shapes(reopened,tick),samples[tick]);
   e.undo();assert.deepEqual(e.serialize(),before);
-  e.redo();for(const tick of [0,2.5,3,12.5,23.75,24,30])close(shapes(e.report,tick),samples[tick*4]);
+  e.redo();for(const tick of [0,2,3,12,23,24,30])close(shapes(e,tick),samples[tick]);
 });
 
 test('a locked replacement layer rejects creation without publishing a partial definition',()=>{

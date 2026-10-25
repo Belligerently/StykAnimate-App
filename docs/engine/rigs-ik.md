@@ -6,7 +6,7 @@ How the Rust engine (`engine/crates/styk-eval`) evaluates IK, and where it meets
 
 - A pose object carries its controllers (`_stykIK`, `Object::ik`), keyed by the handle they end at. Only a controller that is **enabled and pinned** changes what a frame looks like: geometry derives the angles of its chain, and with stretch its lengths. Unpinned and disabled controllers are editing state.
 - A solve is a pure function of the evaluated frame. It returns an `ik::Solution` (angles, optional lengths) that `geometry::build` reads in place of the pose's channels. Nothing is written to the document, nothing is cached between frames, and no solver state is carried: any tick evaluates on any thread, in any order.
-- Evaluation order, as in `buildGeometrySteps`: (1) `ik::joined::solve` once per frame, for every joined assembly with a pin; (2) per object, after its root is resolved from its join, the assembly's solution or `ik::solve_local`; (3) the object's rig and geometry are evaluated from the solved channels.
+- Evaluation order, as the editor's `buildGeometrySteps` had it (since deleted): (1) `ik::joined::solve` once per frame, for every joined assembly with a pin; (2) per object, after its root is resolved from its join, the assembly's solution or `ik::solve_local`; (3) the object's rig and geometry are evaluated from the solved channels.
 - Between two keys, controllers tween with the pose (`ik::tween`, called from `eval::tween_object`): target position, target rotation and follower angles use the timeline's own channel sampler (linear, eased, Auto, Pivot's cubic). A controller tweens only toward a controller of the same handle that is enabled and pinned alike; otherwise the first key's controller holds.
 
 ## Modules

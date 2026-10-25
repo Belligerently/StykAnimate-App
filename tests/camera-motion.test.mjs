@@ -1,12 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createCameraMotion,sampleCameraMotion,validateCameraMotion,cameraAtTime} from '../src/camera-motion.mjs';
 import {ownedEditorSync, ownedEditorFor} from './support/owned-editor.mjs';
 import {ownerReferences} from './support/owner-references.mjs';
 import {packMotionLanes} from '../src/camera-motion-timeline.mjs';
 import {motionRowSize,motionLaneBox,sheetRowLayout} from '../src/timeline-rows.mjs';
-import {parallaxResolver} from '../src/layer-parallax.mjs';
-import {evaluatedFrame,buildGeometry} from '../src/pivot/geometry.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
@@ -16,7 +13,15 @@ const near=(a,b)=>assert.ok(Math.abs(a-b)<.002,`${a} != ${b}`);
 function fixture(){const e=ownedEditorFor({demo:false,layerTimeline:true});e.addFigure();return e;}
 /** The same document (built by a plain editor, once: its reference) with the engine owning the editor: baking the camera's motion is a command of the engine session. */
 function ownedFixture(take){return ownedEditorSync({demo:false},JSON.parse(take('fixture')),{recorded:false}).editor;}
-function at(e,tick){const rows=e.timeline,index=rows.findLastIndex(r=>r.start<=tick),row=rows[Math.max(0,index)];return evaluatedFrame(e.report,Math.max(0,index),row.count?(tick-row.start)/row.count:0,tick);}
+function at(e,tick){e.seek(tick);return e.evaluatedFrame;}
+/** The camera the frame at `tick` is shot through (follow travel, then the presets' impulse): the session's `shot`. */
+function shotAt(e,tick){const frame=at(e,tick);return e._shown.shot()??frame.camera;}
+/** What a Pivot export stores per frame once the camera's motion and the layers' parallax are baked into it (the engine's export). */
+const stored=e=>pivotDocument(e).keyframes.map(f=>({camera:{x:f.camera?.x??0,y:f.camera?.y??0,scale:f.camera?.scale??1,angle_rad:f.camera?.angle_rad??0},roots:f.objects.map(o=>[o.root_x,o.root_y])}));
+function sameStored(actual,expected){
+  assert.equal(actual.length,expected.length);
+  actual.forEach((frame,i)=>{for(const k of ['x','y','scale','angle_rad'])near(frame.camera[k],expected[i].camera[k]);frame.roots.forEach((root,j)=>{near(root[0],expected[i].roots[j][0]);near(root[1],expected[i].roots[j][1]);});});
+}
 test('motions that never play together share a timeline lane; overlapping ones stack',()=>{
   const clip=(id,start,duration)=>({id,start,duration}),lanes=clips=>packMotionLanes(clips).map(lane=>lane.map(c=>c.id));
   assert.deepEqual(lanes([]),[]);
@@ -32,13 +37,6 @@ test('the Motion row is a content row for one lane and grows a 14px sub-lane per
   const layout=sheetRowLayout([{kind:'camera'},{kind:'motion',laneCount:3},{kind:'scene'},{kind:'layer'}],{viewport:400});
   assert.equal(layout.size(1),50);assert.equal(layout.top(2),74);assert.equal(layout.at(30),1);assert.equal(layout.pinned,true);
 });
-test('seeded motion seeks identically, overlaps add, and boundaries return neutral',()=>{
-  const clip=createCameraMotion('shake','a',10,48),state={version:1,clips:[clip]};validateCameraMotion(state);
-  const a=sampleCameraMotion(state,24);for(const t of [57,10,35,13,0])sampleCameraMotion(state,t);assert.deepEqual(a,sampleCameraMotion(state,24));
-  assert.deepEqual(sampleCameraMotion(state,58),{x:0,y:0,rotation:0,zoom:1});
-  const both=sampleCameraMotion({clips:[clip,{...clip,id:'b'}]},24);near(both.x,a.x*2);near(both.rotation,a.rotation*2);
-  assert.notDeepEqual(a,sampleCameraMotion({clips:[{...clip,params:{...clip.params,seed:4}}]},24));
-});
 test('motion rejects invalid input atomically and only retains camera metadata in history',()=>{
   const e=fixture(),objects=e.report.keyframes.map(f=>f.objects),before=e.serialize(),history=e._undo.length;
   const id=e.addCameraMotion('impact',{start:5,duration:12});assert.equal(e._undo.length,history+1);assert.ok(e.totalTicks>=17);assert.ok(e._undo.at(-1).bytes<12000);
@@ -47,42 +45,35 @@ test('motion rejects invalid input atomically and only retains camera metadata i
   e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.equal(e.getCameraMotions()[0].id,id);
 });
 test('motion changes output camera but never authored pose; hidden camera bypasses it',()=>{
-  const e=fixture();e.addCameraMotion('impact',{start:0,duration:12});const f=at(e,0),base={...f.camera},matrix=cameraMatrix({report:e.report,frame:f});
+  const e=fixture();e.addCameraMotion('impact',{start:0,duration:12});const f=at(e,0),base={...f.camera},shot={...f,camera:shotAt(e,0)},matrix=cameraMatrix({report:e.report,frame:shot});
   assert.notDeepEqual(matrix,[1,0,0,1,0,0]);assert.deepEqual(f.camera,base);
-  e.setLayerVisible('camera',false);assert.deepEqual(cameraMatrix({report:e.report,frame:f}),[1,0,0,1,0,0]);
-});
-test('parallax reference holds composition, disabled camera bypasses depth, and joins inherit root response',()=>{
-  const e=fixture(),uid=e.selectedUid;const layer=e.activeLayerId;e.setCameraValues({x:50});e.setLayerParallax(layer,{enabled:true,x:.25});
-  let f=at(e,0);assert.deepEqual(parallaxResolver(e.report,f)(uid),{x:0,y:0});
-  e.setCameraValues({x:150});f=at(e,0);near(parallaxResolver(e.report,f)(uid).x,75);assert.deepEqual(parallaxResolver(e.report,f,false)(uid),{x:0,y:0});
-  const synthetic={camera:{x:150},objects:[{unique_id:uid},{unique_id:999,join:{target_object_slot:0}}]};
-  const report={...e.report,_styk:{...e.report._styk,layers:{...e.report._styk.layers,assignments:{...e.report._styk.layers.assignments,999:'other'},byId:{...e.report._styk.layers.byId,other:{parallax:{enabled:true,x:2,y:2,reference:{x:0,y:0}}}},order:[...e.report._styk.layers.order,'other']}}};
-  assert.deepEqual(parallaxResolver(report,synthetic)(999),parallaxResolver(report,synthetic)(uid));
+  e.setLayerVisible('camera',false);assert.deepEqual(cameraMatrix({report:e.report,frame:shot}),[1,0,0,1,0,0]);
 });
 test('Pivot materialization bakes motion and parallax once without changing editable project',()=>{
   const e=fixture();e.setLayerParallax(e.activeLayerId,{enabled:true,x:.5});e.setCameraValues({x:60});e.addCameraMotion('impact',{start:0,duration:12});
   const before=e.serialize(),frame=at(e,0),out=pivotDocument(e.report);near(out.keyframes[0].objects[0].root_x,frame.objects[0].root_x+30);
-  near(out.keyframes[0].camera.x,cameraAtTime(e.report,frame).x);assert.equal(out._styk.cameraMotion,undefined);assert.deepEqual(e.serialize(),before);
+  near(out.keyframes[0].camera.x,shotAt(e,0).x);assert.equal(out._styk.cameraMotion,undefined);assert.deepEqual(e.serialize(),before);
 });
 refs.test('baking retains camera output and parallax at every output tick and undoes as one action',take=>{
-  const e=ownedFixture(take),layer=e.activeLayerId,uid=e.selectedUid;e.setLayerParallax(layer,{enabled:true,x:.3});e.setCameraValues({x:70});e.addCameraMotion('impact',{duration:12});e.addCameraMotion('wobble',{duration:24});
-  const before=e.serialize(),history=e._undo.length,samples=Array.from({length:e.totalTicks},(_,t)=>{const f=at(e,t);return {camera:cameraAtTime(e.report,f),depth:parallaxResolver(e.report,f)(uid)};});
+  const e=ownedFixture(take),layer=e.activeLayerId;e.setLayerParallax(layer,{enabled:true,x:.3});e.setCameraValues({x:70});e.addCameraMotion('impact',{duration:12});e.addCameraMotion('wobble',{duration:24});
+  const before=e.serialize(),history=e._undo.length,samples=Array.from({length:e.totalTicks},(_,t)=>shotAt(e,t)),exported=stored(e);
   e.bakeCameraMotion();assert.equal(e._undo.length,history+1);assert.ok(e.getCameraMotions().every(c=>!c.enabled));
-  samples.forEach((sample,t)=>{const f=at(e,t),camera=cameraAtTime(e.report,f),depth=parallaxResolver(e.report,f)(uid);for(const k of ['x','y','scale','angle_rad'])near(camera[k],sample.camera[k]);near(depth.x,sample.depth.x);near(depth.y,sample.depth.y);});
+  samples.forEach((camera,t)=>{const baked=shotAt(e,t);for(const k of ['x','y','scale','angle_rad'])near(baked[k],camera[k]);});
+  sameStored(stored(e),exported);
   e.undo();assert.deepEqual(e.serialize(),before);e.redo();validateAnimationDocument(e.report);
 });
 test('pose snapshots omit the derived motion clock and retain the authored camera',()=>{
   const e=fixture();e.addCameraMotion('impact');const frame=at(e,3),saved=snapshotPoseFrame(frame);assert.equal(saved._cameraMotionTick,undefined);assert.deepEqual(saved.camera,frame.camera);
 });
 for(const interpolation of ['constant','linear','bezier','auto'])refs.test(`partial bake preserves all output ticks across ${interpolation} camera spans`,take=>{
-  const e=ownedFixture(take),uid=e.selectedUid;e.addCameraMotion('handheld',{duration:60});e.addCameraMotion('impact',{start:5,duration:30});
+  const e=ownedFixture(take);e.addCameraMotion('handheld',{duration:60});e.addCameraMotion('impact',{start:5,duration:30});
   e.setLayerParallax(e.activeLayerId,{enabled:true,x:.2});
   for(const [tick,x] of [[0,0],[20,100],[40,240]]){e.sheetInsertKey(['camera'],tick);e.seek(tick);e.setCameraValues({x});}
   e.sheetSetEasing(['camera'],0,40,{interpolation,...(interpolation==='bezier'?{bezier:[.3,0,.8,1]}:{})});
-  const sample=()=>Array.from({length:e.totalTicks},(_,tick)=>{const f=at(e,tick);return {c:cameraAtTime(e.report,f),p:parallaxResolver(e.report,f)(uid)};});
-  const before=e.serialize(),expected=sample();e.bakeCameraMotion({start:8,end:14});validateAnimationDocument(e.report);
-  const actual=sample();expected.forEach((s,t)=>{for(const k of ['x','y','scale','angle_rad'])near(s.c[k],actual[t].c[k]);near(s.p.x,actual[t].p.x);near(s.p.y,actual[t].p.y);});
-  e.bakeCameraMotion({start:45,end:49});sample().forEach((s,t)=>{for(const k of ['x','y','scale','angle_rad'])near(s.c[k],expected[t].c[k]);near(s.p.x,expected[t].p.x);});
+  const sample=()=>Array.from({length:e.totalTicks},(_,tick)=>shotAt(e,tick));
+  const before=e.serialize(),expected=sample(),exported=stored(e);e.bakeCameraMotion({start:8,end:14});validateAnimationDocument(e.report);
+  const actual=sample();expected.forEach((camera,t)=>{for(const k of ['x','y','scale','angle_rad'])near(camera[k],actual[t][k]);});sameStored(stored(e),exported);
+  e.bakeCameraMotion({start:45,end:49});sample().forEach((camera,t)=>{for(const k of ['x','y','scale','angle_rad'])near(camera[k],expected[t][k]);});sameStored(stored(e),exported);
   e.undo();e.undo();assert.deepEqual(e.serialize(),before);
 });
 refs.test('camera and layer locks reject motion, baking and parallax changes atomically',take=>{

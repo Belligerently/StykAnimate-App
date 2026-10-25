@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {motionPathTargets, pickMotionPathPoint} from '../src/motion-path.mjs';
 
 const clone = value => structuredClone(value);
@@ -101,7 +100,7 @@ test('a joined figure\'s origin trail edits the parent attach joint, not the com
   assert.ok(editor.beginMotionPathEdit({kind: 'node', uid: 2, handleId: 0, joint: -1}, 10));
   assert.equal(editor._drag.target.uid, 1);
   assert.equal(editor._drag.target.handleId, figure.segments[0].segment_id);
-  const geometry = buildGeometry(editor.report, editor.evaluatedFrame);
+  const geometry = editor.geometry;
   const attach = geometry.objects.get(0).joints.get(figure.segments[0].segment_id);
   editor.updateMotionPathEdit({x: attach.x + 40, y: attach.y});
   assert.equal(editor.commitMotionPathEdit(), true);
@@ -110,7 +109,7 @@ test('a joined figure\'s origin trail edits the parent attach joint, not the com
   near(stored.objects[0].root_x, 300);
   assert.ok(Math.abs(stored.objects[0].angles[0] - (-Math.PI / 2)) > 0.01, 'parent joint rotated');
   assert.ok(stored.objects[1].join, 'child stays attached');
-  const after = buildGeometry(editor.report, editor.evaluatedFrame);
+  const after = editor.geometry;
   assert.ok(after.objects.get(0).joints.get(figure.segments[0].segment_id).x > attach.x + 10);
   editor.undo();
 });

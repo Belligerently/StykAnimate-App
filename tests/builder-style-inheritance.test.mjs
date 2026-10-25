@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {strokeSegments} from '../src/builder-construction.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
@@ -18,7 +17,7 @@ test('line and chain inherit their actual parent style with atomic undo and save
   assert.equal(parts[0].parent_id,parent);assert.equal(parts[1].parent_id,parts[0].segment_id);
   assert.equal(e._undo.length,history+1);
   const after=JSON.stringify(e.serialize());e.undo();assert.equal(JSON.stringify(e.serialize()),before);e.redo();assert.equal(JSON.stringify(e.serialize()),after);
-  const restored=new Editor({demo:false}).load(e.serialize());restored.select(e.selectedUid);
+  const restored=ownedEditorFor({demo:false},e.serialize());restored.select(e.selectedUid);
   assert.equal(restored.figure.segments.at(-1).thickness,19);
   assert.deepEqual(restored.figure.segments.at(-1).color_rgb,[229,66,131]);
 });

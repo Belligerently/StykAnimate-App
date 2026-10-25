@@ -19,7 +19,7 @@ const ticks = (process.env.STYK_BENCH_TICKS || '0,1,535,536,1824,1825,1826,1827,
 const cases = (process.env.STYK_BENCH_CASES || '1080-edges,2160-edges,2160-sprites').split(',');
 const ffmpeg = path.resolve('build/video-encoder/ffmpeg.exe');
 const sourceHashes = {};
-for (const file of ['src/engine/engine-export.mjs','src/engine/engine-export-worker.mjs','src/native-video-export.mjs','desktop/video-export-service.cjs','src/pivot/geometry.mjs','src/export-memory.mjs','src/app.mjs']) sourceHashes[file] = await digest(file);
+for (const file of ['src/engine/engine-export.mjs','src/engine/engine-export-worker.mjs','src/native-video-export.mjs','desktop/video-export-service.cjs','src/export-memory.mjs','src/app.mjs']) sourceHashes[file] = await digest(file);
 const app = await electron.launch({args:[process.cwd()],cwd:process.cwd(),timeout:60000,
   env:{...process.env, STYK_USER_DATA_DIR:path.join(output,`profile-${Date.now()}`)}});
 const result = {label,date:new Date().toISOString(),source,sourceHash,sourceHashes,cpu:os.cpus()[0].model,ramBytes:os.totalmem(),node:process.version,ticks,runs:[],errors:[]};
@@ -36,7 +36,7 @@ try {
   await page.locator('#file-input').setInputFiles(source);
   await page.waitForFunction(name => !styk.state.importing && styk.editor.name === name,path.basename(source,'.piv'),{timeout:240000});
   result.scene = await page.evaluate(async () => {
-    const {timeline} = await import('/src/pivot/geometry.mjs');
+    const {timeline} = await import('/src/pivot/read-view.mjs');
     const report=styk.editor.report, rows=timeline(report);
     styk.state.playback?.clear?.();
     return {width:report.canvas_width,height:report.canvas_height,keyframes:report.keyframes.length,ticks:rows.at(-1).start+rows.at(-1).count};

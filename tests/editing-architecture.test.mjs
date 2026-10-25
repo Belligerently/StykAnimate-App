@@ -1,17 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {packPoseSequences,expandPoseSequencesSteps} from '../src/pose-sequence-storage.mjs';
-import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
-import {buildGeometry,buildGeometrySteps,evaluatedFrame,evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
 
-function fixture(frames=12,parts=8) {
-  const report=emptyDocument(),figure=report.figure_types[0];
-  report.keyframes=Array.from({length:frames},(_,i)=>createFrame(Array.from({length:parts},(_,slot)=>
-    createObject(figure,slot+1,i*2+slot*10,100,{join:slot===1?{target_object_slot:0,target_handle_id:1}:null})),3));
-  return plainEditorFor({demo:false,propertyChannels:true}, report);
-}
 const complete = iterator => {let result;do{result=iterator.next();}while(!result.done);return result.value;};
 
 test('stored pose references reject corruption atomically and old array documents remain unchanged',()=>{
@@ -27,38 +17,5 @@ test('stored pose references reject corruption atomically and old array document
   const packed=packPoseSequences(parent);assert.equal(packed._styk.simpleFrameDraft.animationBaseline.version,2);
   assert.equal(packed.figure_types[0]._styk.movieclip.document._styk.animation.version,2);
   assert.equal(nested._styk.animation.version,1);
-});
-
-test('scoped pose snapshots preserve ancestor geometry and paint order with independent records',()=>{
-  const e=fixture(),frame=e.frame;frame.object_draw_order=[7,1,0,3,4,5,6,2];
-  frame.objects[0].unknown={nested:[1,2]};
-  Object.defineProperty(frame.objects[7],'runtime_segments',{enumerable:true,get(){throw Error('Unrelated geometry visited');}});
-  const captured=snapshotPoseFrame(frame,new Set([2])),before=buildGeometry(e.report,{...frame,objects:frame.objects.slice(0,2)});
-  assert.deepEqual(captured.objects.map(o=>o.unique_id),[1,2]);assert.deepEqual(captured.object_draw_order,[1,0]);
-  const after=buildGeometry(e.report,captured);
-  assert.deepEqual(after.objects.get(1).root,before.objects.get(1).root);
-  assert.deepEqual(after.objects.get(1).joints,before.objects.get(1).joints);
-  captured.objects[0].unknown.nested.push(3);assert.deepEqual(frame.objects[0].unknown.nested,[1,2]);
-  const remapped=snapshotPoseFrame(frame,new Set([4]));assert.equal(remapped.objects[0].object_slot,0);
-});
-
-test('scoped native interpolation evaluates requested objects and both endpoint ancestor chains exactly',()=>{
-  const e=fixture(),r=e.report; r.keyframes[1].objects[1].join={target_object_slot:2,target_handle_id:1};
-  for(const fraction of [.1,.5,.9]){
-    const scoped=evaluatedNativeFrame(r,0,fraction,undefined,new Set([2])),full=evaluatedNativeFrame(r,0,fraction);
-    for(const slot of [0,1,2])assert.deepEqual(scoped.objects[slot],full.objects[slot]);
-    assert.equal(scoped.objects[7],r.keyframes[0].objects[7]);
-    assert.deepEqual(buildGeometry(r,scoped).objects.get(1).joints,buildGeometry(r,full).objects.get(1).joints);
-  }
-});
-
-test('dense single figures yield inside geometry without changing output',()=>{
-  const e=fixture(1,1),figure=e.report.figure_types[0],template=figure.segments[0];
-  figure.segments=Array.from({length:1024},(_,i)=>({...template,segment_id:i+1,parent_id:0,z_order:i}));
-  figure.segment_count=figure.segments.length;e.frame.objects[0].angles=figure.segments.map(s=>s.angle_rad);
-  const steps=buildGeometrySteps(e.report,e.frame);let result,progress=[];
-  do{result=steps.next();if(!result.done)progress.push(result.value);}while(!result.done);
-  const geometry=result.value,full=buildGeometry(e.report,e.frame);assert.deepEqual(geometry,full);
-  assert.ok(progress.length>5);
 });
 

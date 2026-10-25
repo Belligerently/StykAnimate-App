@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {evaluatedFrame} from '../src/pivot/geometry.mjs';
-import {timeline} from '../src/pivot/read-view.mjs';
+import {evaluatedAt} from './support/engine-geometry.mjs';
 import {pivotDocument, exportDocument, keepsStoredFrames} from './support/engine-export.mjs';
 
 /** The imported document of four exposures, in an editor the engine owns; `change(saved)` edits what the engine opens. */
@@ -19,11 +18,8 @@ function fixture(change = null) {
   const saved = editor.serialize(); change(saved);
   return engineEditor({demo: false, layerTimeline: true}, saved);
 }
-function sample(report, tick) {
-  const rows = timeline(report); let index = 0;
-  while (index + 1 < rows.length && rows[index + 1].start <= tick) index++;
-  return evaluatedFrame(report, index, rows[index].count ? (tick - rows[index].start) / rows[index].count : 0, tick);
-}
+/** The frame the engine shows for a document at a tick. */
+const sample = (report, tick) => evaluatedAt(report, tick);
 
 test('an imported layer sheet retains native exposures, hidden keys and unknown fields without baking', () => {
   const editor = fixture(), before = structuredClone(editor.report);

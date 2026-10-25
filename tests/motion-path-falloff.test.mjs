@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
-import {timeline} from '../src/pivot/read-view.mjs';
+import {evaluatedAt, geometryOfDocument} from './support/engine-geometry.mjs';
 import {falloffWeight, planFalloff, normalizeFalloff} from '../src/motion-path-falloff.mjs';
 
 const near = (a, b, tolerance = 1e-3) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
@@ -19,10 +18,9 @@ function report() {
 const modes = {
   sheet: () => ownedEditorFor({demo: false, propertyChannels: true, layerTimeline: true}, report()),
 };
+/** Where the engine puts the first figure at `tick` of a document (the one an editor holds, or the virtual one a gesture shows). */
 function rootAt(source, tick) {
-  const rows = timeline(source), index = rows.findLastIndex(row => row.start <= tick), row = rows[index];
-  const frame = evaluatedFrame(source, index, row.count ? (tick - row.start) / row.count : 0, tick);
-  const object = frame.objects.find(o => o.unique_id === 1);
+  const object = evaluatedAt(source, tick).objects.find(o => o.unique_id === 1);
   return {x: object.root_x, y: object.root_y};
 }
 const at = (editor, tick) => rootAt(editor.report, tick);
@@ -64,8 +62,8 @@ for (const [mode, make] of Object.entries(modes)) {
     assert.equal(editor._drag.falloff.radius, 15);
     for (let i = 1; i <= 5; i++) editor.updateMotionPathEdit({x: before[20].x, y: 200 - i * 20});
     // Live: the virtual report is reshaped while the document is untouched.
-    near(rootAt(editor.motionPathReport(), 20).y, 100);
-    near(rootAt(editor.motionPathReport(), 10).y, 200 - 100 * falloffWeight(10, 15));
+    near(rootAt(editor._drag.report, 20).y, 100);
+    near(rootAt(editor._drag.report, 10).y, 200 - 100 * falloffWeight(10, 15));
     const plan = editor.motionPathFalloff();
     assert.deepEqual(plan.writes.map(w => w.tick), [4, 10, 20, 30, 36]);
     assert.deepEqual([...plan.changed].sort((a, b) => a - b), [4, 10, 20, 30, 36]);
@@ -119,10 +117,10 @@ test('holding and releasing falloff mid-drag switches the same gesture', () => {
   editor.updateMotionPathEdit({x: 300, y: 150});
   assert.ok(editor.setMotionPathFalloff(FALLOFF));
   assert.ok(editor._drag.falloff);
-  near(rootAt(editor.motionPathReport(), 20).y, 150);
-  near(rootAt(editor.motionPathReport(), 10).y, 200 - 50 * falloffWeight(10, 15));
+  near(rootAt(editor._drag.report, 20).y, 150);
+  near(rootAt(editor._drag.report, 10).y, 200 - 50 * falloffWeight(10, 15));
   assert.ok(editor.setMotionPathFalloff({radius: 25, shape: 'smooth'}));
-  near(rootAt(editor.motionPathReport(), 10).y, 200 - 50 * falloffWeight(10, 25));
+  near(rootAt(editor._drag.report, 10).y, 200 - 50 * falloffWeight(10, 25));
   assert.ok(editor.setMotionPathFalloff(null));
   assert.equal(editor._drag.falloff, undefined);
   editor.updateMotionPathEdit({x: 300, y: 140});
@@ -139,7 +137,7 @@ test('a camera trail reshapes with falloff too', () => {
   assert.ok(editor.beginMotionPathEdit(camera, 20, {falloff: FALLOFF}));
   editor.updateMotionPathEdit({x: centre.x + 60, y: centre.y});
   assert.equal(editor.commitMotionPathEdit(), true);
-  const cameraAt = tick => { const rows = editor.timeline, i = rows.findLastIndex(r => r.start <= tick); return evaluatedFrame(editor.report, i, rows[i].count ? (tick - rows[i].start) / rows[i].count : 0, tick).camera; };
+  const cameraAt = tick => evaluatedAt(editor.report, tick).camera;
   near(Number(cameraAt(20).x), 60);
   near(Number(cameraAt(10).x), 60 * falloffWeight(10, 15));
   near(Number(cameraAt(36).x ?? 0), 0);
@@ -151,12 +149,11 @@ test('joint trails rotate neighbouring keys partially toward the moved arc', () 
   const editor = modes.sheet(), figure = editor.report.figure_types[0];
   const joint = figure.segments.findIndex(s => !s.is_static && s.parent_id !== 0 && !figure.segments.some(c => c.parent_id === s.segment_id));
   const target = {kind: 'node', uid: 1, handleId: Number(figure.segments[joint].segment_id), joint};
-  const angle = tick => { const rows = editor.timeline, i = rows.findLastIndex(r => r.start <= tick); return evaluatedFrame(editor.report, i, 0, tick).objects[0].angles[joint]; };
+  const angle = tick => evaluatedAt(editor.report, tick).objects[0].angles[joint];
   const before = [10, 20, 30].map(angle);
   assert.ok(editor.beginMotionPathEdit(target, 20, {falloff: FALLOFF}));
   // The grabbed joint is where the pose of tick 20 puts its limb tip.
-  const rows = editor.timeline, row = rows.findLastIndex(r => r.start <= 20), pose = evaluatedFrame(editor.report, row, 0, 20);
-  const origin = [...buildGeometry(editor.report, pose).objects.values()][0].segments[joint].end;
+  const origin = [...geometryOfDocument(editor.report, evaluatedAt(editor.report, 20)).objects.values()][0].segments[joint].end;
   editor.updateMotionPathEdit({x: origin.x + 25, y: origin.y - 25});
   assert.equal(editor.commitMotionPathEdit(), true);
   const after = [10, 20, 30].map(angle), turn = i => Math.abs(Math.atan2(Math.sin(after[i] - before[i]), Math.cos(after[i] - before[i])));

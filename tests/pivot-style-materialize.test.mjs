@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {newOwnedEditor} from './support/owned-editor.mjs';
+import {newOwnedEditor, ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
-import {timeline} from '../src/pivot/read-view.mjs';
+import {geometryOfDocument} from './support/engine-geometry.mjs';
 import {exportDocument, pivotDocument, keepsStoredFrames} from './support/engine-export.mjs';
 import {roundTrip} from './support/codec.mjs';
 
@@ -17,11 +16,8 @@ function document(edit = null) {
   return report;
 }
 const fixture = edit => newOwnedEditor({demo: false}).load(document(edit));
-function sample(report, tick) {
-  const rows = timeline(report); let index = 0;
-  while (index + 1 < rows.length && rows[index + 1].start <= tick) index++;
-  return evaluatedFrame(report, index, rows[index].count ? (tick - rows[index].start) / rows[index].count : 0, tick);
-}
+/** The engine's geometry at `tick` of an editor. */
+const geometryAt = (editor, tick) => { editor.seek(tick); return editor.geometry; };
 const style = geometry => {const figure = geometry.fig; return {outline: figure.segment_decode.global_style.u30, primary: figure.segments[0].transparency, secondary: figure.segments[0].secondary.a};};
 function nativeRoundtrip(report, kind = 'piv', figureTypeId) {
   return roundTrip({document: report, format: kind, figureTypeId});
@@ -45,12 +41,12 @@ test('independent outline, primary and gradient endpoint opacity bake into real 
       {target: {kind: 'segment', uid: 1, handleId: 1}, property: 'gradientOpacity', tick, value: tick ? .6 : .4},
     ]),
   ]);
-  const report = editor.report, before = structuredClone(report), output = pivotDocument(editor), native = await nativeRoundtrip(output);
+  const report = editor.report, before = structuredClone(report), output = pivotDocument(editor), native = await nativeRoundtrip(output), reopened = ownedEditorFor({demo: false}, native);
   assert.equal(output.keyframes.length, 5); assert.ok(output.keyframes.every(frame => frame.duration_raw === 1));
   assert.deepEqual(report, before); assert.ok(output.keyframes.every(frame => frame.objects.every(object => !object._stykStyle)));
   assert.ok(output.figure_types.length <= 6); assert.equal(output._styk.animation, undefined);
   for (let tick = 0; tick < 5; tick++) {
-    const expected = buildGeometry(report, sample(report, tick)), actual = buildGeometry(native, sample(native, tick));
+    const expected = geometryAt(editor, tick), actual = geometryAt(reopened, tick);
     for (const slot of [0, 1]) assert.deepEqual(style(actual.objects.get(slot)), style(expected.objects.get(slot)));
     assert.equal(style(actual.objects.get(1)).primary, 0);
   }
@@ -61,8 +57,8 @@ test('captured native style overrides remain exportable after their channels are
   assert.equal(editor.animationChannels.length, 0); assert.equal(keepsStoredFrames(editor), false);
   const output = pivotDocument(editor), native = await nativeRoundtrip(output);
   assert.equal(output.keyframes.length, 5); assert.equal(native.keyframes.length, 5);
-  assert.equal(style(buildGeometry(native, native.keyframes[0]).objects.get(0)).primary, 102);
-  assert.equal(style(buildGeometry(native, native.keyframes[4]).objects.get(0)).primary, 0);
+  assert.equal(style(geometryOfDocument(native, native.keyframes[0]).objects.get(0)).primary, 102);
+  assert.equal(style(geometryOfDocument(native, native.keyframes[4]).objects.get(0)).primary, 0);
 });
 test('STK resolves the selected instance and authored tick without changing its shared base', async () => {
   const editor = fixture(); editor.addAnimationKeys([

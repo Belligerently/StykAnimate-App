@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
-import {vfxStack, vfxProperty} from '../src/vfx.mjs';
+import {vfxProperty} from '../src/vfx.mjs';
 import {validateVfxClips, clipContains, vfxRenderFrame} from '../src/vfx-clips.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {appendVfxRows,visibleVfxKeys} from '../src/vfx-clip-timeline.mjs';
@@ -48,7 +48,7 @@ test('group reordering preserves parameter tables and supports undo, redo and lo
  const before=e.report._styk.vfxClips,keys=e.getVfxClips()[0].keys;e.reorderVfxGroupEffect(id,glow,1);assert.deepEqual(e.getVfxClips()[0].effects.map(f=>f.id),[shadow,glow]);assert.equal(e.getVfxClips()[0].keys,keys);
  e.undo();assert.deepEqual(e.report._styk.vfxClips,before);e.redo();e.setLayerLocked(e.layerForUid(1),true);const locked=e.report._styk.vfxClips;assert.throws(()=>e.reorderVfxGroupEffect(id,glow,0),/Unlock/);assert.deepEqual(e.report._styk.vfxClips,locked);
 });
-test('scene snapshots exclude runtime effects',()=>{const e=fixture();e.addVfxClip({kind:'scene'},'tint');const frame=e.evaluatedFrame;assert.equal(vfxStack(frame).length,1);const saved=snapshotPoseFrame(frame);assert.equal(saved._vfxTimelineScene,undefined);assert.equal(saved._vfxTimelineTick,undefined);assert.equal(saved._stykVfx,undefined);});
+test('scene snapshots carry no runtime effects',()=>{const e=fixture();e.addVfxClip({kind:'scene'},'tint');const frame=e.evaluatedFrame;assert.equal(frame._vfxTimelineTick,0);const saved=snapshotPoseFrame(frame);assert.equal(saved._vfxTimelineScene,undefined);assert.equal(saved._vfxTimelineTick,undefined);assert.equal(saved._stykVfx,undefined);});
 test('twenty timed effects share one compact lane and order is independent of time',()=>{const e=fixture();for(let i=0;i<20;i++)e.addVfxClip(target,'glow',{start:i*10,duration:8});e._vfxTimelineVisible=true;const layer=e.getLayer(e.layerForUid(1)),rows=appendVfxRows([layer],e);assert.equal(rows.length,2);const first=e.getVfxClips()[0];e.setVfxClip(first.id,{start:250});assert.equal(e.getVfxClips()[0].id,first.id);e.moveVfxClipOrder(first.id,1);assert.equal(e.getVfxClips()[1].id,first.id);});
 test('invalid state and locked edits fail atomically',()=>{const e=fixture(),id=e.addVfxClip(target,'glow'),before=e.report._styk.vfxClips;assert.throws(()=>e.setVfxClip(id,{duration:-1}));assert.deepEqual(e.report._styk.vfxClips,before);const bad=structuredClone(before);bad.clips[0].target.uid=-1;assert.throws(()=>validateVfxClips(bad));e.setLayerLocked(e.layerForUid(1),true);assert.throws(()=>e.setVfxClip(id,{name:'Locked'}));assert.deepEqual(e.report._styk.vfxClips,before);});
 

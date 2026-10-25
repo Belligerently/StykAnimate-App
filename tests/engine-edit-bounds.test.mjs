@@ -79,8 +79,9 @@ test('the engine measures the app\'s bounds callback itself; any other callback 
   const outcomes = [];
   for (const app of [false, true]) {
     const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(structuredClone(document));
+    const owner = owned(editor);
     editor.selectMany([1, 3]);
-    const owner = owned(editor), order = [], queries = appBounds();
+    const order = [], queries = appBounds();
     const boundsOf = entry => { order.push(entry.obj.unique_id); return queries(entry); };
     if (!app) {
       // A function that is not the app's marker is not data for the session: refused, never run in the editor.

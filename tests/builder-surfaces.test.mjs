@@ -4,7 +4,7 @@ import {buildRotatingCube} from './helpers/rotating-cube.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {pickFigureFill} from '../src/builder-fill.mjs';
-import {surfaceOrder,surfaceDepthValues,surfaceHandles,remapSurface,validateSurface} from '../src/pivot/surfaces.mjs';
+import {validateSurface} from '../src/pivot/surfaces.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 import {pivotDocument} from './support/engine-export.mjs';
 const fixture=()=>{const e=ownedEditorFor({demo:false});return {e,q:buildRotatingCube(e)};};
@@ -66,22 +66,7 @@ test('one-sided fills also work on ordinary figures with no rig constraints',()=
   assert.throws(()=>pivotDocument(e),/one-sided fills/);
 });
 
-test('depth guides change painter order continuously and survive affine transforms and ID remapping',()=>{
-  const poly={z_order:2,segment_ids:[0,1,2],_stykSurface:{basis:[0,1,2],depth:[3,4]}};
-  const positions=[[10,20],[40,20],[10,50],[70,0],[-20,90]];
-  const joints=new Map(positions.map(([x,y],id)=>[id,{x,y}]));
-  assert.equal(surfaceOrder(poly,joints),2.5);
-  for(const scale of [-2,3]){
-    const a=.7,c=Math.cos(a),s=Math.sin(a);
-    const transformed=new Map([...joints].map(([id,p])=>[id,{x:80+scale*(p.x*c-p.y*s),y:60+scale*(p.x*s+p.y*c)}]));
-    assert.ok(Math.abs(surfaceOrder(poly,transformed)-2.5)<1e-10);
-  }
-  joints.set(3,{x:-50,y:0});assert.equal(surfaceOrder(poly,joints),.5);
-  const remap=id=>id+10;remapSurface(poly,remap);assert.deepEqual(poly._stykSurface.depth,[13,14]);
-  assert.ok(surfaceHandles(poly).includes(14));
-  const mapped=new Map([...joints].map(([id,p])=>[remap(id),p]));assert.equal(surfaceOrder(poly,mapped),.5);
-  mapped.set(11,mapped.get(10));assert.equal(surfaceOrder(poly,mapped),2);
-  assert.equal(surfaceOrder({z_order:7},joints),7);
+test('depth guides validate their references',()=>{
   for(const depth of [[],[999],[NaN],'3'])assert.throws(()=>validateSurface({_stykSurface:{basis:[0,1,2],depth}},new Set([0,1,2,3])),/Face depth/);
 });
 
@@ -116,7 +101,4 @@ test('intersection depth preserves each corner through transforms and native aut
     assert.equal(d.figure_types.find(f=>f.figure_type_id===e.figure.figure_type_id).polyfills[0]._stykSurface.depthTest,true);
   }
   e.undo();e.undo();e.undo();e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(get(),[2,0,1]);
-  const poly=e.figure.polyfills[0],g=e.geometry.objects.get(e.selectedSlot);
-  const shifted=structuredClone(poly);remapSurface(shifted,id=>id+100);
-  assert.deepEqual(surfaceDepthValues(shifted,new Map([...g.joints].map(([id,p])=>[id+100,p]))),get());
 });

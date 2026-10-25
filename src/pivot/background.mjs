@@ -1,5 +1,4 @@
 import {messageError} from '../localized-error.mjs';
-import {cameraAtTime} from '../camera-motion.mjs';
 import {canvasPaint} from '../paint.mjs';
 import {previewMemoryPlan} from '../playback-budget.mjs';
 // Backgrounds are native ARGB; figure COLORREF colors use a different byte order.
@@ -26,7 +25,7 @@ export function sceneBackgroundColor(report, frame) {
 
 /** A hidden Camera track uses the untransformed animation viewport everywhere. */
 export function effectiveCamera(report, frame, cameraEnabled = true) {
-  return cameraEnabled && report?._styk?.layers?.fixed?.camera?.visible !== false ? cameraAtTime(report,frame) : null;
+  return cameraEnabled && report?._styk?.layers?.fixed?.camera?.visible !== false ? frame?.camera : null;
 }
 
 // Native rendering decides identity from the camera values after loading.
@@ -212,62 +211,6 @@ export function backgroundBounds(frame, width, height, cameraEnabled = true, rep
       Math.max(...xs) > width ||
       Math.max(...ys) > height,
   };
-}
-
-export function tweenBackground(start, end, t) {
-  let a = start.background_id ?? 0,
-    b = start.background_id_b || 0,
-    m = start.background_mix || 0;
-  const c = end.background_id ?? 0,
-    d = end.background_id_b || 0,
-    n = end.background_mix || 0;
-  const result = () => ({
-    background_id: a,
-    background_id_b: b,
-    background_mix: m,
-  });
-  if (a === c && b === d && m === n) return result();
-  const duration = start.duration_raw || 1;
-  let j = t * duration;
-  if (Math.abs(j - Math.round(j)) < 1e-9) j = Math.round(j);
-  const lerp = (x, y) => x + Math.trunc((j * (y - x)) / duration);
-  let fallback = false;
-  if (m && n) {
-    if (a === c && b === d) m = lerp(m, n);
-    else if (a === d && b === c) m = lerp(m, 255 - n);
-    else fallback = true;
-  } else if (m) {
-    if (c === a) m = lerp(m, 0);
-    else if (c === b) m = lerp(m, 255);
-    else fallback = true;
-  } else if (n) {
-    if (a === c) {
-      b = d;
-      m = lerp(0, n);
-    } else if (a === d) {
-      a = c;
-      b = d;
-      m = lerp(255, n);
-    } else fallback = true;
-  } else {
-    b = c;
-    m = Math.floor((255 * j) / duration);
-  }
-  if (fallback) {
-    a =
-      start.background_mix >= 128 ? start.background_id_b : start.background_id;
-    b = end.background_mix >= 128 ? end.background_id_b : end.background_id;
-    if (a === b) {
-      b = 0;
-      m = 0;
-    } else m = Math.floor((255 * j) / duration);
-  }
-  if (m >= 254) {
-    a = b;
-    b = 0;
-    m = 0;
-  }
-  return result();
 }
 
 export function drawBackground(

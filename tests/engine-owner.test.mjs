@@ -10,26 +10,27 @@ import {readdirSync, readFileSync} from 'node:fs';
 import {withDraws} from '../src/editor-draws.mjs';
 import {holdsRevision, registeredEngine} from '../src/engine/engine-open.mjs';
 import {createDrawingFigure, drawingMetadata} from '../src/drawing-model.mjs';
-import {cameraAtTime} from '../src/camera-motion.mjs';
 import {hasPinnedIK} from '../src/ik.mjs';
 import {MotionTrails} from '../src/motion-path.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditor} from './support/owned-editor.mjs';
-import {canonical, ownerReferences} from './support/owner-references.mjs';
+import {CLOCKS, canonical, ownerReferences} from './support/owner-references.mjs';
 import {recordedBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
 
 const refs = ownerReferences(import.meta.url);
 const folder = new URL('../engine/tests/edit/', import.meta.url);
 /** Recordings of commands the session took over from the editor (the same format as the tapes in `folder`). */
 const otherFolders = ['movieclip-sheet-extension'].map(name => new URL(`../engine/tests/${name}/`, import.meta.url));
-const json = value => JSON.stringify(value, (key, item) => key === 'runtime_segments' || key === '_movieclipSample' ? undefined : item);
+const json = value => JSON.stringify(value, (key, item) => key === 'runtime_segments' || key === '_movieclipSample' || CLOCKS.includes(key) ? undefined : item);
 const frameText = frame => { const {object_count, ...rest} = frame ?? {}; return json(rest); };
 const state = editor => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null,
   selectedUids: [...editor.selectedUids], selectedJoint: editor.selectedJoint ?? -1, canUndo: editor.canUndo, canRedo: editor.canRedo,
   undoLabel: editor.undoLabel, redoLabel: editor.redoLabel, dirty: editor.dirty});
 /** What the interface reads of an open motion-path edit (the trails sample `report` over `range`,
  * the arc's overlay and the pinned-origin modifier read the rest), as text; `null` with none open. */
+/** The document a motion-path edit shows: its virtual report while one is open (the trails sample it), else the editor's. */
+const motionReport = editor => editor._drag?.motionPath ? editor._drag.report : editor.report;
 const motionState = (editor, text) => {
   const drag = editor._drag;
   if (!drag?.motionPath) return 'null';
@@ -37,7 +38,7 @@ const motionState = (editor, text) => {
   const own = drag.report === editor.report;
   return text({target: {kind, uid, handleId, joint}, tick: drag.tick, falloff: drag.falloff ?? null, moved: Boolean(drag.moved), range: drag.range,
     pinned: (drag.grab?.baseline ?? drag.baseline).some(hasPinnedIK), arc: arc && {...arc, changed: [...arc.changed]},
-    report: own ? 'the document' : drag.report, reported: editor.motionPathReport() === drag.report});
+    report: own ? 'the document' : drag.report, reported: motionReport(editor) === drag.report});
 };
 /** What the interface reads of an open figure-handle, Handle Edit Mode or segment-value gesture (the stage's
  * pivot marker reads the transform's origin; the segment-values dialog the options), as text; `null` with none open. */
@@ -90,7 +91,8 @@ const probes = {
   '@motionFrame': editor => JSON.stringify(snapshotPoseFrame((editor._drag?.motionPath ? editor._drag.display?.frame : null) ?? editor.evaluatedFrame)),
   '@selection': editor => JSON.stringify(editor._selectionState()),
   '@restoreSelection': (editor, selection) => editor._restoreSelection(selection),
-  '@cameraAtTime': editor => cameraAtTime(editor.report, editor.evaluatedFrame),
+  // The camera the frame on show is shot through: the session's `shot`, else the frame's own.
+  '@cameraAtTime': editor => editor._shown.shot() ?? editor.evaluatedFrame.camera,
 };
 /** A step of a tape on `editor`: `["@batch", label, steps]` groups its steps in one `movieclipBatch`. */
 const run = (editor, [name, ...args]) => {
@@ -355,7 +357,7 @@ refs.test('a motion-path edit runs in the session and shows on the editor as its
   both('select', 1, -1);
   both('beginMotionPathEdit', head, 8);
   assert.ok(owned._drag?.engine && owned._drag.motionPath, 'the session\'s edit is on the editor');
-  assert.equal(owned.motionPathReport(), owned.report, 'nothing has moved the trail yet');
+  assert.equal(motionReport(owned), owned.report, 'nothing has moved the trail yet');
   assert.equal(owned._drag.display, null, 'the stage draws the pose the document has');
   sameLive(owned, reference, 'begin');
   const start = new MotionTrails(owned, {budgetMs: Infinity}).read([head])[0].points.get(8);
@@ -368,8 +370,8 @@ refs.test('a motion-path edit runs in the session and shows on the editor as its
   assert.equal(answers[1].motionPath.target, undefined);
   assert.equal(answers[1].motionPath.moved, true);
   assert.ok(answers[1].motionPath.report.length > 0 && answers[1].motionPath.report.length < 8, 'the changed tracks and sources, not the document');
-  assert.notEqual(owned.motionPathReport(), owned.report);
-  assert.equal(owned.motionPathReport(), owned.motionPathReport(), 'one report until the trail moves again');
+  assert.notEqual(motionReport(owned), owned.report);
+  assert.equal(motionReport(owned), motionReport(owned), 'one report until the trail moves again');
   assert.equal(owned.dirty, reference('dirty'));
   sameLive(owned, reference, 'move');
   both('updateMotionPathEdit', {x: start.x, y: start.y});

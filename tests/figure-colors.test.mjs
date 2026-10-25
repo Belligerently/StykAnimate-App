@@ -1,28 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {figurePalette,displayedSegmentPaint} from '../src/figure-colors.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
-import {plainScope} from './support/plain-editor.mjs';
+import {geometryOfDocument} from './support/engine-geometry.mjs';
 import {pivotDocument} from './support/engine-export.mjs';
 
 const open = ownedScope();
-const openPlain = plainScope();
 
-function fixture({version=5,raw=0,layerTimeline=true,propertyChannels=true,prepare=null,plain=false}={}){
+function fixture({version=5,raw=0,layerTimeline=true,propertyChannels=true,prepare=null}={}){
   const report=emptyDocument();report.version=version;report.frame_delay_ms=40;
   const figure=report.figure_types[0];figure.segments=figure.segments.slice(0,4).map((s,i)=>({...s,segment_id:i+1,parent_id:i,length:40,thickness:5,primitive_code:0,segment_type:'line',segment_kind:'line',color_rgb:i===2?[10,20,30]:[200,40,50],secondary:null,paint:undefined}));
   delete figure.segment_decode;figure.polyfills=[];
   report.keyframes=[0,1,2].map(i=>createFrame([createObject(figure,1,100+i*10,200,{color_override_raw:raw}),createObject(figure,2,250,200,{color_override_raw:raw})],10));
   prepare?.(report);
-  const e=(plain?openPlain:open)({demo:false,layerTimeline,propertyChannels}, report);e.select(1);return e;
+  const e=open({demo:false,layerTimeline,propertyChannels}, report);e.select(1);return e;
 }
 const palette=e=>e.figurePalette().map(p=>[p.color,p.segments.length]);
-const colors=e=>buildGeometry(e.report,e.evaluatedFrame).objects.get(e.selectedSlot).segments.map(s=>s.rgb);
+const colors=e=>e.geometry.objects.get(e.selectedSlot).segments.map(s=>s.rgb);
 
 test('attached palette preserves instance membership and undo',()=>{
   const settings={layerTimeline:true};
@@ -52,7 +49,7 @@ test('attached palette preserves instance membership and undo',()=>{
   assert.deepEqual(resolved.polyfills[0].color_rgb,[119,136,153]);
   assert.deepEqual(resolved.segments[0].color_rgb,[10,20,30]);
   assert.deepEqual(resolved.segments[0].secondary.rgb,[119,136,153]);
-  const reopened=new Editor({demo:false,...settings}).load(JSON.parse(JSON.stringify(e.serialize())));reopened.select(1);
+  const reopened=open({demo:false,...settings},JSON.parse(JSON.stringify(e.serialize())));reopened.select(1);
   assert.deepEqual(palette(reopened),palette(e));
   e.undo();e.undo();assert.deepEqual(palette(e),[['#0a141e',9],['#c82832',5]]);
   e.redo();assert.deepEqual(palette(e),[['#0a141e',12]]);
@@ -70,7 +67,7 @@ for(const version of [2,3,4,5])test(`Pivot ${version}: whole figure, node, whole
   e.setFigureColor('#9933ee');assert.deepEqual(palette(e),[['#9933ee',4]]);
   e.undo();assert.equal(e._undo.length,2);assert.deepEqual(palette(e),[['#44aacc',3],['#eecc11',1]]);
   e.replaceFigureColor('#44aacc','#222222');assert.deepEqual(palette(e),[['#222222',3],['#eecc11',1]]);
-  const saved=e.serialize(),reopened=new Editor({demo:false,layerTimeline:true,propertyChannels:true}).load(JSON.parse(JSON.stringify(saved)));reopened.select(1);
+  const saved=e.serialize(),reopened=open({demo:false,layerTimeline:true,propertyChannels:true},JSON.parse(JSON.stringify(saved)));reopened.select(1);
   assert.deepEqual(colors(reopened),colors(e));assert.deepEqual(e.report.figure_types,definitions);
   assert.deepEqual(e.evaluatedFrame.objects[1],other);
   e.undo();e.redo();assert.deepEqual(palette(e),[['#222222',3],['#eecc11',1]]);
@@ -139,8 +136,8 @@ test('invalid colors and locked layers leave document and history untouched',()=
 
 test('native export materializes instance colors and preserves untouched legacy figures',()=>{
   const e=fixture({version:4,raw:196});e.select(1,0);e.updateBuilderSegmentStyle({color:'#123456'});
-  const frame=e.evaluatedFrame,output=pivotDocument(e.serialize());
-  const before=buildGeometry(e.report,frame).drawables.map(s=>s.rgb),after=buildGeometry(output,output.keyframes[0]).drawables.map(s=>s.rgb);
+  const output=pivotDocument(e.serialize());
+  const before=e.geometry.drawables.map(s=>s.rgb),after=geometryOfDocument(output,output.keyframes[0]).drawables.map(s=>s.rgb);
   assert.deepEqual(after,before);
 });
 

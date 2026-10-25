@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
-import {cameraMatrix} from '../src/renderer-geometry.mjs';
+import {geometryOfFrame} from './support/engine-geometry.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
 
 const open = ownedScope();
@@ -16,11 +15,12 @@ function fixture(){
   });
   const editor=open({demo:false}, report);editor.select(1);editor.setOrigin(4);return editor;
 }
-function points(editor,index,{evaluated=true,projected=false}={}){
-  const raw=editor.report.keyframes[index],frame=evaluated?evaluatedFrame(editor.report,index,0,editor.timeline[index].start):raw;
-  const matrix=projected?cameraMatrix({report:editor.report,frame}):[1,0,0,1,0,0];
-  return [...buildGeometry(editor.report,frame).objects.values()].flatMap(object=>[...object.joints].map(([id,p])=>
-    [object.obj.unique_id,id,matrix[0]*p.x+matrix[2]*p.y+matrix[4],matrix[1]*p.x+matrix[3]*p.y+matrix[5]]));
+/** Where the engine puts every joint at keyframe `index`: as it evaluates the frame on show there, or (`evaluated: false`) as the stored keyframe stands. */
+function points(editor,index,{evaluated=true}={}){
+  let geometry;
+  if(evaluated){editor.seek(editor.timeline[index].start);geometry=editor.geometry;}
+  else geometry=geometryOfFrame(editor,editor.report.keyframes[index]);
+  return [...geometry.objects.values()].flatMap(object=>[...object.joints].map(([id,p])=>[object.obj.unique_id,id,p.x,p.y]));
 }
 function close(actual,expected){assert.equal(actual.length,expected.length);for(let i=0;i<actual.length;i++){
   assert.deepEqual(actual[i].slice(0,2),expected[i].slice(0,2));

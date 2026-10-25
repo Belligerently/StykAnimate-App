@@ -3,12 +3,8 @@ import assert from 'node:assert/strict';
 import {createDemo} from '../src/demo.mjs';
 import {engineEditor} from './support/owned-editor.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
-import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {evaluatedAt} from './support/engine-geometry.mjs';
 import {figureDocument} from './support/engine-export.mjs';
-
-
-
-
 
 test('native figure keeps the evaluated pose, precise style and assets without the project', () => {
   const report = createDemo();
@@ -22,7 +18,7 @@ test('native figure keeps the evaluated pose, precise style and assets without t
   assert.equal(output.keyframes.length, 1);
   assert.deepEqual(output.figure_types[0].custom, report.figure_types[0].custom);
   assert.equal(output.keyframes[0].objects[0]._stykStyle.outlineOpacity, .123456789);
-  assert.deepEqual(output.keyframes[0].objects[0].angles, evaluatedFrame(report, 0, .5, tick).objects[0].angles);
+  assert.deepEqual(output.keyframes[0].objects[0].angles, evaluatedAt(report, tick).objects[0].angles);
   assert.equal(output._stykSource, undefined);
   assert.deepEqual(output.backgrounds, []);
   assert.deepEqual(report, before);
