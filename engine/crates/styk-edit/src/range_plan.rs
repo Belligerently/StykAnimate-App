@@ -61,12 +61,13 @@ pub(crate) enum Direction {
 }
 
 /// The part of one figure a branch flip turns over (`segmentSelection`): the selected
-/// figure's selected handles. (A selected branch, `branch: true`, is runtime state the engine
-/// does not hold: the facade leaves calls on a branch selection to the editor.)
+/// figure's selected handles, and with `branch` (a selected branch) everything below them,
+/// the figures joined at those handles turning with it.
 #[derive(Clone, Debug)]
 pub(crate) struct Part {
     pub uid: Option<u32>,
     pub handles: Vec<f64>,
+    pub branch: bool,
 }
 
 /// A validated operation (`validateOperation`).
@@ -880,6 +881,39 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
                     return Ok(None);
                 }
                 transformed = vec![slot];
+                if part.branch {
+                    // The branch below the handles, and the figures hanging from them.
+                    let mut at = 0;
+                    while at < part_handles.len() {
+                        let parent = part_handles[at];
+                        for child in segments.iter().filter(|s| given(s, "parent_id") == Some(parent)).filter_map(|s| given(s, "segment_id")) {
+                            if !part_handles.contains(&child) {
+                                part_handles.push(child);
+                            }
+                        }
+                        at += 1;
+                    }
+                    for &child in children.get(&slot).map(Vec::as_slice).unwrap_or(&[]) {
+                        let handle = objects[child].get("join").filter(|j| j.truthy()).and_then(|j| num(j, "target_handle_id"));
+                        if handle.is_some_and(|h| part_handles.contains(&h)) {
+                            let mut queue = vec![child];
+                            let mut next = 0;
+                            while next < queue.len() {
+                                for &below in children.get(&queue[next]).map(Vec::as_slice).unwrap_or(&[]) {
+                                    if !queue.contains(&below) {
+                                        queue.push(below);
+                                    }
+                                }
+                                next += 1;
+                            }
+                            for member in queue {
+                                if !transformed.contains(&member) {
+                                    transformed.push(member);
+                                }
+                            }
+                        }
+                    }
+                }
                 part_slot = Some(slot);
             }
             for &slot in &transformed {

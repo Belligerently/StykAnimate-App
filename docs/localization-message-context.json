@@ -16983,13 +16983,13 @@
   },
   "errors.engineOwner.invalidValue": {
     "locations": [
-      "src/engine/engine-owner.mjs:1114"
+      "src/engine/engine-owner.mjs:1119"
     ],
     "context": "if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error}"
   },
   "errors.engineOwner.notSupported": {
     "locations": [
-      "src/engine/engine-owner.mjs:1121"
+      "src/engine/engine-owner.mjs:1126"
     ],
     "context": "const error = messageError(new Error(''), 'errors.engineOwner.notSupported', {});"
   },
@@ -39724,7 +39724,7 @@
   },
   "vfxChannels.enabled": {
     "locations": [
-      "src/engine/engine-owner.mjs:1101",
+      "src/engine/engine-owner.mjs:1106",
       "src/vfx-clip-inspector.mjs:63",
       "src/vfx-localization.mjs:9",
       "src/vfx.mjs:25"

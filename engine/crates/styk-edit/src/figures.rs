@@ -191,6 +191,10 @@ impl Editor {
     /// `deleteSelection()`: the selected figures leave the frame; figures joined to
     /// them stay where the join held them.
     pub(crate) fn delete_selection(&mut self) -> Result<bool, EditError> {
+        // A selected branch is deleted as segments, with the figures joined below it detached.
+        if self.branch_selected() {
+            return self.delete_segment(None);
+        }
         let selected: Vec<u32> = self.selected_objects()?.iter().filter_map(uid).collect();
         if selected.is_empty() {
             return Ok(false);
@@ -282,7 +286,9 @@ impl Editor {
             ids.push(identity as f64);
             set_order(frame, &ids);
             normalize_frame(frame);
+            // `selectedUid = uid`: the new figure is the whole selection, with no fill, joints or branch chosen.
             editor.selection = crate::Selection { uid: Some(identity as u32), uids: vec![identity as u32], joint: -1 };
+            editor.selection_metadata = crate::select::SelectionMetadata::default();
             Ok(())
         })?;
         Ok(self.object()?.map(|(_, o)| o).unwrap_or(Value::Null))
@@ -339,13 +345,14 @@ impl Editor {
             frame.set("object_count", Value::Num(count as f64));
         }
         // Published, the figure is selected and the next identity taken; refused, neither.
-        let (selection, previous) = (self.selection_state(), self.selection.clone());
+        let (selection, previous, branch) = (self.selection_state(), self.selection.clone(), self.selection_metadata.branch.take());
         self.selection = crate::Selection { uid: Some(identity as u32), uids: vec![identity as u32], joint: -1 };
         self.next_uid += 1;
         let mut frame = Value::object(frame);
         self.synchronize_origin_frame(&mut frame, &objects_of(&shown), true)?;
         if let Err(error) = self.commit_sheet_range_with(&frame, &[identity as u32], &[identity as u32], &std::collections::HashMap::new(), Vec::new(), "Add figure", selection) {
             self.selection = previous;
+            self.selection_metadata.branch = branch;
             self.next_uid = identity;
             return Err(error);
         }

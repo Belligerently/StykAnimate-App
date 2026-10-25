@@ -143,7 +143,7 @@ impl Editor {
     /// Offline replay routing for the SAME supported worker calls. Ordinary
     /// figure insertion and unrecorded selection metadata keep normal dispatch.
     pub(crate) fn movieclip_timeline_replay_call(&self, method: &str, args: &[Value]) -> bool {
-        if self.selection_metadata_gate(method).is_err() { return false; }
+        if self.selection_metadata_visible() && !crate::select::metadata_recorded_call(method) { return false; }
         if !self.sheet() { return matches!(TimelineCall::of(method, args), Some(TimelineCall::Bake)); }
         match TimelineCall::of(method, args) {
             Some(TimelineCall::AddFigure) => {

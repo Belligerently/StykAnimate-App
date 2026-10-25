@@ -42,7 +42,7 @@ pub struct RigSources<'a> {
 
 /// The plan of a figure without rig relationships: every joint is plain.
 pub(crate) fn plain_plan(count: usize) -> RigPlan {
-    RigPlan { order: (0..count as u32).collect(), inputs: vec![None; count], dependencies: vec![Vec::new(); count] }
+    RigPlan { order: (0..count as u32).collect(), inputs: vec![None; count], outputs: vec![None; count], dependencies: vec![Vec::new(); count] }
 }
 
 struct GroupSample {

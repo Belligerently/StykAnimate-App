@@ -10,8 +10,7 @@
 //! definition and the poses it touched, before and after.
 //!
 //! Recorded animation-origin edits retain their original pivot and hidden support.
-//! Frame drafts, movieclip sources, IK across joined figures, channels a
-//! changed handle animates, pose choices and 3D meshes answer `Unported`.
+//! Frame drafts and movieclip sources answer `Unported`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -20,6 +19,8 @@ use styk_doc::{Obj, Value};
 use crate::history::{Command, CommandKind, Direction};
 use crate::record::{join_target, num, uid};
 use crate::{EditError, Editor};
+mod channels;
+mod joined_ik;
 mod sprite;
 mod new_figure;
 
@@ -134,6 +135,25 @@ fn set(object: &mut Value, key: &str, value: Value) {
 fn remove(object: &mut Value, key: &str) {
     if let Some(record) = object.make_obj() {
         record.remove(key);
+    }
+}
+
+/// `retainRuntimePose(object, segments)`: lengths and bends a pose only carries in its derived
+/// `runtime_segments` (an imported legacy pose) become its own before the segments change.
+pub(crate) fn retain_runtime_pose(object: &mut Value, segments: &[Value]) {
+    let Some(runtime) = object.get("runtime_segments").filter(|runtime| runtime.truthy()).cloned() else { return };
+    for (flag, vector, field) in [("len_flag", "lengths", "length"), ("bend_flag", "bends", "bend_rad")] {
+        if object.get(flag).is_some_and(Value::truthy) {
+            continue;
+        }
+        let held = |i: usize| runtime.item(i).and_then(|record| record.get(field).cloned());
+        let own = |segment: &Value| segment.get(field).filter(|v| !v.is_null()).cloned().unwrap_or(Value::Num(0.0));
+        if !segments.iter().enumerate().any(|(i, segment)| held(i).is_some_and(|value| value != own(segment))) {
+            continue;
+        }
+        let values = segments.iter().enumerate().map(|(i, segment)| held(i).filter(|v| !v.is_null()).unwrap_or_else(|| own(segment))).collect();
+        set(object, flag, Value::Num(1.0));
+        set(object, vector, Value::array(values));
     }
 }
 
@@ -458,9 +478,6 @@ impl Editor {
         if self.report.path(&["_styk", "simpleFrameDraft"]).is_some() {
             return Err(EditError::Unported("topology edits with a frame draft".into()));
         }
-        if figure.path(&["_styk", "poseChoices"]).is_some() || figure.path(&["_styk", "spatialMesh"]).is_some() || items(figure.get("segments")).iter().any(|s| s.get("_stykPoseChoice").is_some()) {
-            return Err(EditError::Unported("topology edits of a figure with pose choices or a 3D mesh".into()));
-        }
         // Raw support remapping relies on the typed origin owner's validated indices.
         // Refuse before committing a live gesture, keeping report/history atomic.
         if figure.path(&["_styk", "animationOrigin"]).is_some() { self.origin_figure(&figure)?; }
@@ -558,17 +575,25 @@ impl Editor {
         let bones: HashSet<u64> = segments.iter().filter(|s| s.path(&["_stykRig", "spatial", "origin"]).is_some_and(Value::truthy)).filter_map(|s| handle(s.get("segment_id"))).map(key_of).collect();
         for entry in &before.frames {
             let objects = items(frame_at(&self.report, &entry.place).and_then(|f| f.get("objects")));
-            // IK across joined figures (`repairJoined`) is not ported.
+            // IK across joined figures (`repairJoined`): the assemblies that hold the figure.
+            let mut handled: HashSet<usize> = HashSet::new();
+            let mut joined = Vec::new();
             if objects.iter().any(|o| o.get("join").is_some_and(Value::truthy)) {
-                let joins: Vec<Option<usize>> = objects.iter().map(join_target).collect();
-                for group in styk_eval::ik::joined::components_of(&joins) {
-                    if group.len() >= 2 && group.iter().any(|&s| objects[s].get("figure_type_id") == Some(&type_id)) && group.iter().any(|&s| objects[s].get("_stykIK").is_some_and(Value::truthy)) {
-                        return Err(EditError::Unported("topology edits of figures joined with IK".into()));
-                    }
-                }
+                let figures = items(self.report.get("figure_types"));
+                let old_figures: Vec<Value> = figures.iter().map(|f| if f.get("figure_type_id") == Some(&type_id) { before.figure.clone() } else { f.clone() }).collect();
+                let previous: HashMap<u32, &Value> = entry.objects.iter().filter_map(|o| uid(o).map(|u| (u, o))).collect();
+                let old_objects: Vec<Value> = objects.iter().map(|o| uid(o).and_then(|u| previous.get(&u)).map_or_else(|| o.clone(), |p| (*p).clone())).collect();
+                joined = joined_ik::repair(&figures, &old_figures, &objects, &old_objects, &type_id, &explicit)?;
+                handled.extend(joined.iter().map(|(slot, _)| *slot));
             }
             let Some(list) = objects_mut(&mut self.report, &entry.place) else { continue };
-            for object in list.iter_mut() {
+            for (slot, table) in joined {
+                match table {
+                    Some(table) => set(&mut list[slot], "_stykIK", table),
+                    None => remove(&mut list[slot], "_stykIK"),
+                }
+            }
+            for (slot, object) in list.iter_mut().enumerate() {
                 if object.get("figure_type_id") != Some(&type_id) {
                     continue;
                 }
@@ -586,6 +611,9 @@ impl Editor {
                     let mut spatial = object.get("_stykSpatial").and_then(Value::as_obj).cloned().unwrap_or_default();
                     spatial.set("shape", Value::object(next));
                     set(object, "_stykSpatial", Value::object(spatial));
+                }
+                if handled.contains(&slot) {
+                    continue;
                 }
                 let Some(table) = object.get("_stykIK").filter(|t| t.truthy()).and_then(Value::as_obj).cloned() else { continue };
                 let angles = numbers(object.get("angles"));
@@ -652,23 +680,6 @@ impl Editor {
         if changes.is_empty() {
             return Ok(());
         }
-        let mut uids: HashSet<u32> = HashSet::new();
-        for entry in &before.frames {
-            uids.extend(entry.objects.iter().filter(|o| o.get("figure_type_id") == Some(&type_id)).filter_map(uid));
-        }
-        // Channels a changed handle animates (`_styk.animation` is refused for the whole document;
-        // a layer sheet's saved channels stay with the editor here).
-        let channels = items(self.report.path(&["_styk", "layerSheet", "legacyAnimation", "channels"]));
-        let affected = channels.iter().any(|channel| {
-            let target = channel.get("target").cloned().unwrap_or(Value::Null);
-            target.get("kind").and_then(Value::as_str) == Some("segment")
-                && uid(&target.get("uid").map(|u| { let mut o = Obj::new(); o.set("unique_id", u.clone()); Value::object(o) }).unwrap_or(Value::Null)).is_some_and(|u| uids.contains(&u))
-                && handle(target.get("handleId")).is_some_and(|h| changes.iter().any(|(old, _)| *old == h))
-                && target.get("figureTypeId").is_none_or(|t| t == &type_id)
-        });
-        if affected {
-            return Err(EditError::Unported("topology edits of handles saved property channels animate".into()));
-        }
         for entry in &before.frames {
             let Some(list) = objects_mut(&mut self.report, &entry.place) else { continue };
             for object in list.iter_mut() {
@@ -733,6 +744,16 @@ impl Editor {
                 }
             }
         }
+        // The channels of the imported animation that animate a changed handle follow it (`repairSheetStyles`;
+        // a document's own `_styk.animation` channels are not edited here).
+        if let Some(animation) = self.report.path(&["_styk", "layerSheet", "legacyAnimation"]).filter(|animation| animation.truthy()).cloned() {
+            let edit = channels::Edit { type_id: &type_id, changes: &changes, reversed: &options.reversed_gradients, before_figure: &before.figure, before_frames: &before.frames };
+            if let Some(repaired) = channels::repair(&self.report, &animation, &edit)?
+                && let Some(sheet) = self.report.make_obj().and_then(|r| r.get_mut("_styk")).and_then(Value::make_obj).and_then(|s| s.get_mut("layerSheet")).and_then(Value::make_obj)
+            {
+                sheet.set("legacyAnimation", repaired);
+            }
+        }
         Ok(())
     }
 
@@ -742,6 +763,7 @@ impl Editor {
         let figure = self.report.get("figure_types").and_then(|f| f.item(index)).unwrap_or(Value::Null);
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
         let segments = validate_definition(&figure)?;
+        crate::load::validate_figure_extensions(&figure)?;
         let ids: HashSet<u64> = segments.iter().filter_map(|s| handle(s.get("segment_id"))).map(key_of).chain([0]).collect();
         let at = |id: f64| segments.iter().position(|s| handle(s.get("segment_id")) == Some(id));
         for entry in &before.frames {
@@ -952,6 +974,13 @@ fn protect_surfaces(figure: &Value, removed: &HashSet<u64>) -> Result<(), EditEr
             return Err(invalid("errors.editorBuilderTopology.thisJointControlsFaceVisibilityChangeTheFill"));
         }
     }
+    // A joint the 3D mesh is bound to or oriented by cannot go.
+    if let Some(mesh) = figure.path(&["_styk", "spatialMesh"]).filter(|mesh| mesh.truthy()) {
+        let uses = |list: Vec<f64>| list.iter().any(|id| removed.contains(&key_of(*id)));
+        if uses(numbers(mesh.get("basis"))) || uses(numbers(mesh.get("bones"))) {
+            return Err(invalid("errors.surfaces.thisJointMovesOrOrientsThe3dMesh"));
+        }
+    }
     Ok(())
 }
 
@@ -1082,9 +1111,6 @@ impl Editor {
         if next_id + list.len() as f64 - 1.0 > 65535.0 {
             return Err(invalid("errors.editorBuilderBranch.figureJointCapacityReached"));
         }
-        if segments.iter().any(|s| s.get("_stykRig").is_some_and(Value::truthy)) {
-            return Err(EditError::Unported("drawing into a figure with rig relationships".into()));
-        }
         let (resolved, _) = crate::recolor::resolve(&figure, &object)?;
         let mut styles: Vec<(Value, Value)> = resolved.iter().map(|s| (id_of(s), s.clone())).collect();
         let style_of = |styles: &Vec<(Value, Value)>, id: &Value| styles.iter().rev().find(|(k, _)| crate::history::js_strict_eq(k, id)).map(|(_, s)| s.clone());
@@ -1115,6 +1141,22 @@ impl Editor {
             let segment = Value::object(segment);
             styles.push((id_of(&segment), segment.clone()));
             result.push(segment);
+        }
+        // Drawn into a rigged figure, a stroke is stored in the space the rig draws its parent's children in.
+        if segments.iter().any(|s| s.get("_stykRig").is_some_and(Value::truthy)) {
+            let mut spaces = self.rig_child_spaces(&segments)?;
+            for (i, segment) in result.iter_mut().enumerate() {
+                let parent = given(segment, "parent_id").unwrap_or(f64::NAN);
+                let space = spaces.iter().find(|(handle, _)| *handle == parent).map_or(styk_eval::rig::Space::default(), |(_, space)| *space);
+                let (length, angle) = (prepared[i].length, prepared[i].angle);
+                let aim = [length * styk_math::cos(angle), length * styk_math::sin(angle)];
+                let target = styk_eval::ik::rig::authored_rig_target_with([0.0, 0.0], Some(space), 0.0, aim, None).ok_or_else(|| invalid("errors.rigConstraints.expandTheStretchDriverBeforePosingAFully"))?;
+                prepared[i].angle = styk_math::atan2(target[1], target[0]);
+                prepared[i].length = styk_math::hypot(target[0], target[1]);
+                set(segment, "angle_rad", Value::Num(prepared[i].angle));
+                set(segment, "length", Value::Num(prepared[i].length));
+                spaces.push((given(segment, "segment_id").unwrap_or(f64::NAN), space));
+            }
         }
         let label = if list.len() > 1 { "Draw chain" } else { "Add segment" };
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
@@ -1149,9 +1191,27 @@ impl Editor {
         Ok(Value::array(result))
     }
 
+    /// The space the rig draws the children of each joint of the selected figure in, by handle
+    /// (`rigChildSpace ?? {rotation: rigRotation ?? 0}` of its geometry).
+    fn rig_child_spaces(&self, segments: &[Value]) -> Result<Vec<(f64, styk_eval::rig::Space)>, EditError> {
+        let Some((slot, object)) = self.object()? else { return Ok(Vec::new()) };
+        let (_, _, scene) = self.evaluate_only(Some(&[slot]))?;
+        let uid = uid(&object);
+        let rig = scene.objects.iter().find(|g| Some(g.uid) == uid && g.resolved).and_then(|g| g.rig.clone());
+        Ok(segments
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| {
+                let joint = rig.as_ref().and_then(|rig| rig.get(i));
+                let rotation = joint.map_or(0.0, |j| if j.rotation != 0.0 && !j.rotation.is_nan() { j.rotation } else { 0.0 });
+                Some((handle(s.get("segment_id"))?, joint.and_then(|j| j.child_space).unwrap_or(styk_eval::rig::Space { rotation, follow: None })))
+            })
+            .collect())
+    }
+
     /// `deleteSegment({handleIds, branch})`: segments (with their branches) removed; figures
     /// joined to a removed handle stay where they were drawn.
-    fn delete_segment(&mut self, options: Option<&Value>) -> Result<bool, EditError> {
+    pub(crate) fn delete_segment(&mut self, options: Option<&Value>) -> Result<bool, EditError> {
         let Some((_, figure)) = self.topology_figure()? else { return Ok(false) };
         let segments = items(figure.get("segments"));
         let Some(selected) = usize::try_from(self.selection.joint).ok().and_then(|j| segments.get(j)).cloned() else { return Ok(false) };
@@ -1243,9 +1303,6 @@ impl Editor {
                 next.push(segment);
             }
             protect_surfaces(&figure, &removed)?;
-            if figure.path(&["_styk", "spatialMesh"]).is_some() {
-                return Err(EditError::Unported("deleting joints of a 3D mesh".into()));
-            }
             let polygons: Vec<Value> = items(figure.get("polyfills"))
                 .into_iter()
                 .filter(|p| {
@@ -1262,6 +1319,7 @@ impl Editor {
                     record.set("polyfills", Value::array(Vec::new()));
                 }
             }
+            editor.selection_metadata.segments = None;
             editor.selection.joint = -1;
             Ok(())
         })
@@ -1281,9 +1339,6 @@ impl Editor {
             return Err(invalid("errors.editorBuilderTopology.thisJointControlsFaceVisibilityChangeTheFill"));
         }
         protect_surfaces(&figure, &removed)?;
-        if figure.path(&["_styk", "spatialMesh"]).is_some() {
-            return Err(EditError::Unported("deleting joints of a 3D mesh".into()));
-        }
         let preserve = match options.and_then(|o| o.get("preserveEndpoints")) {
             None => false,
             Some(Value::Bool(b)) => *b,
@@ -1327,6 +1382,7 @@ impl Editor {
                     set(&mut list[slot], "join", Value::Null);
                 }
                 for &slot in &slots {
+                    retain_runtime_pose(&mut list[slot], &segments);
                     let object = &list[slot];
                     let mut pose = Pose::of(object);
                     if preserve && !children.is_empty() {
@@ -1450,9 +1506,11 @@ impl Editor {
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
         self.topology_edit(&label, TopologyOptions::default(), |editor, at| {
             let frames = instances(&editor.report, &type_id);
+            let definition = items(editor.figure_at(at).get("segments"));
             for (place, slots) in &frames {
                 let Some(list) = objects_mut(&mut editor.report, place) else { continue };
                 for &slot in slots {
+                    retain_runtime_pose(&mut list[slot], &definition);
                     let mut pose = Pose::of(&list[slot]);
                     for &i in &indices {
                         if let Some(a) = pose.angles.get_mut(i) {
@@ -1566,6 +1624,7 @@ impl Editor {
             for (place, slots) in instances(&editor.report, &type_id) {
                 let Some(objects) = objects_mut(&mut editor.report, &place) else { continue };
                 for slot in slots {
+                    retain_runtime_pose(&mut objects[slot], &original);
                     let pose = Pose::of(&objects[slot]);
                     let pick = |v: &Vec<f64>| order.iter().map(|&i| v.get(i).copied().unwrap_or(f64::NAN)).collect::<Vec<_>>();
                     Pose { angles: pick(&pose.angles), lengths: pose.lengths.as_ref().map(pick), bends: pose.bends.as_ref().map(pick) }.write(&mut objects[slot]);
@@ -1626,9 +1685,6 @@ fn order_value(value: Option<&Value>, fallback: f64) -> Result<f64, EditError> {
 /// `remapRigReferences(segment, remap)` for the relationships a duplicated segment can carry.
 fn remap_rig_references(segment: &mut Value, remap: &[(f64, f64)]) -> Result<(), EditError> {
     let Some(rig) = segment.get("_stykRig").filter(|r| r.truthy()).and_then(Value::as_obj).cloned() else { return Ok(()) };
-    if rig.get("spatial").is_some_and(Value::truthy) {
-        return Err(EditError::Unported("duplicating a 3D joint".into()));
-    }
     let map = |value: Option<&Value>| -> Value {
         let value = value.cloned().unwrap_or(Value::Null);
         match value.as_f64().and_then(|id| remap.iter().find(|(from, _)| *from == id)) {
@@ -1637,6 +1693,9 @@ fn remap_rig_references(segment: &mut Value, remap: &[(f64, f64)]) -> Result<(),
         }
     };
     let mut next = rig.clone();
+    if let Some(spatial) = rig.get("spatial").filter(|s| s.truthy()) {
+        next.set("spatial", remap_spatial(spatial, &map));
+    }
     if let Some(weighted) = rig.get("weighted").filter(|w| w.truthy()) {
         next.set("weighted", remap_weighted(weighted, &map));
     }
@@ -1672,6 +1731,47 @@ fn remap_rig_references(segment: &mut Value, remap: &[(f64, f64)]) -> Result<(),
     }
     set(segment, "_stykRig", Value::object(next));
     Ok(())
+}
+
+/// `remapSpatial(spatial, remap)`: the joints a 3D joint names (a skin's bindings, a bone's parent, turn and
+/// pitch joints and the joint driving its motion) moved to the copies.
+fn remap_spatial(spatial: &Value, map: &dyn Fn(Option<&Value>) -> Value) -> Value {
+    // A reference that is not there stays absent.
+    let remapped = |record: &Obj, key: &str| -> Option<Value> { record.contains(key).then(|| map(record.get(key))) };
+    if spatial.get("bindings").is_some_and(Value::truthy) {
+        let mut out = Obj::new();
+        out.set("point", spatial.get("point").cloned().unwrap_or(Value::Null));
+        let bindings = items(spatial.get("bindings")).into_iter().map(|binding| {
+            let mut record = binding.as_obj().cloned().unwrap_or_default();
+            if let Some(joint) = remapped(&record, "joint") {
+                record.set("joint", joint);
+            }
+            Value::object(record)
+        });
+        out.set("bindings", Value::array(bindings.collect()));
+        if let Some(view) = spatial.get("viewPoints").filter(|v| v.truthy()) {
+            out.set("viewPoints", view.clone());
+        }
+        return Value::object(out);
+    }
+    let mut out = spatial.as_obj().cloned().unwrap_or_default();
+    if let Some(motion) = spatial.get("motion").filter(|m| m.truthy()).and_then(Value::as_obj) {
+        let mut next = motion.clone();
+        if let Some(driver) = motion.get("driver").filter(|d| d.truthy()).and_then(Value::as_obj) {
+            let mut moved = driver.clone();
+            if let Some(joint) = remapped(driver, "joint") {
+                moved.set("joint", joint);
+            }
+            next.set("driver", Value::object(moved));
+        }
+        out.set("motion", Value::object(next));
+    }
+    for key in ["parent", "turn", "pitch"] {
+        if let Some(moved) = remapped(&out, key) {
+            out.set(key, moved);
+        }
+    }
+    Value::object(out)
 }
 
 /// `remapWeightedJoint(value, remap)`.
@@ -1756,6 +1856,7 @@ impl Editor {
             for (place, slots) in instances(&editor.report, &type_id) {
                 let Some(list) = objects_mut(&mut editor.report, &place) else { continue };
                 for slot in slots {
+                    retain_runtime_pose(&mut list[slot], &originals);
                     let pose = Pose::of(&list[slot]);
                     let mut next = Pose { angles: Vec::new(), lengths: pose.lengths.as_ref().map(|_| Vec::new()), bends: pose.bends.as_ref().map(|_| Vec::new()) };
                     for (index, original) in originals.iter().enumerate() {
@@ -2019,6 +2120,7 @@ impl Editor {
             for (place, slots) in instances(&editor.report, &type_id) {
                 let Some(list) = objects_mut(&mut editor.report, &place) else { continue };
                 for slot in slots {
+                    retain_runtime_pose(&mut list[slot], &all);
                     let mut pose = Pose::of(&list[slot]);
                     let added: Vec<f64> = indices.iter().map(|&i| angle_of(pose.angles.get(i).copied().unwrap_or(f64::NAN))).collect();
                     pose.angles.extend(added);
@@ -2432,3 +2534,6 @@ impl Editor {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

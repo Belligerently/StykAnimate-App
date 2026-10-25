@@ -36,6 +36,8 @@ preserves an already-open drag, document, counters and history.
 
 `rig.rs` (crate root) evaluates rig relationships; IK uses it through three additions: `RigPlan::dependencies` (which joints a joint reads), `State::space` (the local space a joint's rig derives) and the public `spatial_quaternion`.
 
+Editing reads one more: `State::child_space` (the space the joints below a joint are authored in, from `RigPlan::outputs`, kept per joint as `RigJoint::child_space` and `RigJoint::rotation`), which a stroke drawn into a rigged figure is stored in.
+
 A rigged bone is not drawn where its authored angle points. For a skeleton with a rig plan, `solve_object` therefore: solves the chain on the **rendered** joint positions; inverts each bone's local space (`authored_rig_target`) for a first guess of the authored angle; then `RigContext::refine` corrects the authored angles by damped least squares until the rendered endpoint reaches the target (40 steps, tolerance 1e-4). A two-bone spatial limb with a 3D target is solved analytically instead (`solve_spatial`). Only the joints the driven bones depend on are evaluated in these loops.
 
 Chains stop at a derived joint (`layout::derived_rig_joint`: skin, connector, angle lock, angle path, weighted joint): IK never drives one.

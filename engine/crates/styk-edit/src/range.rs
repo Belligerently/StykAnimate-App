@@ -395,7 +395,7 @@ impl Editor {
             // `mirrorSelection` on one figure's joint flips the branch; whole figures stay in transform.rs.
             "mirrorSelection" => match self.selection.joint >= 0 && axis_valid(&arg(0)) {
                 true => match self.selected_objects() {
-                    Ok(objects) if objects.len() == 1 => self.apply_figure_range(Request::Mirror(arg(0)), Options { at_playhead: true, ..Options::default() }),
+                    Ok(objects) if objects.len() == 1 || self.branch_selected() => self.apply_figure_range(Request::Mirror(arg(0)), Options { at_playhead: true, ..Options::default() }),
                     Ok(_) => return None,
                     Err(error) => Err(error),
                 },
@@ -464,12 +464,11 @@ impl Editor {
             return Err(EditError::Unported("duplicating figures with effect clips".into()));
         }
         let mut part = None;
-        if matches!(request, Request::Mirror(_)) && self.selection.joint >= 0 && self.selected_objects()?.len() == 1 {
-            let handle = self.object()?.and_then(|(_, object)| {
-                let figure = self.figure_of(&object)?;
-                figure.get("segments").and_then(|s| s.item(self.selection.joint as usize)).and_then(|s| num(&s, "segment_id"))
-            });
-            part = Some(Part { uid: self.selection.uid, handles: handle.into_iter().collect() });
+        if matches!(request, Request::Mirror(_)) && self.selection.joint >= 0 && (self.selected_objects()?.len() == 1 || self.branch_selected()) {
+            // The joints selected (several with Shift), and with a selected branch everything below them.
+            let figure = self.object()?.and_then(|(_, object)| self.figure_of(&object));
+            let handles = self.selected_segment_ids(figure.as_ref()).iter().map(|id| id.as_f64().unwrap_or(f64::NAN)).collect();
+            part = Some(Part { uid: self.selection.uid, handles, branch: self.branch_selected() });
         }
         if self.drag.is_some() {
             self.commit_drag()?;
@@ -943,7 +942,13 @@ impl Editor {
         if objects.len() == 1 && self.selection.joint >= 0 {
             let figure = self.object()?.and_then(|(_, o)| self.figure_of(&o));
             let count = |key: &str| figure.as_ref().and_then(|f| f.get(key)).and_then(Value::array_len).unwrap_or(0);
-            if (self.selection.joint as usize) < count("segments") && count("segments") + count("polyfills") > 1 {
+            let branch = self.branch_selected();
+            // The drawables the order edit moves (`builderStyleTargets`) are part of the figure's own order.
+            let moved = match (&figure, branch) {
+                (Some(figure), true) => crate::builder::style_target_count(figure, self.selection.joint as usize, true)?,
+                _ => 1,
+            };
+            if (self.selection.joint as usize) < count("segments") && moved < count("segments") + count("polyfills") {
                 // A segment of one figure moves in the figure's own drawing order (`moveBuilderOrder`).
                 let mut target = styk_doc::Obj::new();
                 target.set("kind", Value::str("segment"));
@@ -954,7 +959,7 @@ impl Editor {
                     None => direction.clone(),
                 };
                 let mut options = styk_doc::Obj::new();
-                options.set("branch", Value::Bool(false));
+                options.set("branch", Value::Bool(branch));
                 return self.move_builder_order(&Value::object(target), &step, Some(&Value::object(options)));
             }
         }
@@ -980,7 +985,7 @@ impl Editor {
     fn mirror_figure(&mut self, axis: &Value) -> Result<Value, EditError> {
         let Some(horizontal) = axis_horizontal(axis) else { return Err(invalid("errors.editorBuilderTopology.chooseAHorizontalOrVerticalFlip")) };
         let selected = self.selected_objects()?.len();
-        if self.selection.joint >= 0 && selected == 1 {
+        if self.selection.joint >= 0 && (selected == 1 || self.branch_selected()) {
             return self.apply_figure_range(Request::Mirror(axis.clone()), Options { at_playhead: true, ..Options::default() });
         }
         if selected > 1 {
