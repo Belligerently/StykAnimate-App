@@ -61,6 +61,8 @@ const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxCl
 const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings', 'getSpatialPose', 'getSpatialMotion', 'sampleVfxClip'];
 /** What the session's error says when it does not answer for a document (`styk_edit::session::UNPORTED`). */
 const UNPORTED = 'unported: ';
+/** Where the values a refusal names start in its message (`styk_edit::PARAMS`). */
+const PARAMS = '\u001f';
 
 /**
  * A call's arguments as text for the session. Frame ranges keep their `sheetTicks`, and the app's figure-bounds callback is the
@@ -119,7 +121,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
       catch (error) {
         // What the session does not evaluate yet, the editor does.
         if (String(error?.message ?? error).startsWith(UNPORTED)) return null;
-        throw error;
+        throw queryFailure(error);
       }
     },
     source(motion) {
@@ -721,9 +723,8 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
       let text;
       try { text = session.query(name, JSON.stringify(args), adopting ? 'null' : JSON.stringify(view())); }
       catch (error) {
-        const message = String(error?.message ?? error);
-        if (message.startsWith(UNPORTED)) return original.apply(this, args);
-        throw failure(message);
+        if (String(error?.message ?? error).startsWith(UNPORTED)) return original.apply(this, args);
+        throw queryFailure(error);
       }
       return JSON.parse(text).v;
     };
@@ -860,6 +861,15 @@ function failure(error, params) {
     if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error});
     return messageError(new Error(''), error, values);
   } catch { return new Error(error); }
+}
+
+/** The editor's error for a refusal of a read: the session raises the message key, followed by the values the message names after
+ * `PARAMS` (`styk_edit::error_key`, `error_params`), where a call's answer carries them apart. What is not a message of the
+ * editor's (an engine failure) is raised as it came. */
+function queryFailure(error) {
+  const [key, params] = String(error?.message ?? error).split(PARAMS);
+  if (!Object.hasOwn(english, key)) return error;
+  try { return failure(key, params === undefined ? undefined : JSON.parse(params)); } catch { return error; }
 }
 
 /** The error for a call the session refuses (a document it does not edit yet): the call ran nowhere. */

@@ -60,3 +60,12 @@ test('the session samples an effect clip at a tick through its keys', () => {
     assert.throws(() => editor.sampleVfxClip('nope', 0), error => error.messageKey === 'errors.editorVfxClips.selectAnEffectClip');
   });
 });
+
+test('a read the session refuses reaches the interface as the localized error a call\'s refusal is', () => {
+  const report = emptyDocument(); report.keyframes = [createFrame([createObject(report.figure_types[0], 1, 100, 100)], 30)];
+  const editor = engineEditor({demo: false, layerTimeline: true}, report);
+  // The library, the rig test and the builder read the figure document of the selection from the session.
+  assert.throws(() => editor._shown.figureDocument({figureUid: 999, tick: 0}),
+    error => error.messageKey === 'errors.nativeFigure.selectAFigureOrMovieclipToExport' && error.message === 'Select a figure or movieclip to export.');
+  assert.equal(editor._shown.figureDocument({figureUid: 1, tick: 0}).figure_types.length > 0, true, 'a figure that is there is answered');
+});
