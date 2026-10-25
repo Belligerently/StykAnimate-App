@@ -1,3 +1,4 @@
+import {chooseExport, exportDialogClosed} from './helpers/export-dialog.mjs';
 /** Actual polygon draft construction, curved overlay and native file round trips. */
 import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
@@ -9,17 +10,17 @@ const service=await backend.startDesktopHost({appRoot:process.cwd()});let browse
 const checks=[],errors=[],check=(name,ok)=>{assert.ok(ok,name);checks.push(name);console.log('PASS',name);};
 try{
  browser=await chromium.launch({channel:'chrome',headless:true});
- page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true});page.setDefaultTimeout(10000);
+ page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true});page.setDefaultTimeout(10000);await page.addInitScript(()=>{delete window.showSaveFilePicker;});
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto(service.origin);await page.waitForFunction(()=>window.styk?.ready);
  await page.evaluate(async()=>{const {polygonConstructionFixture}=await import('/tests/polygon-construction-fixture.mjs');const report=polygonConstructionFixture();report.keyframes.push(structuredClone(report.keyframes[0]));styk.editor.load(report,'Bent polygon');styk.editor.select(1);styk.fit();});
  const exportFile=async(format,name)=>{
-  await page.locator('.titlebar [data-action="export"]').click();const pending=page.waitForEvent('download');
-  await page.locator(`#dialog [data-action="export-${format}"]`).click();const file=await pending,target=path.join(output,name);await file.saveAs(target);await page.waitForFunction(()=>!document.querySelector('#dialog').open);return target;
+  await page.locator('.titlebar [data-action="export"]').click();await chooseExport(page,`export-${format}`);const pending=page.waitForEvent('download');
+  await page.locator('#export-dialog #export-submit').click();const file=await pending,target=path.join(output,name);await file.saveAs(target);await exportDialogClosed(page);return target;
  };
  const source=await exportFile('piv','before.piv');
  await page.locator('#file-input').setInputFiles(source);await page.waitForFunction(()=>styk.editor.report.source?.endsWith?.('before.piv')||styk.editor.name==='before');
- await page.evaluate(async()=>{styk.editor.select(styk.editor.frame.objects[0].unique_id);styk.fit();styk.editor.updateFigureStyle({name:'Existing native edit'});styk.editor.markSaved();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ await page.evaluate(async()=>{styk.editor.select(styk.editor.evaluatedFrame.objects[0].unique_id);styk.fit();styk.editor.updateFigureStyle({name:'Existing native edit'});styk.editor.markSaved();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   window.polygonBaseline={undo:styk.editor._undo.length,redo:styk.editor._redo.length,report:JSON.stringify(styk.editor.report),revision:styk.editor.revision};
   const ctx=document.querySelector('#overlay').getContext('2d'),original={};let path=[];window.polygonPaths=[];window.openArcFills=0;window.openArcCloses=0;
   for(const key of ['beginPath','moveTo','lineTo','stroke','fill','closePath'])original[key]=ctx[key].bind(ctx);
@@ -36,7 +37,7 @@ try{
   const p=await page.evaluate(async id=>{const {worldToScreen}=await import('/src/renderer-geometry.mjs');const e=styk.editor,g=e.geometry.objects.get(e.selectedSlot),r=document.querySelector('#viewport').getBoundingClientRect(),p=worldToScreen(g.joints.get(id),{report:e.report,frame:e.frame,view:styk.state.view});return{x:r.x+p.x,y:r.y+p.y};},id);
   if(ctrl)await page.keyboard.down('Control');try{await page.mouse.click(p.x,p.y);}finally{if(ctrl)await page.keyboard.up('Control');}
  };
- const start=()=>page.locator('[data-tool="polygon"]').click();
+ const start=async()=>{if(await page.locator('[data-tool="polygon"]').isHidden())await page.locator('[data-workspace-mode="rig"]').click();await page.locator('[data-tool="polygon"]').click();};
  await start();await click(0);await click(1);await page.waitForFunction(()=>window.polygonPaths.some(p=>p.length>10));
  check('a two-joint bent draft stays open and unfilled',await page.evaluate(()=>window.openArcFills===0&&window.openArcCloses===0));await page.keyboard.press('Control+z');await click(3,true);
  check('Ctrl click follows the shortest native segment chain',JSON.stringify(await handles())==='[0,1,2,3]');
@@ -93,7 +94,7 @@ try{
  await page.evaluate(()=>styk.editor.markSaved());
  await page.locator('#file-input').setInputFiles(exported.piv);await page.waitForFunction(()=>styk.editor.name==='curved');
  check('opening a PIV replaces the document and clears the pending construction',await page.evaluate(()=>!styk.state.polygon&&styk.editor._undo.length===0&&styk.editor.report.figure_types.some(f=>f.polyfills?.length===1)));
- await page.locator('#file-input').setInputFiles(exported.stk);await page.waitForFunction(()=>styk.editor.frame.objects.length===2);
+ await page.locator('#file-input').setInputFiles(exported.stk);await page.waitForFunction(()=>styk.editor.evaluatedFrame.objects.length===2);
  check('actual STK file-picker import reopens the saved polygon figure',await page.evaluate(()=>styk.editor.figure.polyfills.length===1&&styk.editor.figure.polyfills[0].segment_ids.join(',')==='0,1,2,3'));
  check('no uncaught application errors',errors.length===0);
  await writeFile(path.join(output,'report.json'),JSON.stringify({checks,preview,markerPixels,errors},null,2));console.log(JSON.stringify({checks:checks.length,errors}));

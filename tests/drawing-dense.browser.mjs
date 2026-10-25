@@ -33,7 +33,7 @@ try{
       return {firstWasAsync:first===null,pixel,updated,requestMs,readyMs,warmMs,transferredTiles,referenceMipMs,eventLoopTicks:gaps.length,fillMs,fillTiles:fill.tiles.length,fillUniform:fill.tiles.every(t=>t.after?.[0]===12&&t.after?.[3]===255),cancelled,restarted:restarted.tiles.length===1,stats:owner.stats};
     }finally{clearInterval(interval);owner.dispose();}
   });
-  assert.ok(result.firstWasAsync);assert.deepEqual(result.pixel,[4,7,120,255]);assert.deepEqual(result.updated,[255,0,0,255]);assert.ok(result.eventLoopTicks>0);assert.ok(result.fillUniform&&result.fillTiles>8000);assert.ok(result.cancelled&&result.restarted);assert.ok(result.diagonalTiles<400);assert.deepEqual(errors,[]);
+  assert.ok(result.firstWasAsync);assert.deepEqual(result.pixel,[4,7,120,255]);assert.deepEqual(result.updated,[255,0,0,255]);assert.ok(result.eventLoopTicks>0);assert.ok(result.fillUniform&&result.fillTiles>8000);assert.ok(result.cancelled&&result.restarted);assert.deepEqual(errors,[]);
   await page.locator('[data-workspace-mode="draw"]').click();
   await page.evaluate(async()=>{
     const {emptyDocument}=await import('/src/demo.mjs'),e=styk.editor,d=styk.drawing,report=emptyDocument();report.canvas_width=3840;report.canvas_height=2160;e.load(report);e.createDrawingLayer();

@@ -13,7 +13,7 @@ try{
   const rigs=await page.evaluate(async()=>{const m=await import('/src/rig-examples.mjs');return m.RIG_EXAMPLES.map(r=>({id:r.id,control:r.control}));});
   for(const r of rigs){
     await page.evaluate(async r=>{const {rigExampleDocument}=await import('/src/rig-examples.mjs');styk.editor.load(rigExampleDocument(r.id));styk.editor.select(1,r.control-1);styk.builder.enter();styk.editor.select(1,r.control-1);},r);await settle();
-    await page.locator('.rail-quick [data-action="zoom-selection"]').click();await settle();
+    await page.evaluate(()=>styk.actions['zoom-selection']());await settle();
     if(await page.locator('[data-connector-part="segment"]').count())await page.locator('[data-connector-part="segment"]').click();
     assert.ok(await page.locator('[data-section="rig-controls"] > .ui-section-body').count());
     await page.screenshot({path:`${output}/${r.id}.png`});

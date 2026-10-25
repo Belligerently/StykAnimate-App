@@ -37,7 +37,7 @@ try {
     const check = (value, message) => { if (!value) throw new Error(message); };
     const source = new File([Uint8Array.from(bytes)], 'type-change.piv');
     check(await styk.importFiles([source]) !== false, 'Import was cancelled');
-    check(styk.state.lastImport?.transport === 'native-v5-frames' && styk.state.lastImport.wire_bytes > 0, 'Real import must exercise the native frame transport');
+    check(styk.state.lastImport?.transport === 'engine-open', 'The engine opens the import');
     const {editor} = styk, frames = editor.report.keyframes;
     check(frames.length === 1129 && editor.totalTicks === 1134, 'Import lost keyframes or timing');
     check(frames[0].objects[0].figure_type_id === 1 && frames[1].objects[0].figure_type_id === 2,

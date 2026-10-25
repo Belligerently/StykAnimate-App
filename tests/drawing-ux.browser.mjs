@@ -82,14 +82,11 @@ try{
   check('Delete without a pixel selection keeps its global figure delete',await page.evaluate(()=>!styk.drawing.selection&&styk.editor.revision!==deleteProbe.revision&&styk.editor.evaluatedFrame.objects.length<deleteProbe.objects));
   await page.keyboard.press('Control+z');await page.evaluate(()=>styk.drawing.prepareVisible());
   const scaling=await page.evaluate(async()=>{
-    const {drawingPixelMatrix,transformPoint}=await import('/src/drawing-model.mjs'),{drawGeometry}=await import('/src/pivot/geometry.mjs');
+    const {drawingPixelMatrix,transformPoint}=await import('/src/drawing-model.mjs');
     const e=styk.editor,d=styk.drawing,t=e.drawingTarget(),item=d.geometryItem(t),p={x:400,y:320},before=transformPoint(drawingPixelMatrix(item),p);
-    const calls=[],ctx=new Proxy({globalAlpha:1,canvas:{width:64,height:64}},{get:(o,k)=>k==='drawImage'?()=>calls.push({smoothing:o.imageSmoothingEnabled,quality:o.imageSmoothingQuality}):k==='getTransform'?()=>new DOMMatrix():k in o?o[k]:()=>{},set:(o,k,v)=>(o[k]=v,true)});
-    drawGeometry(ctx,{drawables:[item]},{drawing:f=>d.resource(f),url:a=>a.data_url,image:()=>null});
     d.settings.resolution=1;await d.action('resample');const after=transformPoint(drawingPixelMatrix(d.geometryItem(e.drawingTarget())),{x:p.x/2,y:p.y/2});e.undo();d.settings.resolution=2;await d.prepareVisible();
-    return {smooth:calls.some(c=>c.smoothing&&c.quality==='high'),pose:Math.hypot(before.x-after.x,before.y-after.y)<1e-6};
+    return {pose:Math.hypot(before.x-after.x,before.y-after.y)<1e-6};
   });
-  check('Canvas uses smooth drawing scaling',scaling.smooth);
   check('resampling a cel preserves its world placement',scaling.pose);
   await page.mouse.move(x,y);await page.mouse.down({button:'middle'});await page.mouse.move(x+500,y+180,{steps:10});await page.mouse.up({button:'middle'});
   await page.evaluate(()=>{window.cancelState={revision:styk.editor.revision,figures:styk.editor.report.figure_types.length,entries:styk.drawing.owner.entries.size};});

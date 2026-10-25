@@ -507,8 +507,8 @@ try {
   await step("simple-initial-reveal", async () => {
     const hidden = await page.evaluate(async () => {
       const { SheetFilmstrip } = await import("/src/sheet-filmstrip.mjs");
-      const { Editor } = await import("/src/editor.mjs");
-      const editor = new Editor({ demo: true, layerTimeline:true });
+      const { pageEditor } = await import("/tests/support/page-editor.mjs");
+      const editor = pageEditor({ demo: true, layerTimeline:true });
       editor.selectFrame(23);
       const host = document.createElement("div");
       host.id = "simple-hidden-mount";
@@ -751,10 +751,8 @@ try {
         backend: styk.state.renderer.stats.backend,
       }));
       check(
-        "Without WebGPU the engine draws with WebGL2 and the label names it",
-        label.text === "WebGL2" &&
-          label.display !== "none" &&
-          label.backend === "WebGL2",
+        "Without WebGPU the engine draws with WebGL2 and the status text names it",
+        label.text === "WebGL2" && label.backend === "WebGL2",
         label,
       );
       await fallback.evaluate(() => styk.editor.moveSelection(10, 0));

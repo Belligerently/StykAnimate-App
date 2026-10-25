@@ -62,7 +62,7 @@ try {
   await page.locator('.audio-body').press('Control+y'); await settle();
 
   // Direct fade handles and visible volume controls are undoable, no dialogs needed.
-  await page.locator(`[data-clip="${id}"]`).click({position:{x:55, y:40}}); await settle();
+  await page.locator(`[data-clip="${id}"]`).click({position:{x:55, y:28}}); await settle();
   const fade = await page.locator(`[data-clip="${id}"] .audio-fadeIn`).boundingBox();
   await gesture({x:fade.x + 5, y:fade.y + 5}, {x:fade.x + 47, y:fade.y + 5}); await release();
   assert.equal((await state()).tracks[2].clips[0].fadeIn, .25);
@@ -96,7 +96,7 @@ try {
   const compact = await page.locator('.audio-body').evaluate(node => node.clientHeight);
   const wheelBox = await page.locator('.audio-body').boundingBox(); await page.mouse.move(wheelBox.x + 400, wheelBox.y + 40); await page.mouse.wheel(70, 0); await settle();
   const offsetBeforeExpand = await page.evaluate(() => styk.timeline.strip.scrollLeft); assert.ok(offsetBeforeExpand > 0);
-  await page.getByRole('button', {name:'Expand timeline', exact:true}).click(); await settle();
+  await page.locator('#expand-timeline').click(); await settle();
   const expanded = await page.locator('.audio-body').evaluate(node => node.clientHeight); assert.ok(expanded >= compact, `${compact} -> ${expanded}`);
   assert.equal(await page.evaluate(() => styk.timeline.strip.scrollLeft), offsetBeforeExpand, 'Expand preserves the timeline position');
   const focusPoint = await position(id, 35);

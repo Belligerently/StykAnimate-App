@@ -17288,26 +17288,26 @@
   },
   "errors.textDialog.chooseAFontSmallerThan32Mb": {
     "locations": [
-      "src/text-dialog.mjs:208",
-      "src/text-dialog.mjs:458"
+      "src/text-dialog.mjs:212",
+      "src/text-dialog.mjs:462"
     ],
     "context": "throw messageError(new Error(''), \"errors.textDialog.chooseAFontSmallerThan32Mb\", {});"
   },
   "errors.textDialog.noAccessibleOutlineFontsWereFoundOpenA": {
     "locations": [
-      "src/text-dialog.mjs:423"
+      "src/text-dialog.mjs:427"
     ],
     "context": "throw messageError(new Error(''), \"errors.textDialog.noAccessibleOutlineFontsWereFoundOpenA\", {});"
   },
   "errors.textDialog.textEditorClosed": {
     "locations": [
-      "src/text-dialog.mjs:525"
+      "src/text-dialog.mjs:529"
     ],
     "context": "request.reject(messageError(new DOMException('', \"AbortError\"), \"errors.textDialog.textEditorClosed\", {}));"
   },
   "errors.textDialog.theFontServiceDidNotReturnFontBytes": {
     "locations": [
-      "src/text-dialog.mjs:468"
+      "src/text-dialog.mjs:472"
     ],
     "context": "throw messageError(new Error(''), \"errors.textDialog.theFontServiceDidNotReturnFontBytes\", {});"
   },
@@ -30786,166 +30786,166 @@
   },
   "textDialog.alignment": {
     "locations": [
-      "src/text-dialog.mjs:125"
+      "src/text-dialog.mjs:129"
     ],
     "context": "<label>${messageHTML(\"textDialog.alignment\", {})}<select id=\"text-alignment\"><option value=\"left\" data-i18n=\"textDialog.left\">Left</option><option value=\"center"
   },
   "textDialog.applyChanges": {
     "locations": [
-      "src/text-dialog.mjs:130",
-      "src/text-dialog.mjs:505"
+      "src/text-dialog.mjs:134",
+      "src/text-dialog.mjs:509"
     ],
     "context": "<div class=\"text-authoring-footer\"><p id=\"text-error\" class=\"form-error\" role=\"alert\" hidden></p><div class=\"dialog-actions\"><button class=\"button\" data-text-cl"
   },
   "textDialog.applying": {
     "locations": [
-      "src/text-dialog.mjs:496"
+      "src/text-dialog.mjs:500"
     ],
     "context": "localizedText(this.$(\"create-text\"), \"textDialog.applying\", {});"
   },
   "textDialog.bold": {
     "locations": [
-      "src/text-dialog.mjs:124"
+      "src/text-dialog.mjs:128"
     ],
     "context": "<div class=\"text-control-row\"><label class=\"text-check\"><input id=\"text-bold\" type=\"checkbox\" ${o.bold ? \"checked\" : \"\"}>${messageHTML(\"textDialog.bold\", {})}</"
   },
   "textDialog.cancel": {
     "locations": [
-      "src/text-dialog.mjs:130"
+      "src/text-dialog.mjs:134"
     ],
     "context": "<div class=\"text-authoring-footer\"><p id=\"text-error\" class=\"form-error\" role=\"alert\" hidden></p><div class=\"dialog-actions\"><button class=\"button\" data-text-cl"
   },
   "textDialog.center": {
     "locations": [
-      "src/text-dialog.mjs:125"
+      "src/text-dialog.mjs:129"
     ],
     "context": "<label>${messageHTML(\"textDialog.alignment\", {})}<select id=\"text-alignment\"><option value=\"left\" data-i18n=\"textDialog.left\">Left</option><option value=\"center"
   },
   "textDialog.checkText": {
     "locations": [
-      "src/text-dialog.mjs:380"
+      "src/text-dialog.mjs:384"
     ],
     "context": "localizedText(this.$(\"text-preview-state\"), \"textDialog.checkText\", {});"
   },
   "textDialog.chooseAFont": {
     "locations": [
-      "src/text-dialog.mjs:479"
+      "src/text-dialog.mjs:483"
     ],
     "context": "localizedText(this.$(\"text-preview-state\"), \"textDialog.chooseAFont\", {});"
   },
   "textDialog.closeTextEditor": {
     "locations": [
-      "src/text-dialog.mjs:116"
+      "src/text-dialog.mjs:120"
     ],
     "context": "localizedMarkup(this.content, `<div class=\"dialog-head\"><h2 ${messageAttributes((figure ? \"textDialog.editText\" : \"textDialog.createText\"), (figure ? {} : {}))}"
   },
   "textDialog.createText": {
     "locations": [
-      "src/text-dialog.mjs:116",
-      "src/text-dialog.mjs:130",
-      "src/text-dialog.mjs:505"
+      "src/text-dialog.mjs:120",
+      "src/text-dialog.mjs:134",
+      "src/text-dialog.mjs:509"
     ],
     "context": "localizedMarkup(this.content, `<div class=\"dialog-head\"><h2 ${messageAttributes((figure ? \"textDialog.editText\" : \"textDialog.createText\"), (figure ? {} : {}))}"
   },
   "textDialog.editText": {
     "locations": [
-      "src/text-dialog.mjs:116"
+      "src/text-dialog.mjs:120"
     ],
     "context": "localizedMarkup(this.content, `<div class=\"dialog-head\"><h2 ${messageAttributes((figure ? \"textDialog.editText\" : \"textDialog.createText\"), (figure ? {} : {}))}"
   },
   "textDialog.embeddedOutlines": {
     "locations": [
-      "src/text-dialog.mjs:119"
+      "src/text-dialog.mjs:123"
     ],
     "context": "<label>${messageHTML(\"textDialog.font\", {})}<select id=\"text-font\" aria-label=\"Font\" data-i18n-aria-label=\"textDialog.font\">${figure ? `<option value=\"embedded\""
   },
   "textDialog.endColor": {
     "locations": [
-      "src/text-dialog.mjs:127"
+      "src/text-dialog.mjs:131"
     ],
     "context": "<div class=\"text-control-row\" hidden><label class=\"text-check\"><input id=\"text-gradient-enabled\" type=\"checkbox\" ${o.gradientColor ? \"checked\" : \"\"}>${messageHT"
   },
   "textDialog.familyOrStyle": {
     "locations": [
-      "src/text-dialog.mjs:121"
+      "src/text-dialog.mjs:125"
     ],
     "context": "<div id=\"text-installed-picker\" hidden><label>${messageHTML(\"textDialog.findAFont\", {})}<input id=\"text-font-search\" type=\"search\" placeholder=\"Family or style\""
   },
   "textDialog.familyStyleThisFaceSOutlinesWillBeEmbedded": {
     "locations": [
-      "src/text-dialog.mjs:288"
+      "src/text-dialog.mjs:292"
     ],
     "context": "localizedText(this.$(\"text-font-note\"), (embedded ? 'textDialog.fontfamilyExistingGlyphsStayUnchangedValue1ChooseAFont' : (face ? 'textDialog.familyStyleThisFac"
   },
   "textDialog.fill": {
     "locations": [
-      "src/text-dialog.mjs:126"
+      "src/text-dialog.mjs:130"
     ],
     "context": "<div class=\"text-control-row\"><label>${messageHTML(\"textDialog.fill\", {})}<input id=\"text-color\" type=\"color\" value=\"${hex(o.color)}\"></label><label>${messageHT"
   },
   "textDialog.findAFont": {
     "locations": [
-      "src/text-dialog.mjs:121"
+      "src/text-dialog.mjs:125"
     ],
     "context": "<div id=\"text-installed-picker\" hidden><label>${messageHTML(\"textDialog.findAFont\", {})}<input id=\"text-font-search\" type=\"search\" placeholder=\"Family or style\""
   },
   "textDialog.font": {
     "locations": [
-      "src/text-dialog.mjs:119"
+      "src/text-dialog.mjs:123"
     ],
     "context": "<label>${messageHTML(\"textDialog.font\", {})}<select id=\"text-font\" aria-label=\"Font\" data-i18n-aria-label=\"textDialog.font\">${figure ? `<option value=\"embedded\""
   },
   "textDialog.fontAccessWasNotGrantedYouCanStill": {
     "locations": [
-      "src/text-dialog.mjs:429"
+      "src/text-dialog.mjs:433"
     ],
     "context": "? interfaceText(\"textDialog.fontAccessWasNotGrantedYouCanStill\")"
   },
   "textDialog.fontfamilyExistingGlyphsStayUnchangedValue1ChooseAFont": {
     "locations": [
-      "src/text-dialog.mjs:288"
+      "src/text-dialog.mjs:292"
     ],
     "context": "localizedText(this.$(\"text-font-note\"), (embedded ? 'textDialog.fontfamilyExistingGlyphsStayUnchangedValue1ChooseAFont' : (face ? 'textDialog.familyStyleThisFac"
   },
   "textDialog.gradient": {
     "locations": [
-      "src/text-dialog.mjs:127"
+      "src/text-dialog.mjs:131"
     ],
     "context": "<div class=\"text-control-row\" hidden><label class=\"text-check\"><input id=\"text-gradient-enabled\" type=\"checkbox\" ${o.gradientColor ? \"checked\" : \"\"}>${messageHT"
   },
   "textDialog.installedFont": {
     "locations": [
-      "src/text-dialog.mjs:121"
+      "src/text-dialog.mjs:125"
     ],
     "context": "<div id=\"text-installed-picker\" hidden><label>${messageHTML(\"textDialog.findAFont\", {})}<input id=\"text-font-search\" type=\"search\" placeholder=\"Family or style\""
   },
   "textDialog.installedFonts": {
     "locations": [
-      "src/text-dialog.mjs:120"
+      "src/text-dialog.mjs:124"
     ],
     "context": "<div class=\"text-font-tools\"><button class=\"button\" id=\"text-font-file-button\">${icon(\"folder\")}${messageHTML(\"textDialog.openFont\", {})}</button><button class="
   },
   "textDialog.italic": {
     "locations": [
-      "src/text-dialog.mjs:124"
+      "src/text-dialog.mjs:128"
     ],
     "context": "<div class=\"text-control-row\"><label class=\"text-check\"><input id=\"text-bold\" type=\"checkbox\" ${o.bold ? \"checked\" : \"\"}>${messageHTML(\"textDialog.bold\", {})}</"
   },
   "textDialog.left": {
     "locations": [
-      "src/text-dialog.mjs:125"
+      "src/text-dialog.mjs:129"
     ],
     "context": "<label>${messageHTML(\"textDialog.alignment\", {})}<select id=\"text-alignment\"><option value=\"left\" data-i18n=\"textDialog.left\">Left</option><option value=\"center"
   },
   "textDialog.lineHeight": {
     "locations": [
-      "src/text-dialog.mjs:123"
+      "src/text-dialog.mjs:127"
     ],
     "context": "<div class=\"text-control-row\"><label><span id=\"text-size-label\" data-i18n=\"textDialog.sizePx\">Size · px</span><input id=\"text-size\" type=\"number\" min=\"1\" max=\"2"
   },
   "textDialog.livePreviewFit": {
     "locations": [
-      "src/text-dialog.mjs:129"
+      "src/text-dialog.mjs:133"
     ],
     "context": "</div><div class=\"text-authoring-preview\"><div class=\"text-preview-heading\"><span data-i18n=\"textDialog.livePreviewFit\">Live preview · Fit</span><span id=\"text-"
   },
@@ -30957,118 +30957,118 @@
   },
   "textDialog.newSpacingIsEstimatedFromTheEmbeddedGlyphs": {
     "locations": [
-      "src/text-dialog.mjs:371"
+      "src/text-dialog.mjs:375"
     ],
     "context": ".spacingEstimated ? \"textDialog.newSpacingIsEstimatedFromTheEmbeddedGlyphs\" : \"textDialog.textIsSavedAsVectorOutlinesAndStays\"), (figure._styk.textAuthoring"
   },
   "textDialog.notoSans4BundledStylesNoFontInstallation": {
     "locations": [
-      "src/text-dialog.mjs:288"
+      "src/text-dialog.mjs:292"
     ],
     "context": "localizedText(this.$(\"text-font-note\"), (embedded ? 'textDialog.fontfamilyExistingGlyphsStayUnchangedValue1ChooseAFont' : (face ? 'textDialog.familyStyleThisFac"
   },
   "textDialog.notoSansBundled": {
     "locations": [
-      "src/text-dialog.mjs:119"
+      "src/text-dialog.mjs:123"
     ],
     "context": "<label>${messageHTML(\"textDialog.font\", {})}<select id=\"text-font\" aria-label=\"Font\" data-i18n-aria-label=\"textDialog.font\">${figure ? `<option value=\"embedded\""
   },
   "textDialog.opacity": {
     "locations": [
-      "src/text-dialog.mjs:126"
+      "src/text-dialog.mjs:130"
     ],
     "context": "<div class=\"text-control-row\"><label>${messageHTML(\"textDialog.fill\", {})}<input id=\"text-color\" type=\"color\" value=\"${hex(o.color)}\"></label><label>${messageHT"
   },
   "textDialog.openFont": {
     "locations": [
-      "src/text-dialog.mjs:120"
+      "src/text-dialog.mjs:124"
     ],
     "context": "<div class=\"text-font-tools\"><button class=\"button\" id=\"text-font-file-button\">${icon(\"folder\")}${messageHTML(\"textDialog.openFont\", {})}</button><button class="
   },
   "textDialog.outlineColor": {
     "locations": [
-      "src/text-dialog.mjs:128"
+      "src/text-dialog.mjs:132"
     ],
     "context": "<div class=\"text-control-row\"><label>${messageHTML(\"textDialog.outlinePx\", {})}<input id=\"text-outline-width\" type=\"number\" min=\"0\" max=\"128\" step=\"any\" value=\""
   },
   "textDialog.outlinePx": {
     "locations": [
-      "src/text-dialog.mjs:128"
+      "src/text-dialog.mjs:132"
     ],
     "context": "<div class=\"text-control-row\"><label>${messageHTML(\"textDialog.outlinePx\", {})}<input id=\"text-outline-width\" type=\"number\" min=\"0\" max=\"128\" step=\"any\" value=\""
   },
   "textDialog.pivotStoresOutlinesWithoutTheOriginalFontSize": {
     "locations": [
-      "src/text-dialog.mjs:288"
+      "src/text-dialog.mjs:292"
     ],
     "context": "localizedText(this.$(\"text-font-note\"), (embedded ? 'textDialog.fontfamilyExistingGlyphsStayUnchangedValue1ChooseAFont' : (face ? 'textDialog.familyStyleThisFac"
   },
   "textDialog.portableVectorTextPreview": {
     "locations": [
-      "src/text-dialog.mjs:129"
+      "src/text-dialog.mjs:133"
     ],
     "context": "</div><div class=\"text-authoring-preview\"><div class=\"text-preview-heading\"><span data-i18n=\"textDialog.livePreviewFit\">Live preview · Fit</span><span id=\"text-"
   },
   "textDialog.preparing": {
     "locations": [
-      "src/text-dialog.mjs:129"
+      "src/text-dialog.mjs:133"
     ],
     "context": "</div><div class=\"text-authoring-preview\"><div class=\"text-preview-heading\"><span data-i18n=\"textDialog.livePreviewFit\">Live preview · Fit</span><span id=\"text-"
   },
   "textDialog.readingFont": {
     "locations": [
-      "src/text-dialog.mjs:478",
-      "src/text-dialog.mjs:486"
+      "src/text-dialog.mjs:482",
+      "src/text-dialog.mjs:490"
     ],
     "context": "if (this.$(\"text-preview-state\").getAttribute(\"data-i18n\") === \"textDialog.readingFont\")"
   },
   "textDialog.ready": {
     "locations": [
-      "src/text-dialog.mjs:369"
+      "src/text-dialog.mjs:373"
     ],
     "context": "localizedText(this.$(\"text-preview-state\"), \"textDialog.ready\", {});"
   },
   "textDialog.right": {
     "locations": [
-      "src/text-dialog.mjs:125"
+      "src/text-dialog.mjs:129"
     ],
     "context": "<label>${messageHTML(\"textDialog.alignment\", {})}<select id=\"text-alignment\"><option value=\"left\" data-i18n=\"textDialog.left\">Left</option><option value=\"center"
   },
   "textDialog.scale": {
     "locations": [
-      "src/text-dialog.mjs:278"
+      "src/text-dialog.mjs:282"
     ],
     "context": "localizedText(this.$(\"text-size-label\"), (unknownSize ? \"textDialog.scale\" : \"textDialog.sizePx\"), (unknownSize ? {} : {}));"
   },
   "textDialog.sizePx": {
     "locations": [
-      "src/text-dialog.mjs:123",
-      "src/text-dialog.mjs:278"
+      "src/text-dialog.mjs:127",
+      "src/text-dialog.mjs:282"
     ],
     "context": "<div class=\"text-control-row\"><label><span id=\"text-size-label\" data-i18n=\"textDialog.sizePx\">Size · px</span><input id=\"text-size\" type=\"number\" min=\"1\" max=\"2"
   },
   "textDialog.text": {
     "locations": [
-      "src/text-dialog.mjs:118"
+      "src/text-dialog.mjs:122"
     ],
     "context": "<label>${messageHTML(\"textDialog.text\", {})}<textarea id=\"text-content\" maxlength=\"16384\" spellcheck=\"false\"${descriptorAttributes(o, \"text\")}>${esc(o.text)}</t"
   },
   "textDialog.textIsSavedAsVectorOutlinesAndStays": {
     "locations": [
-      "src/text-dialog.mjs:129",
-      "src/text-dialog.mjs:371"
+      "src/text-dialog.mjs:133",
+      "src/text-dialog.mjs:375"
     ],
     "context": "</div><div class=\"text-authoring-preview\"><div class=\"text-preview-heading\"><span data-i18n=\"textDialog.livePreviewFit\">Live preview · Fit</span><span id=\"text-"
   },
   "textDialog.theTextWorkerStoppedReopenTheTextEditor": {
     "locations": [
-      "src/text-dialog.mjs:156"
+      "src/text-dialog.mjs:160"
     ],
     "context": "event.message || interfaceText(\"textDialog.theTextWorkerStoppedReopenTheTextEditor\"),"
   },
   "textDialog.updating": {
     "locations": [
-      "src/text-dialog.mjs:330"
+      "src/text-dialog.mjs:334"
     ],
     "context": "localizedText(this.$(\"text-preview-state\"), \"textDialog.updating\", {});"
   },

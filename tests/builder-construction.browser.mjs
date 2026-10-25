@@ -20,7 +20,7 @@ try {
  await p.keyboard.press('Control+z');await settle();assert.equal(await p.evaluate(()=>styk.editor.figure.segments.length),initial);
  await p.keyboard.press('Control+Shift+z');await settle();assert.equal(await p.evaluate(()=>styk.editor.figure.segments.length),initial+2);
  await p.mouse.click(rect.x+150,rect.y+140);await p.keyboard.press('Escape');assert.equal(await p.locator('#chain-controls').isVisible(),false);
- await p.locator('#builder-snap').click();assert.equal(await p.locator('#builder-snap').getAttribute('aria-pressed'),'false');await p.locator('#builder-snap').click();
+ await p.evaluate(()=>styk.workspace.dock('structure','left'));await settle();await p.locator('#builder-snap').click();assert.equal(await p.locator('#builder-snap').getAttribute('aria-pressed'),'false');await p.locator('#builder-snap').click();
  await p.locator('.builder-tree-row').first().click();await p.keyboard.down('Shift');await p.locator('.ui-quick [data-action=duplicate-segment]').click();await p.keyboard.up('Shift');
  await p.mouse.move(rect.x+380,rect.y+290);await settle();assert.equal(await p.locator('#overlay').evaluate(el=>el.style.cursor),'copy');
  await p.screenshot({path:'artifacts/builder-construction/duplicate.png'});

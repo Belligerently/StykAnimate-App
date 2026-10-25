@@ -43,7 +43,7 @@ async function drag(uid,id,target,{keys=[],button='left',cancel=false,name='drag
   for(const key of [...keys].reverse())await page.keyboard.up(key); await settle(); return route;
 }
 try {
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   await setup();
   const route=await drag(1,1,{x:420,y:260},{name:'joined-parent'});
   check('Joined child selection routes shared node to parent pose',route.kind==='pose'&&route.uid===1&&route.joint===0);
