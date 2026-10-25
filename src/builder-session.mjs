@@ -169,12 +169,8 @@ export class BuilderSession {
     if (this.typeId === null || !editor.report.figure_types.some(figure => figure.figure_type_id === this.typeId)) return;
     this._removeCreatedFigure(this.typeId);
   }
-  /** The creation of the figure left the history: its instances are deleted as the user's Delete does (the engine's command), and
-   * the definition stays in the library, unused. */
+  /** The creation of the figure left the history: its instances in every frame and its definition go, as one entry of the engine. */
   _removeCreatedFigure(typeId) {
-    const editor = this.editor, uids = editor.selectionFrame.objects.filter(object => object.figure_type_id === typeId).map(object => object.unique_id);
-    if (!uids.length) return;
-    editor.selectMany(uids);
-    editor.deleteSelection();
+    this.editor.discardNewFigure(typeId, {label: interfaceText("builderSession.discardNewFigure"), labelKey: "builderSession.discardNewFigure"});
   }
 }

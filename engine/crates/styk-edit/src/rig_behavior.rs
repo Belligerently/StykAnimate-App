@@ -483,6 +483,11 @@ fn merged(a: Option<&Value>, b: Option<&Value>) -> Obj {
     out
 }
 
+/// Whether a patch member is truthy as the editor's `if (patch[key])` reads it: a member set to `undefined` (args.rs) is not.
+fn given_member(value: &Value) -> bool {
+    !crate::args::is_undefined(value) && value.truthy()
+}
+
 /// A value an object spread would take keys from that the engine does not reproduce
 /// (strings and arrays spread their indices).
 fn spreads_indices(value: Option<&Value>) -> bool {
@@ -616,7 +621,7 @@ impl Editor {
         }
         for key in ["response", "angleLock", "anglePath", "weighted", "spatial"] {
             if let Some(value) = patch.get(key) {
-                if value.truthy() {
+                if given_member(value) {
                     r.set(key, Value::object(merged(r.get(key), Some(value))));
                 } else {
                     r.remove(key);
@@ -634,13 +639,13 @@ impl Editor {
             if !r.get("connector").is_some_and(Value::truthy) {
                 return Err(invalid("errors.editorRigConstraints.createAConnectorWithConnectJoints"));
             }
-            if !connector.truthy() {
+            if !given_member(connector) {
                 return Err(invalid("errors.editorRigConstraints.deleteTheConnectorToRemoveItOrReconnect"));
             }
             r.set("connector", Value::object(merged(r.get("connector"), Some(connector))));
         }
         if let Some(stretch) = patch.get("stretch") {
-            if stretch.truthy() {
+            if given_member(stretch) {
                 let span = r.get("connector").filter(|c| c.truthy()).and_then(|c| c.get("restLength")).filter(|v| !v.is_null()).cloned().or_else(|| segment.get("length").cloned()).unwrap_or(Value::Null);
                 let mut next = Obj::new();
                 next.set("restLength", span);
@@ -662,7 +667,7 @@ impl Editor {
             }
         }
         if let Some(follow) = patch.get("follow") {
-            if follow.truthy() {
+            if given_member(follow) {
                 let mut base = Obj::new();
                 base.set("mode", Value::str("stretch"));
                 base.set("influence", Value::Num(1.0));

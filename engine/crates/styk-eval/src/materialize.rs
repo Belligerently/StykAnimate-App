@@ -50,6 +50,17 @@ impl Transform {
     }
 }
 
+/// What a conversion has allocated so far: the definitions it made and the identities it gave. A conversion in slices
+/// (`Materializer::into_state`, `Materializer::resume`) carries it from one slice to the next.
+pub struct MaterializerState {
+    figures: Vec<Value>,
+    identities: Obj,
+    types: HashMap<(usize, u32), u32>,
+    signatures: HashMap<String, u32>,
+    next_type: u32,
+    next_uid: u32,
+}
+
 /// One conversion's definition and identity allocator. Reuse it across frames so
 /// a nested path keeps one UID and each imported definition is shared.
 pub struct Materializer<'a> {
@@ -78,6 +89,15 @@ impl<'a> Materializer<'a> {
         }
         let signatures = figures.iter().filter_map(|f| Some((signature(f), num(f, "figure_type_id")? as u32))).collect();
         Ok(Self { report, prepared, figures, identities: Obj::new(), types: HashMap::new(), signatures, next_type, next_uid })
+    }
+    /// The conversion carried on from `state`, over the same document.
+    pub fn resume(report: &'a Value, prepared: &'a Prepared, state: MaterializerState) -> Self {
+        let MaterializerState { figures, identities, types, signatures, next_type, next_uid } = state;
+        Self { report, prepared, figures, identities, types, signatures, next_type, next_uid }
+    }
+    /// What the conversion has allocated, to carry on with later.
+    pub fn into_state(self) -> MaterializerState {
+        MaterializerState { figures: self.figures, identities: self.identities, types: self.types, signatures: self.signatures, next_type: self.next_type, next_uid: self.next_uid }
     }
     pub fn figures(&self) -> &[Value] {
         &self.figures

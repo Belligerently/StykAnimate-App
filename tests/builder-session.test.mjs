@@ -292,3 +292,34 @@ test('discard survives session history eviction via the captured baseline', () =
   assert.deepEqual(editor.figure, beforeFigure);
   assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
 });
+
+test('a figure whose creation left the history is discarded from every frame and the library as one entry', () => {
+  const report = emptyDocument(), walker = report.figure_types[0];
+  report.keyframes = [0, 1].map(i => createFrame([createObject(walker, 1, 200 + 40 * i, 200)], 4));
+  const editor = ownedEditorFor({demo: false, layerTimeline: true, propertyChannels: true}, report);
+  editor.select(null);
+  const session = new BuilderSession(editor).begin();
+  editor.addSegment({type: 'line', start: {x: 100, y: 100}});
+  session.sync();
+  const typeId = session.typeId, uid = session.uid;
+  assert.ok(typeId !== null);
+  // The new figure is posed at a second key inside its cell as well, so that it lives in more than one frame of the layer.
+  editor.seek(2);
+  assert.equal(editor.updateObject({root_x: 330}), true);
+  const shows = () => editor._allSourceFrames().filter(frame => frame.objects.some(object => object.figure_type_id === typeId)).length;
+  assert.ok(shows() >= 2, 'the figure is in several frames');
+  const complete = JSON.stringify(editor.report), entries = editor._undo.length;
+  // What eviction leaves: the figure in the document and none of the entries that created it.
+  session._removeCreatedFigure(typeId);
+  assert.equal(shows(), 0, 'no frame holds an instance');
+  assert.ok(!editor.report.figure_types.some(f => f.figure_type_id === typeId), 'the definition left the library');
+  assert.ok(editor.report.figure_types.some(f => f.figure_type_id === walker.figure_type_id), 'the other figures stay');
+  assert.ok(editor.evaluatedFrame.objects.every(object => object.figure_type_id !== typeId));
+  assert.equal(editor.undoLabel, 'Discard new figure');
+  assert.equal(editor._undo.length, entries + 1, 'one entry');
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+  editor.undo();
+  assert.equal(JSON.stringify(editor.report), complete, 'one undo brings it back everywhere');
+  assert.ok(editor.report.figure_types.some(f => f.figure_type_id === typeId));
+  assert.ok(editor.evaluatedFrame.objects.some(object => object.unique_id === uid));
+});

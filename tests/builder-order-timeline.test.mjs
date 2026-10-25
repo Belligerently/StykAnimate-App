@@ -8,13 +8,15 @@ import {validateAnimationDocument,validateAnimationValue} from '../src/animation
 import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit,cancelNativePropertyEdit,getNativePropertyValue} from '../src/native-property-edit.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
 
-function fixture(layerTimeline, owned = true) {
+/** The app's configuration (the layer timeline) is the engine's: the editor is owned. A native timeline is the JavaScript editor's own. */
+function fixture(layerTimeline, owned = layerTimeline) {
   const report=emptyDocument(),figure=report.figure_types[0];
   figure.polyfills=[{polyfill_id:1,segment_ids:[0,1,2],color_rgb:[255,0,0],color_alpha:1,z_order:1.5}];
   report.keyframes=[0,1,2].map(()=>createFrame([1,2].map(uid=>createObject(figure,uid,uid*200,200)),10));
-  const e=owned?plainEditorFor({demo:false,propertyChannels:true,layerTimeline}, report):new Editor({demo:false,propertyChannels:true,layerTimeline}).load(report);
+  const e=(owned?ownedEditorFor:plainEditorFor)({demo:false,propertyChannels:true,layerTimeline}, report);
   e.select(1,0);return e;
 }
 const frameAt=(report,tick)=>{const row=timeline(report).findLast(row=>row.start<=tick);return evaluatedFrame(report,row.index,(tick-row.start)/row.count,tick);};
@@ -41,8 +43,7 @@ for(const layerTimeline of [false,true]) {
     assert.deepEqual(order(reopened.report,frameAt(reopened.report,10)),second);
   });
   test(`polygon and branch order preview, cancel and history are atomic (layerTimeline=${layerTimeline})`,()=>{
-    // session gap: a committed native order edit on a native timeline with property channels (layerTimeline=false) leaves the session's zIndex channel value different from the editor's
-    const e=fixture(layerTimeline,layerTimeline),base=current(e),definition=structuredClone(e.figure),history=e._undo.length;
+    const e=fixture(layerTimeline),base=current(e),definition=structuredClone(e.figure),history=e._undo.length;
     let token=beginNativePropertyEdit(e,'polygon_0_z_order');
     previewNativePropertyEdit(token,base.length);assert.equal(current(e).at(-1),'polygon:0');
     previewNativePropertyEdit(token,1);assert.equal(current(e)[0],'polygon:0');

@@ -89,6 +89,8 @@ pub(crate) enum Request {
     Reset,
     /// Recolouring (its label comes with the options).
     Recolor(Box<crate::recolor::Recolor>),
+    /// A pose property at one value (the label comes with the options; the entry says how many frames it changed).
+    Pose(crate::pose_value::Pose),
 }
 
 impl Request {
@@ -108,6 +110,7 @@ impl Request {
             Request::Align { .. } => "Align figures across frames",
             Request::Reset => "Reset poses across frames",
             Request::Recolor(_) => "Edit figure colors",
+            Request::Pose(_) => "Edit pose",
         }
     }
 }
@@ -337,6 +340,7 @@ fn validate(request: &Request, version: f64, canvas: [f64; 2], reference: Option
         Request::Detach => Kind::Detach,
         Request::Reset => Kind::Reset,
         Request::Recolor(recolor) => Kind::Recolor(recolor.clone()),
+        Request::Pose(pose) => Kind::Pose(pose.clone()),
         Request::Add { .. } => unreachable!("an insertion is not planned"),
     };
     let center = match request {
@@ -386,6 +390,8 @@ impl Editor {
                 })
             }
             "resetPoseInFrames" => self.apply_figure_range(Request::Reset, range_args(args, 0)),
+            "setPoseProperty" => crate::pose_value::Pose::validated(arg(0).as_str().unwrap_or(""), &arg(1), self.selection.uid, self.selection.joint)
+                .and_then(|pose| self.apply_figure_range(Request::Pose(pose), range_args(args, 2))),
             "bringToFront" => self.partition_layers(true),
             "sendToBack" => self.partition_layers(false),
             "moveSelectionLayer" => self.move_selection_layer(&arg(0)),
@@ -576,6 +582,19 @@ impl Editor {
         if plans.is_empty() {
             return Ok(outcome(&[], &[]));
         }
+        let label = if matches!(request, Request::Pose(_)) {
+            // The poses are ones the document may hold (`validateObjectChanges`); the entry says how many frames it changed.
+            for (_, planned) in &plans {
+                for object in objects_of(&planned.frame).iter().filter(|object| uid(object).is_some_and(|id| planned.changed.contains(&id))) {
+                    if let Some(figure) = self.figure_of(object) {
+                        crate::load::validate_object_pose(&self.report, object, &figure)?;
+                    }
+                }
+            }
+            format!("{label} in {} frames", plans.len())
+        } else {
+            label
+        };
         let selection = self.selection_state();
         let ticks: Vec<f64> = plans.iter().map(|(t, _)| t.tick).collect();
         let inserted: Vec<u32> = payload.as_ref().map(|p| p.order.clone()).unwrap_or_default();

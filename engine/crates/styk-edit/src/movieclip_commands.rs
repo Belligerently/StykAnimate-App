@@ -16,7 +16,7 @@ fn object(fields: &[(&str, Value)]) -> Value {
     }
     Value::object(o)
 }
-fn error(key: &str) -> EditError {
+pub(crate) fn error(key: &str) -> EditError {
     EditError::Invalid(format!("errors.editorMovieclips.{key}"))
 }
 pub(crate) fn allocate_type(report: &Value) -> f64 {
@@ -36,7 +36,7 @@ pub(crate) fn presence_of(mode: Option<Value>, speed: Option<Value>) -> Value {
     settings.set("speed", speed.unwrap_or(Value::Num(1.0)));
     presence(&Value::object(settings))
 }
-fn uses_presence(o: &Value) -> bool {
+pub(crate) fn uses_presence(o: &Value) -> bool {
     o.path(&["_stykMovieclip", "clock"]).and_then(Value::as_str) == Some("presence")
 }
 fn set_continuations(frame: &mut Obj, values: Vec<Value>) {
@@ -243,7 +243,7 @@ fn prune_retained(document: &mut Value, selected: &HashSet<u32>, layers: &HashSe
     }
 }
 
-fn materialize_error(error: styk_eval::records::Error) -> EditError {
+pub(crate) fn materialize_error(error: styk_eval::records::Error) -> EditError {
     match error {
         styk_eval::records::Error::Unported(reason) => EditError::Unported(reason),
         styk_eval::records::Error::Invalid(reason) => EditError::Invalid(reason),
@@ -662,59 +662,9 @@ impl Editor {
         self.break_apart_movieclip_with(None)
     }
 
-    /// `await bakeMovieclip`: explicit durable-worker tool entry only. Sampling
-    /// borrows the one Records/materializer owner; publication is the existing
-    /// expansion callback inside the host's prepared transaction.
-    pub(crate) fn bake_movieclip_worker(&mut self, worker: &mut crate::movieclip_planning::TimelineWorker<'_>) -> Result<Value, EditError> {
-        self.selected_movieclip()?;
-        self.commit_drag()?;
-        self.commit_animation_edit()?;
-        let (_, original, _) = self.selected_movieclip()?;
-        let previous = uid(&original).unwrap();
-        let playback = crate::movieclips::playback_settings(original.get("_stykMovieclip"));
-        let start = if uses_presence(&original) { 0.0 } else { num(&Value::object(playback.clone()), "start").unwrap_or(0.0) };
-        let total = crate::timeline::total_ticks(&crate::timeline::rows(&self.report));
-        let end = playback.get("end").and_then(Value::as_f64).unwrap_or(total).min(total);
-        if end - start > 5000.0 { return Err(error("bakeSupportsScenesUpTo5000Frames")); }
-        crate::movieclip_planning::budget(worker.max_source_bytes)?;
-        let report = self.report.clone();
-        let prepared = self.prepared()?;
-        let records = styk_eval::records::Records::new(&report, &prepared).map_err(materialize_error)?;
-        let mut materializer = styk_eval::materialize::Materializer::new(&report, &prepared).map_err(materialize_error)?;
-        let mut frames = Vec::new();
-        let mut count = 0usize;
-        let mut footprint = (0, 0, 0);
-        let mut last = (worker.clock)();
-        let mut tick = start;
-        while tick < end {
-            (worker.check)()?;
-            let sampled = records.evaluated_with(tick, true).map_err(materialize_error)?;
-            let frame = self.expand_movieclip_pose(&sampled, previous, &mut materializer)?;
-            count = count.saturating_add(objects_of(&frame).len());
-            if count > 250000 { return Err(error("bakeAShorterRangeForThisScene")); }
-            frames.push((tick, frame));
-            footprint = crate::movieclip_planning::memory(frames.iter().map(|(_, frame)| frame), worker.max_source_bytes, footprint)?;
-            let now = (worker.clock)();
-            if frames.len() % 8 == 0 || now - last > 6.0 || tick + 1.0 >= end {
-                (worker.progress)(crate::layer_planning::Progress {
-                    phase: "sampling", completed: frames.len(), total: (end - start).max(0.0).ceil() as usize,
-                    source_frames: frames.len(), object_poses: footprint.1, segment_values: footprint.2,
-                });
-                last = now;
-                (worker.check)()?;
-            }
-            tick += 1.0;
-        }
-        if frames.is_empty() { return Ok(Value::Bool(false)); }
-        let definitions = materializer.figures().to_vec();
-        let paths = materializer.identities().map(|(path, uid)| (uid, path.into())).collect();
-        (worker.check)()?;
-        self.publish_movieclip_expansion_with(frames, previous, (start, end), definitions, paths, "Bake animation", false, &original, Some(worker))
-    }
-
     /// `_expandMovieclipPose`: the SAME geometry and materializer owners are
     /// shared by one-frame break and the awaited worker bake.
-    fn expand_movieclip_pose(&self, frame: &Value, previous: u32, materializer: &mut styk_eval::materialize::Materializer<'_>) -> Result<Value, EditError> {
+    pub(crate) fn expand_movieclip_pose(&self, frame: &Value, previous: u32, materializer: &mut styk_eval::materialize::Materializer<'_>) -> Result<Value, EditError> {
         let source = if let Some(selected) = objects_of(frame).into_iter().find(|object| uid(object) == Some(previous)) {
             let scene = self.record_geometry(frame)?;
             let root = scene.objects.iter().find(|object| object.slot as f64 == num(&selected, "object_slot").unwrap()).map(|object| object.root).unwrap_or([num(&selected, "root_x").unwrap_or(0.0), num(&selected, "root_y").unwrap_or(0.0)]);
@@ -746,7 +696,7 @@ impl Editor {
     }
 
     /// SAME replacement Plan and publication owner for break and worker bake.
-    fn publish_movieclip_expansion_with(
+    pub(crate) fn publish_movieclip_expansion_with(
         &mut self, mut frames: Vec<(f64, Value)>, previous: u32, bounds: (f64, f64),
         definitions: Vec<Value>, paths: HashMap<u32, String>, label: &str, reuse_parts: bool,
         original: &Value, mut worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>,

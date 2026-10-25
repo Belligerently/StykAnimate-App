@@ -87,6 +87,8 @@ pub(crate) enum Kind {
     Delete,
     Detach,
     Reset,
+    /// A pose property at one value ([`crate::pose_value`]).
+    Pose(crate::pose_value::Pose),
 }
 
 #[derive(Clone, Debug)]
@@ -373,6 +375,9 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
     let slots: Vec<usize> = objects.iter().enumerate().filter(|(_, o)| uid(o).is_some_and(|u| uids.contains(&u))).map(|(slot, _)| slot).collect();
     if slots.is_empty() {
         return Ok(None);
+    }
+    if let Kind::Pose(pose) = &operation.kind {
+        return crate::pose_value::plan(context, frame, &slots, pose);
     }
     let selected: HashSet<usize> = slots.iter().copied().collect();
     let mut changes = Changes { objects: &objects, changes: BTreeMap::new(), order: Vec::new() };

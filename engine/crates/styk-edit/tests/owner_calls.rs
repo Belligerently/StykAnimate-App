@@ -144,3 +144,26 @@ fn a_member_set_to_undefined_is_absent_for_the_commands_that_do_not_read_it() {
     let plain = answer(&mut session, "updateProject", r#"[{"fps":25,"canvas_width":{"@undefined":true}}]"#);
     assert_eq!(plain.get("status").and_then(Value::as_str), Some("error"), "{plain:?}");
 }
+
+#[test]
+fn a_rig_member_set_to_undefined_is_taken_away_and_the_encoding_is_never_stored() {
+    let mut session = session("origin-angle-lock-layout-sheet");
+    let view = r#"{"encoded":true,"selectedUid":1,"selectedUids":[1],"selectedJoint":4}"#;
+    let rig = |session: &Session| session.report().get("figure_types").and_then(|f| f.item(0)).and_then(|f| f.get("segments").and_then(|s| s.item(4))).and_then(|s| s.get("_stykRig").cloned());
+    let set = call_with(&mut session, "setRigBehavior", r#"[{"response":{"mode":"rigid"},"orientation":"world"}]"#, view);
+    assert_eq!(set.get("status").and_then(Value::as_str), Some("ok"), "{set:?}");
+    assert!(rig(&session).unwrap().get("response").is_some());
+    // The editor deleted what a falsy member named: `undefined` is falsy as `null` is.
+    for member in ["response", "orientation"] {
+        let removed = call_with(&mut session, "setRigBehavior", &format!(r#"[{{"{member}":{{"@undefined":true}}}}]"#), view);
+        assert_eq!(removed.get("status").and_then(Value::as_str), Some("ok"), "{member}: {removed:?}");
+        assert!(rig(&session).and_then(|rig| rig.get(member).cloned()).is_none(), "{member} is gone");
+        assert!(!styk_doc::json::to_string(session.report()).contains("@undefined"), "{member} left the encoding in the document");
+    }
+    // A member inside a merged one: the old value of that member alone goes.
+    call_with(&mut session, "setRigBehavior", r#"[{"response":{"mode":"rigid","multiplier":2}}]"#, view);
+    let merged = call_with(&mut session, "setRigBehavior", r#"[{"response":{"multiplier":{"@undefined":true}}}]"#, view);
+    assert_eq!(merged.get("status").and_then(Value::as_str), Some("ok"), "{merged:?}");
+    assert_eq!(styk_doc::json::to_string(&rig(&session).unwrap().get("response").cloned().unwrap()), r#"{"mode":"rigid"}"#);
+    assert!(!styk_doc::json::to_string(session.report()).contains("@undefined"));
+}
