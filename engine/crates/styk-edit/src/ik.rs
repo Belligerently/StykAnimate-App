@@ -137,9 +137,10 @@ impl Editor {
         })
     }
 
-    /// `layerLocked(report, uid)` without focus locks, which the facade keeps in JavaScript.
+    /// `layerLocked(report, uid)`: the figure's layer is locked, or Focus and lock holds it.
     pub(crate) fn layer_locked(&self, uid: u32) -> bool {
-        matches!(self.report.path(&["_styk", "layers", "byId", &self.layer_of(uid), "locked"]), Some(Value::Bool(true)))
+        let layer = self.layer_of(uid);
+        crate::layer_focus::locked(matches!(self.report.path(&["_styk", "layers", "byId", &layer, "locked"]), Some(Value::Bool(true))), self.focus_lock.as_ref(), &layer)
     }
 
     /// The pinned limbs of the frame being edited as geometry solves them, by figure

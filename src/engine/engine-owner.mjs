@@ -99,7 +99,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   /** How many `movieclipBatch` operations the owner is running: the session records them as one entry. */
   let batches = 0;
 
-  const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
+  const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])], layerFocusLock: editor.layerFocusLock(), // the layers Focus and lock leaves free: the session locks the rest for the call
     selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey), audioRipple: Boolean(editor.audioRipple),
     sheetSelection: editor._sheetSelection ? {id: editor._sheetSelection.id, contents: Boolean(editor._sheetSelection.contents)} : null,
     ...selectionMetadata(editor._selectionState())});
@@ -214,7 +214,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
       const before = posesBefore(), layers = new Set(Object.keys(editor.report._styk?.layers?.byId ?? {}));
       applyDocumentPatch(editor.report, answer.patch);
       refresh(answer.patch, before);
-      // A layer a call creates joins the layer focus the editor holds (the session knows no focus).
+      // A layer a call creates joins the layer focus the editor holds (the session left it free as it made it).
       editor._includeCreatedLayersInFocus(Object.keys(editor.report._styk?.layers?.byId ?? {}).filter(id => !layers.has(id)));
       editor._invalidate({timing: true});
     }

@@ -83,7 +83,7 @@ impl Editor {
         }
         let selected = uid(&instance).unwrap();
         let layer = self.layer_of(selected);
-        if self.report.path(&["_styk", "layers", "byId", &layer, "locked"]).is_some_and(Value::truthy) {
+        if self.track_locked(&layer) {
             return Err(EditError::Invalid("errors.editorMovieclips.unlockTheMovieclipLayerBeforeEditingIt".into()));
         }
         let frame = self.report.get("keyframes").and_then(|frames| frames.item(self.frame_index)).unwrap();

@@ -299,7 +299,7 @@ impl Editor {
         }
         let selected = uid(&instance).unwrap();
         let id = self.layer_of(selected);
-        if self.report.path(&["_styk", "layers", "byId", &id, "locked"]).is_some_and(Value::truthy) {
+        if self.track_locked(&id) {
             return Err(error("unlockTheMovieclipLayerBeforeEditingIt"));
         }
         (worker.check)()?;

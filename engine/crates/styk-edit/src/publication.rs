@@ -393,7 +393,7 @@ impl GuardedPublication<'_> {
         // Loader deliberately permits partial typed views. The existing Plan
         // owner checks the raw required layer/track/key descriptors; do not
         // fabricate a second shape validator or change legacy Editor loading.
-        crate::layer_planning::checked_plan(report, &[], 0)?;
+        crate::layer_planning::checked_plan(report, &[], 0, None)?;
         Ok(GuardedTypedCache { report, loader, prepared })
     }
     /// Constant head exchange; retains all displaced payloads in the return.

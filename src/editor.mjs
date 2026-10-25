@@ -304,7 +304,8 @@ export class Editor extends EventTarget {
 
 Object.assign(Editor.prototype, editorSpatialMethods);
 Object.assign(Editor.prototype, editorSelectionMethods);
-Object.assign(Editor.prototype, editorLayerMethods, editorLayerFocusMethods);
+Object.assign(Editor.prototype, editorLayerMethods);
+Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorLayerFocusMethods));
 Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorAnimationMethods));
 Object.assign(Editor.prototype, editorFrameMethods);
 Object.assign(Editor.prototype, editorIKMethods);

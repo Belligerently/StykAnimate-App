@@ -21,7 +21,7 @@ const SHARED_KEYS = new Set([
   // configuration
   'historyLimit', 'historyBytes', 'propertyChannels', 'layerTimeline', 'autoKey',
   // counters that stay monotonic across every document
-  '_revisionSerial', '_loadRequestId', '_layerRevision', '_definitionRevision',
+  '_revisionSerial', '_loadRequestId', '_layerRevision', '_layerFocusRevision', '_definitionRevision',
   // the engine owner's view of the frame on show, which follows whichever document is open
   '_shown',
   // clipboards

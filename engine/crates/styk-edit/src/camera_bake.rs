@@ -168,7 +168,7 @@ impl Editor {
     /// `bakeCameraMotion({start, end})`: the camera motion clips become keys of the camera track over the range
     /// (the whole animation by default, at most 100000 frames), and the clips are silenced there.
     pub(crate) fn bake_camera_motion(&mut self, options: &Value) -> Result<bool, EditError> {
-        if self.report.path(&["_styk", "layers", "fixed", "camera", "locked"]).is_some_and(Value::truthy) {
+        if self.track_locked("camera") {
             return Err(invalid("errors.editorCameraMotion.unlockCameraBeforeEditingMotion"));
         }
         if !self.sheet() {

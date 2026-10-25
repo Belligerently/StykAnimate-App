@@ -57,9 +57,7 @@ test('Focus and lock preserves saved locks, visibility, history and source repor
   assert.equal(editor.getLayer('layer-3').visible, false);
 });
 
-// The session's commands know only the layers' saved locks, not the focus (the editor's own): see the engine session's `layer_locked`.
-const SESSION_IGNORES_FOCUS = 'the engine session does not refuse edits to layers locked by Focus and lock yet';
-test('temporary locks reject off-focus sheet edits before publication', {todo: SESSION_IGNORES_FOCUS}, () => {
+test('temporary locks reject off-focus sheet edits before publication', () => {
   const editor = ownedEditorFor({demo: false, layerTimeline: true}, fixture().report); editor.createDrawingLayer('Sketch'); editor.select(1); editor.markSaved();
   editor.setLayerFocus(['layer-1', 'layer-2'], {lock: true});
   const before = editor.serialize(), history = editor._undo.length;
@@ -88,7 +86,7 @@ test('connected, branch, same-definition, invert and marquee selection respect t
   editor.selectMarquee([2, 3], {mode: 'add'}); assert.deepEqual([...editor.selectedUids], [1]);
 });
 
-test('posing a focused parent cannot commit changes to an off-focus joined attachment', {todo: SESSION_IGNORES_FOCUS}, () => {
+test('posing a focused parent cannot commit changes to an off-focus joined attachment', () => {
   const editor = fixture({joined: true}); editor.setLayerFocus(['layer-1'], {lock: true}); editor.select(1, 0);
   const before = editor.serialize(), history = editor._undo.length;
   editor.beginDrag('Rotate parent'); editor.rotateJoint(.2);
@@ -209,4 +207,40 @@ test('folder filtering reveals matching descendants and keeps empty folders avai
   assert.deepEqual(organizeTimelineRows(rows, '', new Set(['layer-3'])).map(row => row.id), ['camera', 'folder-2', 'layer-3']);
   assert.deepEqual(organizeTimelineRows(rows, 'empty').map(row => row.id), ['camera', 'folder-2']);
   assert.deepEqual(organizeTimelineRows(rows), rows);
+});
+
+test('the engine session holds what Focus and lock holds, and nothing once the lock is off', () => {
+  const editor = fixture(), before = editor.serialize(), history = editor._undo.length;
+  // An edit that is made and taken back, so the next check starts from the same document.
+  const insert = id => { const depth = editor._undo.length; editor.sheetInsertKey([id], 3); while (editor._undo.length > depth) editor.undo(); };
+  assert.equal(editor.layerFocusLock(), null);
+  editor.setLayerFocus(['layer-1', 'layer-2']); assert.equal(editor.layerFocusLock(), null, 'a focus that only filters holds nothing');
+  assert.doesNotThrow(() => insert('layer-3'));
+  editor.setLayerFocus(['layer-1', 'layer-2'], {lock: true}); assert.deepEqual(editor.layerFocusLock(), ['layer-1', 'layer-2']);
+  assert.throws(() => insert('layer-3'), /Unlock Reference/);
+  assert.doesNotThrow(() => insert('layer-2'));
+  editor.clearLayerFocus(); assert.equal(editor.layerFocusLock(), null);
+  assert.doesNotThrow(() => insert('layer-3'));
+  assert.deepEqual(editor.serialize(), before); assert.equal(editor._undo.length, history);
+});
+
+test('a saved lock and a focus lock refuse the same edit the same way', () => {
+  const saved = fixture(), focused = fixture();
+  saved.setLayerLocked('layer-3', true); focused.setLayerFocus(['layer-1', 'layer-2'], {lock: true});
+  const message = (editor, edit) => { try { edit(editor); } catch (error) { return error.message; } return null; };
+  for (const edit of [e => e.sheetInsertKey(['layer-3'], 3), e => e.assignFiguresToLayer([1], 'layer-3'), e => e.deleteLayer('layer-3'),
+    e => e.scaleFiguresInFrames(2, undefined, {uids: [3], atPlayhead: true})])
+    assert.equal(message(focused, edit), message(saved, edit)), assert.match(message(focused, edit), /Unlock Reference/);
+  assert.equal(focused.getLayer('layer-3').savedLocked, false);
+});
+
+test('Focus changes never write the layer revision, which the engine session counts, so no key stands for two states', () => {
+  const editor = fixture(), keys = [editor.layerViewKey], revision = editor.layerRevision;
+  editor.setLayerFocus(['layer-1'], {lock: true}); keys.push(editor.layerViewKey);
+  assert.equal(editor.layerRevision, revision, 'the focus is not a change of the session\'s layers');
+  editor.renameLayer('layer-2', 'Renamed'); keys.push(editor.layerViewKey);
+  editor.clearLayerFocus(); keys.push(editor.layerViewKey);
+  editor.renameLayer('layer-3', 'Renamed too'); keys.push(editor.layerViewKey);
+  editor.setLayerFocus(['layer-1']); keys.push(editor.layerViewKey);
+  assert.equal(new Set(keys).size, keys.length, `${keys}`);
 });

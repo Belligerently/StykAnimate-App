@@ -478,7 +478,7 @@ Interface: stays in JS.
 | `src/drawing-pressure-curve.mjs` |  | stays |  |
 | `src/drawing-sliders.mjs` |  | stays |  |
 | `src/drawing-view.mjs` |  | stays |  |
-| `src/editor-layer-focus.mjs` |  | stays | view state of the layers' Focus and Lock: the editor's, the engine session knows no focus |
+| `src/editor-layer-focus.mjs` |  | stays | view state of the layers' Focus and Lock: the editor's; the owner sends it with every call and the session holds the layers outside it as locked (styk-edit/src/layer_focus.rs) |
 | `src/error-presentation.mjs` |  | stays |  |
 | `src/export-flow.mjs` |  | stays | export dialog and request |
 | `src/export-presets.mjs` |  | stays | export dialog and request |

@@ -177,7 +177,7 @@ impl Editor {
     /// `publish(editor, next, label)`: the new table, one history entry, the sheet lengthened
     /// to the last clip.
     pub(crate) fn publish_camera(&mut self, clips: Vec<Value>, label: &str) -> Result<bool, EditError> {
-        if self.report.path(&["_styk", "layers", "fixed", "camera", "locked"]).is_some_and(Value::truthy) {
+        if self.track_locked("camera") {
             return Err(invalid("errors.editorCameraMotion.unlockCameraBeforeEditingMotion"));
         }
         let mut table = Obj::new();

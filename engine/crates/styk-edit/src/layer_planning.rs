@@ -1,6 +1,6 @@
 //! Read-only layer-sheet migration, using the existing sheet Plan/source owner.
 use crate::{
-    EditError,
+    EditError, FocusLock,
     frame::{layer_of, objects_of},
     record::uid,
     sheet::{Plan, Write, constant, continuations, items, num, owned_frame_with},
@@ -18,6 +18,8 @@ pub struct Request<'a> {
     pub deleted_layer: Option<&'a str>,
     pub next_frame_identity: u64,
     pub max_source_bytes: usize,
+    /// The layers Focus and lock holds from the edit.
+    pub focus: Option<&'a FocusLock>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Progress {
@@ -66,7 +68,7 @@ fn known(report: &Value) -> HashSet<u32> {
     }
     result
 }
-pub(crate) fn checked_plan(report: &Value, ids: &[String], identity: u64) -> Result<Plan, EditError> {
+pub(crate) fn checked_plan(report: &Value, ids: &[String], identity: u64, focus: Option<&FocusLock>) -> Result<Plan, EditError> {
     let layers = report
         .path(&["_styk", "layers"])
         .cloned()
@@ -75,7 +77,7 @@ pub(crate) fn checked_plan(report: &Value, ids: &[String], identity: u64) -> Res
         let layer = layers
             .path(&[if crate::sheet::fixed(id) { "fixed" } else { "byId" }, id])
             .ok_or_else(|| invalid("errors.editorLayerSheet.theSelectedLayerNoLongerExists"))?;
-        if layer.get("locked").is_some_and(Value::truthy) {
+        if crate::layer_focus::locked(layer.get("locked").is_some_and(Value::truthy), focus, id) {
             return Err(crate::invalid_with("errors.editorLayerSheet.unlockBeforeEditingIt", vec![("name", Value::str(&crate::layers::layer_title(Some(&layers), id)))]));
         }
     }
@@ -400,6 +402,7 @@ pub fn sheet_layer_plan(
             id,
             request.next_frame_identity,
             request.max_source_bytes,
+            request.focus,
             &mut check,
             &mut progress,
             clock,
@@ -444,7 +447,7 @@ pub fn sheet_layer_plan(
     }
     let mut ids = vec![request.target_layer.to_string()];
     ids.extend(source_ids.clone());
-    let mut plan = checked_plan(report, &ids, request.next_frame_identity)?;
+    let mut plan = checked_plan(report, &ids, request.next_frame_identity, request.focus)?;
     for u in moved {
         plan.assign(u, request.target_layer);
     }
@@ -560,6 +563,7 @@ fn deletion(
     id: &str,
     identity: u64,
     maxbytes: usize,
+    focus: Option<&FocusLock>,
     check: &mut impl FnMut() -> Result<(), EditError>,
     progress: &mut impl FnMut(Progress),
     clock: fn() -> f64,
@@ -572,7 +576,7 @@ fn deletion(
             "errors.editorLayerSheet.sceneAndCameraCannotBeDeleted",
         ));
     }
-    let mut plan = checked_plan(report, &[id.into()], identity)?;
+    let mut plan = checked_plan(report, &[id.into()], identity, focus)?;
     let before_layers = layers.clone();
     let order: Vec<_> = items(layers.get("order"))
         .iter()

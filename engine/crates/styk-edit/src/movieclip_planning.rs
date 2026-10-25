@@ -3,7 +3,7 @@
 //! Direct editor/UI admission and the remaining presence-replacement options
 //! are deliberately outside these recorded planning prerequisites.
 use crate::{
-    EditError, Editor,
+    EditError, Editor, FocusLock,
     frame::{layer_of, objects_of},
     layer_planning::{Progress, SheetPlan, checked_plan},
     sheet::{Plan, Write, constant, items, key_at, num},
@@ -30,6 +30,7 @@ impl TimelineWorker<'_> {
                 uids: &editor.selection.uids,
                 next_frame_identity: editor.next_frame_identity,
                 max_source_bytes: self.max_source_bytes,
+                focus: editor.focus_lock.as_ref(),
             },
             &mut *self.check,
             &mut *self.progress,
@@ -55,6 +56,7 @@ impl TimelineWorker<'_> {
                 preserve_duration: false,
                 next_frame_identity: editor.next_frame_identity,
                 max_source_bytes: self.max_source_bytes,
+                focus: editor.focus_lock.as_ref(),
             },
             &mut *self.check,
             &mut *self.progress,
@@ -244,6 +246,8 @@ pub struct PreparationRequest<'a> {
     pub uids: &'a [u32],
     pub next_frame_identity: u64,
     pub max_source_bytes: usize,
+    /// The layers Focus and lock holds from the edit.
+    pub focus: Option<&'a FocusLock>,
 }
 pub struct ChannelsRequest<'a> {
     pub channels: &'a [Value],
@@ -251,6 +255,8 @@ pub struct ChannelsRequest<'a> {
     pub preserve_duration: bool,
     pub next_frame_identity: u64,
     pub max_source_bytes: usize,
+    /// The layers Focus and lock holds from the edit.
+    pub focus: Option<&'a FocusLock>,
 }
 pub(crate) fn memory<'a>(
     frames: impl ExactSizeIterator<Item = &'a Value>,
@@ -312,9 +318,11 @@ pub fn prepare_movieclips(
                 .uids
                 .iter()
                 .any(|u| layer_of(Some(&layers), *u) == *id)
-                && !layers
-                    .path(&["byId", id, "locked"])
-                    .is_some_and(Value::truthy)
+                && !crate::layer_focus::locked(
+                    layers.path(&["byId", id, "locked"]).is_some_and(Value::truthy),
+                    request.focus,
+                    id,
+                )
                 && items(report.path(&["_styk", "layerSheet", "tracks", id, "keys"]))
                     .iter()
                     .any(|key| key.get("sourceTick").is_some())
@@ -325,7 +333,7 @@ pub fn prepare_movieclips(
         return Ok(None);
     }
     budget(request.max_source_bytes)?;
-    let mut plan = checked_plan(report, &ids, request.next_frame_identity)?;
+    let mut plan = checked_plan(report, &ids, request.next_frame_identity, request.focus)?;
     let records = Records::new(report, prepared).map_err(EditError::from)?;
     let total: usize = ids
         .iter()
@@ -425,7 +433,7 @@ pub fn apply_channels(
             "errors.editorLayerSheet.selectALayer".into(),
         ));
     }
-    let mut plan = checked_plan(report, &ids, request.next_frame_identity)?;
+    let mut plan = checked_plan(report, &ids, request.next_frame_identity, request.focus)?;
     for id in &ids {
         ticks.extend(plan.keys(id).iter().filter_map(|key| num(key, "tick")));
     }
