@@ -2,7 +2,7 @@ import {messageError} from './localized-error.mjs';
 /** The segment values shown for the selected segment, and the text the segment-value dialog copies and pastes. The engine
  * session sets and pastes them (`setSegmentValues`, `pasteSegmentValues`).
  * help5-2/value_input.htm; static clipboard evidence is in artifacts/native-static/capslock-and-segment-values.md. */
-import {shortest} from './pivot/geometry.mjs';
+import {shortest} from './pivot/read-view.mjs';
 const DEG = 180 / Math.PI;
 const finite = value => { if (!Number.isFinite(value)) throw messageError(new Error(''), "errors.editorHandleCommands.positionValuesMustBeFinite", {}); return value; };
 

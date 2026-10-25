@@ -7,11 +7,10 @@ import {rigConstraintPlan} from '../src/rig-constraints.mjs';
 import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {getPivotHandles} from '../src/canvas-interactions.mjs';
-import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {rigSections,rigControlChange} from '../src/rig-controls.mjs';
 import {renderInspector} from '../src/inspector-kit.mjs';
+import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 const rigView=e=>renderInspector({kind:'joint',sections:rigSections(e)});
 
 const near=(a,b,t=1e-4)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
@@ -127,7 +126,7 @@ test('joined figures follow sliding joints',()=>{
 test('IK drives ordinary anchors; derived controls reject conflicting IK and unsupported Pivot exports',()=>{
   const e=editorFor('flexing-muscle');select(e,2);e.setNodeIK({enabled:true});e.poseJoint(400,180);const c=g(e).segments[2];point(c.end,g(e).joints.get(2));
   select(e,3);assert.throws(()=>e.setNodeIK({enabled:true}),/derived|driving/);
-  assert.throws(()=>materializePivotDocument(e.serialize()),/Pivot cannot preserve/);
+  assert.throws(()=>pivotDocument(e.serialize()),/Pivot cannot preserve/);
 });
 test('deep dependency chains compile and evaluate without recursive stack growth',()=>{
   const doc=rigExampleDocument('nested-curve-controls'),fig=doc.figure_types[0],template=fig.segments[3],count=5000;
@@ -218,7 +217,7 @@ for(const rig of RIG_EXAMPLES)test(`${rig.name}: native project and reusable fig
   const report=e.serialize(),baseline=poseSignature(e.geometry),container=await buildContainerV2(report,'styk'),decoded=(await decodeDocument(container,'styk')).document;
   validateScene(decoded);point(buildGeometry(decoded,decoded.keyframes[0]).objects.get(0).root,g(e).root);
   assert.deepEqual(poseSignature(buildGeometry(decoded,decoded.keyframes[0])),baseline);
-  const reusable=nativeFigureDocument(report,{figureUid:1});const file=await buildContainerV2(reusable,'stkz'),saved=(await decodeDocument(file,'stkz')).document;
+  const reusable=figureDocument(report,{figureUid:1});const file=await buildContainerV2(reusable,'stkz'),saved=(await decodeDocument(file,'stkz')).document;
   assert.deepEqual(poseSignature(buildGeometry(saved,saved.keyframes[0])),baseline);
   });
 

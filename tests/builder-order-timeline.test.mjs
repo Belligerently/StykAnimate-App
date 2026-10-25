@@ -6,8 +6,9 @@ import {builderDrawables} from '../src/editor-builder-style.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {validateAnimationDocument,validateAnimationValue} from '../src/animation-channels.mjs';
 import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit,cancelNativePropertyEdit,getNativePropertyValue} from '../src/native-property-edit.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
-import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
+import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 
 function fixture() {
@@ -57,7 +58,7 @@ test(`polygon and branch order preview, cancel and history are atomic`,()=>{
 test(`rendering and Pivot materialization preserve internal order`,()=>{
   const e=fixture();e.moveBuilderOrder({kind:'segment',index:0},'front');
   e.seek(10);e.moveBuilderOrder({kind:'polygon',index:0},'front');
-  const exported=materializePivotDocument(e.serialize());
+  const exported=pivotDocument(e.serialize());
   for(const tick of [0,5,9.999,10,20]) {
     const frame=frameAt(e.report,tick),expected=order(e.report,frame);
     assert.deepEqual(order(exported,frameAt(exported,tick)),expected);

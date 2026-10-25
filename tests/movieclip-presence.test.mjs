@@ -4,10 +4,10 @@ import {engineEditor, newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure,validatePlayback} from '../src/movieclips.mjs';
 import {presencePlayback,continuations} from '../src/movieclip-presence.mjs';
-import {evaluatedFrame,timeline,buildGeometry,movieclipPresenceIndex} from '../src/pivot/geometry.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
-import {nativeFigureDocument} from '../src/native-figure.mjs';
+import {evaluatedFrame, buildGeometry, movieclipPresenceIndex} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {movieclipInspector} from '../src/movieclip-ui.mjs';
+import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 
 function fixture({duration=12,clipDuration=8,fps=24,clipFps=24,empty=false}={}){
   const child=defaultFigure(),document={...emptyDocument(),fps:clipFps};
@@ -141,7 +141,7 @@ test('hidden layers and opacity do not pause authored membership',()=>{
 });
 
 test('portable imports use the new clock and legacy documents keep their saved clocks',()=>{
-  const e=fixture(),portable=nativeFigureDocument(e.report,{figureUid:7}),target=fixture({empty:true});target.seek(4);target.importFigure(portable);
+  const e=fixture(),portable=figureDocument(e.report,{figureUid:7}),target=fixture({empty:true});target.seek(4);target.importFigure(portable);
   assert.equal(target.object._stykMovieclip.clock,'presence');assert.equal(target.object._movieclipSample,0);assert.equal(target.totalTicks,12);
   const legacy=engineEditor();legacy.select(1);legacy.createMovieclip({start:3,end:12});const uid=legacy.selectedUid,before=phases(legacy,20,uid);
   const loaded=reopen(legacy);assert.deepEqual(phases(loaded,20,uid),before);
@@ -158,7 +158,7 @@ test('nested cropped movieclips retain source phase before and after entering th
 
 test('Pivot expansion agrees with every rendered frame after gaps and breaks',()=>{
   const e=fixture();e.sheetClearFrames(['layer-1'],2);e.seek(5);e.select(7);e.breakApartMovieclip();
-  const flat=materializePivotDocument(e.report);for(let t=0;t<12;t++)closeShape(shape(flat,t),shape(e,t));
+  const flat=pivotDocument(e.report);for(let t=0;t<12;t++)closeShape(shape(flat,t),shape(e,t));
 });
 
 test('large held scenes build a sparse clock once and reuse it while seeking',()=>{

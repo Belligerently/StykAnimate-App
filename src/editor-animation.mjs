@@ -2,7 +2,8 @@ import {messageError} from './localized-error.mjs';
 /** Authored animation metadata and bounded, undoable sparse-key operations. */
 import {composeAnimationChannels,animationChannels, animationEndTick, animationChannelId, findAnimationChannel, normalizeAnimationTarget,
   validateAnimationValue, animationPropertyValue, sampleAnimationChannel} from './animation-channels.mjs';
-import {buildGeometry, evaluatedFrame, nativeTimeline} from './pivot/geometry.mjs';
+import {buildGeometry, evaluatedFrame} from './pivot/geometry.mjs';
+import {nativeTimeline} from './pivot/read-view.mjs';
 import {previewBranchStyleAnimation,commitBranchStyleAnimation,cancelBranchStyleAnimation} from './editor-branch-style.mjs';
 
 import {keyEasing, assignKeyEasing, validateKeyEasing, inheritedKeyEasing} from './keyframe-easing.mjs';

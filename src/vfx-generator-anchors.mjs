@@ -10,7 +10,8 @@
  * fit return PENDING and the caller refines on later frames. Workers and export
  * use no budget, so their results are always exact. One instance per realm;
  * memory is bounded by entry count across all documents. */
-import {evaluatedFrame,timeline,buildGeometry,evaluationGeneration} from './pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry, evaluationGeneration} from './pivot/geometry.mjs';
+import {timeline} from './pivot/read-view.mjs';
 import {ikComponents} from './ik-joined.mjs';
 import {anchorFromGeometry} from './vfx-generators.mjs';
 

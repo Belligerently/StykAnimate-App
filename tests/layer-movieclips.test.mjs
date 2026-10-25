@@ -6,9 +6,9 @@ import {engineEditor} from './support/owned-editor.mjs';
 /** The editor the engine owns, on a layer sheet like the class above. */
 const layerEditor=(options={},document)=>engineEditor({...options,layerTimeline:true},document);
 import {movieclipAsset,movieclipTime,playbackSettings,validateMovieclipGraph} from '../src/movieclips.mjs';
-import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
-import {nativeFigureDocument} from '../src/native-figure.mjs';
+import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
+import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 
 
 const sample=(report,tick)=>{const rows=timeline(report);let i=0;while(i+1<rows.length&&rows[i+1].start<=tick)i++;return buildGeometry(report,evaluatedFrame(report,i,rows[i].count?(tick-rows[i].start)/rows[i].count:0,tick));};
@@ -61,12 +61,12 @@ test('Bake animation produces ordinary editable poses and one reversible command
 test('mirrored movieclips and their legacy export agree',()=>{
   const editor=layerEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:0,end:8});const uid=editor.selectedUid,old=sample(editor.report,0),root=editor.geometry.objects.get(editor.selectedSlot).root;
   editor.mirrorFigure();const mirrored=coordinates(sample(editor.report,0),uid),expected=coordinates(old,uid).map(s=>({...s,points:s.points.map(([x,y])=>[2*root.x-x,y])}));close(mirrored,expected);
-  const flat=materializePivotDocument(editor.report);assert.equal(sample(flat,0).drawables.length,old.drawables.length);
+  const flat=pivotDocument(editor.report);assert.equal(sample(flat,0).drawables.length,old.drawables.length);
 });
 
 test('portable movieclip imports restart and shared editing recovery retains the root project',()=>{
   const editor=layerEditor({propertyChannels:true});editor.select(1);const f=editor.createMovieclip({start:5,end:17});
-  const portable=nativeFigureDocument(editor.report,{figureUid:editor.selectedUid,tick:5}),other=layerEditor();other.seek(10);other.importFigure(portable);
+  const portable=figureDocument(editor.report,{figureUid:editor.selectedUid,tick:5}),other=layerEditor();other.seek(10);other.importFigure(portable);
   assert.equal(other.object._stykMovieclip.clock,'presence');assert.equal(other.object._movieclipSample,0);assert.equal(other.figure._styk.movieclip.duration,12);
   const parent=editor.report;editor.enterMovieclip(f.figure_type_id);editor.select(1);editor.moveSelection(7,0);
   const recovered=editor.movieclipProjectReport();assert.equal(recovered.keyframes.length,parent.keyframes.length);assert.equal(recovered.figure_types.at(-1)._styk.movieclip.document,editor.report);

@@ -1,11 +1,8 @@
 import { emptyDocument, createFrame, createObject } from "../src/demo.mjs";
 import { createLayerState } from "../src/layers.mjs";
 import { animationChannelId } from "../src/animation-channels.mjs";
-import {
-  timeline,
-  evaluatedFrame,
-  buildGeometry,
-} from "../src/pivot/geometry.mjs";
+import {evaluatedFrame, buildGeometry} from "../src/pivot/geometry.mjs";
+import {timeline} from "../src/pivot/read-view.mjs";
 import { cameraMatrix } from "../src/renderer-geometry.mjs";
 
 export const channel = (target, property, entries) => ({

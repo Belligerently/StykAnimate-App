@@ -307,6 +307,11 @@ impl EditScene {
         self.current.is_some()
     }
 
+    /// The frame the stage shows: the pose last received, converted.
+    pub fn frame(&self) -> Option<Arc<Frame>> {
+        self.current.as_ref().map(|pose| pose.frame.clone())
+    }
+
     /// Whether the last frame's generated effects are still being refined: some of their
     /// earlier anchors did not fit the frame's budget, so the next frame should be drawn
     /// again (`incomplete` batches in the editor).

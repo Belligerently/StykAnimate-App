@@ -1,7 +1,7 @@
 import {messageError} from './localized-error.mjs';
 import {drawingResourcesFor} from './drawing-resources.mjs';
 import {movieclipAsset, isMovieclip} from './movieclips.mjs';
-import {timeline} from './pivot/geometry.mjs';
+import {timeline} from './pivot/read-view.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 
 const clone=value=>structuredClone(value);

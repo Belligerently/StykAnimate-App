@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {composeAnimationChannels, validateAnimationDocument} from '../src/animation-channels.mjs';
-import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
-import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
+import {evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
+import {pivotDocument} from './support/engine-export.mjs';
 
 const target = {kind: 'figure', uid: 1};
 /** `edit(report)` changes the document before the engine opens it. */
@@ -62,7 +63,7 @@ test('invalid depth and continuous easing reject atomically, including persisted
 
 test('depth is identical in materialized Pivot output', () => {
   const e = fixture(); e.addAnimationKey(target, 'zIndex', 0, 2); e.addAnimationKey(target, 'zIndex', 10, -2);
-  const exported = materializePivotDocument(e.serialize());
+  const exported = pivotDocument(e.serialize());
   for (const tick of [0, 5, 9, 10, 20]) {
     const expected = order(sample(e.report, tick));
     assert.deepEqual(order(sample(exported, tick)), expected);

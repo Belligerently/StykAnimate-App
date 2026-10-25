@@ -52,6 +52,9 @@ impl Transform {
 
 /// One conversion's definition and identity allocator. Reuse it across frames so
 /// a nested path keeps one UID and each imported definition is shared.
+/// The largest object identity the editor allocates (`MAX_ALLOCATED_UID` of src/object-identity.mjs).
+const MAX_ALLOCATED_UID: f64 = 2_147_483_646.0;
+
 pub struct Materializer<'a> {
     report: &'a Value,
     prepared: &'a Prepared,
@@ -71,8 +74,10 @@ impl<'a> Materializer<'a> {
         let mut next_uid = 1u32;
         for frame in items(report.get("keyframes")).into_iter().chain(sources.into_iter().flat_map(|s| s.iter().map(|(_, f)| f.clone()))) {
             for object in items(frame.get("objects")) {
-                if let Some(id) = num(&object, "unique_id") {
-                    next_uid = next_uid.max((id as u32).checked_add(1).ok_or_else(|| Error::Unported("materialization exhausted native identities".into()))?);
+                // Pivot writes identities above 2^31: they stay as they are and never collide with the ones allocated here
+                // (`nextUidAfter` of src/object-identity.mjs).
+                if let Some(id) = num(&object, "unique_id").filter(|id| *id <= MAX_ALLOCATED_UID) {
+                    next_uid = next_uid.max(id as u32 + 1);
                 }
             }
         }

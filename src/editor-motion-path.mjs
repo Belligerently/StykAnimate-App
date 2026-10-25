@@ -7,7 +7,8 @@ import {captureSpatialIK} from './ik-spatial.mjs';
  * commits once through the same command shapes ordinary posing already records:
  * native object snapshots, a native keyframe split, animation-channel keys, or
  * a layer-sheet plan. */
-import {evaluatedFrame, timeline, buildGeometry, shortest, isStatic} from './pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry} from './pivot/geometry.mjs';
+import {timeline, shortest, isStatic} from './pivot/read-view.mjs';
 import {rotationEdits, resolveJoinSelection} from './pivot/structure.mjs';
 import {validateObjectChanges} from './pivot/model.mjs';
 import {cameraValues} from './editor-camera.mjs';

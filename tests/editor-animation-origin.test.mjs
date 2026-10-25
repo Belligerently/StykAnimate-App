@@ -4,13 +4,14 @@ import {fileURLToPath} from 'node:url';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {evaluatedFrame,timeline,buildGeometry} from '../src/pivot/geometry.mjs';
+import {evaluatedFrame, buildGeometry} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
 import {animationPropertyValue} from '../src/animation-channels.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
-import {materializePivotDocument,needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
 import {missingFixture} from './helpers/local-fixtures.mjs';
 import {roundTrip, exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
+import {pivotDocument, keepsStoredFrames} from './support/engine-export.mjs';
 const clone=structuredClone;
 /** `change(report)` writes into the document before it opens; `owned: false` leaves the editor to itself. */
 function fixture({authored=true,easing=false,joined=true,change,owned=true}={}){
@@ -64,16 +65,16 @@ for(const easing of [false,true])test(`Set Origin preserves dense curved native 
   for(let i=0;i<expected.length;i++)equalWorld(expected[i],shape(editor.report,i/10));
 });
 test('native-only reroot preserves nonlinear inbetweens without adding authored keys',()=>{
-  const editor=fixture({authored:false}),before=editor.serialize();editor.setOrigin(99);assert.equal(editor.animationChannels.length,0);assert.ok(needsPivotMaterialization(editor.report));
+  const editor=fixture({authored:false}),before=editor.serialize();editor.setOrigin(99);assert.equal(editor.animationChannels.length,0);assert.equal(keepsStoredFrames(editor),false);
   for(let i=0;i<=100;i++)equalWorld(shape(before,i/5),shape(editor.report,i/5));
 });
 function roundtrip(document,format){
   return roundTrip({document,format});
 }
 test('STYK retains editable pivots while native PIV bakes every displayed pose and cannot double-compose',async ()=>{
-  const editor=fixture(),before=editor.serialize();editor.setOrigin(99);const source=editor.serialize(),styk=await roundtrip(source,'styk'),native=await roundtrip(materializePivotDocument(source),'piv');
+  const editor=fixture(),before=editor.serialize();editor.setOrigin(99);const source=editor.serialize(),styk=await roundtrip(source,'styk'),native=await roundtrip(pivotDocument(source),'piv');
   assert.deepEqual(styk.figure_types[0]._styk.animationOrigin,source.figure_types[0]._styk.animationOrigin);assert.deepEqual(styk._styk.animation,source._styk.animation);
-  assert.equal(native.keyframes.length,21);assert.equal(needsPivotMaterialization(native),false);
+  assert.equal(native.keyframes.length,21);assert.equal(keepsStoredFrames(native), true);
   for(let tick=0;tick<=20;tick++){equalWorld(shape(before,tick),shape(styk,tick));equalWorld(shape(before,tick),shape(native,tick),.00035);}
   assert.deepEqual(editor.serialize(),source);
 });
@@ -103,7 +104,7 @@ test('native PIV retains tied segment and polygon paint order through required t
     figure.polyfills=[{polyfill_id:1,segment_ids:[0,7,99],color_rgb:[240,10,80],alpha_raw:0,z_order:1}];
   }});
   const expected=shape(editor.report,0).geometry.objects.get(0).drawables.map(item=>item.rgb);
-  editor.setOrigin(99);const native=await roundtrip(materializePivotDocument(editor.report),'piv');
+  editor.setOrigin(99);const native=await roundtrip(pivotDocument(editor.report),'piv');
   assert.deepEqual(shape(native,0).geometry.objects.get(0).drawables.map(item=>item.rgb),expected);
 });
 for(const authored of [false,true])test(`subsequent translated poses retain the preview and style edits retain their pivot (authored=${authored})`,()=>{

@@ -6,8 +6,9 @@ import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {easedProgress, cubicBezierProgress, keyEasing} from '../src/keyframe-easing.mjs';
 import {sampleAnimationChannel, validateAnimationDocument} from '../src/animation-channels.mjs';
-import {evaluatedNativeFrame, evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
-import {materializePivotDocument, needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
+import {evaluatedNativeFrame, evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {timeline} from '../src/pivot/read-view.mjs';
+import {pivotDocument, keepsStoredFrames} from './support/engine-export.mjs';
 
 const near = (actual, expected, epsilon = 1e-7) => assert.ok(Math.abs(actual - expected) < epsilon, `${actual} ≠ ${expected}`);
 const modes = ['auto', 'bezier', 'ease-in', 'ease-out', 'linear', 'constant'];
@@ -55,7 +56,7 @@ for (const interpolation of modes) test(`${interpolation}: scalar, native pose, 
     near(frame.objects.find(object => object.unique_id === 1).root_x, expected); near(frame.camera.x, expected);
     near(sample(editor.report, tick).objects.find(object => object.unique_id === 2).root_x, evaluatedNativeFrame(editor.report, 0, tick / 10).objects.find(object => object.unique_id === 2).root_x);
   }
-  const output = materializePivotDocument(editor.serialize());
+  const output = pivotDocument(editor.serialize());
   assert.equal(output.auto_easing, false);
   for (let tick = 0; tick < 10; tick++) {
     near(sample(output,tick).objects.find(object => object.unique_id === 1).root_x, 100 * easedProgress(easing,tick/10));
@@ -88,8 +89,8 @@ test('frame easing invalidates native descriptors and exports without authored c
   assert.equal(editor.nativePoseChannel(target).keys[0].interpolation,'ease-out');
   const expected = 100 * easedProgress({interpolation:'ease-out'},.5);
   near(sample(editor.report,5).objects.find(object => object.unique_id === 1).root_x,expected);
-  assert.equal(needsPivotMaterialization(editor.report),true);
-  const output = materializePivotDocument(editor.serialize());
+  assert.equal(keepsStoredFrames(editor.report), false);
+  const output = pivotDocument(editor.serialize());
   near(sample(output,5).objects.find(object => object.unique_id === 1).root_x,expected);
   assert.ok(output.keyframes.every(frame => !frame._styk?.easing));
   editor.undo(); assert.equal(editor.report.keyframes[0]._styk.easing,undefined);
@@ -171,7 +172,7 @@ test('Auto pose and scalar curves agree across a run and update neighbours after
   assert.notEqual(sample(editor.report,2).objects.find(o=>o.unique_id===1).root_x,before);
   editor.undo();near(sample(editor.report,2).objects.find(o=>o.unique_id===1).root_x,before);
   const saved=JSON.parse(JSON.stringify(editor.serialize()));validateAnimationDocument(saved);
-  const output=materializePivotDocument(saved);
+  const output=pivotDocument(saved);
   for(let tick=0;tick<=17;tick++) {
     const expected=sampleAnimationChannel(scalar,tick);
     near(sample(output,tick).objects.find(o=>o.unique_id===1).root_x,expected);
