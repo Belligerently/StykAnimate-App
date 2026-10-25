@@ -506,7 +506,7 @@ try {
   });
   await step("simple-initial-reveal", async () => {
     const hidden = await page.evaluate(async () => {
-      const { SimpleTimeline } = await import("/src/simple-timeline.mjs");
+      const { SheetFilmstrip } = await import("/src/sheet-filmstrip.mjs");
       const { Editor } = await import("/src/editor.mjs");
       const editor = new Editor({ demo: true, layerTimeline:true });
       editor.selectFrame(23);
@@ -515,7 +515,7 @@ try {
       host.style.cssText =
         "position:fixed;left:20px;top:60px;width:600px;height:205px;z-index:80;display:none!important";
       document.body.append(host);
-      const ui = new SimpleTimeline(host, editor);
+      const ui = new SheetFilmstrip(host, editor);
       window.hiddenSimpleTest = { host, ui, editor };
       return ui.revealPending && ui.strip.clientWidth === 0;
     });

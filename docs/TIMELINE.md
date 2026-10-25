@@ -1,6 +1,6 @@
 # Timeline interaction and verification
 
-Implementation: [timeline.mjs](../src/timeline.mjs). Reproduce the browser checks
+Implementation: [layer-timeline.mjs](../src/layer-timeline.mjs). Reproduce the browser checks
 with `node tests/timeline.browser.mjs` from the app directory. Current results are
 in [timeline-verification.json](../artifacts/timeline-verification.json).
 

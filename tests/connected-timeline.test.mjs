@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
-import {connectedTimelineGroups} from '../src/connected-timeline.mjs';
+import {connectedTimelineGroups} from './helpers/legacy-connected-timeline.mjs';
 
 test('temporary authored attachments do not merge independent timeline figures',()=>{
   const objects=[{unique_id:1,object_slot:0},{unique_id:2,object_slot:1,join:{target_object_slot:0}}];

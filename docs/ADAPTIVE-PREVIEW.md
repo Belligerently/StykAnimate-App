@@ -16,5 +16,5 @@ Animation settings offer fixed Normal (100%, the default), Medium (75%), Low (50
 
 ## Verification
 
-- `node --test tests/preview-image.test.mjs tests/preview-images.test.mjs tests/playback-resources.test.mjs tests/playback-raster-cache.test.mjs tests/preview-quality.test.mjs`: preview image decoding, the preview image owner, retained resource budgets and the quality levels.
+- `node --test tests/preview-image.test.mjs tests/preview-images.test.mjs tests/preview-quality.test.mjs`: preview image decoding, the preview image owner and the quality levels.
 - `node tests/preview-quality.desktop.mjs`: the quality ladder (resolution and edge sampling) on the engine's stage in Electron.
