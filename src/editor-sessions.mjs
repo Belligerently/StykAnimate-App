@@ -23,10 +23,10 @@ const SHARED_KEYS = new Set([
   // counters that stay monotonic across every document
   '_revisionSerial', '_loadRequestId', '_layerRevision', '_definitionRevision', '_frameDraftRevision',
   // services and listeners installed once
-  '_frameClipboardWorker', '_inbetweenPlanner', '_frameDraftListener', '_frameDraftEnabled',
+  '_inbetweenPlanner', '_frameDraftListener', '_frameDraftEnabled',
   // clipboards
   '_audioClipboard', '_cameraClipboard', '_cameraMotionClipboard', '_figureClipboard', '_selectionClipboard', '_sheetClipboard',
-  '_frameClipboard', '_frameClipboardCopyController', '_frameClipboardCopyPromise', '_segmentValuesClipboard',
+  '_segmentValuesClipboard',
   '_vfxClipClipboard', '_vfxClipClipboardValues', '_drawingPixelClipboard',
   // panel state and diagnostics
   '_vfxTimelineVisible', '_cameraInspectorTab', 'lastLoadTimings', 'lastInbetweenTimings',

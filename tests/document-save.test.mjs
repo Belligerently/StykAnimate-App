@@ -19,7 +19,7 @@ function app({browser = false} = {}) {
   // One open project: the list of open projects reports the editor's own state.
   const projects = {tabs: {activeId: 'project-1'}, summary: () => ({open: 1, unsaved: editor.dirty ? 1 : 0, unsavedName: editor.dirty ? editor.name : '', stamp: 0}),
     saveAll: async save => !editor.dirty || save()};
-  const hooks = {write: async () => {}, cleanup: async () => {}, picker: async () => {}, flushPreferences: async () => {}, flushSettings: async () => {}, flushClipboard: async () => {}, publish: async () => {}, close: async () => {}};
+  const hooks = {write: async () => {}, cleanup: async () => {}, picker: async () => {}, flushPreferences: async () => {}, flushSettings: async () => {}, publish: async () => {}, close: async () => {}};
   const desktop = browser ? null : {
     beginProjectWrite() {}, async deleteRecovery(target) {calls.cleared.push(target); await hooks.cleanup();},
     async setDocumentState(value) {await hooks.publish(value);},
@@ -37,7 +37,7 @@ function app({browser = false} = {}) {
     async writeNativeBlob(_desktop, _blob, {signal}) {calls.writes++; await hooks.write(); if (signal.aborted) throw new DOMException('', 'AbortError'); calls.committed++; return true;},
     async runDocumentExport(_format, consume, {controller}) {return consume({}, controller.signal);},
     workspaceLayout: {flushPreferences: () => hooks.flushPreferences()},
-    editorSettings: {flush: () => hooks.flushSettings()}, nativeFrameClipboard: {flush: () => hooks.flushClipboard()},
+    editorSettings: {flush: () => hooks.flushSettings()},
   });
   const functions = vm.runInContext(`let savingDocument = false, lastSave = null, saveMutationEpoch = 0, finalizingDocument = false, recoveredEpoch = -1;\n${saveSource}\nfunction editorChanged(e) {${epochSource}}\n({saveNative, finishDocumentAction, saveEveryProjectThen, checkpoint: () => lastSave, emitChange: kind => editorChanged({detail: {kind}})})`, context);
   return {editor, state, calls, hooks, projects, ...functions};
@@ -84,7 +84,7 @@ test('failed native writing leaves work dirty and permits a later retry', async 
   a.hooks.write = async () => {}; assert.equal(await a.saveNative(), true);
 });
 
-for (const action of ['close', 'restartForUpdate']) for (const stage of ['flushPreferences', 'flushSettings', 'flushClipboard', 'publish']) {
+for (const action of ['close', 'restartForUpdate']) for (const stage of ['flushPreferences', 'flushSettings', 'publish']) {
   test(`${action} preserves an edit arriving during ${stage}`, async () => {
     const a = app(); assert.equal(await a.saveNative(), true);
     a.hooks[stage] = async () => {a.editor.revision++; a.editor.dirty = true;};

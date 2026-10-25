@@ -347,17 +347,17 @@ test('flipping, ordering, styling and deleting a selected branch or several join
   assert.equal(steps['delete leg'][0].undo, 'Delete segment branches');
 });
 
-test('copying a selected branch is the one call a selection still sends to the editor', {skip: !engineBuilt}, async () => {
+test('copying a selected branch is the one call a selection still sends to the editor, which hands the session what it copied', {skip: !engineBuilt}, async () => {
   const steps = await same(SHEET, walker(), (editor, call) => {
     call('select', () => editor.selectBranch(1, 4));
     call('copy', () => editor.copySelection());
-    // What the editor copied, the editor pastes.
+    // The session pastes what the editor copied: the clipboard is handed over, with the definition it extracted as a new one.
     call('paste', () => editor.pasteSelection());
     editor.selectBranch(1, 6);
     call('duplicate', () => editor.duplicateSelection());
     editor.selectBranch(1, 4);
     call('cut', () => editor.cutSelection());
-  }, {'copySelection: copySelection of a selected branch': 1, 'duplicateSelection: duplicateSelection of a selected branch': 1, 'cutSelection: cutSelection of a selected branch': 1}, 1);
+  }, {'copySelection: copySelection of a selected branch': 1, 'duplicateSelection: duplicateSelection of a selected branch': 1, 'cutSelection: cutSelection of a selected branch': 1});
   for (const name of ['paste', 'duplicate', 'cut']) assert.ok(steps[name][0].changed && !steps[name][0].error, name);
 });
 

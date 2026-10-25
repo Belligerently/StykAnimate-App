@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {Editor, emptyDocument} from '../src/editor.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {SharedClipboard, clipboardSnapshot, restoreClipboard, pasteSheetClipboard} from '../src/shared-clipboard.mjs';
 import {librarySnapshot} from '../src/library-files.mjs';
 import {libraryDragData, readLibraryDrag, LIBRARY_DRAG_TYPE} from '../src/library-drag.mjs';
@@ -12,9 +13,13 @@ function systemClipboard() {
   return {availableFormats: () => [...content.keys()], readBuffer: type => content.get(type),
     writeBuffer: (type, value) => { content = new Map([[type, Buffer.from(value)]]); }, clear: () => content.clear()};
 }
+/** An editor the engine owns, as the app has it: the session runs the copies and pastes, the editor shows the clipboards. */
 function instance(t, os) {
   const native = new NativeClipboard(os); t.after(() => native.dispose());
   const editor = new Editor({propertyChannels: true, layerTimeline: true});
+  const owner = installEngineOwner(editor);
+  t.after(() => { const {fallback, refused} = owner; owner.release(); assert.deepEqual(Object.keys(refused), [], 'the session refused nothing'); assert.equal(fallback, 0, 'no call ran in the editor'); });
+  assert.ok(owner.ready(), 'the document has its session');
   const desktop = Object.fromEntries([['beginSharedClipboardWrite','beginWrite'],['writeSharedClipboardChunk','write'],['finishSharedClipboardWrite','finish'],['beginSharedClipboardRead','beginRead'],['readSharedClipboardChunk','read'],['cancelSharedClipboardTransfer','cancel']].map(([name, method]) => [name, async (...args) => native[method](...args)]));
   return {editor, clipboard: new SharedClipboard(editor, desktop), native};
 }
@@ -69,7 +74,7 @@ test('filmstrip paste creates missing layers and restores all animation in one u
 test('wire transfers embedded media and movieclip definitions without dropping bytes', async t => {
   const os = systemClipboard(), a = instance(t, os), b = instance(t, os);
   a.editor.select(1); a.editor.createMovieclip({start: 0, end: 12});
-  a.editor.figure._styk.testAsset = 'data:image/png;base64,' + 'ABCD'.repeat(90000);
+  a.editor.figure._styk.testAsset = 'data:image/png;base64,' + 'ABCD'.repeat(90000); a.editor._drawingPublished(a.editor.figure);
   await a.clipboard.copy('figures', () => a.editor.copySelection());
   await b.clipboard.paste('figures', () => b.editor.pasteSelection());
   assert.equal(b.editor.figure._styk.movieclip.duration, 12);
@@ -150,12 +155,6 @@ test('document switch during a shared read does not modify the new clipboard or 
   b.clipboard.desktop.readSharedClipboardChunk = async token => { b.editor.load(emptyDocument()); return read(token); };
   await assert.rejects(b.clipboard.paste('figures', () => b.editor.pasteSelection()), {name: 'AbortError'});
   assert.equal(b.editor._selectionClipboard, undefined); assert.equal(b.native.jobs.size, 0);
-});
-
-test('native frame snapshots still round trip into another editor', async () => {
-  const a = new Editor(), b = new Editor(); a.copyFrames([0,1]);
-  await restoreClipboard(b, structuredClone(clipboardSnapshot(a, 'frames')));
-  assert.equal(b.clipboardFrameCount, 2); b.pasteFrames(); b.serialize();
 });
 
 for (const layers of [false, true]) test(`library drop placement preserves sets and one undo (layers=${layers})`, () => {

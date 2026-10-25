@@ -560,7 +560,7 @@ export function installFrameDraftPreflights(Editor) {
   const methods = {
     _topologyEdit: all, replaceFigureDefinition: all,
     duplicateFrame: all, duplicateFrames: all, insertBlankFrame: all, insertDuplicateFrames: all,
-    moveFrame: all, deleteFrames: all, reverseFrames: all, bakeFrames: all, pasteFrames: all, insertInbetweenFrames: all,
+    moveFrame: all, deleteFrames: all, reverseFrames: all, bakeFrames: all, insertInbetweenFrames: all,
     setFramesDuration: args => multi(args[0]),
     applyFigureRange: args => multi(args[1]?.indices) || multi(args[1]?.ticks),
     setSceneColor: args => multi(args[1]?.indices), setSceneBackground: args => multi(args[1]?.indices),

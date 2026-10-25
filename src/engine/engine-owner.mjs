@@ -20,6 +20,9 @@
  * its entries name the cel and the record of the interface's drawing store and history that hold the tiles, which
  * `engine-owner-drawing.mjs` applies around the call.
  *
+ * The clipboards the session's copies fill are shown in the editor's clipboard fields, which the interface reads and
+ * writes, and reach the session before the call that pastes them (`engine-clipboards.mjs`).
+ *
  * The editor's reads of the frame on show (`evaluatedFrame`, `geometry`, `timeline`) and a few of its own
  * (`SESSION_READS`) are answered by the session too, after the editor's pending edits reach it
  * (`engine-shown.mjs`, docs/engine/evaluation.md): the editor evaluates for itself only while it runs a
@@ -39,13 +42,12 @@ import {drawingResourcesFor} from '../drawing-resources.mjs';
 import {createOwnedDrawings, DRAWING_COMMITS} from './engine-owner-drawing.mjs';
 import {appBoundsMarker} from './engine-edit-bounds.mjs';
 import {createShown} from './engine-shown.mjs';
+import {createClipboards} from './engine-clipboards.mjs';
 
 /** The undo/redo answer when the entry to apply is the editor's own (external.rs). */
 const EXTERNAL_ENTRY = 'external history entry ';
 /** How many values of each kind a call that draws many identities is handed. */
 const MANY_DRAWS = 512;
-/** What the editor shows of a copied audio clip, which the session holds: the interface asks only whether there is one. */
-const AUDIO_COPIED = Object.freeze({inSession: true});
 /** The tables the read view tracks record by record. */
 const TABLES = ['figure_types', 'keyframes', 'backgrounds'];
 
@@ -69,14 +71,14 @@ const SESSION_COMMANDS = Object.freeze([
 /** Calls that read the document or the editor's state, open or close documents, or
  * configure the editor: never routed. */
 const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEvent', 'animationChannel', 'animationValue', 'canDisconnectSegment',
-  'drawingTarget', 'figurePalette', 'frameClipboardDocument', 'frameClipboardDocumentView', 'frameIndexForId', 'getCameraMotions',
+  'drawingTarget', 'figurePalette', 'frameIndexForId', 'getCameraMotions',
   'getFrameById', 'getFrameId', 'getIKSettings', 'getLayer', 'getLayerFigureUids', 'getLayerFocus', 'getLayerFolders', 'getLayers', 'getSpatialCamera',
   'getSpatialIKPole', 'getSpatialMotion', 'getSpatialPose', 'getSpatialProportions', 'getVfxClips', 'isFigureFocusLocked', 'isLayerFocusLocked',
   'layerForUid', 'layerFrameKeys', 'motionPathReport', 'movieclipProjectReport', 'nativePoseChannel', 'nativePropertyChannel',
   'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
   'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'sheetSpan', 'transaction',
   'load', 'loadAsync', 'newDocument', 'detachDocument', 'discardDocument', 'resumeDocument', 'handOverDocument', 'markSaved',
-  'setFrameClipboardWorker', 'restoreFrameClipboard', 'restoreFrameClipboardAsync', 'setInbetweenPlanner', 'enterMovieclip', 'leaveMovieclip',
+  'setInbetweenPlanner', 'enterMovieclip', 'leaveMovieclip',
   'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'touch', 'sheetEditTimes', 'deleteLayerAsync', 'assignFiguresToLayerAsync', 'undo', 'redo', 'constructor']);
 
 /** The editor's reads the session answers where it holds the document (`Editor::interface_query`): the values the interface
@@ -129,8 +131,6 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   const entries = new Map();
   /** Commands the editor recorded during the call it is running for the owner. */
   let captured = null;
-  /** Whether the figures last copied are the editor's (a copy the session refused): the session holds none to paste. */
-  let editorClipboard = false;
   /** Records the editor changed in place, as its change events name them. */
   let hints = null;
   /** The identity of every record when the session last had the same document. */
@@ -613,8 +613,11 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   /** What a call returns when its answer is a view the editor holds. */
   const resultOf = (name, answer) => {
     if (['duplicateFigure', 'addFigure', 'importFigure'].includes(name)) return editor.object;
-    if (name === 'pasteSelection' || name === 'duplicateSelection') return editor.selectedObjects;
+    // What was pasted is what is selected, unless nothing was (the session answers an empty list then).
+    if (name === 'pasteSelection' || name === 'duplicateSelection') return answer.result?.length === 0 ? [] : editor.selectedObjects;
     if (name === 'sheetAppendFrame') return editor.evaluatedFrame;
+    // The timeline's copy answers with the clipboard it filled, which the answer carried (the filmstrip and the shared clipboard take it as done).
+    if (name === 'sheetCopyFrames') return editor._sheetClipboard;
     if (name === 'beginAnimationEdit') return editor._animationEdit;
     if (name === 'beginVfxClipEdit') return undefined;
     if ((name === 'createLayer' || name === 'createDrawingLayer') && answer.result?.id) return editor.getLayer(answer.result.id);
@@ -724,10 +727,10 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     };
     try {
       result = spare.length ? withSpare(() => original.apply(editor, args)) : original.apply(editor, args);
+      clipboards.edited(name);
       // An asynchronous call is one unit until it settles: calls made meanwhile run here too.
       if (typeof result?.then === 'function') { unsettled = true; return result.finally(done); }
     } finally { if (!unsettled) done(); }
-    if ((name === 'copySelection' || name === 'cutSelection') && result) editorClipboard = true;
     return result;
   };
   const writeBack = recorded => {
@@ -772,7 +775,6 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     if (report.ms) report.ms.flush += performance.now() - flushed;
     // The session ends the edits it holds before a drawing's pixels are committed, as it does before a call the editor runs.
     if (drawing) endSessionEdits();
-    if (editorClipboard && name === 'pasteSelection') return runInEditor(name, original, args);
     // A clip takes the pixels its drawings' definitions carry: strokes not yet published would be left out of it.
     if (name === 'createMovieclip' && drawingResourcesFor(editor.report)?.stats.unpublished) throw messageError(new Error(''), 'errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip', {});
     // A gesture or edit the editor runs (the session refused to begin it) stays with the editor to its end.
@@ -782,17 +784,27 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       if (drawing) throw refuse(name, 'an edit the engine does not run is open');
       return runInEditor(name, original, args);
     }
+    // The clipboards the call pastes are the session's: the ones the interface wrote or another project copied reach it first.
+    clipboards.handOver(name, live, (kind, data, foreign) => {
+      const handing = JSON.stringify([kind, data, foreign]), handingView = JSON.stringify(view());
+      report.capture?.push({name: '@setClipboard', args: handing, view: handingView});
+      const handed = JSON.parse(live.call('@setClipboard', handing, handingView));
+      if (handed.status === 'error') throw failure(handed.error, handed.errorParams);
+      if (handed.status !== 'ok') throw new Error(`The engine did not take the ${kind} clipboard: ${handed.reason}`);
+    }, (holder, kind) => JSON.parse(holder.query('clipboard', JSON.stringify([kind]), 'null')).v);
     const payload = sessionPayload(args);
     if (payload === null) throw refuse(name, 'arguments that are not plain data');
     report.calls++;
     const timing = report.ms ??= {flush: 0, session: 0, parse: 0, adopt: 0, emit: 0};
     let mark = performance.now();
-    let viewText = JSON.stringify({...view(), patch: true, changesOnly: true, draws: pool(), drawPool: true});
+    // A paste says how often the figures were pasted, which sets where the next paste lands.
+    const pastes = name === 'pasteSelection' ? {figureClipboardPastes: true} : {};
+    let viewText = JSON.stringify({...view(), patch: true, changesOnly: true, draws: pool(), drawPool: true, ...pastes});
     report.capture?.push({name, args: payload, view: viewText});
     let text = live.call(name, payload, viewText);
     // A call that makes more identities than the pool holds (rippling the audio cuts many clips) changed nothing: it asks again with enough.
     if (text.includes('"unported"') && JSON.parse(text).reason?.startsWith('a call that draws more than the pool')) {
-      viewText = JSON.stringify({...view(), patch: true, changesOnly: true, draws: pool(MANY_DRAWS), drawPool: true});
+      viewText = JSON.stringify({...view(), patch: true, changesOnly: true, draws: pool(MANY_DRAWS), drawPool: true, ...pastes});
       text = live.call(name, payload, viewText);
     }
     const spent = performance.now() - mark;
@@ -819,9 +831,10 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     const drafted = answer.retained ? (editor._authoredPoseEdit?.frame ?? baseFrame()) : null;
     const kept = answer.retainedKept ? editor._evaluated : null;
     adoptState(answer);
+    if (answer.clipboard) clipboards.adopt(answer.clipboard, live);
+    if (answer.figureClipboardPastes) clipboards.pasted(answer.figureClipboardPastes);
     if (answer.drawingForks?.length) forkDrawings(answer.drawingForks);
     if (answer.status === 'ok' && (name === 'beginVfxClipEdit' || name === 'beginAnimationEdit')) mirrorEdit(name, answer);
-    if (answer.status === 'ok' && (name === 'copyAudioClip' || name === 'cutAudioClip')) editor._audioClipboard = AUDIO_COPIED;
     if (drafted && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, drafted); editor._geometry = null; editor._incremental = null; }
     else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
     if (!answer.retained && !answer.retainedKept) retainedShown = null;
@@ -833,9 +846,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     check();
     if (answer.status === 'error') { report.errors = (report.errors ?? 0) + 1; throw failure(answer.error, answer.errorParams); }
     report.native++;
-    const result = resultOf(name, answer);
-    if ((name === 'copySelection' || name === 'cutSelection') && result) editorClipboard = false;
-    return result;
+    return resultOf(name, answer);
   };
   /** `movieclipBatch(label, operation)`: the session records what `operation` does as one history entry. */
   const batchCall = (original, args) => {
@@ -933,6 +944,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   const listen = editor._emit;
   const layer = Object.create(Object.getPrototypeOf(editor));
   Object.setPrototypeOf(editor, layer);
+  // The clipboard fields the interface reads: a mirror of the session's, written through to it.
+  const clipboards = createClipboards(editor, layer, () => editor._documentToken);
   for (const name of new Set(methods)) {
     if (!editor[name] && SESSION_COMMANDS.includes(name)) sessionOnly.add(name);
     const original = editor[name] ?? (SESSION_COMMANDS.includes(name) ? withoutSession(name) : undefined);
@@ -1082,7 +1095,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   /** Whether the session holds the open document (starting it if it can). */
   report.ready = () => Boolean(ensure());
   report.session = () => session;
-  report.release = () => { session?.free(); session = null; document = null; for (const value of parked.values()) value.session.free(); parked.clear(); shown.release(); editor._shown = null; };
+  report.release = () => { session?.free(); session = null; document = null; for (const value of parked.values()) value.session.free(); parked.clear(); clipboards.release(); shown.release(); editor._shown = null; };
   // The editor reads the frame on show, its geometry and its timeline from the session.
   editor._shown = shown;
   return report;

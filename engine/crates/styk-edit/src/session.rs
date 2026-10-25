@@ -728,12 +728,15 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         } }
     } else { None };
     let called_ok = result.is_ok();
+    // A copy that copied something (`sheetCopyFrames` answers nothing): the interface keeps what was copied.
+    let copied = if called_ok { crate::clipboards::copied_kind(method).filter(|_| method == "sheetCopyFrames" || result.as_ref().is_ok_and(Value::truthy)) } else { None };
     match result {
         Ok(result) => {
             answer.push(("status", Value::str("ok")));
             // The facade returns these views from its adopted document. Repeating
             // their complete figure/frame data in the answer serves no purpose.
-            let adopted_view = changes_only && matches!(method, "duplicateFigure" | "addFigure" | "importFigure" | "pasteSelection" | "duplicateSelection" | "sheetAppendFrame");
+            // (A paste or a duplicate that made nothing answers an empty list, which the facade cannot read from its document.)
+            let adopted_view = changes_only && matches!(method, "duplicateFigure" | "addFigure" | "importFigure" | "pasteSelection" | "duplicateSelection" | "sheetAppendFrame") && result.array_len() != Some(0);
             answer.push(("result", if adopted_view { Value::Null } else { result }));
         }
         Err(EditError::Unported(what)) => {
@@ -756,6 +759,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     }
     if called_ok && std::mem::take(&mut editor.drawing_retired) {
         answer.push(("drawingRetired", Value::Bool(true)));
+    }
+    if let Some(kind) = copied && let Some(data) = editor.clipboard_answer(kind) {
+        answer.push(("clipboard", response_value(vec![("kind", Value::str(kind)), ("data", data)])));
     }
     let events = editor.take_events();
     let report = editor.report();

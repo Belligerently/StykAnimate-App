@@ -25,6 +25,7 @@ mod camera_commands;
 mod camera_motion;
 mod combine;
 mod camera_views;
+mod clipboards;
 mod figure_clipboard;
 mod figure_transform;
 mod external;
@@ -786,6 +787,7 @@ impl Editor {
             "@historyLimits" => return self.configure_history(args),
             "@markSaved" => return self.mark_saved(),
             "@drawingBytes" => return self.set_pixels_bytes(args),
+            "@setClipboard" => return self.set_clipboard(args),
             "@revisions" => return self.set_revisions(args),
             // A grouped edit (`movieclipBatch`) is bookkeeping around the edits it holds: no document gate applies.
             "beginBatch" => return self.begin_batch(args.first().and_then(Value::as_str).unwrap_or("")).map(|_| Value::Null),
@@ -1074,7 +1076,7 @@ impl Editor {
             "setCanvasSize" => self.set_canvas_size(&arg(0), &arg(1)).map(Value::Bool),
             "updateProject" => self.update_project(&arg(0)).map(Value::Bool),
             "copySelection" => match args.first().and_then(|o| o.get("wholeFigures")).is_some_and(Value::truthy) {
-                false => self.copy_selection(),
+                false => self.copy_selection(args.first().and_then(|o| o.get("inPlace")).is_some_and(Value::truthy)),
                 true => Err(EditError::Unported("copying whole figures of a branch selection".into())),
             },
             "cutSelection" => self.cut_selection(),
