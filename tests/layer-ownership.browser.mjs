@@ -33,7 +33,7 @@ try{
 
   if(process.argv[2]){
     await page.evaluate(()=>styk.editor.markSaved());
-    await page.locator('input[type=file]').first().setInputFiles(process.argv[2]);
+    await page.locator('#file-input').setInputFiles(process.argv[2]);
     await page.waitForFunction(()=>styk.editor.report.figure_types.some(f=>f._styk?.movieclip)&&styk.editor.report._styk.layers.order.length>=3,null,{timeout:120000});
     checks.suppliedFile=await page.evaluate(async()=>{
       const e=styk.editor,layer=e.layers.find(l=>l.kind==='layer'&&!e.getLayerFigureUids(l.id).length),figure=e.report.figure_types.find(f=>f._styk?.movieclip);

@@ -19,7 +19,7 @@ try {
     const figure = editor._shown.figureDocument({figureUid: 1, tick: 0});
     const figureSaved = new Uint8Array(await (await new DocumentExporter().export(editor.report, {format: 'stkz', figureUid: 1, tick: 0, revision: editor.revision})).arrayBuffer());
     editor.select(1);
-    const clip = editor.createMovieclip({start: 0, end: 12}), clipUid = editor.selectedUid;
+    const clip = editor.createMovieclip({start: 0, end: editor.totalTicks}), clipUid = editor.selectedUid;
     const files = {
       'project.styk': await buildContainerV2(structuredClone(editor.report), 'styk'),
       'figure.stkz': await buildContainerV2(figure, 'stkz'),
@@ -33,7 +33,7 @@ try {
     }
     importer.dispose();
     const exporter = new DocumentExporter();
-    const saved = new Uint8Array(await (await exporter.export(editor.report, {format: 'styk'})).arrayBuffer());
+    const saved = new Uint8Array(await (await exporter.export(editor.report, {format: 'styk', revision: editor.revision})).arrayBuffer());
     exporter.dispose();
     return {opened, clip: Boolean(clip && clipUid),
       savedMagic: new TextDecoder().decode(saved.subarray(0, 4)), savedVersion: saved[4],

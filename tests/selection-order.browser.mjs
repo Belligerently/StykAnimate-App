@@ -34,7 +34,7 @@ try {
   await page.goto(backend.origin);
   await page.waitForFunction(() => window.styk?.ready);
   if (external) {
-    await page.locator('input[type=file]').first().setInputFiles(path.resolve(external));
+    await page.locator('#file-input').setInputFiles(path.resolve(external));
     await page.waitForFunction(() => styk.editor.report.figure_types.some(f => f.name === 'Bren MK2 LMG'));
   } else await page.evaluate(async () => {
     const {emptyDocument, createFrame, createObject} = await import('/src/demo.mjs');
