@@ -507,6 +507,27 @@ mod tests {
         assert_eq!(refused, 24);
     }
 
+    /// A command's own draft finds the pivots of the figures it adds: a duplicate stands where it is drawn, and so does its pivot.
+    #[test]
+    fn a_duplicated_origin_figure_finds_its_pivot_where_it_stands() {
+        let bytes = fixture_bytes("origin-pose-support-sheet.document.json");
+        let mut editor = Editor::new(styk_doc::json::parse(&bytes).unwrap(), crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
+        editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();
+        // The identities the editor would hand over: the next one is past the document's last.
+        let state = editor.state();
+        editor.set_counters(state.layer_revision, state.next_frame_identity, 4);
+        editor.call("duplicateFigure", &[]).unwrap();
+        let objects = crate::frame::objects_of(&editor.shown_frame().unwrap());
+        let find = |id: f64| objects.iter().find(|object| num(object, "unique_id") == Some(id)).cloned().unwrap();
+        let (original, copy) = (find(1.0), objects.iter().find(|object| !matches!(num(object, "unique_id"), Some(1.0 | 2.0 | 3.0))).cloned().unwrap());
+        let pivot = |object: &Value, axis: &str| object.path(&["_stykAnimationOrigin", axis]).and_then(Value::as_f64).unwrap();
+        for (root, axis) in [("root_x", "x"), ("root_y", "y")] {
+            let moved = num(&copy, root).unwrap() - num(&original, root).unwrap();
+            assert!(moved != 0.0, "the copy stands elsewhere");
+            assert!((pivot(&copy, axis) - pivot(&original, axis) - moved).abs() < 1e-9, "{axis}");
+        }
+    }
+
     #[test]
     fn invalid_future_range_join_guard_is_atomic_and_never_panics() {
         use std::panic::{catch_unwind, AssertUnwindSafe};
