@@ -614,7 +614,8 @@ it on the editor, for every document.
   answers `targets` for `target`, and `initialValue` and `value` hold one number for each. `previewAnimationEdit`
   takes one number for every target or a list with one for each, composes them on the frame the edit began on, and
   `commitAnimationEdit` keys every target at the playhead as one `Edit layer pose` entry (draw orders hold: the key
-  they are written in is constant). The branch and draw-order gestures of `native-property-edit.mjs` are these calls.
+  they are written in is constant, whatever easing it had, and a bezier key written over keeps no curve; the
+  other keys keep theirs, `Plan::write`). The branch and draw-order gestures of `native-property-edit.mjs` are these calls.
 - **Motion-path edits.** `beginMotionPathEdit`…`setMotionPathFalloff` run in the session. Every
   answer carries `motionPath` (`null`, or how the open edit stands: whether it has moved and the
   ticks its trail changes, `range`, and a falloff's writes that moved). The call that opens it adds

@@ -359,7 +359,13 @@ impl Plan {
         key.set("empty", Value::Bool(empty));
         key.remove("sourceTick");
         if let Some(easing) = options.easing {
-            for (name, value) in key_easing(easing) {
+            // The easing replaces the key's: a curve it has stays where it was in the key, and one it has not does not stay beside a
+            // mode that has none (a held draw order written over a bezier key would be no valid key).
+            let fields = key_easing(easing);
+            if fields.iter().all(|(name, _)| *name != "bezier") {
+                key.remove("bezier");
+            }
+            for (name, value) in fields {
                 key.set(name, value);
             }
         }
