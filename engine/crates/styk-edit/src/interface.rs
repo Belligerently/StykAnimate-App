@@ -113,6 +113,25 @@ impl Editor {
         })
     }
 
+    /// The rectangle the figures `{uids}` paint at the playhead, a movieclip instance's content included, without the reach of their
+    /// effects: `[x, y, width, height]`, or `null` when they paint nothing. The effects gizmo measures a figure by it: the geometry the
+    /// interface holds of a movieclip instance is its handle alone (what it draws is the engine's).
+    pub(crate) fn interface_vfx_extent(&self, args: &Value) -> Result<String, EditError> {
+        let uids: Vec<f64> = args.get("uids").and_then(Value::numbers).ok_or_else(|| EditError::Invalid("an extent needs the identities of its figures".into()))?;
+        let prepared = self.prepared()?;
+        if let Some(feature) = prepared.doc.unsupported.first() {
+            return Err(EditError::Unported(format!("geometry with {feature}")));
+        }
+        let record = self.interface_record(false)?;
+        let frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
+        let slots: Vec<u32> = frame.objects.iter().enumerate().filter(|(_, object)| uids.contains(&f64::from(object.uid))).map(|(slot, _)| slot as u32).collect();
+        let scene = styk_eval::geometry::build(&prepared.doc, &frame);
+        Ok(match styk_eval::drawlist::objects_artwork_bounds(&scene, prepared.doc.as_ref(), &slots) {
+            Some(rect) => styk_doc::json::to_string(&Value::nums(&rect)),
+            None => "null".into(),
+        })
+    }
+
     /// The figures whose connected effects the figure `{uid}` filters together at the playhead (its `vfxScope`, or a clip that includes
     /// the attached parts, with an effect active): `{members: [uid, …]}`, the owner first and then the figures attached to it, or
     /// `null` when it owns no connected group (the effects gizmo measures the owner alone).
