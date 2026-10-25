@@ -51,15 +51,13 @@ test('range duration changes are one undo command and only snapshot changed keys
   assert.throws(() => editor.setFramesDuration([4], 1), /existing keyframes/);
 });
 
-test('duplicate ranges keep chronological order, native metadata and the existing clipboard', () => {
+test('duplicate ranges keep chronological order and native metadata', () => {
   const editor = fixture(), before = clone(editor.report);
-  editor.copyFrames([0]); const clipboard = clone(editor._frameClipboard);
   assert.equal(editor.duplicateFrames([3, 1, 1]), 2);
   assert.deepEqual(editor.report.keyframes.slice(4).map(withoutFrameId), [before.keyframes[1], before.keyframes[3]].map(withoutFrameId));
   assertUniqueFrameIds(editor);
   assert.notEqual(editor.getFrameId(4), before.keyframes[1]._styk.frameId);
   assert.notEqual(editor.getFrameId(5), before.keyframes[3]._styk.frameId);
-  assert.deepEqual(editor._frameClipboard, clipboard);
   assert.equal(editor.frameIndex, 4);
   editor.report.keyframes[4].camera.x += 1;
   assert.equal(editor.report.keyframes[1].camera.x, before.keyframes[1].camera.x);

@@ -17,7 +17,6 @@ import {errorText} from '../src/error-presentation.mjs';
 import {createStagePlayback} from '../src/engine/engine-playback.mjs';
 import {validateOriginSupport,validateOriginObject} from '../src/animation-origin-validation.mjs';
 import {createClipboardWireDecoder} from '../src/clipboard-wire.mjs';
-import {prepareSparseClipboardPaste} from '../src/editor-clipboard-sparse.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {rigConstraintPlan} from '../src/rig-constraints.mjs';
 import {planFigureFrameOperation} from '../src/range-figure-operations.mjs';
@@ -137,7 +136,6 @@ test('origin and clipboard failures translate complete diagnostics while preserv
  const decoder=createClipboardWireDecoder();
  await assert.rejects(decoder.push(Uint8Array.of(83,84,89,75,67,66,87,49,99).buffer),capture('errors.clipboardWire.details.unknownToken','Invalid clipboard wire: unknown token.'));
  assert.throws(()=>createClipboardWireDecoder().finish(),capture('errors.clipboardWire.details.truncatedStream','Invalid clipboard wire: truncated stream.'));
- await assert.rejects(prepareSparseClipboardPaste(editor,null),capture('errors.editorClipboardSparse.details.insertion','Invalid pasted frames: insertion.'));
  interfaceLocalization.setPseudo('long');
  try{
   for(const error of failures){

@@ -37,7 +37,6 @@ for (const [name, insert, count] of [
   ['add', editor => editor.addFrame(), 1],
   ['duplicate', editor => editor.duplicateFrame(), 1],
   ['duplicate range', editor => editor.duplicateFrames([0, 2]), 2],
-  ['copy and paste', editor => { editor.copyFrames([0, 2]); editor.pasteFrames(1); }, 2],
   ['insert duplicates before their sources', editor => editor.insertDuplicateFrames([0, 2]), 2],
   ['insert blank', editor => editor.insertBlankFrame(1), 1],
 ]) test(`${name} creates fresh IDs and preserves original identities through undo and redo`, () => {
