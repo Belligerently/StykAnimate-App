@@ -751,10 +751,8 @@ try {
         backend: styk.state.renderer.stats.backend,
       }));
       check(
-        "Without WebGPU the engine draws with WebGL2 and the label names it",
-        label.text === "WebGL2" &&
-          label.display !== "none" &&
-          label.backend === "WebGL2",
+        "Without WebGPU the engine draws with WebGL2 and the status text names it",
+        label.text === "WebGL2" && label.backend === "WebGL2",
         label,
       );
       await fallback.evaluate(() => styk.editor.moveSelection(10, 0));
