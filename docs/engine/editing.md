@@ -665,6 +665,8 @@ it on the editor, for every document.
   of a figure in that source, and the animation it retains, are edited with the figure (`Place::Retained`: a rig edit
   inside the clip changes them as it changes the clip's own poses, in the same `topology` entry). A clip on a native
   timeline (tools and tests) is edited by the editor. A project closed ends the sessions it holds, those of its clips too.
+  A movieclip made inside a clip retains the scene the outer clip retains cut down to its own figures (`prune_retained`: poses,
+  effect clips and imported animation, down the chain of `movieclipSource` documents).
 - **Working frames.** The interface never starts one on a layer sheet. `disableFrameDrafts` (the
   timeline mounting in Advanced mode) commits what is open and converts a draft a file was saved with when
   it is an Update (`frame_draft.rs`); `beginFrameDraftPreview` and `endFrameDraftPreview` answer false.
@@ -675,7 +677,9 @@ it on the editor, for every document.
   `rippleAudio` cuts through clips; the `audioRipple` option travels with the view, and frame inserts and
   removals of every layer then ripple the audio inside one entry. The interface asks only whether an
   audio clip was copied (`editor._audioClipboard`), which the owner marks; the recording (megabytes) stays in the
-  session that copied it and is read from it (`clipboard`) when the session of another project pastes it.
+  session that copied it and is read from it (`clipboard`) when the session of another project pastes it. A session that
+  ends (its project is closed, its movieclip is left) hands the recording to the clipboard first (`surrender`), which
+  keeps it until a session pastes it: every session is freed through one owner path, and no clipboard names a freed session.
 - **Clipboards.** The session keeps what the editor's copy commands copied; the interface reads the same clipboards
   (the Paste buttons, the shared clipboard that writes them to the system's) and hands it others, so the editor's
   clipboard fields are a mirror the owner keeps (`src/engine/engine-clipboards.mjs`). A copy's answer carries the

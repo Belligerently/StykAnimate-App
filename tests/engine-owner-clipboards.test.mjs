@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Editor, emptyDocument} from '../src/editor.mjs';
 import {clipboardSnapshot, restoreClipboard, pasteSheetClipboard} from '../src/shared-clipboard.mjs';
+import {createClipboards} from '../src/engine/engine-clipboards.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
 import {recordedDocument, documentText, normalized} from './support/owned-vs-plain.mjs';
@@ -258,4 +259,44 @@ test('an audio clip copied in one project pastes in the next, its recording read
     assert.ok(tracks[0].clips.some(clip => clip.id === id && clip.start === 3));
     return {...shownBy(editor, before), id: normalized(id)};
   });
+});
+
+test('an audio clip copied in a project that is then closed still pastes, its recording kept by the clipboard', opts, async () => {
+  await bothWays([recordedDocument('audio')], editor => {
+    assert.equal(editor.copyAudioClip('clip-3'), true);
+    // The project closes (its tab does, which ends its session) while another opens beside it.
+    const closed = editor.detachDocument();
+    editor.load(recordedDocument('startup'));
+    editor.discardDocument(closed);
+    assert.ok(editor._audioClipboard, 'the interface can still tell something was copied');
+    const before = editor._undo.length, id = editor.pasteAudioClip('audio-a', 3);
+    assert.match(id, /^clip-/);
+    const [track] = editor.report._styk.audio.tracks;
+    assert.ok(track.clips.some(clip => clip.id === id && clip.start === 3));
+    assert.ok(editor.report._styk.audio.assets[track.clips.find(clip => clip.id === id).assetId], 'with its recording');
+    return {...shownBy(editor, before), id: normalized(id)};
+  });
+});
+
+test('a session that is freed hands over a recording it holds, and no clipboard asks a freed session', () => {
+  const clipboards = createClipboards({}, {}, () => 'document');
+  const recording = {clip: {id: 'clip-1'}, asset: {id: 'sound-1'}};
+  const copier = {name: 'copier'}, pasting = {name: 'pasting'}, asked = [], sent = [];
+  const fetch = (session, kind) => { asked.push([session.name, kind]); return recording; };
+  const send = (kind, data, foreign) => sent.push([kind, data, foreign]);
+  clipboards.adopt({kind: 'audio'}, copier);
+  clipboards.surrender(copier, fetch);
+  assert.deepEqual(asked, [['copier', 'audio']], 'the recording is read as the session ends');
+  clipboards.handOver('pasteAudioClip', pasting, send, fetch);
+  assert.deepEqual(sent, [['audio', recording, true]], 'and reaches the session that pastes');
+  assert.equal(asked.length, 1, 'the session that ended is not asked again');
+  // The session that pastes now has it: it hands it over in turn when it ends, and nothing is sent twice.
+  sent.length = 0;
+  clipboards.handOver('pasteAudioClip', pasting, send, fetch);
+  assert.deepEqual(sent, []);
+  clipboards.surrender(pasting, fetch);
+  assert.deepEqual(asked.at(-1), ['pasting', 'audio']);
+  // Sessions that hold nothing of it end without a read.
+  clipboards.surrender({name: 'other'}, fetch);
+  assert.equal(asked.length, 2);
 });

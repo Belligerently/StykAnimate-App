@@ -638,10 +638,19 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     parked.set(document, {session, entries: new Map(entries), depths, history, known, snapshot, nextEntry});
     session = null; document = null;
   };
+  /** A clipboard the editor only shows a marker of, read from the session that holds it. */
+  const readClipboard = (holder, kind) => JSON.parse(holder.query('clipboard', JSON.stringify([kind]), 'null')).v;
+  /** Frees a session that is closed. The clipboards read what they keep in it first (a copied audio clip's recording) and name
+   * it no more, so a freed session is never called. Every session of a closed project or a left movieclip ends here. */
+  const end = ended => {
+    try { clipboards.surrender(ended, readClipboard); } finally { ended.free(); }
+  };
   /** Ends the session of a document that is closed (or a movieclip that is left), whether it is the open one or parked. */
   const forget = closed => {
-    if (document === closed) { session.free(); session = null; document = null; entries.clear(); }
-    else { parked.get(closed)?.session.free(); parked.delete(closed); }
+    let ended = null;
+    if (document === closed) { ended = session; session = null; document = null; entries.clear(); }
+    else { ended = parked.get(closed)?.session; parked.delete(closed); }
+    if (ended) end(ended);
   };
   const call = (method, args) => {
     const answer = JSON.parse(session.call(method, JSON.stringify(args), JSON.stringify(view())));
@@ -683,7 +692,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       activate();
       check();
     } catch (error) {
-      session.free(); session = null; document = null; entries.clear();
+      const failed = session; session = null; document = null; entries.clear();
+      failed.free();
       report.broken = String(error.message ?? error);
       return null;
     }
@@ -803,7 +813,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       const handed = JSON.parse(live.call('@setClipboard', handing, handingView));
       if (handed.status === 'error') throw failure(handed.error, handed.errorParams);
       if (handed.status !== 'ok') throw new Error(`The engine did not take the ${kind} clipboard: ${handed.reason}`);
-    }, (holder, kind) => JSON.parse(holder.query('clipboard', JSON.stringify([kind]), 'null')).v);
+    }, readClipboard);
     const payload = sessionPayload(args);
     if (payload === null) throw refuse(name, 'arguments that are not plain data');
     report.calls++;
@@ -1131,7 +1141,14 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   report.session = () => session;
   /** How many sessions the owner holds: the open document's, and those of the documents open beside it or a movieclip is entered from. */
   report.sessions = () => (session ? 1 : 0) + parked.size;
-  report.release = () => { session?.free(); session = null; document = null; for (const value of parked.values()) value.session.free(); parked.clear(); clipboards.release(); shown.release(); editor._shown = null; };
+  report.release = () => {
+    // The clipboards let go of the sessions first: none names one that is freed.
+    clipboards.release();
+    const ended = [session, ...[...parked.values()].map(value => value.session)];
+    session = null; document = null; parked.clear();
+    for (const value of ended) value?.free();
+    shown.release(); editor._shown = null;
+  };
   // The editor reads the frame on show, its geometry and its timeline from the session.
   editor._shown = shown;
   return report;
