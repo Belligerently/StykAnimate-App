@@ -7,7 +7,6 @@ import {figurePalette,displayedSegmentPaint} from '../src/figure-colors.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
-import {planFigureFrameOperation} from '../src/range-figure-operations.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
 import {plainScope} from './support/plain-editor.mjs';
 
@@ -201,8 +200,3 @@ test('materializing legacy layer ordering preserves held poses at every output t
   for(let tick=0;tick<e.totalTicks;tick++)assert.deepEqual(sample(output,tick).objects.map(o=>[o.unique_id,o.root_x,o.root_y]),sample(e.report,tick).objects.map(o=>[o.unique_id,o.root_x,o.root_y]));
 });
 
-test('opacity-only color commands retain a captured color transition',()=>{
-  const e=fixture(),frame=e.report.keyframes[0],transition={from:0xff112233,to:0xff223344,t:.5};frame.objects[0].color_transition=transition;
-  const plan=planFigureFrameOperation(e.report,frame,[1],{kind:'recolor',mode:'all',opacity:.4});
-  assert.equal(plan.frame.objects[0].color_transition,transition);assert.equal(plan.frame.objects[0].field28,153);
-});

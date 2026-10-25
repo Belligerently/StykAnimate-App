@@ -1,10 +1,7 @@
 import {messageError} from './localized-error.mjs';
-import {drawingMetadata,isDrawingLayer,createDrawingFigure,copyDrawingFigure,migrateDrawingFigure,EMPTY_PNG} from './drawing-model.mjs';
-import {drawingSheetPlan,drawingSheetPublish} from './editor-layer-sheet.mjs';
+import {drawingMetadata,isDrawingLayer,createDrawingFigure} from './drawing-model.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
-import {createFrame,createObject} from './demo.mjs';
-import {pixelChangeBytes} from './drawing-pixels.mjs';
-import {nextUidAfter} from './object-identity.mjs';
+import {createObject} from './demo.mjs';
 
 export function assertDrawingTargets(editor,ids) {
   if(!ids.length)throw messageError(new Error(''), "errors.editorDrawing.chooseADrawingLayer", {});
@@ -40,54 +37,5 @@ export const editorDrawingMethods={
     const object=createObject(figure,uid,world.x,world.y,{scale:1/pixelsPerUnit});
     return {...target,figure,object,created:true};
   },
-  /** Publish a resampled cel: the tile list and bounds come from the worker;
-   * pixel (0,0) stays fixed so anchors and the segment scale with the ratio. */
-  resampleDrawing(target,{pixelsPerUnit,tiles,bounds,owned=false}) {
-    assertDrawingTargets(this,[target.id]);const current=this.drawingTarget(target.id);
-    if(current.key.id!==target.key.id||current.figure!==target.figure)throw messageError(new Error(''), "errors.editorDrawing.theDrawingChangedBeforeResampling", {});
-    const old=drawingMetadata(target.figure),ratio=pixelsPerUnit/old.pixelsPerUnit,typeId=this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1);
-    const figure=old.version===1?migrateDrawingFigure(target.figure,typeId,{bounds,anchorScale:ratio}):copyDrawingFigure(target.figure,typeId),asset=figure.image_assets[0];
-    const fd=drawingMetadata(figure);fd.pixelsPerUnit=pixelsPerUnit;fd.bounds=bounds?{...bounds}:null;fd.revision=0;
-    // Anchors sit in pixel space: rescaling pixels rescales them. anchor_start
-    // stays pinned to drawing_anchor and anchor_end keeps its direction.
-    const direction=asset.anchor_length?{x:(asset.anchor_end.x-asset.anchor_start.x)/asset.anchor_length,y:(asset.anchor_end.y-asset.anchor_start.y)/asset.anchor_length}:{x:1,y:0};
-    if(old.version===2){const anchor={x:(asset.drawing_anchor?.x??0)*ratio,y:(asset.drawing_anchor?.y??0)*ratio};asset.anchor_start={...anchor};asset.drawing_anchor=anchor;}
-    asset.anchor_length*=ratio;asset.anchor_end={x:asset.anchor_start.x+direction.x*asset.anchor_length,y:asset.anchor_start.y+direction.y*asset.anchor_length};figure.segments[0].length*=ratio;
-    delete asset.styk_tiles;asset.data_url=EMPTY_PNG;asset.width=asset.height=asset.display_width=asset.display_height=1;
-    const object=structuredClone(target.object);object.figure_type_id=figure.figure_type_id;object.scale*=old.pixelsPerUnit/pixelsPerUnit;if(object.len_flag)object.lengths=object.lengths.map(n=>n*ratio);
-    const plan=drawingSheetPlan(this,[target.id]);plan.definitions=[...this.report.figure_types,figure];plan.write(target.id,target.key.tick,createFrame([object]),{easing:{interpolation:'constant'}});
-    // Install before publishing so the broadcast's own drawing barrier can
-    // encode the resampled tiles instead of serializing an empty cel.
-    this.drawingResources.install(figure,tiles,{owned});
-    return drawingSheetPublish(this,plan,'Resample drawing',{assets:{figure_types:{added:[figure]}}});
-  },
-  commitDrawingPixels(target,tiles,label='Brush stroke',prepared,{resident=false}={}) {
-    if(!tiles.length)return false;assertDrawingTargets(this,[target.id]);
-    const current=this.drawingTarget(target.id,target.key.tick);
-    if(current.key.id!==target.key.id||(!target.created&&!target.migratedFrom&&current.figure!==target.figure))throw messageError(new Error(''), "errors.editorDrawing.theDrawingExposureChangedBeforeTheEditFinished", {});
-    // The record commits at any size: history eviction retires older entries,
-    // and reserve() bounds resident stores before this point is reached.
-    const bytes=pixelChangeBytes(tiles);
-    const celId=drawingMetadata(target.figure).celId,beforeBounds=drawingMetadata(target.figure).bounds??null;
-    this.drawingResources.checkHistory({kind:'drawing-pixels',celId,tiles},'after',prepared);
-    const commit=()=>{
-      if(target.migratedFrom)this.drawingResources.retarget(target.migratedFrom,target.figure);
-      // Committing ends the gesture's exclusive hold on the store: publication
-      // barriers triggered by this commit's own broadcast must see the tiles.
-      this.drawingResources.entry(target.figure).pinned=false;
-      if(target.created||target.migratedFrom){
-        const plan=drawingSheetPlan(this,[target.id]);plan.layers.assignments[target.object.unique_id]=target.id;plan.definitions=[...this.report.figure_types,target.figure];
-        plan.write(target.id,target.key.tick,createFrame([target.object]),{easing:{interpolation:'constant'}});
-        drawingSheetPublish(this,plan,target.created?'Create drawing cel':'Migrate drawing',{assets:{figure_types:{added:[target.figure]}},nextUid:nextUidAfter(this._nextUid,target.object.unique_id??0)});
-      }
-      const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===celId);
-      this.drawingResources.apply(figure,tiles,'after',prepared,{resident});
-      this._record({kind:'drawing-pixels',celId,tiles,label,beforeBounds,afterBounds:drawingMetadata(figure).bounds??null,precomputedBytes:bytes});
-      if(this.activeLayerId===target.id&&this.tick>=target.key.tick&&this.tick<target.end)this.selectSheetLayer(target.id);
-      this._invalidate({timing:false});this._emit('edit',{label,definition:true,drawing:true,figureIndices:[this.report.figure_types.indexOf(figure)]});return true;
-    };
-    // Cel creation and migration change sheet structure. Subsequent strokes are
-    // pixel commands and must not rebuild timing or invalidate timeline rows.
-    return (target.created||target.migratedFrom)?this.movieclipBatch(label,commit):commit();
-  },
+  // Publishing a resampled cel and committing a stroke's pixels are the owner's compositions of session calls (`engine-owner-drawing.mjs`).
 };

@@ -22,7 +22,7 @@ import {figurePalette, displayedSegmentPaint, displayedColor} from '../../src/fi
 import { icon } from "../../src/icons.mjs";
 import { isStatic } from "../../src/pivot/geometry.mjs";
 import { formatPropertyValue } from "../../src/property-controls.mjs";
-import { cameraValues } from "../../src/editor-camera.mjs";
+import { cameraValues } from "../../src/pivot/model.mjs";
 import { builderDrawables } from '../../src/editor-builder-style.mjs';
 import { isBuilderContext } from '../../src/builder-aids.mjs';
 import {resolveInstanceFigure} from '../../src/animation-style.mjs';

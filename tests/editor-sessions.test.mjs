@@ -182,27 +182,3 @@ test('a load whose receiver fails leaves the open project in place', async () =>
   assert.equal(editor.report, first);
 });
 
-test('the Simple timeline working frame follows the project, and the mode follows the editor', () => {
-  const editor = openPlain({demo: false}).load(scene(), 'First');
-  editor.enableFrameDrafts();
-  setX(editor, 91);
-  assert.equal(editor.frameDraft.dirty, true);
-  const stored = editor.report._styk.simpleFrameDraft;
-  const first = editor.detachDocument();
-  editor.load(scene(2), 'Second');
-  assert.equal(editor._frameDraftEnabled, true);
-  assert.equal(editor.frameDraft.dirty, false);
-  const second = editor.detachDocument();
-  editor.resumeDocument(first);
-  assert.equal(editor.frameDraft.dirty, true); assert.equal(rootX(editor), 91);
-  assert.deepEqual(editor.report._styk.simpleFrameDraft.baseline, stored.baseline);
-  editor.discardFrameDraft(); assert.notEqual(rootX(editor), 91);
-  // Switched to the Advanced timeline while another project was in front.
-  editor.detachDocument(); editor.resumeDocument(second);
-  editor.disableFrameDrafts();
-  const secondAgain = editor.detachDocument();
-  editor.load(scene(), 'Third');
-  assert.equal(editor._frameDraftEnabled, false); assert.equal(editor.frameDraft, null);
-  editor.detachDocument(); editor.resumeDocument(secondAgain);
-  assert.equal(editor.frameDraft, null);
-});

@@ -1,6 +1,6 @@
 import {messageError} from './localized-error.mjs';
 import {localizedText} from './localization-bindings.mjs';
-import {cameraValues} from './editor-camera.mjs';
+import {cameraValues} from './pivot/model.mjs';
 import {formatPropertyValue} from './property-controls.mjs';
 const monitorStates=new WeakMap();
 

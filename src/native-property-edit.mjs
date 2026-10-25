@@ -6,7 +6,7 @@ import {messageError} from './localized-error.mjs';
  * document itself, to record it as an entry of the editor's own (the definition of a figure, a pose across several frames), is the
  * engine's alone now, and refused where the session has no command for it. */
 import { objectBounds } from "./renderer-geometry.mjs";
-import { cameraValues } from "./editor-camera.mjs";
+import { cameraValues } from "./pivot/model.mjs";
 import { animationStyleValue, polygonIdentity, resolveInstanceFigure } from "./animation-style.mjs";
 import { builderStyleProperty, beginBuilderOrderAnimation, previewBuilderOrderAnimation } from './editor-builder-style.mjs';
 import { branchOpacityPlan, beginBranchStyleAnimation, previewBranchStyleAnimation, commitBranchStyleAnimation, cancelBranchStyleAnimation } from './editor-branch-style.mjs';

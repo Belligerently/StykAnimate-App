@@ -1,27 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {Editor} from '../src/editor.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
+import {buildGeometry, evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
 const document = () => JSON.parse(readFileSync(new URL('../engine/crates/styk-eval/tests/fixtures/ik/joined.json', import.meta.url), 'utf8'));
 const target = {kind: 'node', uid: 3, handleId: 33, joint: 0};
 const bytes = editor => JSON.stringify(editor.report);
-for (const mode of ['native', 'channels', 'sheet']) test(`joined pinned follower trail rotates without changing selection or publishing before commit (${mode})`, () => {
-  const options = {demo: false, layerTimeline: mode === 'sheet', propertyChannels: mode === 'channels'};
-  // The editor alone on a layer sheet: the test reads the working frame of the editor's own motion-path gesture, which the session's gesture does not have.
-  const editor = mode === 'sheet' ? new Editor(options).load(document()) : plainEditorFor(options, document());
+test('joined pinned follower trail rotates without changing selection or publishing before commit', () => {
+  const editor = ownedEditorFor({demo: false, layerTimeline: true}, document());
   editor.seek(5); editor.select(3, 0);
   const saved = bytes(editor), history = editor._undo.length;
   assert.ok(editor.beginMotionPathEdit(target, 2));
-  const session = editor._drag.grab ?? editor._drag;
-  const shape = buildGeometry(editor.report, session.working).objects.get(2).segments[0];
+  // The limb the trail grabs, in the pose the document gives at the grabbed tick.
+  const rows = timeline(editor.report), row = rows.findLastIndex(entry => entry.start <= 2);
+  const shape = buildGeometry(editor.report, evaluatedFrame(editor.report, row, 0, 2)).objects.get(2).segments[0];
   const point = {x: shape.start.x + (shape.end.x - shape.start.x) * Math.cos(.25) - (shape.end.y - shape.start.y) * Math.sin(.25),
     y: shape.start.y + (shape.end.x - shape.start.x) * Math.sin(.25) + (shape.end.y - shape.start.y) * Math.cos(.25)};
   assert.equal(editor.updateMotionPathEdit(point), true);
   assert.equal(bytes(editor), saved); assert.equal(editor.tick, 5); assert.equal(editor.selectedUid, 3); assert.equal(editor.selectedJoint, 0);
-  const owner = session.working.objects[1]._stykIK[22];
-  assert.ok(Object.values(owner.joinedFollowers[3]).every(Number.isFinite));
   assert.equal(editor.cancelMotionPathEdit(), true); assert.equal(bytes(editor), saved); assert.equal(editor._undo.length, history);
   assert.ok(editor.beginMotionPathEdit(target, 2)); assert.equal(editor.updateMotionPathEdit(point), true);
   assert.equal(editor.commitMotionPathEdit(), true); const committed = bytes(editor); assert.notEqual(committed, saved);

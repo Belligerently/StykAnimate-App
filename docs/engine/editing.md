@@ -33,10 +33,10 @@ and after), and emit change events the interface listens to.
 - Order: what the app runs. The app constructs the editor with `propertyChannels` and
   `layerTimeline` (`src/app.mjs`), and `load` gives every document a layer sheet
   (`initializeLayerSheet`). Every gesture in the app therefore takes the authored path
-  (`src/editor-authored-pose.mjs`): a draft of the evaluated frame at the playhead, the same
+  (the editor's `src/editor-authored-pose.mjs`, deleted now that the session runs it: `styk-edit/src/authored.rs`): a draft of the evaluated frame at the playhead, the same
   per-figure mutations as on a native frame, and a commit that captures the edited frame
   into pose sources and writes keys on the layer tracks (`_commitSheetPose`, the sheet
-  planner and `publish` in `src/editor-layer-sheet.mjs`). The native-timeline commands
+  planner and `publish`, once in `src/editor-layer-sheet.mjs`, now `styk-edit/src/sheet.rs`). The native-timeline commands
   ported first are those mutations, checked on native frames; the app needs, in order:
   1. **The evaluated frame as records**: `editor.evaluatedFrame` reproduced as JSON byte for
      byte (layer sheets, tweens, movieclips, layer order), because a commit stores it.
@@ -711,9 +711,8 @@ it on the editor, for every document.
   not valid (`errors.engineOwner.invalidValue`).
 - **Refusals.** A call the session refuses for this document or selection (`Unported`), or has no command for (it answers
   `unported` with the call's own name), raises `errors.engineOwner.notSupported` with the call's name and the reason on
-  `error.reason`, and changes nothing: the editor never runs it, and `report.refused` counts it. The keyframe commands of a
-  native timeline (`REFUSED_CALLS`: `addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames` and `insertBlankFrame`) are
-  refused by the owner itself. The app gives every document a layer sheet, so none of these is reached from it ("Refusals" below lists what is refused on a sheet). Nothing but the session's
+  `error.reason`, and changes nothing: the editor never runs it, and `report.refused` counts it. The editor has no bodies for the keyframe commands of a
+  native timeline (`addFrame`, `deleteFrame`, `duplicateFrame`, `reverseFrames`, `insertBlankFrame`): the app never calls them, and a call raises a `TypeError`. The app gives every document a layer sheet, so none of these is reached from it ("Refusals" below lists what is refused on a sheet). Nothing but the session's
   answers writes to the editor's read view: code that changed a record in place would leave it apart from the session's
   document, which the tests' `verify` mode (the session's document compared with the read view after every call) reports.
 - **Arguments.** JSON drops an object member set to `undefined` and turns `NaN` into `null`, so the owner encodes both

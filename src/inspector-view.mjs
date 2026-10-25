@@ -32,7 +32,7 @@ import {cameraMotionView, parallaxView} from './camera-motion-ui.mjs';
 import {paintCSS} from './paint.mjs';
 import {figurePalette, displayedSegmentPaint, displayedColor} from './figure-colors.mjs';
 import {isStatic} from './pivot/geometry.mjs';
-import {cameraValues} from './editor-camera.mjs';
+import {cameraValues} from './pivot/model.mjs';
 import {builderDrawables} from './editor-builder-style.mjs';
 import {branchSegmentIndices} from './editor-builder-branch.mjs';
 import {isBuilderContext} from './builder-aids.mjs';

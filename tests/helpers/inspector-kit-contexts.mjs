@@ -14,7 +14,7 @@
  */
 import {figurePalette, displayedSegmentPaint, displayedColor} from '../../src/figure-colors.mjs';
 import {paintCSS} from '../../src/paint.mjs';
-import {cameraValues} from '../../src/editor-camera.mjs';
+import {cameraValues} from '../../src/pivot/model.mjs';
 import {builderDrawables} from '../../src/editor-builder-style.mjs';
 import {resolveInstanceFigure} from '../../src/animation-style.mjs';
 import {BRUSH_BLEND_LABELS} from '../../src/drawing-view.mjs';
