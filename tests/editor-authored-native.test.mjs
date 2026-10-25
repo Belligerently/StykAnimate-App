@@ -6,9 +6,10 @@ import {validateScene} from '../src/pivot/model.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {layerVisible} from '../src/layers.mjs';
 import {exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const clone = value => structuredClone(value);
-function fixture() {
+function fixture({owned = true} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [4, 6, 1].map((duration, index) => {
     const objects = [createObject(figure, 1, 100 + index * 45, 220), createObject(figure, 2, 360, 220)];
@@ -19,7 +20,7 @@ function fixture() {
     }
     const frame = createFrame(objects, duration); frame._styk = {unknown: {source: `pose-${index}`}}; return frame;
   });
-  const editor = new Editor({demo: false}).load(report);
+  const editor = owned ? ownedEditorFor({demo: false}, report) : new Editor({demo: false}).load(report);
   return editor.load(editor.serialize(), 'Authored persistence');
 }
 
@@ -40,7 +41,8 @@ function samples(editor, ticks = [0, 1, 2, 5, 8, 9, 12]) {
 }
 
 test('the codec STYK exporter and importer preserve real layers, independent pose sources, scalar curves and playback', async () => {
-  const editor = fixture(), originalIds = editor.report.keyframes.map((_, index) => editor.getFrameId(index));
+  // session gap: a pose capture and opacity keys on a native timeline without property channels (the session's native channel path takes figure transform keys only)
+  const editor = fixture({owned: false}), originalIds = editor.report.keyframes.map((_, index) => editor.getFrameId(index));
   editor.renameLayer('layer-1', 'Backdrop');
   const actors = editor.createLayer('Actors').id, temporary = editor.createLayer('Temporary').id;
   editor.renameLayer(temporary, 'Remove this layer'); editor.deleteLayer(temporary);
@@ -82,7 +84,8 @@ for (const [name, edit] of [
   ['duplicate a segment branch', editor => editor.duplicateSegmentBranch({angleOffset: .2})],
   ['split a segment', editor => editor.splitSegment(.35)],
 ]) test(`reusable topology edits ${name} in every retained pose source and undo exactly`, async () => {
-  const editor = fixture(), first = editor.captureFrameSource(editor.report.keyframes[0]), second = editor.captureFrameSource(editor.report.keyframes[1]);
+  // plain editor: the test reads the editor's own history entry (kind and frames)
+  const editor = fixture({owned: false}), first = editor.captureFrameSource(editor.report.keyframes[0]), second = editor.captureFrameSource(editor.report.keyframes[1]);
   editor.selectFrame(0); editor.select(1, 2);
   const before = editor.serialize(), originalCount = editor.figure.segments.length;
   edit(editor);

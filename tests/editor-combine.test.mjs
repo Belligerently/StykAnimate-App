@@ -4,9 +4,10 @@ import {Editor} from '../src/editor.mjs';
 import {buildGeometry, mixColor} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const near = (a, b, epsilon = 1e-4) => assert.ok(Math.abs(a - b) <= epsilon, `${a} != ${b}`);
-const blank = () => { const editor = new Editor({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
+const blank = ({plain = false} = {}) => { const editor = plain ? new Editor({demo: false}) : ownedEditorFor({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
 function compareGeometry(before, after) {
   assert.equal(after.drawables.length, before.drawables.length);
   for (let i = 0; i < before.drawables.length; i++) {
@@ -20,8 +21,8 @@ function compareGeometry(before, after) {
     }
   }
 }
-function vectorGroup() {
-  const editor = blank(), root = editor.selectedUid;
+function vectorGroup({plain = false} = {}) {
+  const editor = blank({plain}), root = editor.selectedUid;
   editor.select(root, 2); editor.updateSegment({bend_rad: 0.5});
   editor.addPolygon([0, 7, 9], {color: '#e24491', opacity: 0.5});
   const child = editor.duplicateFigure().unique_id; editor.updateObject({scale: 0.6, color_override_raw: 0x80224466});
@@ -29,7 +30,8 @@ function vectorGroup() {
 }
 
 test('combine joined figures preserves curved geometry, circles, fills, paint order and root identity', () => {
-  const {editor, root} = vectorGroup(); editor.duplicateFrame(); const before = editor.serialize(), geometry = editor.geometry;
+  // plain editor: the test reads the editor's own history entry (kind)
+  const {editor, root} = vectorGroup({plain: true}); editor.duplicateFrame(); const before = editor.serialize(), geometry = editor.geometry;
   editor.combineJoinedFigure(root, {name: 'Merged rig'});
   assert.equal(editor.frame.objects.length, 1); assert.equal(editor.object.unique_id, root); assert.equal(editor.figure.name, 'Merged rig');
   assert.equal(editor.figure.segments.length, 20); assert.equal(editor.figure.polyfills.length, 2);

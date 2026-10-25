@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {createFrame,createObject,emptyDocument} from '../src/demo.mjs';
 import {documentChunks,applyDocumentChunk} from '../src/document-transport.mjs';
 import {movieclipAsset} from '../src/movieclips.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 function clipFixture(){
-  const editor=new Editor();editor.select(1);
+  const editor=ownedEditorFor();editor.select(1);
   const figure=editor.createMovieclip({start:0,end:20,replace:false});
   return {editor,figure};
 }
@@ -39,7 +39,7 @@ test('figure transport rejects cyclic and out-of-order aliases without accepting
 });
 test('sheet pose edits and history preserve definition revisions',()=>{
   const report=emptyDocument();report.keyframes=[0,10].map(x=>createFrame([createObject(report.figure_types[0],1,x,100)],10));
-  const editor=new Editor({demo:false,layerTimeline:true}).load(report),events=[];
+  const editor=ownedEditorFor({demo:false,layerTimeline:true}, report),events=[];
   editor.addEventListener('change',e=>{if(['edit','history'].includes(e.detail.kind))events.push(e.detail);});
   const revision=editor.definitionRevision,before=editor.serialize();editor.select(1);editor.moveSelection(12,-4);
   assert.equal(editor.definitionRevision,revision);

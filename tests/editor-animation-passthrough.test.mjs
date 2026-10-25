@@ -3,15 +3,16 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {animationChannelId,sampleAnimationChannel} from '../src/animation-channels.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const target={kind:'figure',uid:1},id=animationChannelId(target,'x');
-function fixture(){
+function fixture({owned=true}={}){
   const report=emptyDocument();report.keyframes=[createFrame([createObject(report.figure_types[0],1,25,100)],20)];
   report._styk.animation={version:1,nextKeyId:4,channels:[{id,target,property:'x',keys:[
     {id:'key-1',tick:0,value:200,interpolation:'linear',passthrough:true},
     {id:'key-2',tick:5,value:300,interpolation:'hold',passthrough:true},
     {id:'key-3',tick:10,value:400,interpolation:'hold'}]}]};
-  return new Editor({demo:false}).load(report);
+  return owned?ownedEditorFor({demo:false}, report):new Editor({demo:false}).load(report);
 }
 
 test('explicit value replacement activates passthrough keys while preserving neighboring intervals and undo',()=>{
@@ -30,7 +31,8 @@ test('explicit value replacement activates passthrough keys while preserving nei
 });
 
 test('scalar passthrough preview activates immediately and cancel restores exact references',()=>{
-  const editor=fixture(),before=editor.report._styk.animation,history=editor._undo.length;
+  // plain editor: the test is about the identity of the document's records after a cancel
+  const editor=fixture({owned:false}),before=editor.report._styk.animation,history=editor._undo.length;
   editor.beginAnimationEdit(target,'x');editor.previewAnimationEdit(200);
   assert.equal(editor.evaluatedFrame.objects[0].root_x,200);assert.equal(editor._undo.length,history);
   editor.cancelAnimationEdit();assert.equal(editor.report._styk.animation,before);

@@ -6,9 +6,12 @@ import {inspectWave, pcmWave, wavePeaks, mixAudio} from '../src/audio-pcm.mjs';
 import {playbackProperties} from '../src/playback-patch.mjs';
 import {documentChunks, applyDocumentChunk} from '../src/document-transport.mjs';
 import {buildContainerV2, decodeDocument} from './support/native-files.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const asset = (duration = 2) => ({id:'sound-test', name:'Voice.wav', size:3, duration, chunks:[{data_base64:'AQID'}], peaks:[0,.5,1,.5]});
-const editorWithAudio = () => { const editor = new Editor({layerTimeline:true}); editor.importAudio(asset(),{start:0}); return editor; };
+const editorWithAudio = () => { const editor = ownedEditorFor({layerTimeline:true}); editor.importAudio(asset(),{start:0}); return editor; };
+// The editor alone, for the tests of the editor's own history entries and document references.
+const plainEditorWithAudio = () => { const editor = new Editor({layerTimeline:true}); editor.importAudio(asset(),{start:0}); return editor; };
 
 test('repeated audio control commits do not create empty undo steps', () => {
   const editor = editorWithAudio(), track = audioState(editor.report).tracks[0], clip = track.clips[0];
@@ -20,10 +23,10 @@ test('repeated audio control commits do not create empty undo steps', () => {
   editor.undo(); assert.equal(audioState(editor.report).tracks[0].clips[0].gain, 1);
 });
 test('undoing the first import restores the exact original document',()=>{
-  const editor=new Editor({layerTimeline:true}),before=JSON.stringify(editor.serialize());editor.importAudio(asset(),{start:0});editor.undo();assert.equal(JSON.stringify(editor.serialize()),before);
+  const editor=ownedEditorFor({layerTimeline:true}),before=JSON.stringify(editor.serialize());editor.importAudio(asset(),{start:0});editor.undo();assert.equal(JSON.stringify(editor.serialize()),before);
 });
 test('audio edits preserve poses, store immutable assets once and undo exactly', () => {
-  const editor = editorWithAudio(), report = editor.report, pose = report.keyframes, imported = audioState(report), clip = imported.tracks[0].clips[0];
+  const editor = plainEditorWithAudio(), report = editor.report, pose = report.keyframes, imported = audioState(report), clip = imported.tracks[0].clips[0];
   editor.markSaved(); editor.setAudioClip(clip.id,{start:1,duration:1,fadeIn:.2,gain:.4});
   assert.equal(report.keyframes,pose); assert.equal(audioState(report).assets,imported.assets); assert.ok(editor.dirty);
   assert.ok(editor._undo.at(-1).bytes < 6000); assert.equal(editor._undo.at(-1).before,imported);
@@ -67,7 +70,7 @@ test('FPS edits leave recording speed and source offsets unchanged', () => {
   const editor = editorWithAudio(), state = audioState(editor.report); editor.setFPS(60); assert.equal(audioState(editor.report),state);
 });
 test('explicit ripple splits at inserted time and joins surviving source ranges after removal', () => {
-  const editor = editorWithAudio(), original = audioState(editor.report), insert = rippleAudio(original,.5,0,1);
+  const editor = plainEditorWithAudio(), original = audioState(editor.report), insert = rippleAudio(original,.5,0,1);
   assert.deepEqual(insert.tracks[0].clips.map(c=>[c.start,c.offset,c.duration]),[[0,0,.5],[1.5,.5,1.5]]);
   const removed = rippleAudio(original,.5,.5,0);
   assert.deepEqual(removed.tracks[0].clips.map(c=>[c.start,c.offset,c.duration]),[[0,0,.5],[.5,1,1]]);

@@ -12,13 +12,14 @@ import {createImageFigure} from '../src/media-authoring.mjs';
 import {compileTextFigure} from '../src/text-authoring.mjs';
 import {parse} from '../vendor/text/opentype.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 Object.assign(Editor.prototype, editorBuilderBranchMethods);
 const clone = structuredClone, kinds = ['line', 'circle', 'image', 'circleFill', 'circleClear', 'text', 'squareLine'];
 const near = (a, b, tolerance = .0002) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 const nearPoint = (a, b) => {near(a.x, b.x); near(a.y, b.y);};
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
-function fixture() {
+function fixture({plain = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0], base = figure.segments[0];
   figure.segments = [[30,20,3],[65535,0,0],[20,10,0],[10,0,0],[40,20,1],[50,40,4],[60,30,6],[70,10,0]].map(([id,parent,kind],i) => ({
     ...clone(base), segment_id: id, parent_id: parent, primitive_code: kind, segment_kind: kinds[kind], segment_type: [1,3,4].includes(kind) ? 'circle' : 'line',
@@ -42,7 +43,7 @@ function fixture() {
     createObject(child, 2, 0, 0, {join: {target_object_slot: 0, target_unique_id: 1, target_handle_id: 20}}),
     createObject(child, 3, 350, 220),
   ], i ? 1 : 5));
-  const editor = new Editor({demo: false}).load(report); editor.select(1, 2); editor.captureFrameSource(editor.report.keyframes[1]); return editor;
+  const editor = plain ? new Editor({demo: false}).load(report) : ownedEditorFor({demo: false}, report); editor.select(1, 2); editor.captureFrameSource(editor.report.keyframes[1]); return editor;
 }
 function reversible(editor, action) {
   const before = editor.serialize(), history = editor._undo.length;
@@ -51,7 +52,8 @@ function reversible(editor, action) {
 }
 
 test('native branch traversal excludes ancestors/siblings and color-only retains mixed alpha and enclosed polygon eligibility', () => {
-  const editor = fixture(), figure = editor.figure, frames = editor.report.keyframes, sources = clone(editor._allSourceFrames()), unrelated = figure.segments[1];
+  // plain editor: the test reads the editor's own history entry (kind, entries) and the identity of the document's records
+  const editor = fixture({plain: true}), figure = editor.figure, frames = editor.report.keyframes, sources = clone(editor._allSourceFrames()), unrelated = figure.segments[1];
   assert.deepEqual(branchSegmentIndices(figure, 2), [0,2,4,5,6]);
   reversible(editor, () => editor.updateSegmentBranchStyle({color: '#123456'}));
   for (const i of [0,2,4,5,6]) {assert.deepEqual(editor.figure.segments[i].color_rgb, [18,52,86]); assert.equal(editor.figure.segments[i].transparency, i * 20);}
@@ -76,7 +78,8 @@ test('explicit alpha and gradient endpoint updates follow native branch rules an
 });
 
 test('fixed thickness, delta clamping and selected-anchor static/caps/fill are one sparse undo each', () => {
-  const editor = fixture(), before = clone(editor.figure);
+  // plain editor: the test reads the editor's own history entry (after.entries)
+  const editor = fixture({plain: true}), before = clone(editor.figure);
   reversible(editor, () => editor.changeBranchThickness(5));
   assert.deepEqual([0,2,4,5,6].map(i => editor.figure.segments[i].thickness), [9,8,13,6,1000]);
   reversible(editor, () => editor.updateSegmentBranchStyle({thickness: 12.5, static: true}));
@@ -105,7 +108,8 @@ test('branch planner is pure, gesture binding is reusable and malformed/no-op ed
 });
 
 test('selected-only sparse style combines shape/static/gradient without copying assets, poses or sibling styles', () => {
-  const editor = fixture(), siblings = clone(editor.figure.segments), polygons = clone(editor.figure.polyfills), frames = clone(editor._allSourceFrames());
+  // plain editor: the test adds an image asset to the figure in place and reads the editor's own history entry (after.entries)
+  const editor = fixture({plain: true}), siblings = clone(editor.figure.segments), polygons = clone(editor.figure.polyfills), frames = clone(editor._allSourceFrames());
   const asset = createImageFigure({dataUrl:png,width:1,height:1}).image_assets[0]; editor.figure.image_assets.push(asset);
   reversible(editor, () => editor.updateBuilderSegmentStyle({color:'#fedcba',opacity:.25,static:true,shape:'squareLine',thickness:1400,gradient:{color:'#123456',opacity:.4}}));
   const segment = editor.figure.segments[2]; assert.equal(segment.flags,262); assert.equal(segment.thickness,1400); assert.equal(segment.transparency,191);
@@ -136,7 +140,7 @@ test('branch split retains posed endpoints, joined figures, sparse max IDs, poly
   assert.deepEqual(editor.figure.polyfills[2].segment_ids, [30,40,midpoint.get(40),20,midpoint.get(30)]);
   const expectedOrder = oldOrder.flatMap(([kind,id]) => kind === 'segment' && midpoint.has(id) ? [[kind,midpoint.get(id)],[kind,id]] : [[kind,id]]);
   assert.deepEqual(builderDrawables(editor.figure).map(e => [e.kind,e.kind === 'segment' ? e.item.segment_id : e.item.polyfill_id]), expectedOrder);
-  frames.forEach((frame, i) => {
+  editor._allSourceFrames().forEach((frame, i) => {
     const next = buildGeometry(editor.report, frame);
     for (const [id, point] of geometries[i].objects.get(0).joints) nearPoint(next.objects.get(0).joints.get(id), point);
     nearPoint(next.objects.get(1).root, geometries[i].objects.get(1).root);
@@ -147,7 +151,8 @@ test('branch split retains posed endpoints, joined figures, sparse max IDs, poly
 });
 
 test('split activates runtime-only length/bend values and duplicates per-instance/authored styles into both pieces', () => {
-  const editor = fixture();
+  // plain editor: the test writes the frames' pose caches (runtime_segments) and styles in place
+  const editor = fixture({plain: true});
   for (const frame of editor._allSourceFrames()) {
     const object = frame.objects[0]; object.len_flag = object.bend_flag = 0; object.lengths = object.bends = [];
     object.runtime_segments = editor.figure.segments.map(s => ({length: s.length * 1.4, bend_rad: s.bend_rad + .13}));
@@ -171,7 +176,7 @@ test('native Split keeps tiny-bend second angles and uses a single signed-pi wra
     const report=emptyDocument(),figure=report.figure_types[0];
     figure.segments=[{...figure.segments[0],angle_rad:angle,bend_rad:bend}];figure.segment_count=1;
     report.keyframes=[createFrame([createObject(figure,1,100,100)],1)];
-    const editor=new Editor({demo:false}).load(report);editor.select(1,0);editor.splitBuilderSegments({branch:false});
+    const editor=ownedEditorFor({demo:false}, report);editor.select(1,0);editor.splitBuilderSegments({branch:false});
     assert.equal(editor.figure.segments[0].angle_rad,angle);near(editor.figure.segments[1].angle_rad,expected,1e-12);
     near(editor.object.angles[1],expected,1e-12);assert.equal(editor.figure.segments[0].bend_rad,bend/2);assert.equal(editor.figure.segments[1].bend_rad,bend/2);
   }
@@ -199,7 +204,7 @@ test('branch capacity preflight is atomic and deep 15,000-segment splitting reac
   const report = emptyDocument(), figure = report.figure_types[0], base = figure.segments[0];
   figure.segments = Array.from({length:15000},(_,i) => ({...base,segment_id:i+1,parent_id:i,length:.01,bend_rad:0,angle_rad:0}));
   figure.segment_count = 15000; report.keyframes = [createFrame([createObject(figure,1,0,0)],1)];
-  const editor = new Editor({demo:false}).load(report); editor.select(1,0);
+  const editor = ownedEditorFor({demo:false}, report); editor.select(1,0);
   assert.equal(editor.splitSegmentBranch(),true); assert.equal(editor.figure.segments.length,30000); assert.equal(editor.object.angles.length,30000);
   const history = editor._undo.length, segments = editor.figure.segments;
   assert.throws(() => editor.splitSegmentBranch(), /30,000/); assert.equal(editor._undo.length,history); assert.equal(editor.figure.segments,segments);
@@ -213,7 +218,7 @@ test('native STK and PIV roundtrip retain split image/text references, primitive
   const figure = {...image,segments:[image.segments[0],{...text.segments[0],segment_id:2,parent_id:1,z_order:2}],text_assets:text.text_assets,segment_count:2};
   figure.segments.forEach(s => {s.secondary={rgb:[230,100,20],a:77};s.transparency=25;});
   const report = emptyDocument(); report.figure_types=[figure]; report.keyframes=[createFrame([createObject(figure,1,100,100)],1)];
-  const editor = new Editor({demo:false}).load(report); editor.select(1,0);
+  const editor = ownedEditorFor({demo:false}, report); editor.select(1,0);
   const assets = [editor.figure.image_assets[0],editor.figure.text_assets[0]];
   editor.splitBuilderSegments({branch:true}); assert.deepEqual(editor.figure.segments.map(s=>s.primitive_code),[2,2,5,5]);
   assert.equal(editor.figure.image_assets[0],assets[0]); assert.equal(editor.figure.text_assets[0],assets[1]);

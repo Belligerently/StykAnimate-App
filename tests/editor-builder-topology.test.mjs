@@ -6,10 +6,11 @@ import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const near = (actual, expected, tolerance = 8e-5) => assert.ok(Math.abs(actual - expected) < tolerance, `${actual} != ${expected}`);
 const nearPoint = (actual, expected) => {near(actual.x, expected.x); near(actual.y, expected.y);};
-function fixture() {
+function fixture({plain = false} = {}) {
   const report = emptyDocument(), base = defaultFigure().segments[0];
   report.figure_types[0].segments = [
     {...base, segment_id: 30, parent_id: 20, length: 24, angle_rad: -.5, bend_rad: .2},
@@ -29,7 +30,7 @@ function fixture() {
     createObject(report.figure_types[1], 3, 0, 0, {join: {target_object_slot: 1, target_unique_id: 2, target_handle_id: 1}}),
     createObject(report.figure_types[1], 4, 0, 0, {join: {target_object_slot: 0, target_unique_id: 1, target_handle_id: 10}}),
   ], 4));
-  const editor = new Editor({demo: false}).load(report); editor.select(1, 3); editor.captureFrameSource(editor.report.keyframes[1]); return editor;
+  const editor = plain ? new Editor({demo: false}).load(report) : ownedEditorFor({demo: false}, report); editor.select(1, 3); editor.captureFrameSource(editor.report.keyframes[1]); return editor;
 }
 const geometry = (editor, frame) => buildGeometry(editor.report, frame);
 async function roundtrip(editor) {
@@ -43,7 +44,7 @@ test('plain builder Delete removes only one sparse segment and reconnects every 
   const history = editor._undo.length; assert.equal(editor.deleteSingleSegment(), true); assert.equal(editor._undo.length, history + 1);
   assert.deepEqual(editor.figure.segments.map(s => s.segment_id), [30, 40, 20]); assert.equal(editor.figure.segments[2].parent_id, 0);
   assert.deepEqual(editor.figure.polyfills.map(poly => poly.segment_ids), [[0, 20, 40]]);
-  frames.forEach((frame, index) => {
+  editor._allSourceFrames().forEach((frame, index) => {
     const old = geometries[index], next = geometry(editor, frame), first = old.objects.get(0), shift = {x: first.root.x - first.joints.get(10).x, y: first.root.y - first.joints.get(10).y};
     for (const id of [20, 30]) nearPoint(next.objects.get(0).joints.get(id), {x: first.joints.get(id).x + shift.x, y: first.joints.get(id).y + shift.y});
     nearPoint(next.objects.get(0).joints.get(40), first.joints.get(40));
@@ -56,7 +57,7 @@ test('plain builder Delete removes only one sparse segment and reconnects every 
 test('Unsplit preserves every surviving endpoint with curved posed lengths and retained sources', async () => {
   const editor = fixture(), frames = editor._allSourceFrames(), before = frames.map(frame => geometry(editor, frame));
   editor.unsplitSegment();
-  frames.forEach((frame, index) => {
+  editor._allSourceFrames().forEach((frame, index) => {
     const after = geometry(editor, frame);
     for (const id of [0, 20, 30, 40]) nearPoint(after.objects.get(0).joints.get(id), before[index].objects.get(0).joints.get(id));
     for (const slot of [1, 2, 3]) nearPoint(after.objects.get(slot).root, before[index].objects.get(slot).root);
@@ -71,7 +72,7 @@ test('Unsplit preserves every surviving endpoint with curved posed lengths and r
   }
 });
 test('straight Split then Unsplit restores the original endpoints, lengths and native handle IDs', () => {
-  const editor = new Editor({demo: false}); editor.addFigure(); editor.select(editor.selectedUid, 0);
+  const editor = ownedEditorFor({demo: false}); editor.addFigure(); editor.select(editor.selectedUid, 0);
   const original = editor.figure.segments.map(s => ({...s})), joints = new Map(editor.geometry.objects.get(0).joints);
   editor.splitSegment(); const midpoint = editor.figure.segments[editor.selectedJoint].segment_id; assert.notEqual(midpoint, original[0].segment_id);
   editor.unsplitSegment(); assert.deepEqual(editor.figure.segments.map(s => s.segment_id), original.map(s => s.segment_id));
@@ -86,7 +87,7 @@ test('native Ctrl+Delete merges tangent same-direction arcs, while corners and o
       {...base, segment_id: 20, parent_id: 10, angle_rad: .2 + bendA + corner, bend_rad: bendB, length: 20}];
     figure.segment_count = 2;
     report.keyframes = [createFrame([createObject(figure, 1, 150, 200)], 1)];
-    const editor = new Editor({demo: false}).load(report); editor.select(1, 0);
+    const editor = ownedEditorFor({demo: false}, report); editor.select(1, 0);
     const endpoint = editor.geometry.objects.get(0).joints.get(20); editor.unsplitSegment();
     near(editor.figure.segments[0].bend_rad, expected); near(editor.object.bends[0], expected);
     nearPoint(editor.geometry.objects.get(0).joints.get(20), endpoint);
@@ -94,7 +95,8 @@ test('native Ctrl+Delete merges tangent same-direction arcs, while corners and o
   }
 });
 test('failed Unsplit is atomic and mirror retains runtime-only native lengths and bends', () => {
-  const editor = fixture();
+  // plain editor: the test writes the pose caches (runtime_segments) of the frames in place
+  const editor = fixture({plain: true});
   for (const frame of editor._allSourceFrames()) {
     frame.objects[0].len_flag = frame.objects[0].bend_flag = 0;
     frame.objects[0].lengths = frame.objects[0].bends = [];
@@ -113,7 +115,7 @@ test('single-segment mirror moves descendants without rotating them; branch mirr
   for (const branch of [false, true]) for (const axis of ['horizontal', 'vertical']) {
     const editor = fixture(), frames = editor._allSourceFrames(), before = frames.map(frame => geometry(editor, frame)), snapshots = frames.map(frame => structuredClone(frame.objects[0]));
     editor.mirrorSegment(axis, {branch});
-    frames.forEach((frame, index) => {
+    editor._allSourceFrames().forEach((frame, index) => {
       const old = before[index].objects.get(0), next = geometry(editor, frame).objects.get(0), pivot = old.root;
       const reflect = p => axis === 'horizontal' ? {x: 2 * pivot.x - p.x, y: p.y} : {x: p.x, y: 2 * pivot.y - p.y};
       nearPoint(next.joints.get(10), reflect(old.joints.get(10)));
@@ -129,7 +131,7 @@ test('single-segment mirror moves descendants without rotating them; branch mirr
   }
 });
 test('media mirror toggles only the native mirror byte and retains image assets through PIV/STK', async () => {
-  const editor = new Editor({demo: false}), figure = createImageFigure({dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', width: 1, height: 1, name: 'Mirror image'});
+  const editor = ownedEditorFor({demo: false}), figure = createImageFigure({dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', width: 1, height: 1, name: 'Mirror image'});
   editor.importFigure(figure); editor.select(editor.selectedUid, 0);
   const asset = editor.figure.image_assets[0], reverse = editor.figure.segments[0].extra_u8_a, source = structuredClone(editor.serialize());
   editor.mirrorSegmentBranch(); assert.equal(editor.figure.image_assets[0], asset); assert.equal(editor.figure.segments[0].extra_u8_b, 1); assert.equal(editor.figure.segments[0].extra_u8_a, reverse);
@@ -139,9 +141,11 @@ test('media mirror toggles only the native mirror byte and retains image assets 
   for (const kind of ['piv', 'stk']) {const reopened = saved[kind].figure_types.find(f => f.image_assets?.length); assert.equal(reopened.segments[0].extra_u8_b, 1); assert.equal(reopened.image_assets.length, 1);}
 });
 test('30,000 reverse-ordered segments mirror as a branch without recursion or quadratic scans', () => {
-  const editor = new Editor({demo: false}); editor.addFigure(); const base = editor.figure.segments[0], count = 30000;
-  editor.figure.segments = Array.from({length: count}, (_, i) => ({...base, segment_id: count - i, parent_id: count - i - 1, length: 1}));
-  editor.object.angles = editor.figure.segments.map(s => s.angle_rad); editor.select(editor.selectedUid, count - 1);
+  const count = 30000, start = ownedEditorFor({demo: false}); start.addFigure();
+  const uid = start.selectedUid, document = structuredClone(start.report), figure = document.figure_types.find(f => f.figure_type_id === start.figure.figure_type_id), base = figure.segments[0];
+  figure.segments = Array.from({length: count}, (_, i) => ({...base, segment_id: count - i, parent_id: count - i - 1, length: 1}));
+  document.keyframes[0].objects.find(o => o.unique_id === uid).angles = figure.segments.map(s => s.angle_rad);
+  const editor = ownedEditorFor({demo: false}, document); editor.select(uid, count - 1);
   editor.mirrorSegmentBranch(); assert.equal(editor.figure.segments.length, count);
   assert.ok(editor.object.angles.every(angle => angle === -Math.PI / 2)); editor.undo(); assert.equal(editor.figure.segments.length, count);
 });

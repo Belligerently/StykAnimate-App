@@ -7,19 +7,25 @@ import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {emptyDocument} from '../src/demo.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const clone = value => structuredClone(value);
 const near = (a, b, epsilon = 0.001) => assert.ok(Math.abs(a - b) <= epsilon, `${a} != ${b}`);
 const pointNear = (a, b) => { near(a.x, b.x); near(a.y, b.y); };
-function fixture() {
-  const editor = new Editor({demo: false}); editor.addFigure(); const root = editor.selectedUid;
-  const child = editor.duplicateFigure().unique_id; editor.joinTo(root, 4);
-  const grandchild = editor.duplicateFigure().unique_id; editor.joinTo(child, 2);
-  editor.select(root); editor.duplicateFrame(); editor.moveSelection(45, 20);
-  editor.duplicateFrame(); editor.moveSelection(70, -35); editor.selectFrame(0); editor.select(child, 7);
-  editor.report.keyframes[0].camera = {is_default: false, x: 40, y: -20, scale: 0.5, angle_rad: 0.3};
-  editor.report.keyframes[1].camera = {is_default: false, x: 100, y: 30, scale: 2, angle_rad: -0.5};
-  editor._invalidate(); editor.markSaved();
+/** The document is written before it opens (the engine owns the document an editor has opened): `change(document)` writes more of it;
+ * `plain` leaves the editor to itself. */
+function fixture({change, plain = false} = {}) {
+  const base = ownedEditorFor({demo: false}); base.addFigure(); const root = base.selectedUid;
+  const child = base.duplicateFigure().unique_id; base.joinTo(root, 4);
+  const grandchild = base.duplicateFigure().unique_id; base.joinTo(child, 2);
+  base.select(root); base.duplicateFrame(); base.moveSelection(45, 20);
+  base.duplicateFrame(); base.moveSelection(70, -35);
+  const document = clone(base.report);
+  document.keyframes[0].camera = {is_default: false, x: 40, y: -20, scale: 0.5, angle_rad: 0.3};
+  document.keyframes[1].camera = {is_default: false, x: 100, y: 30, scale: 2, angle_rad: -0.5};
+  change?.(document);
+  const editor = plain ? new Editor({demo: false}).load(document) : ownedEditorFor({demo: false}, document);
+  editor.select(child, 7);
   return {editor, root, child, grandchild};
 }
 function cameraAt(editor, index) { return cameraValues(evaluatedFrame(editor.report, index, 0, editor.timeline[index].start).camera); }
@@ -30,7 +36,8 @@ function projectedJoints(editor, index) {
 }
 
 test('absolute camera range values change only entered channels with small atomic history', () => {
-  const {editor} = fixture(), before = editor.serialize(), frames = editor.report.keyframes.map(frame => frame.objects), history = editor._undo.length;
+  // plain editor: the test reads the editor's own history entry (kind, bytes) and the identity of the frames' objects
+  const {editor} = fixture({plain: true}), before = editor.serialize(), frames = editor.report.keyframes.map(frame => frame.objects), history = editor._undo.length;
   assert.equal(editor.setCameraValues({x: 250}, [0, 2]), 2);
   assert.deepEqual(editor.report.keyframes.map(frame => frame.camera.x), [250, 100, 250]);
   assert.deepEqual(editor.report.keyframes.map(frame => frame.camera.y), [-20, 30, 0]);
@@ -61,7 +68,8 @@ test('camera clipboard crosses documents, paste/reset ranges retain figure ident
 });
 
 test('100 camera pointer previews create one history entry; cancel restores all selected cameras', () => {
-  const {editor} = fixture(), before = editor.serialize(), count = editor._undo.length, objectArrays = editor.report.keyframes.map(frame => frame.objects);
+  // plain editor: the test reads the editor's open gesture (_drag.before) and the identity of the frames' objects
+  const {editor} = fixture({plain: true}), before = editor.serialize(), count = editor._undo.length, objectArrays = editor.report.keyframes.map(frame => frame.objects);
   editor.beginCameraDrag({indices: [0, 1]});
   for (let i = 1; i <= 100; i++) editor.updateCameraDrag({x: i / 10, y: -i / 20, scale: 1 + i / 1000});
   assert.equal(editor._undo.length, count); assert.ok(editor.dirty); assert.equal(editor._drag.before.length, 0);
@@ -74,7 +82,8 @@ test('100 camera pointer previews create one history entry; cancel restores all 
 });
 
 test('invalid camera batch/gesture is rejected atomically and cannot poison history', () => {
-  const {editor} = fixture(), before = editor.serialize(), count = editor._undo.length;
+  // session gap: camera gestures on a native timeline (not a layer sheet) run in the editor; when the editor cancels a rejected update the session still holds the previewed camera
+  const {editor} = fixture({plain: true}), before = editor.serialize(), count = editor._undo.length;
   assert.throws(() => editor.transformCamera({scale: 0}, [0, 1]), /positive/);
   assert.throws(() => editor.setCameraValues({x: Infinity}, [0, 1]), /finite/);
   assert.throws(() => editor.setCameraValues({scale: 1e-50}, [0, 1]), /native rendering range/);
@@ -86,7 +95,8 @@ test('invalid camera batch/gesture is rejected atomically and cannot poison hist
 });
 
 test('center camera follows matching selected UIDs and preserves the untouched axis, angle and scale', () => {
-  const {editor, child} = fixture(); editor.select(child);
+  // session gap: the engine measures figure bounds itself and refuses the test's own boundsOf callback
+  const {editor, child} = fixture({plain: true}); editor.select(child);
   const before = editor.report.keyframes.map(frame => clone(frame.camera));
   const centers = editor.report.keyframes.map(frame => {
     const entry = [...buildGeometry(editor.report, frame).objects.values()].find(entry => entry.obj.unique_id === child);
@@ -140,7 +150,8 @@ test('Locate moves an entire joined component and every selected figure by the s
 });
 
 test('Locate uses immediate stored neighbors including hidden keys and native handle IDs, with safe missing targets', () => {
-  const {editor, child} = fixture(); editor.report.keyframes[1].duration_raw = 0; editor._invalidate({timing: true});
+  // session gap: the session evaluates a neighbouring frame at its start tick, which for a zero-duration (hidden) native frame shows the next frame
+  const {editor, child} = fixture({plain: true, change: document => { document.keyframes[1].duration_raw = 0; }});
   editor.selectFrame(2); editor.select(child, 0);
   const target = buildGeometry(editor.report, editor.report.keyframes[1]).objects.get(editor.selectedSlot).joints.get(1);
   assert.ok(editor.locateHandle(-1, {handleId: 1})); pointNear(editor.geometry.objects.get(editor.selectedSlot).joints.get(1), target);
@@ -188,7 +199,8 @@ test('authored camera range commands key composed values, preserve other tracks 
 });
 
 test('authored camera multi-property preview commits once and cancel retains original keys by identity', () => {
-  const {editor} = fixture(); editor.addAnimationKeys([{target: {kind: 'camera'}, property: 'x', tick: 0, value: 1000, interpolation: 'hold'}]);
+  // plain editor: the test is about the identity of the document's animation after a cancel
+  const {editor} = fixture({plain: true}); editor.addAnimationKeys([{target: {kind: 'camera'}, property: 'x', tick: 0, value: 1000, interpolation: 'hold'}]);
   const before = editor.serialize(), animation = editor.report._styk.animation, count = editor._undo.length;
   editor.beginCameraDrag({indices: [0, 1]});
   for (let i = 1; i <= 30; i++) editor.updateCameraDrag({x: i, angle_rad: i / 100});
@@ -203,7 +215,7 @@ test('authored camera multi-property preview commits once and cancel retains ori
 });
 
 test('authored camera current-point editing retains an inbetween tick instead of changing the native key start', () => {
-  const {editor} = fixture(); editor.report.keyframes[0].duration_raw = 10; editor._invalidate({timing: true});
+  const {editor} = fixture({change: document => { document.keyframes[0].duration_raw = 10; }});
   editor.addAnimationKeys([{target: {kind: 'camera'}, property: 'x', tick: 0, value: 0, interpolation: 'linear'}, {target: {kind: 'camera'}, property: 'x', tick: 10, value: 100}]);
   editor.seek(5); editor.beginCameraDrag(); assert.equal(editor.tick, 5);
   editor.updateCameraDrag({x: 25}); assert.equal(editor.evaluatedFrame.camera.x, 75);
@@ -215,7 +227,7 @@ test('authored camera current-point editing retains an inbetween tick instead of
 });
 
 test('no-op native camera drags preserve an omitted camera field exactly', () => {
-  const {editor} = fixture(); delete editor.frame.camera; editor._invalidate();
+  const {editor} = fixture({change: document => { delete document.keyframes[0].camera; }});
   const count = editor._undo.length;
   editor.beginCameraDrag(); editor.updateCameraDrag({x: 0}); assert.equal(editor.commitDrag(), false);
   assert.equal('camera' in editor.frame, false); assert.equal(editor._undo.length, count);

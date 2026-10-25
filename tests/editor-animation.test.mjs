@@ -3,18 +3,22 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {animationChannelId} from '../src/animation-channels.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const figureTarget = {kind: 'figure', uid: 1};
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
-function fixture() {
+/** `change(report)` writes into the document before it opens; `owned: false` leaves the editor to itself. */
+function fixture({change, owned = true} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [0, 100, 0].map((x, i) => createFrame([createObject(figure, 1, x, 200), createObject(figure, 2, 300 + i * 10, 200)], 10));
   report.keyframes.forEach(frame => { frame.unknown_native = {sentinel: 123}; });
-  return new Editor({demo: false}).load(report);
+  change?.(report);
+  return owned ? ownedEditorFor({demo: false}, report) : new Editor({demo: false}).load(report);
 }
 
 test('bulk key insertion is one undo operation and never modifies native frame data', () => {
-  const editor = fixture(), frames = editor.report.keyframes, objects = frames[0].objects, before = structuredClone(frames), count = editor._undo.length;
+  // session gap: opacity keys on a native timeline without property channels are refused (and the test reads the identity of the document's records)
+  const editor = fixture({owned: false}), frames = editor.report.keyframes, objects = frames[0].objects, before = structuredClone(frames), count = editor._undo.length;
   editor.addAnimationKeys([{target: figureTarget, property: 'x', tick: 0, value: 0, interpolation: 'linear'}, {target: figureTarget, property: 'x', tick: 10, value: 200},
     {target: figureTarget, property: 'opacity', tick: 0, value: 1, interpolation: 'linear'}, {target: figureTarget, property: 'opacity', tick: 10, value: .5}]);
   assert.equal(editor.animationChannels.length, 2); assert.equal(editor._undo.length, count + 1);
@@ -71,7 +75,7 @@ test('native layer pose-key mutation adopts real source references in the same h
 });
 
 test('hidden native keys remain distinct, and explicit null adds a blank pose', () => {
-  const editor = fixture(); editor.report.keyframes[0].duration_raw = 0; editor._invalidate({timing: true});
+  const editor = fixture({change: report => { report.keyframes[0].duration_raw = 0; }});
   const layer = editor.layers.find(layer => layer.kind === 'layer' || layer.kind === 'user'), target = {kind: 'layer', id: layer.id};
   const native = editor.nativePoseChannel(target); assert.equal(native.keys[0].tick, native.keys[1].tick); assert.equal(native.keys[0].hidden, true);
   const blank = editor.addAnimationKey(target, 'pose', 7, null); assert.deepEqual(blank.value, {frameId: null});
@@ -89,7 +93,8 @@ test('key duplication and sparse deletion preserve stable IDs and exact STYK met
 });
 
 test('interpolated pose capture stores only one source frame and invalid bulk edits publish no source assets', () => {
-  const editor = fixture(), layer = editor.layers.find(layer => layer.kind === 'layer' || layer.kind === 'user'), target = {kind: 'layer', id: layer.id};
+  // session gap: on a native timeline without property channels a pose capture beside an invalid opacity key reports the pose key as a scalar one
+  const editor = fixture({owned: false}), layer = editor.layers.find(layer => layer.kind === 'layer' || layer.kind === 'user'), target = {kind: 'layer', id: layer.id};
   editor.seek(5); const count = Object.keys(editor.report._styk.frameSources ?? {}).length;
   assert.throws(() => editor.addAnimationKeys([{target, property: 'pose', tick: 5}, {target: figureTarget, property: 'opacity', tick: 5, value: 2}]), /opacity/);
   assert.equal(Object.keys(editor.report._styk.frameSources ?? {}).length, count); assert.equal(editor.animationChannels.length, 0);
@@ -100,7 +105,8 @@ test('interpolated pose capture stores only one source frame and invalid bulk ed
 });
 
 test('cached timeline duration extends, shrinks on undo, and preserves hidden native trailing poses', () => {
-  const editor = fixture(); editor.report.keyframes[2].duration_raw = 0; editor._invalidate({timing: true});
+  // session gap: undoing a camera key on a native timeline without property channels is refused
+  const editor = fixture({owned: false, change: report => { report.keyframes[2].duration_raw = 0; }});
   assert.equal(editor.totalTicks, 20); const oldTimeline = editor.timeline;
   editor.addAnimationKey({kind: 'camera'}, 'x', 100, 50);
   assert.equal(editor.totalTicks, 101); assert.notEqual(editor.timeline, oldTimeline);
@@ -109,7 +115,8 @@ test('cached timeline duration extends, shrinks on undo, and preserves hidden na
 });
 
 test('property drags preserve hold interpolation and returning to an unkeyed value creates no history', () => {
-  const editor = fixture();
+  // session gap: a property drag on a native timeline without property channels is refused after the engine took its begin
+  const editor = fixture({owned: false});
   editor.addAnimationKeys([{target: figureTarget, property: 'x', tick: 0, value: 0, interpolation: 'hold'}]);
   editor.beginAnimationEdit(figureTarget, 'x'); editor.previewAnimationEdit(30); editor.commitAnimationEdit();
   assert.equal(editor.animationChannel(figureTarget, 'x').keys[0].interpolation, 'constant');
@@ -139,7 +146,7 @@ test('loading a missing pose source rejects atomically before replacing the open
 });
 
 test('adopting native pose tracks ending in hidden reference keys preserves exact visible duration', () => {
-  const editor = fixture(); editor.report.keyframes[2].duration_raw = 0; editor._invalidate({timing: true});
+  const editor = fixture({change: report => { report.keyframes[2].duration_raw = 0; }});
   const ticks = editor.totalTicks; assert.equal(ticks, 20);
   const native = Array.from({length: ticks}, (_, tick) => { editor.seek(tick); return editor.evaluatedFrame.objects[0].root_x; });
   editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'});

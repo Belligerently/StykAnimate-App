@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {copyBuilderAppearance,pasteBuilderAppearance,builderStrokeAppearance,setBuilderStroke} from '../src/builder-appearance.mjs';
 import {branchSegmentIndices} from '../src/editor-builder-branch.mjs';
-const fixture=()=>{const e=new Editor({demo:false});e.addFigure();e.select(e.selectedUid,2);e.updateSegmentStyle({paint:{type:'linear',angle:30,stops:[{offset:0,color:[220,30,90],opacity:.6},{offset:1,color:[20,70,230],opacity:.3}]},thickness:21});return e;};
+import {ownedEditorFor} from './support/owned-editor.mjs';
+const fixture=()=>{const e=ownedEditorFor({demo:false});e.addFigure();e.select(e.selectedUid,2);e.updateSegmentStyle({paint:{type:'linear',angle:30,stops:[{offset:0,color:[220,30,90],opacity:.6},{offset:1,color:[20,70,230],opacity:.3}]},thickness:21});return e;};
 test('appearance clipboard is a detached snapshot; paste preserves geometry and undo/redo',()=>{
  const e=fixture(),clip=copyBuilderAppearance(e),original=structuredClone(clip),count=e._undo.length;
  assert.equal(e._undo.length,count);e.select(e.selectedUid,4);

@@ -2,17 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 // Sliding carriage: segment index 2 is a connector from (200, 230) to (440, 230) sliding at 50%.
-function fixture() {
-  const editor = new Editor({demo: false}).load(rigExampleDocument('sliding-carriage'));
+function fixture(owned = true) {
+  const doc = rigExampleDocument('sliding-carriage');
+  const editor = owned ? ownedEditorFor({demo: false}, doc) : new Editor({demo: false}).load(doc);
   editor.select(1, 2); return editor;
 }
 const rail = editor => [...editor.geometry.objects.values()][0].segments[2];
 const near = (a, b, tolerance = 1e-6) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 
 test('a connector bends toward the pointer without runaway feedback', () => {
-  const editor = fixture(), before = rail(editor);
+  // session gap: the engine's geometry rows carry no `attachmentPosition` for a connector (read at the end)
+  const editor = fixture(false), before = rail(editor);
   assert.ok(before.connector);
   assert.deepEqual([before.start.x, before.start.y, before.handle.x, before.handle.y], [200, 230, 320, 230]);
   editor.beginDrag('Pose joint');

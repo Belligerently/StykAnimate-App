@@ -6,18 +6,25 @@ import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
 import {exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 Object.assign(Editor.prototype, editorBuilderMethods);
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
-const blank = () => { const editor = new Editor({demo: false}); editor.addFigure(); editor.markSaved(); return editor; };
-const sparse = editor => {
-  const figure = editor.figure;
-  for (const segment of figure.segments) { segment.segment_id *= 11; segment.parent_id *= 11; }
-  return figure;
+/** An editor on a figure of its own, the engine owning it (`plain`: the editor alone). The document is written before it opens:
+ * `sparse` multiplies the figure's handle ids by 11, `change(document, figure, uid)` writes more of it. */
+const blank = ({sparse = false, change, plain = false} = {}) => {
+  const base = ownedEditorFor({demo: false}); base.addFigure();
+  const uid = base.selectedUid, document = structuredClone(base.report), figure = document.figure_types.find(f => f.figure_type_id === base.figure.figure_type_id);
+  if (sparse) for (const segment of figure.segments) { segment.segment_id *= 11; segment.parent_id *= 11; }
+  change?.(document, figure, uid);
+  const editor = plain ? new Editor({demo: false}).load(document) : ownedEditorFor({demo: false}, document);
+  editor.select(uid);
+  return editor;
 };
 
 test('polygons follow sparse native handle IDs, include origin and preserve existing poses', () => {
-  const editor = blank(); sparse(editor);
+  // plain editor: the test reads the editor's own history entry (kind)
+  const editor = blank({sparse: true, plain: true});
   const poses = structuredClone(editor.report.keyframes), frame = editor.frame, objects = frame.objects;
   const polygon = editor.addPolygon([0, 11, 33, 0], {color: '#0d99ff', opacity: 0.4});
   assert.deepEqual(polygon.segment_ids, [0, 11, 33]); assert.deepEqual(polygon.color_rgb, [13, 153, 255]);
@@ -47,7 +54,7 @@ test('polygon edits and deletion are undoable and reject invalid geometry atomic
 });
 
 test('figure styles edit only their reusable definition across every animation keyframe', () => {
-  const editor = new Editor(), frames = editor.report.keyframes;
+  const editor = ownedEditorFor(), frames = editor.report.keyframes;
   const poses = structuredClone(frames), old = structuredClone(editor.figure);
   editor.updateFigureStyle({name: 'Ink walker', outlineWidth: 2.5, outlineColor: '#ff8000', outlineOpacity: 0.8});
   assert.equal(editor.figure.name, 'Ink walker'); assert.equal(editor.report.keyframes, frames); assert.deepEqual(frames, poses);
@@ -79,11 +86,13 @@ test('round caps, square caps, circle fills, gradients and static flags survive 
 });
 
 test('duplicating a sparse branch preserves posed lengths, bends, internal fills and external joins', () => {
-  const editor = blank(), figure = sparse(editor);
+  const editor = blank({sparse: true, change: (document, figure, uid) => {
+    const object = document.keyframes[0].objects.find(o => o.unique_id === uid);
+    object.len_flag = 1; object.lengths = figure.segments.map(s => s.length * 1.2);
+    object.bend_flag = 1; object.bends = figure.segments.map(() => 0.2);
+    object.angles = object.angles.map(a => a + 0.4);
+  }});
   editor.addPolygon([0, 77, 88], {color: '#abcdef'});
-  editor.object.len_flag = 1; editor.object.lengths = figure.segments.map(s => s.length * 1.2);
-  editor.object.bend_flag = 1; editor.object.bends = figure.segments.map(() => 0.2);
-  editor.object.angles = editor.object.angles.map(a => a + 0.4);
   const parentUid = editor.selectedUid; editor.addFigure(); const childUid = editor.selectedUid;
   editor.joinTo(parentUid, 88); editor.select(parentUid, 6); editor.addFrame(); editor.select(parentUid, 6);
   const before = editor.serialize(), original = structuredClone(editor.object);
@@ -103,7 +112,7 @@ test('duplicating a sparse branch preserves posed lengths, bends, internal fills
 });
 
 test('branch copies retain one embedded media table and cannot orphan assets by shape conversion', () => {
-  const editor = new Editor({demo: false});
+  const editor = ownedEditorFor({demo: false});
   const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=';
   editor.importFigure(createImageFigure({dataUrl, width: 1, height: 1, name: 'Pixel'}));
   editor.select(editor.selectedUid, 0); editor.duplicateSegmentBranch();
@@ -129,11 +138,14 @@ test('30,000 reverse-ordered joints use linear branch discovery without recursio
 });
 
 test('branch duplication supports the full native 30,000-segment figure capacity', () => {
-  const editor = blank(), count = 15000, figure = editor.figure, base = figure.segments[0];
-  figure.segments = Array.from({length: count}, (_, i) => {
-    const id = count - i; return {...base, segment_id: id, parent_id: id - 1, z_order: id};
-  });
-  figure.segment_count = count; editor.object.angles = figure.segments.map(s => s.angle_rad);
+  const count = 15000;
+  const editor = blank({change: (document, figure, uid) => {
+    const base = figure.segments[0];
+    figure.segments = Array.from({length: count}, (_, i) => {
+      const id = count - i; return {...base, segment_id: id, parent_id: id - 1, z_order: id};
+    });
+    figure.segment_count = count; document.keyframes[0].objects.find(o => o.unique_id === uid).angles = figure.segments.map(s => s.angle_rad);
+  }});
   editor.select(editor.selectedUid, count - 1);
   const result = editor.duplicateSegmentBranch({angleOffset: 0});
   assert.equal(editor.figure.segments.length, 30000); assert.equal(editor.object.angles.length, 30000);
@@ -149,7 +161,7 @@ test('branch duplication supports the full native 30,000-segment figure capacity
 });
 
 test('new polygons and authored segment styles roundtrip through the actual PIV and STK writers', async () => {
-  const editor = blank(); sparse(editor); editor.select(editor.selectedUid, 6);
+  const editor = blank({sparse: true}); editor.select(editor.selectedUid, 6);
   editor.addPolygon([0, 77, 88], {color: '#0d99ff', opacity: 0.4});
   editor.updateFigureStyle({name: 'Builder export', outlineWidth: 1.25, outlineColor: '#ff8000', outlineOpacity: 0.8});
   editor.updateSegmentStyle({shape: 'squareLine', static: true, gradient: {color: '#0000ff', opacity: 0.6}});

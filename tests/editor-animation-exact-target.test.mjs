@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument,defaultFigure,createFrame,createObject} from '../src/demo.mjs';
 import {animationChannelId} from '../src/animation-channels.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 const global={kind:'segment',uid:7,handleId:1},a={...global,figureTypeId:1},b={...global,figureTypeId:2};
 function fixture(){
   const report=emptyDocument();report.figure_types.push(defaultFigure(2));
   report.keyframes=[1,2,1].map((id,index)=>createFrame([createObject(report.figure_types[id-1],7,120,180)],index===2?1:5));
-  const editor=new Editor({demo:false}).load(report);
+  const editor=ownedEditorFor({demo:false}, report);
   editor.addAnimationKeys([global,a,b].flatMap((target,index)=>[0,10].map((tick,i)=>({target,property:'opacity',tick,value:index===0?i:index===1?.3:.8,interpolation:'linear'}))));
   editor.markSaved();return editor;
 }

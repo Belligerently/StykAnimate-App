@@ -5,8 +5,8 @@ import {randomBytes, createHash} from 'node:crypto';
 import {DocumentExporter} from '../src/document-export.mjs';
 import {decodeDocument, openDocument} from './support/native-files.mjs';
 import {createDemo} from '../src/demo.mjs';
-import {Editor} from '../src/editor.mjs';
 import {FakeCodecHost} from './support/codec-host.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 class WorkerFacade extends EventTarget {
   constructor() {
@@ -125,7 +125,7 @@ test('fresh workers reuse verified compressed bytes without retaining editable s
 test('real portable movieclip worker packs keys, prunes archives, and leaves the project editable', async t => {
   const exporter = environment(t), report = createDemo();
   report._stykSource = {source_base64: randomBytes(131072).toString('base64')};
-  const editor = new Editor({demo: false, layerTimeline: true}).load(report);
+  const editor = ownedEditorFor({demo: false, layerTimeline: true}, report);
   const uid = editor.report.keyframes[0].objects[0].figure_uid;
   editor.select(uid);
   const clip = editor.createMovieclip({start: 0, end: 1, name: 'Portable clip'});

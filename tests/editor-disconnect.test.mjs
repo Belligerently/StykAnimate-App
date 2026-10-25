@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const near = (a, b, label) => assert.ok(Math.abs(a - b) <= 1e-3, `${label}: ${a} != ${b}`);
 const index = (editor, name) => editor.figure.segments.findIndex(segment => segment.name === name);
-const blue = layerTimeline => new Editor({layerTimeline}).newDocument();
+const blue = (layerTimeline, owned = true) => (owned ? ownedEditorFor({layerTimeline}) : new Editor({layerTimeline})).newDocument();
 
 /** Every drawable's points, keyed by figure family (a source and its disconnected
  * part share one), primitive and native handle, which disconnecting preserves. */
@@ -130,7 +131,8 @@ test('fills move with their part; a fill across the cut is refused without chang
 
 test('a failure while trimming the rig leaves the document, layers and history untouched', () => {
   for (const layerTimeline of [true, false]) {
-    const editor = blue(layerTimeline); animated(editor);
+    // plain editor: the test makes the editor's own topology edit (_topologyEdit) fail
+    const editor = blue(layerTimeline, false); animated(editor);
     const saved = editor.serialize(), depth = editor._undo.length, uids = editor.getLayerFigureUids(editor.layerForUid(1)).slice();
     editor.select(1, index(editor, 'Right upper arm'));
     const original = editor._topologyEdit; let calls = 0;

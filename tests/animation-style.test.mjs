@@ -6,6 +6,7 @@ import {animationChannelId, composeAnimationChannels, animationPropertyValue, va
 import {resolveInstanceFigure, animationStyleValue} from '../src/animation-style.mjs';
 import {validateObjectChanges} from '../src/pivot/model.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const figureTarget = {kind: 'figure', uid: 1};
 const segmentTarget = {kind: 'segment', uid: 1, handleId: 1};
@@ -98,6 +99,7 @@ test('style channels on a joined child preserve the complete attachment pose', (
 });
 
 test('editor style scrub commits one sparse history record and cancel/undo/redo preserve source definitions', () => {
+  // session gap: a segment-style (opacity) edit on a native timeline without property channels: the session takes the begin and refuses the preview
   const editor = new Editor({demo: false}).load(fixture()), before = structuredClone(editor.report.figure_types);
   editor.seek(5); editor.beginAnimationEdit(segmentTarget, 'opacity');
   for (let value = 0; value <= 1; value += .1) editor.previewAnimationEdit(value);
@@ -117,7 +119,7 @@ test('native document JSON save/reopen keeps all three style keys without materi
 });
 
 test('captured style validation rejects malformed data before replacing the open document', () => {
-  const editor = new Editor({demo: false}).load(fixture()), original = editor.report;
+  const editor = ownedEditorFor({demo: false}, fixture()), original = editor.report;
   for (const style of [null, [], {outlineOpacity: 2}, {outlineOpacity: NaN}, {segments: []}, {segments: {'01': {opacity: .2}}}, {segments: {0: {opacity: .2}}}, {segments: {1: {opacity: -.1}}}, {segments: {1: {gradientOpacity: '0.5'}}}]) {
     const report = fixture(); report.keyframes[0].objects[0]._stykStyle = style;
     assert.throws(() => editor.load(report), /style|opacity/i); assert.equal(editor.report, original);

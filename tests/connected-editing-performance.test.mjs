@@ -7,15 +7,16 @@ import {evaluatedNativeFrame,buildGeometry} from '../src/pivot/geometry.mjs';
 import {documentChunks,applyDocumentChunk} from '../src/document-transport.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
 import {connectedTimelineGroups} from '../src/connected-timeline.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
-function fixture({frames=30,parts=24}={}) {
+function fixture({frames=30,parts=24,plain=false}={}) {
   const report=emptyDocument(),figure=report.figure_types[0];
   report.keyframes=Array.from({length:frames},(_,i)=>createFrame(Array.from({length:parts},(_,slot)=>{
     const object=createObject(figure,slot+1,100+i,200);
     if(slot)object.join={target_object_slot:slot-1,target_unique_id:slot,target_handle_id:1};
     return object;
   }),3));
-  const editor=new Editor({demo:false,propertyChannels:true}).load(report);editor.select(1);return editor;
+  const editor=plain?new Editor({demo:false,propertyChannels:true}).load(report):ownedEditorFor({demo:false,propertyChannels:true}, report);editor.select(1);return editor;
 }
 function move(e){e.beginTranslationDrag();e.moveSelection(20,5);e.commitDrag();}
 
@@ -135,7 +136,8 @@ test('focused projection lazily resolves a connected group without constructing 
 });
 
 test('history source collection visits each shared sequence once and collects only unreachable captures',()=>{
-  const e=fixture({frames:60,parts:40});move(e);
+  // plain editor: the test reads the editor's own history entries and prunes its generated sources
+  const e=fixture({frames:60,parts:40,plain:true});move(e);
   for(let i=0;i<12;i++){
     const keyIds=e.animationChannels[0].keys.map(key=>key.id);
     e.moveAnimationKeys(e.animationChannels.map(c=>({channelId:c.id,keyIds})),1);

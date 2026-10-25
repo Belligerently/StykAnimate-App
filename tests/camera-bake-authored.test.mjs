@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Editor } from "../src/editor.mjs";
 import { cameraIsIdentity } from "../src/pivot/background.mjs";
 import { sampleAnimationChannel } from "../src/animation-channels.mjs";
 import {
@@ -9,6 +8,7 @@ import {
   projectedCameraBake,
   channel,
 } from "./camera-bake-fixture.mjs";
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 function near(a, b, message = "", epsilon = 0.002) {
   assert.ok(Math.abs(a - b) < epsilon, `${message}: ${a} != ${b}`);
@@ -40,7 +40,7 @@ function equivalent(a, b, tick) {
 }
 
 test("independent layer, camera and scalar tracks retain all 24 projected frames; joined rigs are transformed once", () => {
-  const editor = new Editor({ demo: false }).load(cameraBakeFixture());
+  const editor = ownedEditorFor({ demo: false }, cameraBakeFixture());
   editor.seek(5);
   editor.select(2, 3);
   const report = editor.report,
@@ -121,7 +121,8 @@ test("independent layer, camera and scalar tracks retain all 24 projected frames
 });
 
 test("native eased motion without scalar overrides resumes through passthrough guards instead of flattening poses", () => {
-  const editor = new Editor({ demo: false }).load(
+  const editor = ownedEditorFor(
+    { demo: false },
     cameraBakeFixture({ scalar: false, poses: false }),
   );
   const before = Array.from({ length: editor.totalTicks }, (_, tick) =>
@@ -139,7 +140,7 @@ test("native eased motion without scalar overrides resumes through passthrough g
 });
 
 test("single inbetween conversion uses current displayed tick; range indices use selected native starts", () => {
-  const editor = new Editor({ demo: false }).load(cameraBakeFixture());
+  const editor = ownedEditorFor({ demo: false }, cameraBakeFixture());
   editor.seek(5);
   editor.applyCameraToFigures();
   assert.equal(editor.tick, 5);
@@ -162,7 +163,7 @@ test("single inbetween conversion uses current displayed tick; range indices use
 });
 
 test("sequential bakes retain prior guards and camera identity bakes create no history", () => {
-  const editor = new Editor({ demo: false }).load(cameraBakeFixture()),
+  const editor = ownedEditorFor({ demo: false }, cameraBakeFixture()),
     before = Array.from({ length: 24 }, (_, tick) =>
       projectedCameraBake(editor.report, tick),
     );
@@ -181,7 +182,7 @@ test("sequential bakes retain prior guards and camera identity bakes create no h
 });
 
 test("authored camera baking validates the full plan before publishing changes", () => {
-  const editor = new Editor({ demo: false }).load(cameraBakeFixture()),
+  const editor = ownedEditorFor({ demo: false }, cameraBakeFixture()),
     before = editor.serialize(),
     count = editor._undo.length;
   for (const ticks of [[-1], [24], [1.5], [NaN]])
@@ -191,29 +192,30 @@ test("authored camera baking validates the full plan before publishing changes",
     );
   assert.deepEqual(editor.serialize(), before);
   assert.equal(editor._undo.length, count);
-  editor.report._styk.animation.channels.push(
+  // The invalid plan is a document the engine opens: the channels and the scale are written before it does.
+  const document = structuredClone(editor.report);
+  document._styk.animation.channels.push(
     channel({ kind: "camera" }, "scale", [
       [0, 1],
       [23, 0.000001],
     ]),
   );
-  editor._invalidate();
-  editor.report.keyframes[2].objects.find(
+  document.keyframes[2].objects.find(
     (object) => object.unique_id === 4,
   ).scale = 10;
   // An authored scale overrides any pose and becomes unsupported after the tiny camera's inverse.
-  editor.report._styk.animation.channels.push(
+  document._styk.animation.channels.push(
     channel({ kind: "figure", uid: 4 }, "scale", [[0, 2]]),
   );
-  editor._invalidate();
-  const invalidPlan = editor.serialize(),
-    undo = editor._undo.length;
+  const invalid = ownedEditorFor({ demo: false }, document);
+  const invalidPlan = invalid.serialize(),
+    undo = invalid._undo.length;
   assert.throws(
-    () => editor.applyCameraToFigures(undefined, { ticks: [0, 23] }),
+    () => invalid.applyCameraToFigures(undefined, { ticks: [0, 23] }),
     /scale.*range/i,
   );
-  assert.deepEqual(editor.serialize(), invalidPlan);
-  assert.equal(editor._undo.length, undo);
+  assert.deepEqual(invalid.serialize(), invalidPlan);
+  assert.equal(invalid._undo.length, undo);
 });
 
 test("zero-scale figures and appearing/disappearing independent layers remain valid and sparse", () => {
@@ -229,7 +231,7 @@ test("zero-scale figures and appearing/disappearing independent layers remain va
     [8, null],
     [16, "frame-3"],
   ]).keys;
-  const editor = new Editor({ demo: false }).load(report),
+  const editor = ownedEditorFor({ demo: false }, report),
     before = Array.from({ length: 24 }, (_, tick) =>
       projectedCameraBake(editor.report, tick),
     );
@@ -245,7 +247,7 @@ test("zero-scale figures and appearing/disappearing independent layers remain va
 });
 
 test("hidden camera is not transferred and does not change artwork or history", () => {
-  const editor = new Editor({ demo: false }).load(cameraBakeFixture());
+  const editor = ownedEditorFor({ demo: false }, cameraBakeFixture());
   editor.report._styk.layers.fixed.camera.visible = false;
   const before = editor.serialize(),
     count = editor._undo.length;

@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
-import {plainEditorWithDrawings} from './support/owned-editor.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 import {BuilderSession} from '../src/builder-session.mjs';
 import {emptyDocument, createObject, createFrame, defaultFigure} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
@@ -18,15 +17,17 @@ function fixture() {
     createObject(walker, 2, 640, 160),
     createObject(report.figure_types[1], 3, 480, 320),
   ], 4));
-  return new Editor({demo: false}).load(report);
+  return ownedEditorFor({demo: false}, report);
 }
+/** An editor the engine owns, on a document with a drawing layer (the active one) the session made. */
+const editorWithDrawing = options => { const editor = ownedEditorFor(options); editor.createDrawingLayer(); return editor; };
 const figure = (editor, typeId) => editor.report.figure_types.find(f => f.figure_type_id === typeId);
 const objectsOf = (editor, typeId, frame = editor.frame) => frame.objects.filter(o => o.figure_type_id === typeId);
 
 test('entering Build from a drawing or fixed track chooses an editable figure layer', () => {
   for (const source of ['drawing', 'scene', 'camera']) {
     const options = {demo: false, layerTimeline: true}, figureLayer = 'layer-1';
-    const editor = source === 'drawing' ? plainEditorWithDrawings(options).editor : new Editor(options);
+    const editor = source === 'drawing' ? editorWithDrawing(options) : ownedEditorFor(options);
     if (source !== 'drawing') editor.selectSheetLayer(source);
     editor.select(null);
     const revision = editor.revision;
@@ -45,7 +46,7 @@ test('entering Build from a drawing or fixed track chooses an editable figure la
 });
 
 test('Build creates a figure layer when all existing figure layers are locked or hidden', () => {
-  const {editor} = plainEditorWithDrawings({demo: false, layerTimeline: true});
+  const editor = editorWithDrawing({demo: false, layerTimeline: true});
   editor.setLayerLocked('layer-1', true);
   const hidden = editor.createLayer('Hidden'); editor.setLayerVisible(hidden.id, false);
   editor.select(null);
@@ -144,7 +145,7 @@ for (const mode of ['native', 'simple', 'advanced']) test(`import-new preserves 
     _stykStyle: {segments: {'1': {color: 0x465a28, opacity: .8, thickness: 13}}},
   });
   report.keyframes = [createFrame([pose, createObject(definition, 2, 500, 160)], 4)];
-  const editor = new Editor({demo: false, propertyChannels: layerTimeline, layerTimeline}).load(report);
+  const editor = ownedEditorFor({demo: false, propertyChannels: layerTimeline, layerTimeline}, report);
   if (mode === 'simple') editor.enableFrameDrafts();
   editor.select(1);
   if (layerTimeline) editor.updateObject({root_x: 200});
@@ -206,7 +207,7 @@ test('create session discard removes the drawn figure and its object', () => {
 test('create session draws a visible figure on a materialized layer-sheet cell', () => {
   const report = emptyDocument(), walker = report.figure_types[0];
   report.keyframes = [createFrame([createObject(walker, 1, 200, 200)], 4)];
-  const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(report);
+  const editor = ownedEditorFor({demo: false, propertyChannels: true, layerTimeline: true}, report);
   // A pose edit captures the layer cell into a frame source; afterwards the
   // evaluated frame no longer mirrors report.keyframes[frameIndex].
   editor.select(1);

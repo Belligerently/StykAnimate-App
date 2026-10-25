@@ -7,16 +7,22 @@ import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEd
 import {defaultFigure,createObject} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 Object.assign(Editor.prototype,editorBuilderMethods);
-function fixture(){
-  const editor=new Editor({demo:false}),figure=defaultFigure(201);
+/** `change(definition)` writes into the figure's definition before the document opens; `plain` leaves the editor to itself. */
+function fixture({change,plain=false}={}){
+  const base=ownedEditorFor({demo:false}),figure=defaultFigure(201);
   figure.name='Order fixture';
   figure.segments=figure.segments.slice(0,4).map((segment,index)=>({...segment,segment_id:[11,22,33,44][index],parent_id:[0,11,22,0][index],z_order:[1,3,5,6][index]}));
   figure.segment_count=4;
   figure.polyfills=[{polyfill_id:1,segment_ids:[0,11,22],segment_ids_raw:[0,11,22],color_rgb:[20,80,200],color_alpha:1,alpha_raw:0,z_order:2},
     {polyfill_id:2,segment_ids:[0,22,44],segment_ids_raw:[0,22,44],color_rgb:[220,80,20],color_alpha:1,alpha_raw:0,z_order:4}];
-  editor.importFigure(figure);editor.select(editor.selectedUid,0);editor._undo=[];editor._redo=[];
-  editor.figure.image_assets=[{kind:'image',data_url:'data:image/png;base64,'+'A'.repeat(1024*1024)}];
+  base.importFigure(figure);
+  const uid=base.selectedUid,document=base.serialize(),definition=document.figure_types.find(value=>value.figure_type_id===base.figure.figure_type_id);
+  definition.image_assets=[{kind:'image',data_url:'data:image/png;base64,'+'A'.repeat(1024*1024)}];
+  change?.(definition);
+  const editor=plain?new Editor({demo:false}).load(document):ownedEditorFor({demo:false},document);
+  editor.select(uid,0);
   return editor;
 }
 const order=editor=>builderDrawables(editor.figure).map(entry=>`${entry.kind==='segment'?'s':'p'}${entry.index}`);
@@ -47,7 +53,7 @@ test('numeric order is one-based, branch delta is relative and boundary-clamped'
   assert.deepEqual(e.figure,before);assert.equal(e._undo.length,history);
 });
 test('repeated live previews start at the captured order and cancel restores raw metadata',()=>{
-  const e=fixture();e.figure.segment_z_raw=[9,7,5,3];e.figure.poly_z_raw=[8,4];
+  const e=fixture({change:figure=>{figure.segment_z_raw=[9,7,5,3];figure.poly_z_raw=[8,4];}});
   const before=structuredClone(e.figure),token=beginNativePropertyEdit(e,'polygon_0_z_order');
   previewNativePropertyEdit(token,6);assert.equal(order(e).at(-1),'p0');
   previewNativePropertyEdit(token,1);assert.equal(order(e)[0],'p0');
@@ -55,7 +61,8 @@ test('repeated live previews start at the captured order and cancel restores raw
   cancelNativePropertyEdit(token);assert.deepEqual(e.figure,before);assert.equal(e._undo.length,0);
 });
 test('polygon alpha and ordering history retain source frames/assets and stay small',()=>{
-  const e=fixture(),frames=e.report.keyframes,frame=e.frame,objects=frame.objects,assets=e.figure.image_assets;
+  // plain editor: the test reads the identity of the document's records and the editor's own history entries (kind, bytes)
+  const e=fixture({plain:true}),frames=e.report.keyframes,frame=e.frame,objects=frame.objects,assets=e.figure.image_assets;
   e.report._styk.frameSources={source:{...frame,objects:frame.objects.map(o=>({...o}))}};
   const retained=e.report._styk.frameSources.source;
   command(e,'polygon_0_opacity',25);assert.equal(e.figure.polyfills[0].alpha_raw,191);
@@ -66,7 +73,7 @@ test('polygon alpha and ordering history retain source frames/assets and stay sm
   assert.equal(e.figure.image_assets,assets);assert.equal(e.report._styk.frameSources.source,retained);
 });
 test('tied authored records stay untouched on no-op and reorder deterministically',()=>{
-  const e=fixture();e.figure.segments.forEach(s=>s.z_order=1);e.figure.polyfills.forEach(p=>p.z_order=1);
+  const e=fixture({change:figure=>{figure.segments.forEach(s=>s.z_order=1);figure.polyfills.forEach(p=>p.z_order=1);}});
   const before=structuredClone(e.figure);e.moveBuilderOrder({kind:'segment',index:3},'front');assert.deepEqual(e.figure,before);
   e.moveBuilderOrder({kind:'polygon',index:0},'front');assert.deepEqual(order(e),['p1','s0','s1','s2','s3','p0']);
   e.undo();assert.deepEqual(e.figure,before);
@@ -81,7 +88,7 @@ test('document validation rejects malformed order and polygon alpha before rende
   assert.doesNotThrow(()=>validateScene(e.report));
 });
 test('actual PIV and STK encoders retain mixed order and polygon alpha',async()=>{
-  const e=fixture();e.figure.image_assets=[];e.moveBuilderOrder({kind:'segment',index:1},'back',{branch:true});e.setPolygonOpacity(0,.4);
+  const e=fixture({change:figure=>{figure.image_assets=[];}});e.moveBuilderOrder({kind:'segment',index:1},'back',{branch:true});e.setPolygonOpacity(0,.4);
   const expected=order(e),document=e.serialize(),reopened={};
   for(const kind of ['piv','stk']){
     const figures=(await roundTrip({document,format:kind,figureTypeId:document.figure_types.at(-1).figure_type_id})).figure_types;

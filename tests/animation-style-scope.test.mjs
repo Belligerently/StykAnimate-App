@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument, defaultFigure, createObject, createFrame} from '../src/demo.mjs';
 import {animationChannelId, normalizeAnimationTarget, findAnimationChannel, composeAnimationChannels,
   animationPropertyValue, validateAnimationDocument, sampleAnimationChannel} from '../src/animation-channels.mjs';
@@ -8,6 +7,7 @@ import {animationStyleValue, setAnimationStyle, resolveInstanceFigure} from '../
 import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {roundTrip} from './support/codec.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const globalTarget = {kind:'segment',uid:7,handleId:1};
 const targetA = {...globalTarget,figureTypeId:1}, targetB = {...globalTarget,figureTypeId:2};
@@ -66,7 +66,7 @@ test('malformed, non-segment and missing figure scopes reject before replacing a
   for(const target of [{kind:'figure',uid:7},{kind:'layer',id:'layer-1'},{kind:'camera'},{kind:'scene'}]) {
     assert.throws(()=>normalizeAnimationTarget({...target,figureTypeId:1}),/Only segment/);
   }
-  const editor=new Editor({demo:false}).load(fixture()), original=editor.report;
+  const editor=ownedEditorFor({demo:false}, fixture()), original=editor.report;
   const missing=setChannels(fixture(),[channel({...globalTarget,figureTypeId:3},'opacity',[])]);
   assert.throws(()=>validateAnimationDocument(missing),/missing figure definition 3/);
   // The engine refuses the document with the editor's message key (its parameters are not carried).
@@ -92,7 +92,7 @@ test('retimed authored and retained poses select scope by displayed definition i
   const report=fixture(), retained=structuredClone(report.keyframes[1]); retained._styk.frameId='retained-b';
   retained.objects[0]._stykStyle={segments:{1:{opacity:.99,gradientOpacity:.98}}};
   report._styk.frameSources={'retained-b':retained};
-  const editor=new Editor({demo:false}).load(report), layer=editor.layers.find(layer=>['layer','user'].includes(layer.kind));
+  const editor=ownedEditorFor({demo:false}, report), layer=editor.layers.find(layer=>['layer','user'].includes(layer.kind));
   editor.addAnimationKeys([
     {target:{kind:'layer',id:layer.id},property:'pose',tick:0,value:{frameId:'retained-b'},interpolation:'hold'},
     {target:{kind:'layer',id:layer.id},property:'pose',tick:5,value:{frameId:'source-0'},interpolation:'hold'},
