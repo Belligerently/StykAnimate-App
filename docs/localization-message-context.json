@@ -16296,12 +16296,6 @@
     ],
     "context": "if (!blob) throw messageError(new Error(''), \"errors.exportFlow.pngExportFailed\", {});"
   },
-  "errors.exportFrameCore.invalidExportTileDimensions": {
-    "locations": [
-      "src/export-frame-core.mjs:178"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.exportFrameCore.invalidExportTileDimensions\", {});"
-  },
   "errors.exportFrameRenderer.anExportFrameCouldNotBeTransferred": {
     "locations": [
       "src/engine/engine-export.mjs:161"

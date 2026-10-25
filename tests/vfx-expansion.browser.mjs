@@ -5,19 +5,17 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.STYK_TEST_URL||'http://127.0.0.1:47832');await page.waitForFunction(()=>window.styk?.ready);
  const parity=await page.evaluate(async()=>{
-  const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),{createVfx}=await import('/src/vfx.mjs'),{drawExportScene,drawExportSceneTiled,exportFrameGeometry}=await import('/src/export-frame-core.mjs'),{VfxGPU}=await import('/src/vfx-gpu.mjs');
+  const {createVfx}=await import('/src/vfx.mjs'),{VfxGPU}=await import('/src/vfx-gpu.mjs');
   const paint={type:'linear',angle:35,stops:[{offset:0,color:[255,80,40],opacity:.6},{offset:.4,color:[100,255,90],opacity:1},{offset:1,color:[70,140,255],opacity:.8}]};
   const variants=[...['linear','radial','angular','diamond'].map(type=>['tint',{color:{...paint,type},mix:.8}]),['glow',{color:paint,mode:2,spread:3,coreMix:.3,coreColor:paint,blend:1,falloff:1.4}],['glow',{mode:1}],['outline',{mode:2,only:1,color:paint,width:8}],['outline',{mode:1,color:paint,width:7}],['shadow',{mode:1,color:paint,spread:2}],['blur',{mode:1,radius:12,angle:33}],['blur',{mode:2,radius:12}],['blur',{mode:3,radius:12}],['grade',{shadows:.3,highlights:-.2,gamma:1.3,tint:.2}],['pixelate',{linked:0,size:13,sizeY:7,offsetX:3,offsetY:-5}],['noise',{colored:1,pattern:1,size:15,softness:.5,contrast:2}],['vignette',{color:paint,centerX:.7,centerY:.4,aspect:1.3,roundness:.2}],['dissolve',{color:paint}],['rgbSplit',{amount:12,angle:45}],['wave',{strength:18,angle:32}],['shockwave',{centerX:.4,centerY:.55,radius:80}],['bloom',{color:paint,radius:24}],['lightSweep',{color:paint}],['crt',{curvature:.15,chromatic:3,color:paint}]];
   const results=[],gpu=new VfxGPU();
   for(const [type,params] of variants){
-   const doc=emptyDocument();doc.canvas_width=320;doc.canvas_height=240;const object=createObject(doc.figure_types[0],1,160,200),frame=createFrame([object],20);doc.keyframes=[frame];const effect=createVfx(type,'test');Object.assign(effect.params,params);
-   const scope=['vignette','shockwave','crt','grade','pixelate','noise','wave','bloom'].includes(type)?'scene':'figure';(scope==='scene'?frame:object)._stykVfx={figure:[effect]};
-   const geometry=exportFrameGeometry(doc,frame),full=new OffscreenCanvas(320,240),tile=new OffscreenCanvas(320,240);drawExportScene(full.getContext('2d'),doc,frame,geometry,{});await drawExportSceneTiled(tile.getContext('2d'),doc,frame,geometry,{preload:async()=>{}},96);
-   const a=full.getContext('2d').getImageData(0,0,320,240).data,b=tile.getContext('2d').getImageData(0,0,320,240).data;let max=0,total=0;for(let i=0;i<a.length;i++){const diff=Math.abs(a[i]-b[i]);max=Math.max(max,diff);total+=diff;}
-   const input=new OffscreenCanvas(96,96),c=input.getContext('2d');c.fillStyle='#68a4d0';c.fillRect(25,25,46,46);gpu.run(input,[effect]);const error=gpu.gl.getError();results.push({type,mode:params.mode,scope,max,mean:total/a.length,error});
+   const effect=createVfx(type,'test');Object.assign(effect.params,params);
+   const scope=['vignette','shockwave','crt','grade','pixelate','noise','wave','bloom'].includes(type)?'scene':'figure';
+   const input=new OffscreenCanvas(96,96),c=input.getContext('2d');c.fillStyle='#68a4d0';c.fillRect(25,25,46,46);gpu.run(input,[effect]);const error=gpu.gl.getError();results.push({type,mode:params.mode,scope,error});
   }gpu.destroy();return results;
  });
- console.log('Expanded rendering',JSON.stringify(parity));for(const row of parity){assert.equal(row.error,0,JSON.stringify(row));assert.ok(row.max<=3,JSON.stringify(row));}
+ console.log('Expanded rendering',JSON.stringify(parity));for(const row of parity){assert.equal(row.error,0,JSON.stringify(row));}
  // Rendering can be checked independently of the legacy pose-effect UI.
  if(!process.argv.includes('--render-only')){
  await page.getByRole('tab',{name:'VFX',exact:true}).click();await page.selectOption('#vfx-scope','figure');

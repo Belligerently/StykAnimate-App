@@ -181,7 +181,7 @@ src/export-canvas.mjs	engine	styk-export	js	frame hand-over of the engine's expo
 src/export-capabilities.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/export-crisp.mjs	engine	styk-export	removed	removed with the JavaScript export worker; No smoothing is drawn by the engine (Edges::Crisp, styk-export)
 src/export-flow.mjs	ui	-	stays	export dialog and request
-src/export-frame-core.mjs	engine	styk-export	partial	Rust: frames of every export (styk-export, src/engine/engine-export.mjs); this module still draws for the JavaScript renderer's callers (vfx-camera) and goes with them
+src/export-frame-core.mjs	engine	styk-export	removed	deleted: the engine exports every frame (styk-export, src/engine/engine-export.mjs); only its own test and the retired fixture generators still used it (12539 bytes)
 src/export-frame-renderer.mjs	engine	styk-export	removed	removed; src/engine/engine-export.mjs owns the request, progress, revision, timeout and retry logic of an export and the output canvas
 src/export-frame-worker.mjs	engine	styk-export	removed	removed; the engine's export worker (src/engine/engine-export-worker.mjs) draws every export, and writes SVG with styk-export svg
 src/export-memory.mjs	engine	styk-export	partial	Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); the interface keeps the allowance and tile plan it validates a request with
@@ -292,7 +292,7 @@ src/onion-skin.mjs	engine	styk-edit	removed	deleted: the session plans the onion
 src/onion-surface-cache.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/onion-timeline-range.mjs	ui	-	stays	
 src/paint.mjs	engine	styk-eval	partial	Rust: segment paints and gradients in draw lists; normalizePaint, segmentPaint, samplePaint, parseColor and hexColor for recolouring (styk-edit/src/recolor.rs); CSS and SVG helpers still JS
-src/parallax-draw.mjs	engine	styk-render	js	
+src/parallax-draw.mjs	engine	styk-render	removed	deleted: only the removed export frame module used it (869 bytes)
 src/pen-input.mjs	ui	-	stays	
 src/pivot-export-materialize.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/pivot-frame-draft.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
@@ -398,7 +398,7 @@ src/simple-timeline.mjs	ui	-	removed	deleted: an alias of sheet-filmstrip.mjs th
 src/source-record.mjs	engine	styk-formats::container	js	
 src/spatial-controls.mjs	ui	-	stays	
 src/spatial-gizmo.mjs	ui	-	stays	
-src/spatial-mesh-legacy.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/spatial-mesh-legacy.mjs	engine	styk-eval::rig	js	Kept: the converter behind scripts/convert-spatial-meshes.mjs (docs/SPATIAL-MESHES.md); the app does not run it on open
 src/spatial-mesh.mjs	engine	styk-eval::spatial	partial	Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS
 src/spatial-projection.mjs	engine	styk-eval::spatial	partial	Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS
 src/sprite-placement-dialog.mjs	ui	-	stays	
@@ -511,8 +511,8 @@ src/vfx-drawable.mjs	engine	styk-eval::vfx	js	what effects a drawn item carries 
 src/vfx-generator-anchors.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-generator-atlas.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
-src/vfx-generator-canvas.mjs	engine	styk-render::generators	partial	Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it
-src/vfx-generator-frame.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-canvas.mjs	engine	styk-render::generators	removed	deleted: styk-raster draws particles and beams; only the removed export frame module used it (12933 bytes)
+src/vfx-generator-frame.mjs	engine	styk-eval::vfx::generated	removed	deleted: only the removed export frame module and the retired fixture generators used it (4643 bytes)
 src/vfx-generator-gpu.mjs	engine	styk-render::generators	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/vfx-generator-layers.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-generator-styles.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)

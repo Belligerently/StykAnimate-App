@@ -15,11 +15,11 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
 | `styk-edit` | 90 | 1227 KiB | 28 | 42 | 8 | 1 | 11 | 17 % | 66 % | 11 % |
 | `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
-| `styk-eval` | 80 | 688 KiB | 18 | 46 | 10 | 0 | 6 | 18 % | 72 % | 1 % |
-| `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
+| `styk-eval` | 80 | 688 KiB | 18 | 46 | 9 | 0 | 7 | 18 % | 72 % | 1 % |
+| `styk-export` | 14 | 75 KiB | 8 | 2 | 0 | 0 | 4 | 16 % | 8 % | 16 % |
 | `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
-| `styk-render` | 51 | 225 KiB | 8 | 7 | 3 | 0 | 33 | 24 % | 48 % | 12 % |
-| **Total** | 356 | 3222 KiB | 106 | 112 | 30 | 23 | 85 | 29 % | 49 % | 7 % |
+| `styk-render` | 51 | 225 KiB | 7 | 6 | 3 | 0 | 35 | 30 % | 43 % | 18 % |
+| **Total** | 356 | 3222 KiB | 105 | 110 | 29 | 23 | 89 | 29 % | 48 % | 8 % |
 
 ## Engine modules
 
@@ -236,7 +236,7 @@ Engine logic: ported to Rust.
 | `src/rig-constraints.mjs` | `styk-eval::rig` | partial | Rust: plan and evaluation (styk_eval::rig); the plan's validation with its refusals (styk-edit/src/rig_behavior.rs); authoring helpers still JS |
 | `src/rig-control-details.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
 | `src/rig-weighted.mjs` | `styk-eval::rig` | partial | Rust: weighted joints and bindings (styk_eval::rig); validateWeightedJoint (styk-edit/src/rig_behavior.rs); authoring still JS |
-| `src/spatial-mesh-legacy.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
+| `src/spatial-mesh-legacy.mjs` | `styk-eval::rig` | js | Kept: the converter behind scripts/convert-spatial-meshes.mjs (docs/SPATIAL-MESHES.md); the app does not run it on open |
 | `src/movieclip-mesh.mjs` | `styk-eval::spatial` | partial | Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS |
 | `src/pivot/surfaces.mjs` | `styk-eval::spatial` | ported | Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer |
 | `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation and ordinary choice/group/preset editing; 24 recorded spatial-origin visibility/preset/mixed tapes/2724 steps including joins; origin instances admitted with a joint, several figures or IK limbs; additional spatial/native-projection cases and panel validation/adoption remain guarded |
@@ -254,14 +254,14 @@ Engine logic: ported to Rust.
 | `src/vfx-user-presets.mjs` | `styk-eval::vfx` | partial | Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS |
 | `src/vfx.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS; B13 coherent edit-frame conversion reuses unchanged warning-free effect tables, retaining original diagnostics and identity/lineage fallbacks; verified400Rust/27CLI925/82JS/check; existing portable Loader API, stored fields/math/schema unchanged; fresh figures cost/checkpoint/default gate pending |
 | `src/vfx-generator-anchors.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/vfx-generator-frame.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-frame.mjs` | `styk-eval::vfx::generated` | removed | deleted: only the removed export frame module and the retired fixture generators used it (4643 bytes) |
 | `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generators.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/renderer-geometry.mjs` | `styk-eval::view` | partial | the interface's view math only: cameraMatrix, worldToScreen, screenToWorld and objectBounds. Rust: styk_eval::view (camera_matrix, orientation) and drawlist::artwork_bounds; the editing cut replaces picking and bounds with engine queries |
 | `src/export-canvas.mjs` | `styk-export` | js | frame hand-over of the engine's export worker |
 | `src/export-crisp.mjs` | `styk-export` | removed | removed with the JavaScript export worker; No smoothing is drawn by the engine (Edges::Crisp, styk-export) |
-| `src/export-frame-core.mjs` | `styk-export` | partial | Rust: frames of every export (styk-export, src/engine/engine-export.mjs); this module still draws for the JavaScript renderer's callers (vfx-camera) and goes with them |
+| `src/export-frame-core.mjs` | `styk-export` | removed | deleted: the engine exports every frame (styk-export, src/engine/engine-export.mjs); only its own test and the retired fixture generators still used it (12539 bytes) |
 | `src/export-frame-renderer.mjs` | `styk-export` | removed | removed; src/engine/engine-export.mjs owns the request, progress, revision, timeout and retry logic of an export and the output canvas |
 | `src/export-frame-worker.mjs` | `styk-export` | removed | removed; the engine's export worker (src/engine/engine-export-worker.mjs) draws every export, and writes SVG with styk-export svg |
 | `src/export-memory.mjs` | `styk-export` | partial | Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); the interface keeps the allowance and tile plan it validates a request with |
@@ -340,7 +340,7 @@ Engine logic: ported to Rust.
 | `src/gpu-startup.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/gpu-timing.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/onion-surface-cache.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
-| `src/parallax-draw.mjs` | `styk-render` | js |  |
+| `src/parallax-draw.mjs` | `styk-render` | removed | deleted: only the removed export frame module used it (869 bytes) |
 | `src/prepared-frames.mjs` | `styk-render` | removed | deleted: the engine uploads and draws its own prepared frames (styk-render) |
 | `src/raster-surfaces.mjs` | `styk-render` | removed | deleted: only the removed playback resources used it (1952 bytes) |
 | `src/raster-view.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
@@ -366,7 +366,7 @@ Engine logic: ported to Rust.
 | `src/drawing-gpu.mjs` | `styk-render::drawing` | removed | deleted: strokes rasterize in styk-drawing and the stage draws them as live cels (src/engine/engine-live-cels.mjs) |
 | `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-atlas.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/vfx-generator-canvas.mjs` | `styk-render::generators` | partial | Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it |
+| `src/vfx-generator-canvas.mjs` | `styk-render::generators` | removed | deleted: styk-raster draws particles and beams; only the removed export frame module used it (12933 bytes) |
 | `src/vfx-generator-gpu.mjs` | `styk-render::generators` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/content-hash.mjs` | `styk-render::images` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/image-resources.mjs` | `styk-render::images` | partial | image decoding and variants. Rust: decoding and atlas upload for supported documents |

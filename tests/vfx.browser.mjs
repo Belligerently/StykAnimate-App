@@ -45,22 +45,6 @@ try{
   gl.destroy();wg.destroy();device.destroy();return results;
  });
  if(wgsl){console.log('WGSL parity',JSON.stringify(wgsl));for(const [type,r] of Object.entries(wgsl))assert.ok(r.max<=24&&r.mean<.5,`${type}: WGSL executor diverged ${JSON.stringify(r)}`);}
- const parity=await page.evaluate(async()=>{
-  const {emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{createVfx}=await import('/src/vfx.mjs');
-  const {exportFrameGeometry,drawExportScene,drawExportSceneTiled}=await import('/src/export-frame-core.mjs');
-  const doc=emptyDocument();doc.canvas_width=320;doc.canvas_height=240;
-  const obj=createObject(doc.figure_types[0],1,160,180,{scale:2}),frame=createFrame([obj],10);doc.keyframes=[frame];
-  const resources={preload:async()=>{}},results={};
-  for(const [scope,type,radius] of [['figure','glow',12],['figure','noise',0],['figure','pixelate',0],['scene','blur',40],['scene','pixelate',0],['scene','noise',0],['scene','vignette',0]]){
-   delete obj._stykVfx;delete frame._stykVfx;const effect=createVfx(type,'test');if(radius)effect.params.radius=radius;(scope==='scene'?frame:obj)._stykVfx={figure:[effect]};
-   const geometry=exportFrameGeometry(doc,frame),full=new OffscreenCanvas(320,240),tile=new OffscreenCanvas(320,240);
-   drawExportScene(full.getContext('2d'),doc,frame,geometry,resources);await drawExportSceneTiled(tile.getContext('2d'),doc,frame,geometry,resources,96);
-   const a=full.getContext('2d').getImageData(0,0,320,240).data,b=tile.getContext('2d').getImageData(0,0,320,240).data;
-   let max=0,sum=0,count=0;for(let i=0;i<a.length;i++){const delta=Math.abs(a[i]-b[i]);max=Math.max(max,delta);sum+=delta;if(delta>2)count++;}results[scope+'-'+type]={max,mean:sum/a.length,count};
-  }return results;
- });
- console.log('Export parity',JSON.stringify(parity));
- for(const [name,result] of Object.entries(parity))assert.ok(result.max<=2,`${name}: tiled export differs ${JSON.stringify(result)}`);
  const saved=await page.evaluate(async()=>{
   const {Editor}=await import('/src/editor.mjs'),{emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{initializeLayerSheet}=await import('/src/editor-layer-sheet.mjs');
   const doc=emptyDocument();doc.keyframes=[createFrame([createObject(doc.figure_types[0],1,200,200)],20)];const e=new Editor({demo:false}).load(doc);initializeLayerSheet(e.report);e._invalidate({timing:true});
