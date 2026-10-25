@@ -120,6 +120,11 @@ fn what_the_interface_empties_or_garbles_is_not_pasted() {
     assert_eq!(refused(&mut session, "@setClipboard", r#"["figures",{"objects":[],"figures":[],"order":[],"offset":24}]"#), "errors.sharedClipboard.invalidFigureClipboard");
     assert_eq!(refused(&mut session, "@setClipboard", r#"["figures",{"objects":[{}],"figures":[],"order":[],"offset":null}]"#), "errors.sharedClipboard.invalidFigureClipboard");
     assert_eq!(refused(&mut session, "@setClipboard", r#"["sheet",{"version":2}]"#), "errors.sharedClipboard.invalidTimelineClipboard");
+    // A figure the copy found on no layer is not garbled.
+    let mut layerless = data.clone();
+    layerless.make_obj().unwrap().set("layers", json(r#"[[1,null]]"#));
+    hand_over(&mut session, &kind, &layerless, false);
+    hand_over(&mut session, &kind, &data, false);
     assert_eq!(refused(&mut session, "@setClipboard", r#"["nothing",{}]"#), "errors.sharedClipboard.unsupportedClipboardType");
     assert_eq!(refused(&mut session, "@setClipboard", r#"["segmentValues",5]"#), "errors.sharedClipboard.unsupportedClipboardType");
     assert_eq!(text(&session), before);

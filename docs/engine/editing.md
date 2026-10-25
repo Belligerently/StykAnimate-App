@@ -661,8 +661,8 @@ it on the editor, for every document.
   their identities from the draws (a call that makes more than the pool holds is asked again with more) and
   `rippleAudio` cuts through clips; the `audioRipple` option travels with the view, and frame inserts and
   removals of every layer then ripple the audio inside one entry. The interface asks only whether an
-  audio clip was copied (`editor._audioClipboard`), which the owner marks; the recording stays in the session
-  (it does not follow the editor to another project).
+  audio clip was copied (`editor._audioClipboard`), which the owner marks; the recording (megabytes) stays in the
+  session that copied it and is read from it (`clipboard`) when the session of another project pastes it.
 - **Clipboards.** The session keeps what the editor's copy commands copied; the interface reads the same clipboards
   (the Paste buttons, the shared clipboard that writes them to the system's) and hands it others, so the editor's
   clipboard fields are a mirror the owner keeps (`src/engine/engine-clipboards.mjs`). A copy's answer carries the
@@ -675,7 +675,8 @@ it on the editor, for every document.
   `pasteCamera`, `pasteSegmentValues`, `pasteVfxClip`) hands it to the session first (`@setClipboard(kind, data,
   foreign)`, `null` empties it), as a clipboard copied in another document when its document is not the one on show. The
   same hand-over moves a clipboard between the sessions of the projects open in the tabs. The drawing pixels the Draw
-  tool copies (`_drawingPixelClipboard`) are the interface's alone and never reach the session. The copy a refused call
+  tool copies (`_drawingPixelClipboard`) are the interface's alone and never reach the session; an audio clip's
+  recording is not mirrored (the field marks that a clip was copied). The copy a refused call
   makes in the editor (a selected branch) fills the mirror through its fields and reaches the session the same way.
 - **Errors.** A session error carries its message key and, when the message names values (`Unlock {name}
   before editing it`, `{label} must be finite`), their JSON (`errorParams`; `invalid_with` in Rust: a text,

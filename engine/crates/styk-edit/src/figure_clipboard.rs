@@ -718,10 +718,8 @@ impl FigureClipboard {
         let figures = list("figures").filter(|figures| figures.iter().all(Value::is_object)).ok_or_else(invalid)?;
         let order = list("order").ok_or_else(invalid)?.iter().map(|uid| uid.as_f64().filter(|uid| uid.fract() == 0.0 && *uid >= 0.0).map(|uid| uid as u32)).collect::<Option<Vec<u32>>>().ok_or_else(invalid)?;
         let offset = data.get("offset").and_then(Value::as_f64).filter(|offset| offset.is_finite()).ok_or_else(invalid)?;
-        let layers = match list("layers") {
-            None => Vec::new(),
-            Some(pairs) => pairs.iter().map(|pair| Some((pair.item(0)?.as_f64()? as u32, pair.item(1)?.as_str()?.to_string()))).collect::<Option<Vec<_>>>().ok_or_else(invalid)?,
-        };
+        // A figure the copy found on no layer has none.
+        let layers = list("layers").unwrap_or_default().iter().filter_map(|pair| Some((pair.item(0)?.as_f64()? as u32, pair.item(1)?.as_str()?.to_string()))).collect();
         let movieclip_samples = match data.get("movieclipSamples").and_then(Value::as_obj) {
             None => Vec::new(),
             Some(samples) => samples.iter().filter_map(|(uid, sample)| Some((uid.parse::<u32>().ok()?, sample.as_f64()?))).collect(),
