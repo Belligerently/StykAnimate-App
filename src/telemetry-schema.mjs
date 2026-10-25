@@ -78,7 +78,7 @@ export const ENV_ENUMS = Object.freeze({
   ramBucket: ['4-or-less', '8', '16', '32', '64-plus', 'unknown'],
   cpuBucket: ['2-or-less', '4', '8', '16', '32-plus', 'unknown'],
   gpuFamily: ['nvidia', 'amd', 'intel', 'apple', 'qualcomm', 'software', 'unknown'],
-  backend: ['webgpu', 'canvas2d', 'unavailable', 'unknown'], mode: ['simple', 'advanced', 'unknown'],
+  backend: ['webgpu', 'webgl2', 'canvas2d', 'unavailable', 'unknown'], mode: ['simple', 'advanced', 'unknown'],
   locale: ['en', 'it', 'de', 'fr', 'es', 'pt', 'ja', 'ko', 'zh', 'ru', 'pl', 'tr', 'other', 'unknown'],
 });
 const object = value => value && typeof value === 'object' && !Array.isArray(value);

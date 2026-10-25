@@ -408,18 +408,20 @@ function writeNativeBlob(bridge,blob,options={}){
   const context=telemetry.consent.diagnostics?telemetry.performance.context():null,epoch=telemetry.epoch;
   return writeNativeBlobRaw(bridge,blob,{...options,...(context?{onTiming:(metric,ms)=>{if(epoch===telemetry.epoch)telemetry.performance.record(metric,ms,context);}}:{})});
 }
+/** The stage's graphics backend as telemetry names it: the engine draws with WebGPU, or with WebGL2 where there is none. */
+const telemetryBackend = () => ({WebGPU: 'webgpu', WebGL2: 'webgl2'})[state.renderer?.stats?.backend] ?? 'unavailable';
 const telemetry = new DesktopTelemetryClient(desktop, { getContext: () => ({
   mode: state.settings.timelineMode, locale: state.settings.locale,
   playing: state.playing,
   pending:playback.stats.pendingFrames,cacheBytes:playback.stats.bytes,cache:playback.stats,
   performance:{
-    backend:state.renderer?.stats?.backend==='WebGPU'?'webgpu':'unavailable',
+    backend:telemetryBackend(),
     complexity:complexityBucket(state.renderer?.stats?.primitives),fps:fpsBucket(editor.report?.fps),
     pixels:canvas.width*canvas.height<1e6?'under-1mp':canvas.width*canvas.height<4e6?'1-4mp':'4mp-plus',
     phase:state.playing?'playing':'editing',quality:images.reduced||state.previewGovernor?.index?'reduced':'full',
     features:(state.onion?1:0)|(state.inspectorContext==='camera'?2:0)|(state.vfxEnabled?4:0)|(state.motionPaths?8:0)|(state.renderer?.stats?.textureObjects?16:0),
   },
-  backend: state.renderer?.stats?.backend === 'WebGPU' ? 'webgpu' : 'unavailable',
+  backend: telemetryBackend(),
   gauges: { gpu_memory_mb: state.renderer?.stats?.gpuBytes / 1048576, draw_calls: state.renderer?.stats?.drawCalls,
     upload_kb: state.renderer?.stats?.uploadBytes / 1024, scene_figures: state.renderer?.stats?.objects,
     scene_primitives: state.renderer?.stats?.primitives, scene_frames: editor.totalTicks },
