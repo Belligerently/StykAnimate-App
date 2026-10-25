@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import english from '../src/locales/en.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
-import {Editor} from '../src/editor.mjs';
 import {engineEditor, ownedEditorFor} from './support/owned-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument,createDemo} from '../src/demo.mjs';
@@ -10,7 +9,8 @@ import {spatialSections} from '../src/spatial-controls.mjs';
 import {cameraMotionView} from '../src/camera-motion-ui.mjs';
 import {motionRows} from '../src/camera-motion-timeline.mjs';
 import {motionTypeMessages,motionParameterMessages,motionDescriptionMessages} from '../src/camera-motion-localization.mjs';
-import {CAMERA_MOTION_TYPES,MOTION_PARAMETERS,createCameraMotion,motionParameterKeys,validateCameraMotion} from '../src/camera-motion.mjs';
+import {CAMERA_MOTION_TYPES,MOTION_PARAMETERS,motionParameterKeys,validateCameraMotion} from '../src/camera-motion.mjs';
+import {createCameraMotion} from './support/camera-motion.mjs';
 import {presetSummary,presetTile} from '../src/vfx-preset-ui.mjs';
 import {VFX_REGISTRY,vfxProperty,validateVfxValue} from '../src/vfx.mjs';
 import {errorMessageData,restoreMessageError,messageError} from '../src/localized-error.mjs';
@@ -23,7 +23,7 @@ import {textOptionsWithDefaults} from '../src/text-authoring.mjs';
 import {validateSticknodesObject} from '../src/sticknodes/validation.mjs';
 import fontService from '../desktop/font-service.cjs';
 import videoService from '../desktop/video-export-service.cjs';
-import {validateAudioAsset} from '../src/audio-model.mjs';
+import {validateAudioAssetSteps} from '../src/audio-model.mjs';
 import {inspectorDescriptor} from '../src/inspector-view.mjs';
 import {rigSections} from '../src/rig-controls.mjs';
 import {renderInspector} from '../src/inspector-kit.mjs';
@@ -84,7 +84,7 @@ test('model, rig, editor, range, text, SVG and font failures localize human labe
  assert.throws(()=>textOptionsWithDefaults({text:'Hello',fontSize:NaN}),capture('Font size must be between 1 and 2048.','errors.validationLabels.fontSize'));
  assert.throws(()=>validateSticknodesObject({_sticknodesSprite:{ratio:NaN,pivotX:0,pivotY:0}},editor.figure),capture('Invalid Stick Nodes sprite ratio.','errors.validationLabels.spriteField','ratio'));
  assert.throws(()=>new fontService.FontService({maxFonts:0}),capture('Invalid font limit.','desktop.fontService.labels.limit'));
- assert.throws(()=>validateAudioAsset({id:'audio',name:'Recording',size:NaN}),error=>{
+ assert.throws(()=>[...validateAudioAssetSteps({id:'audio',name:'Recording',size:NaN})],error=>{
   assert.equal(error.message,'Audio file size must be between 1 and 33554432.');
   assert.equal(error.messageParams.name.messageKey,'errors.validationLabels.audioFileSize');failures.push(error);return true;
  });

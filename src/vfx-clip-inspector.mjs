@@ -18,7 +18,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const clipNameMessage=c=>c.name||{messageKey:effectMessages[c.effects[0]?.type]?.nameKey||'vfxClipInspector.effects'};
 export const clipName=c=>{const caption=clipNameMessage(c);return typeof caption==='string'?caption:interfaceText(caption.messageKey);};
 /** A clip's tile: its one effect's glyph in its category's tint, or the group glyph. */
-export const clipTile=c=>{const d=c.effects.length===1&&VFX_REGISTRY[c.effects[0].type];return d?vfxTile(d.icon,d.category):vfxTile('effects','Looks');};
+const clipTile=c=>{const d=c.effects.length===1&&VFX_REGISTRY[c.effects[0].type];return d?vfxTile(d.icon,d.category):vfxTile('effects','Looks');};
 const iconButton=(name,label,glyph,{disabled=false,on=false,className='',menu=false}={}, _messages = {})=>`<button type="button" class="ui-icon-button${className?` ${className}`:''}" data-size="xs" data-clip-action="${name}" aria-label="${esc(label)}"${on?' data-on="true"':''}${menu?' aria-haspopup="menu"':''} ${disabled?'disabled':''} ${_messages.label ? messageAttributes(_messages.label.key, _messages.label.params, 'aria-label') : ''}>${icon(glyph)}</button>`;
 const keyIndex=(clip,keys,tick)=>{let low=0,high=keys.length-1,time=clipTime(clip,tick);while(low<high){const mid=(low+high+1)>>>1;if(keys[mid].tick<=time)low=mid;else high=mid-1;}return low;};
 const currentKey=(clip,keys,tick)=>keys[keyIndex(clip,keys,tick)];

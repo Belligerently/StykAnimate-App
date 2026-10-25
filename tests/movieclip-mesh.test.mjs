@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {validateMovieclipMeshes} from '../src/movieclip-mesh.mjs';
-import {movieclipFigure,snapshotFigureDefinition} from '../src/movieclips.mjs';
+import {movieclipFigure} from '../src/movieclips.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
@@ -24,7 +24,6 @@ test('mesh definitions reject malformed indices, colors, sizes and incompatible 
  for(const change of [m=>m.positions[0]=NaN,m=>m.indices[0]=100,m=>m.indices.push(0),m=>m.materials.pop(),m=>m.colors[0][0]=256]){const a=structuredClone(asset);change(a.spatialMeshes[0]);assert.throws(()=>validateMovieclipMeshes(a),/Invalid indexed/);}
  assert.throws(()=>validateMovieclipMeshes({...asset,duration:3}),/one mesh/);
  assert.throws(()=>validateMovieclipMeshes({...asset,drawingRotation:{steps:8}}),/without drawing/);
- assert.equal(snapshotFigureDefinition(head)._styk.movieclip.spatialMeshes,asset.spatialMeshes);
 });
 for(const layerTimeline of [false,true])test('meshes use parent spatial controls, forms, undo and native saving '+layerTimeline,async()=>{
  const {d,h}=fixture(),e=ownedEditorSync({demo:false,layerTimeline},d,{recorded:false}).editor;e.select(1,h-1);

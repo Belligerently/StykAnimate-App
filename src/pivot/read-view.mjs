@@ -35,7 +35,7 @@ export function isStatic(s) {
   );
 }
 
-export function frameTicks(f) {
+function frameTicks(f) {
   // Raw signed duration is the displayed keyframe plus its outgoing inbetweens.
   const n = Number(f.duration_raw ?? 1);
   return Math.max(0, n);
@@ -54,6 +54,27 @@ export function nativeTimeline(report) {
     tick += count;
     return out;
   });
+}
+
+const sourceIndices = new WeakMap();
+
+/** The stored frame a pose key names: the retained source table first, then the native keyframe carrying that id. */
+export function poseSourceFrame(report, id) {
+  if (id === null || id === undefined) return null;
+  const sources = report._styk?.frameSources;
+  const retained = sources && Object.hasOwn(sources, id) ? sources[id] : null;
+  if (retained) return retained;
+  const frames = report.keyframes || [];
+  let index = sourceIndices.get(report);
+  const candidate = index?.ids.get(id);
+  if (!index || index.frames !== frames || index.length !== frames.length ||
+      (candidate !== undefined && frames[candidate]?._styk?.frameId !== id)) {
+    index = { frames, length: frames.length, ids: new Map() };
+    frames.forEach((frame, i) => { if (frame._styk?.frameId) index.ids.set(frame._styk.frameId, i); });
+    sourceIndices.set(report, index);
+  }
+  const slot = index.ids.get(id);
+  return slot === undefined ? null : frames[slot];
 }
 
 /** The timeline rows of a document: the native ones, lasting as long as the layer sheet, the property channels, the

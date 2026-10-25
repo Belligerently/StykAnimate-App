@@ -5,9 +5,9 @@ import {messageError} from './localized-error.mjs';
  * typed arrays consumed by one depth-tested draw. See docs/SPATIAL-MESHES.md. */
 import {spatialBone} from './rig-spatial.mjs';
 
-export const MESH_LIMITS=Object.freeze({vertices:200000,triangles:400000,colors:1024,groups:1024});
+const MESH_LIMITS=Object.freeze({vertices:200000,triangles:400000,colors:1024,groups:1024});
 const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups']);
-export const spatialMeshOf=figure=>figure?._styk?.spatialMesh;
+const spatialMeshOf=figure=>figure?._styk?.spatialMesh;
 
 export function validateSpatialMesh(figure){
   const m=spatialMeshOf(figure);if(m===undefined)return;

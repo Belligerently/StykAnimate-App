@@ -67,8 +67,6 @@ const names = {
   figure_z_order: "Z-index",
   figure_opacity: "Figure opacity",
 };
-const clone = (value) =>
-  value === undefined ? undefined : structuredClone(value);
 const radians = (value) => (value * Math.PI) / 180;
 function styleBinding(editor, key) {
   const uid = editor.object?.unique_id;
@@ -259,37 +257,6 @@ function validate(key, value) {
   if (value < min || value > max)
     throw messageError(new Error(''), "errors.nativePropertyEdit.enterAValueFromTo", {min: min, max: max});
   return value;
-}
-function rootFor(editor, scope, index) {
-  return scope === "report"
-    ? editor.report
-    : scope === "frame"
-      ? editor.report.keyframes[index]
-      : scope === "figure"
-        ? editor.report.figure_types[index]
-        : null;
-}
-function applyPatch(root, patch) {
-  for (const entry of patch.entries) {
-    let parent = root;
-    for (const key of entry.path.slice(0, -1)) parent = parent[key] ??= {};
-    const key = entry.path.at(-1);
-    if (entry.exists) parent[key] = clone(entry.value);
-    else delete parent[key];
-  }
-  for (const path of patch.removeEmptyParents || []) {
-    let parent = root;
-    for (const key of path.slice(0, -1)) parent = parent?.[key];
-    const key = path.at(-1),
-      value = parent?.[key];
-    if (value && Object.keys(value).length === 0) delete parent[key];
-  }
-}
-/** Called by Editor's history dispatcher. Only small validated field values are copied. */
-export function applyNativePropertyCommand(editor, command, direction) {
-  const root = rootFor(editor, command.scope, command.index);
-  if (!root) throw messageError(new Error(''), "errors.nativePropertyEdit.thePropertyTargetNoLongerExists", {});
-  applyPatch(root, command[direction]);
 }
 const refused = () => messageError(new Error(''), "errors.engineOwner.notSupported", {});
 function assertCurrent(token, {preview = false} = {}) {

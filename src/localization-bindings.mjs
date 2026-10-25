@@ -103,20 +103,11 @@ export function appendLocalized(parent, ...nodes) {
   parent.append(...nodes);
   for (const node of nodes) if (typeof node !== 'string') connectTranslations(node);
 }
-export function appendChildLocalized(parent, node) {
-  const result = parent.appendChild(node);
-  connectTranslations(parent);
-  return result;
-}
 
 /** Descriptor keys belong to the feature; renderers only attach the binding. */
 export function descriptorAttributes(descriptor, property = 'label', attribute = 'text') {
   const key = descriptor?.[`${property}Key`];
   return key ? ' ' + messageAttributes(key, descriptor[`${property}Params`], attribute) : '';
-}
-export function descriptorText(descriptor, property = 'label') {
-  const key = descriptor?.[`${property}Key`];
-  return key ? interfaceLocalization.t(key, descriptor[`${property}Params`]) : descriptor?.[property];
 }
 
 function caption(element, text) {

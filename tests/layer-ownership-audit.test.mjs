@@ -5,8 +5,8 @@ import {engineEditor} from './support/owned-editor.mjs';
 const sheetRange=(e,ticks)=>Object.assign([e.frameIndex],{sheetTicks:ticks});
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
-import {presencePlayback} from '../src/movieclip-presence.mjs';
-import {poseObjectSignature} from '../src/pose-snapshot.mjs';
+import {presencePlayback} from './support/movieclip-playback.mjs';
+import {poseObjectSignature} from './support/pose-snapshot.mjs';
 import {validateLayerState} from '../src/layers.mjs';
 import {validateLayerSheet} from '../src/layer-sheet.mjs';
 

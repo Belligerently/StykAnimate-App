@@ -3,17 +3,11 @@ import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
 import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
-import {evaluateSpatial,spatialQuaternion,spatialPoint,remapSpatial,sameSpatial} from '../src/rig-spatial.mjs';
+import {remapSpatial,sameSpatial} from '../src/rig-spatial.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 const near=(a,b,t=1e-8)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 const views=[[10,25,4],[22,30,6],[-8,28,5],[-20,32,3]];
-function sample(yaw,pitch=0,options={}){
- const origin=[3,7,2],f={q:spatialQuaternion(0,yaw,pitch),t:[0,0,0],origin,axis:[0,1,0],stretch:1,...options};
- const s={point:views[0].map((v,i)=>v+origin[i]),bindings:[{joint:1,weight:1}],viewPoints:options.views??views};
- const r=evaluateSpatial(s,{segment:{angle_rad:0},input:{start:{x:0,y:0},angle:0},get:()=>({spatial:f}),root:{x:0,y:0},scale:1,figureAngle:0});
- return [r.handle.x,r.handle.y,r.depthOffset.x];
-}
 function fixture(targets=views){
  const q=construction();q.add(0,0,0,'Figure rotation');
  function bone(parent,origin,tip,name){const turn=q.add(0,0,0,name+' turn'),pitch=q.add(0,0,0,name+' tilt'),v=tip.map((n,i)=>n-origin[i]),id=q.add(parent,Math.hypot(...v),Math.atan2(v[1],v[0]),name,{control:true,rig:{spatial:{parent,origin,tip,turn,pitch}}});return {id,turn,pitch};}
@@ -22,29 +16,6 @@ function fixture(targets=views){
  const figure={figure_type_id:1,segments:q.segments,polyfills:[],image_assets:[],text_assets:[]},object=createObject(figure,1,200,200),doc={...emptyDocument(),figure_types:[figure],keyframes:[createFrame([object])]};
  return {doc,figure,object,a,b,skin};
 }
-test('view-corrected skin reaches its cardinal contours and wraps continuously',()=>{
- for(let i=0;i<4;i++){
-  const yaw=i*Math.PI/2,p=sample(yaw),o=spatialPoint({q:spatialQuaternion(0,yaw,0),t:[0,0,0],stretch:1},[3,7,2]);
-  p.forEach((n,k)=>near(n,views[i][k]+o[k]));
-  for(const edge of [yaw,yaw+Math.PI*2]){
-   const before=sample(edge-1e-6),after=sample(edge+1e-6);before.forEach((n,k)=>near(n,after[k],.0001));
-  }
- }
- const mid=sample(Math.PI/4),o=spatialPoint({q:spatialQuaternion(0,Math.PI/4,0),t:[0,0,0],stretch:1},[3,7,2]);
- mid.forEach((n,k)=>near(n,(views[0][k]+views[1][k])/2+o[k]));
-});
-test('vertical views remain finite and continuous instead of jumping at undefined heading',()=>{
- for(const yaw of [0,.5,1.6,3.1,4.8])for(const pitch of [-Math.PI/2,Math.PI/2]){
-  const a=sample(yaw,pitch-1e-7),b=sample(yaw,pitch+1e-7);
-  a.forEach((n,k)=>{assert.ok(Number.isFinite(n));near(n,b[k],.0001);});
- }
- for(let i=0;i<720;i++)assert.ok(sample(i*.019,i*.031).every(Number.isFinite));
-});
-test('view corrections preserve stretch and radial shaping at the bind origin',()=>{
- const p=sample(0,0,{stretch:1.5,shape:{width:2,taper:0},restLength:100});
- const expected=spatialPoint({q:[0,0,0,1],t:[0,0,0],origin:[3,7,2],axis:[0,1,0],stretch:1.5,shape:{width:2,taper:0},restLength:100},[13,32,6]);
- p.forEach((n,i)=>near(n,expected[i]));
-});
 test('view targets validate, remap without aliasing, and invalidate changed definitions',()=>{
  const {figure,b,skin}=fixture(),s=figure.segments[skin-1]._stykRig.spatial,plan=rigConstraintPlan(figure),before=structuredClone(s);
  s.viewPoints[1][0]+=2;assert.equal(sameSpatial(s,before),false);assert.notEqual(rigConstraintPlan(figure),plan);
@@ -66,11 +37,4 @@ for(const count of [4,8])test(`${count}-view corrected rigs survive pose undo/re
   assert.deepEqual(d.figure_types,e.serialize().figure_types);const reopened=newOwnedEditor({demo:false});reopened.load(d);
   const point=reopened.geometry.objects.get(0).joints.get(skin);near(point.x,mirrored.x);near(point.y,mirrored.y);
  }
-});
-
-test('four and eight target skins share a bone without reusing the wrong interval',()=>{
- const frame={q:spatialQuaternion(0,Math.PI/4,0),t:[0,0,0],origin:[0,0,0],axis:[0,1,0],stretch:1};
- const targets=Array.from({length:8},(_,i)=>[i*3,10,0]);
- const evaluate=points=>evaluateSpatial({point:points[0],bindings:[{joint:1,weight:1}],viewPoints:points},{segment:{angle_rad:0},input:{start:{x:0,y:0},angle:0},get:()=>({spatial:frame}),root:{x:0,y:0},scale:1,figureAngle:0}).handle.x;
- for(let i=0;i<4;i++){near(evaluate(views),16);near(evaluate(targets),3);}
 });

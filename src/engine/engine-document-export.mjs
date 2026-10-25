@@ -28,7 +28,7 @@ const UNSUPPORTED = new Set([
 ]);
 
 /** Joins the engine on this thread (once). `join` is `engine.join` of src/engine/engine.mjs. */
-export function joinEngine(join) {
+function joinEngine(join) {
   wasm ??= initSync({module: join.module, memory: join.memory, thread_stack_size: join.stack});
 }
 

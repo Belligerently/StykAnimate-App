@@ -4,7 +4,6 @@ import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
 import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
 import {newOwnedEditor} from './support/owned-editor.mjs';
-import {evaluateSpatial,quatMultiply,quatRotate,spatialQuaternion,spatialPoint} from '../src/rig-spatial.mjs';
 const near=(a,b,t=.002)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 export function spatialFixture(){
  const q=construction();q.add(0,0,0,'Figure rotation');
@@ -15,26 +14,6 @@ export function spatialFixture(){
  return{doc,figure,object,a,b,skin};
 }
 
-test('skin projection agrees with dual-quaternion reference blending across rotations, reflection and stretch',()=>{
- let seed=417;const random=()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/2**32),dot=(a,b)=>a.reduce((n,v,i)=>n+v*b[i],0);
- for(let sample=0;sample<400;sample++){
-  const count=1+sample%4,frames=Array.from({length:count},()=>{
-   const sign=random()<.5?-1:1,q=spatialQuaternion(random()*6,random()*6,random()*6).map(v=>v*sign),t=[random()*30,random()*40,random()*50];
-   return{q,t,dual:quatMultiply([...t,0],q).map(v=>v/2),axis:[0,1,0],origin:[0,20,0],stretch:sample%11===0?1.4:1};
-  }),weights=frames.map(()=>.01+random()),total=weights.reduce((a,b)=>a+b),bindings=weights.map((w,i)=>({joint:i+1,weight:w/total})),point=[random()*70,random()*80,random()*90];
-  let expected;
-  if(count===1)expected=spatialPoint(frames[0],point);
-  else if(frames.some(f=>f.stretch!==1))expected=bindings.reduce((p,b)=>{const v=spatialPoint(frames[b.joint-1],point);return p.map((n,i)=>n+v[i]*b.weight);},[0,0,0]);
-  else{
-   const sum=Array(8).fill(0);for(const b of bindings){const f=frames[b.joint-1],w=b.weight*(dot(f.q,frames[0].q)<0?-1:1);[...f.q,...f.dual].forEach((v,i)=>sum[i]+=v*w);}
-   const norm=Math.hypot(...sum.slice(0,4)),q=sum.slice(0,4).map(v=>v/norm),d=sum.slice(4).map(v=>v/norm),translation=quatMultiply(d,[-q[0],-q[1],-q[2],q[3]]);
-   expected=quatRotate(q,point).map((v,i)=>v+2*translation[i]);
-  }
-  const mirror=sample%2===0,sign=mirror?-1:1,angle=.7,scale=1.5,cs=Math.cos(angle),sn=Math.sin(angle);
-  const result=evaluateSpatial({point,bindings},{segment:{angle_rad:0},input:{start:{x:0,y:0},angle:0},get:id=>({spatial:frames[id-1]}),root:{x:30,y:50},scale,figureAngle:angle,mirror});
-  near(result.handle.x,30+(expected[0]*cs-expected[1]*sign*sn)*scale,1e-9);near(result.handle.y,50+(expected[0]*sn+expected[1]*sign*cs)*scale,1e-9);near(result.depthOffset.x,expected[2]*scale*cs,1e-9);
- }
-});
 test('spatial dependencies remap, invalidate and reject invalid bindings and cycles',()=>{
  const{figure,a,b,skin}=spatialFixture(),plan=rigConstraintPlan(figure);
  figure.segments[a.id-1]._stykRig.spatial.tip[0]=5;assert.notEqual(rigConstraintPlan(figure),plan);

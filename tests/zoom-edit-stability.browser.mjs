@@ -74,7 +74,7 @@ try {
       const ctx = canvas.getContext('2d', {willReadFrequently: true}); ctx.drawImage(source, 0, 0);
       const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
       let ink = 0; for (let i = 0; i < data.length; i += 4) if (data[i+3] > 100 && data[i] < 100 && data[i+1] < 100 && data[i+2] < 100) ink++;
-      return {ink, history: styk.editor.historySize};
+      return {ink, history: styk.editor._undo.length};
     });
     assert.ok(final.ink > 100, 'Artwork must remain visible after zooming and editing');
     assert.deepEqual(errors, []);

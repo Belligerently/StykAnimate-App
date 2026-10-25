@@ -26,7 +26,7 @@ export function cameraValues(camera) {
   if (!camera || camera.is_default) return {is_default: true, x: 0, y: 0, scale: 1, angle_rad: 0};
   return {...camera, x: camera.x ?? 0, y: camera.y ?? 0, scale: camera.scale ?? 1, angle_rad: camera.angle_rad ?? 0};
 }
-export function roundEven(value) {
+function roundEven(value) {
   const floor = Math.floor(value),
     fraction = value - floor;
   return fraction < 0.5
@@ -49,9 +49,6 @@ const rgb = (value, label) => {
     throw messageError(new Error(''), "errors.model.needsThreeRgbBytes", {label: validationLabel(label)});
   for (const n of value) integer(n, 0, 255, label);
 };
-// Populated only by successful definition validation. Editor topology/style
-// commands validate their replacement definitions before the next object edit.
-const validatedDefinitions = new WeakMap();
 function validateObjectPose(report, object, figure, origin = true) {
   if(object._sticknodesShapes||object._sticknodesSprite)validateSticknodesObject(object,figure);
   validateIK(object);
@@ -74,54 +71,6 @@ function validateObjectPose(report, object, figure, origin = true) {
   }
 }
 
-/** Validate an object gesture against already validated, unchanged definitions.
- * All changed numeric channels, identities, target handles and ancestry cycles
- * are checked. Unrelated poses, backgrounds and library geometry are untouched.
- */
-export function validateObjectChanges(report, frame, changedUids) {
-  const types = new Map(), metadata = new Map();
-  for (const figure of report.figure_types) {
-    if (types.has(figure.figure_type_id)) throw messageError(new Error(''), "errors.model.invalidOrRepeatedFigureType", {});
-    types.set(figure.figure_type_id, figure);
-  }
-  const definition = typeId => {
-    const figure = types.get(typeId);
-    if (!figure) throw messageError(new Error(''), "errors.model.unknownFigureOrRepeatedObjectIdentity", {});
-    let cached = validatedDefinitions.get(figure);
-    if (!cached || cached.segments !== figure.segments || cached.count !== figure.segments.length ||
-        cached.origin!==figure._styk?.animationOrigin || cached.support!==figure._styk?.animationOrigin?.support) {
-      validateScene({...report, figure_types: [figure], backgrounds: [], keyframes: [{objects: [], duration_raw: 1}]});
-      cached = validatedDefinitions.get(figure);
-    }
-    metadata.set(typeId, cached); return figure;
-  };
-  const changed = new Set(changedUids), identities = new Set(), slots = [];
-  frame.objects.forEach((object, slot) => {
-    if (identities.has(object.unique_id)) throw messageError(new Error(''), "errors.model.unknownFigureOrRepeatedObjectIdentity", {});
-    identities.add(object.unique_id);
-    if (changed.has(object.unique_id)) slots.push(slot);
-  });
-  if (slots.length !== changed.size) throw messageError(new Error(''), "errors.model.aGestureCannotChangeFigureIdentities", {});
-  validateSpatialJoins(frame,report.figure_types);
-  for (const slot of slots) validateObjectPose(report, frame.objects[slot], definition(frame.objects[slot].figure_type_id));
-  const finished = new Set();
-  for (const initial of slots) {
-    let slot = initial; const chain = new Set();
-    while (!finished.has(slot)) {
-      if (chain.has(slot)) throw messageError(new Error(''), "errors.editorSelection.figuresContainACyclicJoin", {});
-      chain.add(slot); const object = frame.objects[slot];
-      if (!object?.join) break;
-      const targetSlot = object.join.target_object_slot, parent = frame.objects[targetSlot];
-      if (!Number.isInteger(targetSlot) || !parent) throw messageError(new Error(''), "errors.model.joinPointsToAMissingFigureOrHandle", {});
-      const figure = definition(parent.figure_type_id);
-      if (!metadata.get(figure.figure_type_id).handles.has(object.join.target_handle_id))
-        throw messageError(new Error(''), "errors.model.joinPointsToAMissingFigureOrHandle", {});
-      slot = targetSlot;
-    }
-    for (const slot of chain) finished.add(slot);
-  }
-  return frame;
-}
 function styleValues(s) {
   if(s.z_order!==undefined)float32(s.z_order,'Segment drawing order');
   if (s.bend_rad !== undefined) finite(s.bend_rad, "Segment bend");
@@ -362,8 +311,6 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       integer(f.background_mix, 0, 255, "Background mix");
     if (due()) yield progress('background references');
   }
-  for (const figure of report.figure_types) validatedDefinitions.set(figure,
-    {segments: figure.segments, count: figure.segments.length, handles: typeHandles.get(figure.figure_type_id),origin:figure._styk?.animationOrigin,support:figure._styk?.animationOrigin?.support});
   return report;
 }
 export function syncDerived(report) {

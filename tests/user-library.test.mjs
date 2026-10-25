@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {librarySnapshot} from '../src/library-files.mjs';
-import {frameOrder} from '../src/pivot/structure.mjs';
+import {frameOrder} from './support/frame-order.mjs';
 
 test('figure sets preserve pose, order, distinct IDs and undo',()=>{
   const source=newOwnedEditor(); source.select(1); source.select(3,{add:true});

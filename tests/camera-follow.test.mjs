@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-import {validateCameraMotion, createCameraMotion} from '../src/camera-motion.mjs';
+import {validateCameraMotion} from '../src/camera-motion.mjs';
+import {createCameraMotion} from './support/camera-motion.mjs';
 import {ownedEditorSync, ownedEditorFor} from './support/owned-editor.mjs';
 import {ownerReferences} from './support/owner-references.mjs';
 

@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {engineEditor, newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure,validatePlayback} from '../src/movieclips.mjs';
-import {presencePlayback,continuations} from '../src/movieclip-presence.mjs';
+import {continuations} from '../src/movieclip-presence.mjs';
+import {presencePlayback} from './support/movieclip-playback.mjs';
 import {sceneAt} from './support/engine-geometry.mjs';
-import {movieclipInspector} from '../src/movieclip-ui.mjs';
+import {movieclipInspector} from './support/control-views.mjs';
 import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 
 function fixture({duration=12,clipDuration=8,fps=24,clipFps=24,empty=false}={}){

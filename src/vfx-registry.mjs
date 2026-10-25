@@ -61,5 +61,5 @@ export const VFX_REGISTRY={
 };
 for(const definition of Object.values(VFX_REGISTRY)){definition.params={effectStrength:n(definition.generator?'Opacity':'Effect strength',1,0,1,.01,'%'),...definition.params};for(const p of Object.values(definition.params))Object.freeze(p);Object.freeze(definition.params);Object.freeze(definition);}Object.freeze(VFX_REGISTRY);
 export const isGeneratorType=type=>Boolean(VFX_REGISTRY[type]?.generator);
-export const VFX_SCENE_TYPES=new Set(['tint','blur','grade','pixelate','noise','vignette','dissolve','rgbSplit','wave','shockwave','bloom','lightSweep','crt','turbulence','particles','beam','explosion','smoke']);
+const VFX_SCENE_TYPES=new Set(['tint','blur','grade','pixelate','noise','vignette','dissolve','rgbSplit','wave','shockwave','bloom','lightSweep','crt','turbulence','particles','beam','explosion','smoke']);
 export const effectAvailable=(type,scene)=>scene?VFX_SCENE_TYPES.has(type):!VFX_REGISTRY[type]?.scene&&type!=='vignette';

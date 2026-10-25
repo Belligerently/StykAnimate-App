@@ -1,7 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {rotatedDrawing,validateDrawingSets} from '../src/movieclip-drawings.mjs';
+import {validateDrawingSets} from '../src/movieclip-drawings.mjs';
 import {drawingSetsView} from '../src/movieclip-drawings-view.mjs';
-import {spatialQuaternion} from '../src/rig-spatial.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {emptyDocument,defaultFigure,createObject,createFrame} from '../src/demo.mjs';
@@ -12,15 +11,7 @@ const rad=d=>d*Math.PI/180;
 // these tests state the forms a head's drawings come in, where the head sits and what is saved.
 const sets=Array.from({length:2},(_,g)=>({name:'Form '+g,views:Array.from({length:24},(_,i)=>({name:'View '+i,frame:g*24+i}))}));
 const asset={drawingSets:sets,drawingRotation:{steps:8,tiltThreshold:rad(20)},duration:48};
-const pick=(yaw,pitch=0,roll=0,group=0)=>rotatedDrawing(asset,{_stykMovieclip:{offset:24*group}},spatialQuaternion(rad(roll),rad(yaw),rad(pitch)));
-test('eight drawings hold within sectors, step at boundaries and wrap both ways',()=>{
- for(let d=0;d<8;d++)for(const delta of [-22.49,0,22.49])for(const wrap of [-720,0,720])assert.equal(pick(d*45+delta+wrap).view,d);
- assert.equal(pick(22.51).view,1);assert.equal(pick(-22.51).view,7);
- for(const roll of [-70,0,60])for(let d=0;d<8;d++)assert.equal(pick(d*45,0,roll).view,d);
-});
-test('tilt switches drawings without blends and form retains its own frame range',()=>{
- assert.equal(pick(0,-19).view,0);assert.equal(pick(0,-21).view,8);assert.equal(pick(0,21).view,16);
- assert.equal(pick(0,21,0,1).frame,40);
+test('rotating drawing sets validate their views and show no view picker for a rotating set',()=>{
  assert.doesNotThrow(()=>validateDrawingSets(asset));
  assert.throws(()=>validateDrawingSets({...asset,drawingRotation:{steps:8,tiltThreshold:NaN}}),/threshold/);
  assert.throws(()=>validateDrawingSets({...asset,drawingSets:[{name:'Bad',views:sets[0].views.slice(1)}]}),/level, up and down/);

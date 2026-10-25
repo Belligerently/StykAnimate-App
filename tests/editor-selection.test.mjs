@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createObject, createFrame, defaultFigure, emptyDocument} from '../src/demo.mjs';
-import {setOrder} from '../src/pivot/structure.mjs';
+import {setOrder} from './support/frame-order.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
 
 const open = ownedScope();

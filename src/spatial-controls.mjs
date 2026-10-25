@@ -11,7 +11,6 @@ import {icon} from './icons.mjs';
 import {poseChoiceGroups} from './rig-pose-choices.mjs';
 import {rigControlIsDetail,rigDetailsShown,setRigDetailsShown} from './rig-control-details.mjs';
 import {propertyToggle} from './property-toggle.mjs';
-import {renderInspector} from './inspector-kit.mjs';
 import {createSpatialGizmo,drawRotationGizmo,startRotationGizmo,rotateGizmo} from './spatial-gizmo.mjs';
 const DEG=180/Math.PI,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
@@ -96,9 +95,7 @@ export function spatialSections(editor,{hotkeyLabel}={}){
  ];
 }
 const depthHintMessage=key=>key?{messageKey:'spatialControls.depthHint',messageParams:{key:key.split(' / ')[0]}}:{messageKey:'spatialControls.assignHoldToPose3dPartsInDepth'};
-/** The 3D rig's sections as the inspector renders them. */
-export const spatialControlsView=editor=>{const sections=spatialSections(editor);return sections.length?renderInspector({kind:'spatial-rig',sections}):'';};
-export function spatialGizmo(editor,project){return spatialControlMode(editor)!=='pose'?createSpatialGizmo(editor,project):null;}
+function spatialGizmo(editor,project){return spatialControlMode(editor)!=='pose'?createSpatialGizmo(editor,project):null;}
 export function drawSpatialGizmo(ctx,editor,project){
  drawRotationGizmo(ctx,spatialGizmo(editor,project));
 }

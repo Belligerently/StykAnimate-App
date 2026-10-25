@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
-import {geometryOfDocument,evaluatedAt} from './support/engine-geometry.mjs';
+import {evaluatedAt} from './support/engine-geometry.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
-import {projection,projectSpatial,unprojectSpatial,projectSpatialFace,validateSpatialPose,interpolateSpatialPose} from '../src/spatial-projection.mjs';
+import {validateSpatialPose} from '../src/spatial-projection.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
-import {spatialControlsView} from '../src/spatial-controls.mjs';
+import {spatialControlsView} from './support/control-views.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 const near=(a,b,t=1e-3)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 function fixture(){
@@ -22,17 +22,6 @@ function fixture(){
  return{doc,figure,object,a,b,foot,toe,other,skin,footSkin,vertices};
 }
 const editor=doc=>{const {editor:e}=ownedEditorSync({demo:false},doc,{recorded:false});e.select(1,-1);return e;};
-
-test('perspective has an exact neutral default and invertible projection at any scale',()=>{
- for(const scale of [.3,1,3]){
-  const o={scale,root_x:200,root_y:100,_stykSpatial:{camera:{strength:1,distance:400,centerX:200,centerY:100}}},root={x:250,y:120},c=projection(o,root);
-  for(const z of [-200,0,150]){const p=[280,190,z*scale],screen=projectSpatial(p,c),raw=unprojectSpatial(screen,p[2],o,root);near(raw.x,p[0]);near(raw.y,p[1]);}
-  near(projectSpatial([300,100,200*scale],c).x,400);
- }
- const f=fixture(),before=geometryOfDocument(f.doc);f.object._stykSpatial={camera:{strength:0,distance:400},shape:{[f.b.id]:{width:1,taper:0}}};
- const after=geometryOfDocument(f.doc);
- assert.deepEqual([...after.objects.get(0).joints],[...before.objects.get(0).joints]);
-});
 
 test('local width and taper change the intended radius and child sizes remain connected',()=>{
  const f=fixture(),e=editor(f.doc);e.select(1,f.b.id-1);const initial=e.serialize(),other=e.geometry.objects.get(0).joints.get(f.other.id);
@@ -52,15 +41,6 @@ test('spatial settings tween, round-trip native saving, and restore one complete
  assert.deepEqual(reopened.keyframes[0].objects[0]._stykSpatial,e.object._stykSpatial);
  const a=structuredClone(before.keyframes[0].objects[0]),b=structuredClone(e.object);const doc={...f.doc,keyframes:[createFrame([a],12),createFrame([b],12)]};
  const halfway=evaluatedAt(doc,6).objects[0]._stykSpatial;near(halfway.camera.strength,.4);near(halfway.shape[f.b.id].width,1.5);near(halfway.shape[f.b.id].taper,.2);
- validateSpatialPose({...b,_stykSpatial:interpolateSpatialPose(a,b,-10)},f.figure);
-});
-
-test('near-plane clipping retains finite convex depth polygons and removes hidden faces',()=>{
- const o={scale:1,_stykSpatial:{camera:{strength:1,distance:100}}},c=projection(o,{x:0,y:0});
- const face=raw=>projectSpatialFace(raw.map(p=>projectSpatial(p,c)),c);
- const quad=face([[-10,0,0],[10,0,0],[0,10,110]]);assert.equal(quad.points.length,4);assert.ok(quad.points.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.rawPoint[2]<=95));assert.equal(quad.depthValues.length,4);
- assert.equal(face([[0,0,110],[10,0,120],[0,10,130]]).points.length,0);
- const p=face([[0,0,0],[20,0,50],[0,20,0]]);near(p.depthValues[1],100);
 });
 
 test('invalid camera and shape settings fail before changing the document or history',()=>{

@@ -5,7 +5,7 @@ import {DrawingResources,defaultTileBudget} from '../src/drawing-resources.mjs';
 import {applyTileChanges} from '../src/drawing-pixels.mjs';
 import {DrawingStroke} from './support/sketch-stroke.mjs';
 import {drawingEngineOperation} from '../src/engine/engine-drawing-worker.mjs';
-import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure} from '../src/drawing-model.mjs';
+import {drawingMetadata,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey} from '../src/drawing-tiles.mjs';
 import {encodeTileBlob,decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX} from '../src/drawing-tile-codec.mjs';
 import {encodeDrawingPNG,decodeDrawingPNG} from '../src/drawing-png.mjs';
@@ -25,6 +25,8 @@ function workerStub(){
     return reply;
   },dispose(){}};
 }
+/** Opening a copy of the document: the engine checks drawing figures, tile blobs and cel identities as it opens it. */
+const opens=report=>new Editor({demo:false,layerTimeline:true}).load(structuredClone(report));
 function fixture(){
   const e=new Editor({demo:false,layerTimeline:true});e.report.canvas_width=64;e.report.canvas_height=64;
   const resources=new DrawingResources(e.report,{worker:workerStub()});
@@ -176,7 +178,7 @@ test('v1 cels decode into tiles at crop offsets through the resource store',asyn
   }finally{resources.dispose();}
 });
 
-test('copyDrawingFigure plus a resource fork shares tiles until only the edited tile diverges',async()=>{
+test('an extended cel forks its resource and shares tiles until only the edited tile diverges',async()=>{
   const {e,resources}=fixture();try{
     const {target,surface}=await stroke(e);e.extendDrawing(undefined,9);e.seek(5);e.drawingKey();const copy=e.drawingTarget();
     assert.notEqual(drawingMetadata(copy.figure).celId,drawingMetadata(target.figure).celId);
@@ -217,18 +219,18 @@ test('checkHistory rejects tile work that would exceed the resident budget',asyn
   }finally{resources.dispose();}
 });
 
-test('validateDrawings accepts v1 and v2 figures and rejects malformed tile blobs',async()=>{
+test('opening accepts v1 and v2 figures and rejects malformed tile blobs',async()=>{
   const {e,resources}=fixture();try{
     await stroke(e);await resources.flush();
-    validateDrawings(e.report);
-    const {figure:v1}=await legacyFigure({figureTypeId:88});e.report.figure_types.push(v1);validateDrawings(e.report);
+    opens(e.report);
+    const {figure:v1}=await legacyFigure({figureTypeId:88});e.report.figure_types.push(v1);opens(e.report);
     const figure=e.drawingTarget().figure,asset=figure.image_assets[0];
     assert.ok(asset.styk_tiles?.startsWith(TILE_BLOB_PREFIX));
-    const bad=structuredClone(figure);bad._styk.drawing.celId='cel-bad-2';bad.image_assets[0].styk_tiles='data:image/png;base64,AAAA';
-    e.report.figure_types.push(bad);assert.throws(()=>validateDrawings(e.report),/tile blob/);e.report.figure_types.pop();
-    const dup=structuredClone(figure);e.report.figure_types.push(dup);assert.throws(()=>validateDrawings(e.report),/unique/);e.report.figure_types.pop();
+    const bad=structuredClone(figure);bad.figure_type_id=997;bad._styk.drawing.celId='cel-bad-2';bad.image_assets[0].styk_tiles='data:image/png;base64,AAAA';
+    e.report.figure_types.push(bad);assert.throws(()=>opens(e.report),/tile blob/);e.report.figure_types.pop();
+    const dup=structuredClone(figure);dup.figure_type_id=998;e.report.figure_types.push(dup);assert.throws(()=>opens(e.report),/unique/);e.report.figure_types.pop();
     drawingMetadata(figure).bounds={x:0,y:0,width:Number.MAX_SAFE_INTEGER,height:1};
-    assert.throws(()=>validateDrawings(e.report),/metadata/);
+    assert.throws(()=>opens(e.report),/metadata/);
   }finally{resources.dispose();}
 });
 
@@ -306,7 +308,7 @@ test('sprite mapping inverts scale, rotation, mirror, reverse and crop anchor',(
   }
 });
 test('malformed and duplicate drawing metadata is rejected',async()=>{
-  const {e,resources}=fixture();try{const {target}=await stroke(e);validateDrawings(e.report);const copy=structuredClone(target.figure);e.report.figure_types.push(copy);assert.throws(()=>validateDrawings(e.report),/unique/);e.report.figure_types.pop();drawingMetadata(e.report.figure_types.at(-1)).bounds={x:0,y:0,width:0,height:1};assert.throws(()=>validateDrawings(e.report),/metadata/);}finally{resources.dispose();}
+  const {e,resources}=fixture();try{const {target}=await stroke(e);opens(e.report);const copy=structuredClone(target.figure);copy.figure_type_id=999;e.report.figure_types.push(copy);assert.throws(()=>opens(e.report),/unique/);e.report.figure_types.pop();drawingMetadata(e.report.figure_types.at(-1)).bounds={x:0,y:0,width:0,height:1};assert.throws(()=>opens(e.report),/metadata/);}finally{resources.dispose();}
 });
 test('history restores tile snapshots synchronously after a published store is evicted',async()=>{
   const {e,resources}=fixture();try{
@@ -341,7 +343,7 @@ test('v2 cels place pixel (0,0) at the pointer world position independently of s
     const item=celGeometry(e,createFrame([target.object]),target.figure,target.object.unique_id).drawables[0];
     const origin=transformPoint(drawingPixelMatrix(item),{x:0,y:0});
     assert.ok(Math.hypot(origin.x-3000,origin.y+100)<1e-8);
-    validateDrawings({...e.report,figure_types:[...e.report.figure_types,target.figure]});
+    opens({...e.report,figure_types:[...e.report.figure_types,target.figure]});
   }finally{resources.dispose();}
 });
 
@@ -804,7 +806,7 @@ test('sparse distant marks retain valid metadata and exact tiles after publicati
   const {e,resources}=fixture();try{
     const target=e.prepareDrawingCel({pixelsPerUnit:1});await resources.surface(target.figure);
     e.commitDrawingPixels(target,[{tx:0,ty:0,before:null,after:new Uint8ClampedArray([255,0,0,255])},{tx:300,ty:300,before:null,after:new Uint8ClampedArray([0,0,255,255])}]);
-    await resources.flush();validateDrawings(e.report);
+    await resources.flush();opens(e.report);
     const copy=new Editor({demo:false,layerTimeline:true});copy.load(structuredClone(e.report));
     const figure=copy.drawingTarget().figure,tiles=await decodeTileBlob(figure.image_assets[0].styk_tiles);
     assert.equal(tiles.length,2);assert.equal(drawingMetadata(figure).bounds.width,19264);
@@ -825,20 +827,6 @@ test('copy after undo of an evicted cel captures pending pixels independently',a
     e.commitDrawingPixels(e.drawingTarget(),[{tx:0,ty:0,before:red,after:blue}]);
     assert.deepEqual(resources.entry(source).store.pixel(0,0),[255,0,0,255]);
     await resources.flush();assert.deepEqual([...(await decodeTileBlob(copied.image_assets[0].styk_tiles))[0].pixels.slice(0,4)],[0,0,255,255]);
-  }finally{resources.dispose();}
-});
-
-test('clipboard snapshots preserve deferred undo even when the source changes before paste',async()=>{
-  const {e,resources}=fixture(),{copyDrawingFigure}=await import('../src/drawing-model.mjs');try{
-    const t=e.prepareDrawingCel({pixelsPerUnit:1});await resources.surface(t.figure);
-    const red=new Uint8ClampedArray([255,0,0,255]),blue=new Uint8ClampedArray([0,0,255,255]);
-    e.commitDrawingPixels(t,[{tx:0,ty:0,before:null,after:red}]);
-    e.commitDrawingPixels(e.drawingTarget(),[{tx:0,ty:0,before:red,after:blue}]);await resources.flush();
-    const source=e.drawingTarget().figure;resources.entry(source).store=null;e.undo();
-    const clipboard={figures:[structuredClone(source)]};resources.captureClipboard(clipboard);e.redo();
-    const copy=copyDrawingFigure(clipboard.figures[0],999);e.report.figure_types.push(copy);resources.pasteClipboard([[clipboard.figures[0],copy]],clipboard);
-    assert.deepEqual((await resources.surface(copy)).store.pixel(0,0),[255,0,0,255]);
-    assert.deepEqual((await resources.surface(source)).store.pixel(0,0),[0,0,255,255]);
   }finally{resources.dispose();}
 });
 

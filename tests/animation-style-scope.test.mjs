@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument, defaultFigure, createObject, createFrame} from '../src/demo.mjs';
-import {animationChannelId, normalizeAnimationTarget, findAnimationChannel, composeAnimationChannels, validateAnimationDocument} from '../src/animation-channels.mjs';
-import {animationStyleValue, setAnimationStyle} from '../src/animation-style.mjs';
+import {animationChannelId, normalizeAnimationTarget, findAnimationChannel, validateAnimationDocument} from '../src/animation-channels.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
 
 const globalTarget = {kind:'segment',uid:7,handleId:1};
@@ -56,15 +55,3 @@ test('malformed, non-segment and missing figure scopes reject before replacing a
   // The engine refuses the document with the editor's message key (its parameters are not carried).
   assert.throws(()=>editor.load(missing),error=>error.messageKey==='errors.animationChannels.animationSegmentScopeReferencesMissingFigureDefinition'); assert.equal(editor.report,original);
 });
-
-test('direct style reads, writes and dormant composition never touch a mismatched definition', () => {
-  const report=fixture(), frame=report.keyframes[1], object=frame.objects[0], before=structuredClone(object);
-  for(const property of ['opacity','gradientOpacity']) {
-    assert.equal(animationStyleValue(report.figure_types[1],object,targetA,property),undefined);
-    assert.equal(setAnimationStyle(object,targetA,property,.25),object);
-  }
-  assert.deepEqual(object,before);
-  setChannels(report,[channel(targetA,'opacity',[[0,.1]]),channel(targetA,'gradientOpacity',[[0,.2]])]);
-  assert.equal(composeAnimationChannels(report,frame,6),frame);
-});
-

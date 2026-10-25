@@ -23,12 +23,12 @@ try{
     let paints=0;const paint=t._paint;t._paint=function(...args){paints++;return paint.apply(this,args);};
     const checks=[],keys=()=>e.layerFrameKeys('layer-1').map(k=>k.tick),snapshot=()=>JSON.stringify(e.serialize());
     try{
-      const before=snapshot(),history=e.historySize,initialKeys=keys(),grid=t.canvas.toDataURL(),root=e.object.root_x;
+      const before=snapshot(),history=e._undo.length,initialKeys=keys(),grid=t.canvas.toDataURL(),root=e.object.root_x;
       paints=0;e.beginTranslationDrag();
       for(let i=1;i<=8;i++){e.moveSelection(i*3,i,{fromStart:true});await settle();}
       check(e.object.root_x===root+24,'Live pose did not move');
       equal(keys(),initialKeys,'Live pose created an exposure key');
-      check(e.historySize===history&&snapshot()===before,'Live pose changed authored document or history');
+      check(e._undo.length===history&&snapshot()===before,'Live pose changed authored document or history');
       check(t.canvas.toDataURL()===grid,'Live pose changed exposure grid pixels');
       check(paints===0,`Live pose repainted an unchanged grid ${paints} times`);
       checks.push('live pose changes canvas geometry without repainting unchanged exposure cells');

@@ -9,7 +9,7 @@ page.on('pageerror',error=>errors.push(error.message));page.setDefaultTimeout(30
 try{
   await page.goto(process.env.STYK_URL??'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   await page.evaluate(async()=>{
-    const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),{movieclipFigure}=await import('/src/movieclips.mjs'),{presencePlayback}=await import('/src/movieclip-presence.mjs');
+    const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),{movieclipFigure}=await import('/src/movieclips.mjs'),{presencePlayback}=await import('/tests/support/movieclip-playback.mjs');
     const source=emptyDocument(),report=emptyDocument(),clip=movieclipFigure(2,'Motion',source,{duration:1});report.figure_types.push(clip);
     report.keyframes=[0,10,20].map(x=>createFrame([createObject(report.figure_types[0],1,200+x,200),createObject(report.figure_types[0],2,400+x,200),createObject(clip,7,600+x,200,{_stykMovieclip:presencePlayback()})],10));
     styk.settingsUI.commit({timelineMode:'advanced'});const e=styk.editor;e.load(report);

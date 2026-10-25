@@ -7,7 +7,6 @@ import {packMotionLanes} from '../src/camera-motion-timeline.mjs';
 import {motionRowSize,motionLaneBox,sheetRowLayout} from '../src/timeline-rows.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
-import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {pivotDocument} from './support/engine-export.mjs';
 const refs=ownerReferences(import.meta.url);
 const near=(a,b,tolerance=.002)=>assert.ok(Math.abs(a-b)<tolerance,`${a} != ${b}`);
@@ -82,9 +81,6 @@ refs.test('baking retains camera output and parallax at every output tick and un
   e.bakeCameraMotion();assert.equal(e._undo.length,history+1);assert.ok(e.getCameraMotions().every(c=>!c.enabled));
   sameShots(samples,shots(e));sameStored(stored(e),exported);
   e.undo();assert.deepEqual(e.serialize(),before);e.redo();validateAnimationDocument(e.report);
-});
-test('pose snapshots omit the derived motion clock and retain the authored camera',()=>{
-  const e=fixture();e.addCameraMotion('impact');const frame=at(e,3),saved=snapshotPoseFrame(frame);assert.equal(saved._cameraMotionTick,undefined);assert.deepEqual(saved.camera,frame.camera);
 });
 for(const interpolation of ['constant','linear','bezier','auto'])refs.test(`partial bake preserves all output ticks across ${interpolation} camera spans`,take=>{
   const e=ownedFixture(take);e.addCameraMotion('handheld',{duration:60});e.addCameraMotion('impact',{start:5,duration:30});

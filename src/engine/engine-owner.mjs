@@ -217,7 +217,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
     // The playhead first: the selection belongs to the frame it shows. Set as history
     // sets it: the editor's seek would also end a gesture the session keeps going.
     if (state && (state.tick !== editor.tick || state.frameIndex !== editor.frameIndex)) {
-      editor.tick = state.tick; editor.frameIndex = state.frameIndex; editor._invalidate({viewOnly: true});
+      editor.tick = state.tick; editor.frameIndex = state.frameIndex; editor._invalidate();
     }
     if (answer.motionPathError) throw new Error(`The engine could not show the motion-path edit: ${answer.motionPathError}`);
     if (Object.hasOwn(answer, 'drag')) gesture(answer);
@@ -434,8 +434,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
     if (editor._animationEdit?.engine && editor._sheetPropertyPreview) { editor._sheetPropertyPreview = null; editor._invalidate(); }
     // An edit of several targets (a branch, a draw order) names them all (`targets`) and holds a value for each.
     const {target, targets, property, exactTarget, tick, initialValue, changed} = opened, edit = {engine: true, target, ...(targets ? {targets} : {}), property, exactTarget, tick, initialValue, selection: editor._selectionState(), changed};
-    editor._animationEdit = opened.sheet ? Object.assign(edit, {sheet: true, value: opened.value, frame: baseFrame()})
-      : Object.assign(edit, {before: editor.report._styk?.animation ?? null, beforeChannel: editor.animationChannel(target, property, {exactTarget})});
+    editor._animationEdit = opened.sheet ? Object.assign(edit, {sheet: true, value: opened.value, frame: baseFrame()}) : edit;
   };
   /** The session's change events, for the interface: they describe what the session already has. */
   const emit = answer => {

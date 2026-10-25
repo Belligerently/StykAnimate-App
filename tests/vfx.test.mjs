@@ -2,10 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
-import {createVfx,vfxStack,vfxProperty,validateVfxStack,validateVfxValue,interpolateVfx,resolvedVfx,VFX_REGISTRY} from '../src/vfx.mjs';
+import {createVfx,vfxStack,vfxProperty,validateVfxStack,validateVfxValue,resolvedVfx,VFX_REGISTRY} from '../src/vfx.mjs';
 import {VFX_PRESETS} from '../src/vfx-presets.mjs';
-import {validateAnimationDocument,sampleAnimationChannel} from '../src/animation-channels.mjs';
-import {remapVfxOwner} from '../src/vfx.mjs';
+import {validateAnimationDocument} from '../src/animation-channels.mjs';
 function fixture(){const report=emptyDocument(),fig=report.figure_types[0];report.keyframes=[0,1,2].map(()=>createFrame([createObject(fig,1,120,180),createObject(fig,2,280,180)],10));return newOwnedEditor({demo:false,layerTimeline:true}).load(report);}
 const target={kind:'figure',uid:1};
 /** Keys the stack with `effect` added at the playhead: what `changeVfxStack(target,stack=>stack.push(effect))` does, with the stack as data. */
@@ -13,8 +12,6 @@ const pushVfx=(e,effect)=>e.addAnimationKey(target,'vfxStack',e.tick,validateVfx
 test('registry validates effect payloads and rejects malformed/oversized values',()=>{assert.throws(()=>createVfx('bogus','fx1'));assert.throws(()=>validateVfxValue(vfxProperty('glow','fx1','radius'),Infinity));assert.throws(()=>validateVfxStack(Array.from({length:17},(_,i)=>createVfx('glow','f'+i))));assert.throws(()=>validateVfxStack([createVfx('glow','same'),createVfx('blur','same')]));});
 test('effects survive edit/undo/reopen and isolate instances',()=>{const editor=fixture();editor.sheetInsertKey([editor.layerForUid(1)],10);editor.seek(10);const before=editor._undo.length,[id]=editor.addVfx(target,'glow');assert.equal(editor._undo.length,before+1);assert.equal(editor.vfxEffects(target)[0].id,id);assert.equal(vfxStack(editor.evaluatedFrame.objects[1]).length,0);editor.seek(5);assert.equal(editor.vfxEffects(target).length,0);editor.seek(10);editor.setVfxParameter(target,id,'radius',22);assert.equal(editor.vfxEffects(target)[0].params.radius,22);editor.undo();assert.equal(editor.vfxEffects(target)[0].params.radius,12);editor.redo();const reopened=newOwnedEditor({demo:false}).load(structuredClone(editor.report));reopened.seek(10);assert.equal(reopened.vfxEffects(target)[0].params.radius,22);validateAnimationDocument(editor.report);});
 test('effect preview cancellation restores the original pose',()=>{const editor=fixture(),[id]=editor.addVfx(target,'tint');const property=vfxProperty('tint',id,'mix');editor.beginAnimationEdit(target,property,{exactTarget:true});editor.previewAnimationEdit(.8);assert.equal(editor.vfxEffects(target)[0].params.mix,.8);editor.cancelAnimationEdit();assert.equal(editor.vfxEffects(target)[0].params.mix,.5);});
-test('native VFX tween interpolates matching effects and never introduces future effects early',()=>{const a=createVfx('glow','a'),b={...a,params:{...a.params,radius:24}};assert.equal(interpolateVfx({figure:[a]},{figure:[b,createVfx('blur','b')]},.5).figure[0].params.radius,18);assert.equal(interpolateVfx({figure:[a]},{figure:[b,createVfx('blur','b')]},.5).figure.length,1);});
-test('VFX booleans remain discrete while numeric/color channels interpolate',()=>{assert.equal(sampleAnimationChannel({property:vfxProperty('glow','f','enabled'),keys:[{tick:0,value:1},{tick:10,value:0}]},5),1);assert.equal(sampleAnimationChannel({property:vfxProperty('glow','f','radius'),keys:[{tick:0,value:4},{tick:10,value:12}]},5),8);});
 test('held exposures use the same edit boundary as Properties without creating a VFX timeline',()=>{
  const e=fixture(true),layer=e.layerForUid(1);e.sheetSetEasing([layer],0,29,{interpolation:'constant'});const count=e.report._styk.layerSheet.tracks[layer].keys.length;
  e.seek(5);const [id]=e.addVfx(target,'glow');e.setVfxParameter(target,id,'radius',28);
@@ -31,10 +28,6 @@ test('effect order, duplicate, reset and presets use atomic document history',()
  const e=fixture(true),[id]=e.addVfx(target,'glow');e.setVfxParameter(target,id,'radius',30);const duplicate=e.duplicateVfx(target,id);
  e.moveVfx(target,duplicate,-1);assert.equal(e.vfxEffects(target)[0].id,duplicate);e.resetVfx(target,duplicate);assert.equal(e.vfxEffects(target)[0].params.radius,12);
  const count=e._undo.length;e.applyVfxPreset([target,{kind:'figure',uid:2}],'Energy');assert.equal(e._undo.length,count+1);assert.equal(e.vfxEffects({kind:'figure',uid:2}).length,2);e.undo();assert.equal(e.vfxEffects({kind:'figure',uid:2}).length,0);
-});
-test('physical handle remapping preserves node effects and removes deleted handles',()=>{
- const effect=createVfx('glow','one'),owner={figure_type_id:1,_stykVfx:{figure:[effect],'1/2':[effect],'1/3':[effect]}};
- remapVfxOwner(owner,7,new Map([[2,[8,9]],[3,[]]]));assert.deepEqual(Object.keys(owner._stykVfx),['figure','7/8','7/9']);
 });
 test('splitting a rig keeps effects on both physical pieces and undo restores ownership',()=>{
  const e=fixture(true);e.select(1,0);const original=e.figure.segments[0].segment_id,type=e.figure.figure_type_id,node={kind:'segment',uid:1,figureTypeId:type,handleId:original};

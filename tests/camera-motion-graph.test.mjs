@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {createCameraMotion} from '../src/camera-motion.mjs';
+import {createCameraMotion} from './support/camera-motion.mjs';
 import {motionGraphValues, motionGraphScale, motionGraphValueLabel, motionGraphTicks, plotMotionGraph} from '../src/camera-motion-graph.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditor} from './support/owned-editor.mjs';
