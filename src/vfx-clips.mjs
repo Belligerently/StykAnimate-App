@@ -1,5 +1,5 @@
 import {messageError} from './localized-error.mjs';
-import {createVfx,validateVfxStack,validateVfxValue,vfxDescriptor,vfxOwnerKey,vfxProperty} from './vfx.mjs';
+import {createVfx,validateVfxStack,validateVfxValue,vfxDescriptor,vfxOwnerKey} from './vfx.mjs';
 import {interpolateVfxColor} from './vfx-paint.mjs';
 import {isGeneratorType} from './vfx-registry.mjs';
 import {easedProgress,validateKeyEasing} from './keyframe-easing.mjs';
@@ -7,8 +7,6 @@ import {easedProgress,validateKeyEasing} from './keyframe-easing.mjs';
 export const VFX_CLIP_LIMIT=4096;
 const empty=Object.freeze([]),indices=new WeakMap(),validated=new WeakSet(),rendered=new WeakSet(),frames=new WeakMap();
 export const vfxClips=report=>report?._styk?.vfxClips?.clips??empty;
-/** Timeline effect clips owned by figures or their nodes, carried by figure clipboards. */
-export const figureVfxClips=(report,uids)=>{const set=new Set(uids);return vfxClips(report).filter(c=>c.target.kind!=='scene'&&set.has(c.target.uid));};
 export const sameVfxTarget=(a,b)=>a.kind===b.kind&&a.uid===b.uid&&a.handleId===b.handleId&&a.figureTypeId===b.figureTypeId;
 export const clipContains=(clip,tick)=>clip.duration===null||tick>=clip.start&&tick<clip.start+clip.duration;
 export const clipTime=(clip,tick)=>Math.max(0,tick-clip.start+clip.offset);
@@ -47,16 +45,6 @@ export function sampleVfxKeys(keys,tick,fallback,property){
  if(tick<=a.tick||!b||d.discrete)return a.value;
  const t=easedProgress(a,(tick-a.tick)/(b.tick-a.tick));return d.type==='color'?interpolateVfxColor(a.value,b.value,t):a.value+(b.value-a.value)*t;
 }
-/** Inspector activity uses keyed switches/strength, without evaluating colors,
- * spatial parameters or geometry. Fade endpoints remain part of a timed clip. */
-export function vfxClipActiveAt(clip,tick){
- if(!clip.enabled||!clip.strength||!clipContains(clip,tick))return false;
- const time=clipTime(clip,tick);
- return clip.effects.some(effect=>{
-  const enabled=vfxProperty(effect.type,effect.id,'enabled'),strength=vfxProperty(effect.type,effect.id,'effectStrength');
-  return Boolean(sampleVfxKeys(clip.keys[enabled],time,+effect.enabled,enabled))&&sampleVfxKeys(clip.keys[strength],time,effect.params.effectStrength??1,strength)>0;
- });
-}
 export const vfxFadeAt=(clip,elapsed)=>clip.duration===null?1:Math.min(clip.fadeIn?Math.max(0,Math.min(1,elapsed/clip.fadeIn)):1,clip.fadeOut?Math.max(0,Math.min(1,(clip.duration-elapsed)/clip.fadeOut)):1);
 export function sampleVfxClip(clip,tick,{envelope=false}={}){
  const age=clipTime(clip,tick),elapsed=tick-clip.start;
@@ -76,7 +64,7 @@ export function renderVfxOwner(owner,clips,tick){
  let result=owner;
  for(const clip of clips??empty){
   if(!clip.enabled||!clipContains(clip,tick)||!clip.strength||clip.target.kind==='segment'&&clip.target.figureTypeId!==undefined&&clip.target.figureTypeId!==owner.figure_type_id)continue;
-  // Generators draw their own artwork (vfx-generators.mjs); only filters compose here.
+  // Generators draw their own artwork (the engine builds them); only filters compose here.
   if(!clip.effects.some(e=>!isGeneratorType(e.type)))continue;
   const effects=sampleVfxClip(clip,tick,{envelope:true}).filter(e=>!isGeneratorType(e.type)),key=vfxOwnerKey(clip.target);
   const connected=result._vfxConnectedEffects??(owner._stykVfxScope===1?owner._stykVfx?.figure??empty:empty);

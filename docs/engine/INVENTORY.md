@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 29 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 28 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
-| `styk-edit` | 92 | 627 KiB | 23 | 12 | 1 | 4 | 52 | 65 % | 12 % | 60 % |
+| `styk-edit` | 92 | 623 KiB | 23 | 12 | 1 | 4 | 52 | 65 % | 11 % | 60 % |
 | `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
-| `styk-eval` | 80 | 651 KiB | 16 | 45 | 9 | 0 | 10 | 20 % | 72 % | 2 % |
+| `styk-eval` | 80 | 520 KiB | 15 | 43 | 5 | 0 | 17 | 8 % | 82 % | 3 % |
 | `styk-export` | 14 | 63 KiB | 8 | 2 | 0 | 0 | 4 | 0 % | 10 % | 0 % |
-| `styk-formats` | 56 | 742 KiB | 22 | 7 | 1 | 22 | 4 | 65 % | 11 % | 7 % |
-| `styk-render` | 51 | 95 KiB | 4 | 1 | 2 | 0 | 44 | 48 % | 23 % | 27 % |
-| **Total** | 355 | 2419 KiB | 90 | 75 | 21 | 26 | 143 | 47 % | 29 % | 20 % |
+| `styk-formats` | 56 | 741 KiB | 22 | 7 | 1 | 22 | 4 | 65 % | 11 % | 7 % |
+| `styk-render` | 51 | 76 KiB | 4 | 1 | 0 | 0 | 46 | 35 % | 29 % | 35 % |
+| **Total** | 355 | 2262 KiB | 89 | 73 | 15 | 26 | 152 | 45 % | 29 % | 21 % |
 
 ## Engine modules
 
@@ -191,8 +191,8 @@ Engine logic: ported to Rust.
 | `src/layer-folders.mjs` | `styk-eval` | js |  |
 | `src/layer-sheet.mjs` | `styk-eval` | partial | Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS |
 | `src/layers.mjs` | `styk-eval` | partial | Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS |
-| `src/native-pose-projection.mjs` | `styk-eval` | js |  |
-| `src/native-property-projection.mjs` | `styk-eval` | partial | Rust: private native scalar adoption through same marker, Draft, Records and typed sampler; 204 exact recorded curves/200 missing first writes; authored propertyChannels:true command publication and app adoption remain guarded |
+| `src/native-pose-projection.mjs` | `styk-eval` | removed | Deleted: nothing builds a native channel in JavaScript any more; the session edits and samples |
+| `src/native-property-projection.mjs` | `styk-eval` | removed | Deleted: nothing builds a native channel in JavaScript any more; the session edits and samples |
 | `src/object-identity.mjs` | `styk-eval` | js |  |
 | `src/paint.mjs` | `styk-eval` | partial | Rust: segment paints and gradients in draw lists; normalizePaint, segmentPaint, samplePaint, parseColor and hexColor for recolouring (styk-edit/src/recolor.rs); CSS and SVG helpers still JS |
 | `src/pivot/background.mjs` | `styk-eval` | partial | Rust: background tween and colour key; painting still JS |
@@ -212,7 +212,7 @@ Engine logic: ported to Rust.
 | `src/animation-properties.mjs` | `styk-eval::channels` | partial | Rust: property vocabulary, discrete and colour properties; validation and names still JS |
 | `src/animation-style.mjs` | `styk-eval::channels` | partial | Rust: style overlays and style channels (setAnimationStyle, applicability); resolveInstanceFigure's segment and polygon overlays, styleColor and meshPaletteColor for recolouring (styk-edit/src/recolor.rs); validation still JS |
 | `src/native-property-curve.mjs` | `styk-eval::channels` | partial | Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor |
-| `src/camera-follow.mjs` | `styk-eval::follow` | partial | Rust: typed follow sampling and V8-exact logarithm for native edit read/bake; WeakMap geometry/epoch invalidation fixed in JS; a session shapes the path of each revision it makes through the frame on show, incremental resampling across edits still JS; the inspector's framing offset is styk_eval::follow::framing_offset |
+| `src/camera-follow.mjs` | `styk-eval::follow` | removed | Deleted: the engine samples follow (styk_eval::follow, camera views of the session); its validators moved into camera-motion.mjs |
 | `src/movieclip-drawings.mjs` | `styk-eval::movieclips` | partial | Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS |
 | `src/movieclip-geometry.mjs` | `styk-eval::movieclips` | partial | Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS |
 | `src/movieclip-materialize.mjs` | `styk-eval::movieclips` | partial | Rust: shared recorded materializer/source clocks and native/sheet Bake capture; portable effect remapping shared with topology/clipboard; figures with IK limbs (as solved), rigs, origins and 3D poses expand like the editor's; meshes (bake_mesh) and turning drawings expand in the session too |
@@ -255,11 +255,11 @@ Engine logic: ported to Rust.
 | `src/vfx-registry.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags) |
 | `src/vfx-user-presets.mjs` | `styk-eval::vfx` | partial | Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS |
 | `src/vfx.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS; B13 coherent edit-frame conversion reuses unchanged warning-free effect tables, retaining original diagnostics and identity/lineage fallbacks; verified400Rust/27CLI925/82JS/check; existing portable Loader API, stored fields/math/schema unchanged; fresh figures cost/checkpoint/default gate pending |
-| `src/vfx-generator-anchors.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-anchors.mjs` | `styk-eval::vfx::generated` | removed | Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs) |
 | `src/vfx-generator-frame.mjs` | `styk-eval::vfx::generated` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
-| `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/vfx-generators.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | removed | Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs) |
+| `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | removed | Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs) |
+| `src/vfx-generators.mjs` | `styk-eval::vfx::generated` | removed | Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs) |
 | `src/renderer-geometry.mjs` | `styk-eval::view` | partial | the interface's view math only: cameraMatrix, worldToScreen, screenToWorld and objectBounds. Rust: styk_eval::view (camera_matrix, orientation) and drawlist::artwork_bounds; the editing cut replaces picking and bounds with engine queries |
 | `src/export-canvas.mjs` | `styk-export` | js | frame hand-over of the engine's export worker |
 | `src/export-crisp.mjs` | `styk-export` | removed | removed with the JavaScript export worker; No smoothing is drawn by the engine (Edges::Crisp, styk-export) |
@@ -363,8 +363,8 @@ Engine logic: ported to Rust.
 | `src/scene-preparation.mjs` | `styk-render` | removed | deleted: only the removed camera effects executor used it (1150 bytes) |
 | `src/surface-raster.mjs` | `styk-render` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/drawing-gpu.mjs` | `styk-render::drawing` | removed | deleted: strokes rasterize in styk-drawing and the stage draws them as live cels (src/engine/engine-live-cels.mjs) |
-| `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/vfx-generator-atlas.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | removed | Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs) |
+| `src/vfx-generator-atlas.mjs` | `styk-render::generators` | removed | Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs) |
 | `src/vfx-generator-canvas.mjs` | `styk-render::generators` | removed | Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine. |
 | `src/vfx-generator-gpu.mjs` | `styk-render::generators` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/content-hash.mjs` | `styk-render::images` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
@@ -611,6 +611,7 @@ Interface: stays in JS.
 | `src/vfx-clip-controls.mjs` |  | stays |  |
 | `src/vfx-clip-inspector.mjs` |  | stays |  |
 | `src/vfx-clip-timeline.mjs` |  | stays |  |
+| `src/vfx-clip-views.mjs` |  | stays | The effects timeline's clip tails and playing state, read from the session (vfxClips) |
 | `src/vfx-gizmos.mjs` |  | stays |  |
 | `src/vfx-icons.mjs` |  | stays |  |
 | `src/vfx-inspector.mjs` |  | stays |  |

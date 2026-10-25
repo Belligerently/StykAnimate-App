@@ -186,29 +186,28 @@ when the reference has them.
 ## The scene camera
 
 What the camera does when the scene is seen through it: prepared playback frames
-always, edit frames only in the camera preview (`cameraEnabled`). The editor applies
-both at render time (`cameraAtTime`, `parallaxResolver`); the engine works them out
-with the frame and draws them.
+always, edit frames only in the camera preview (`cameraEnabled`). The engine works
+both out with the frame and draws them; the interface asks for the shot (`shot`,
+below) and puts it on the frame it maps points through.
 
-- **Travel** (`cameraTravelAt`, `Prepared::travel`) is where the camera is: the
+- **Travel** (`Prepared::travel`) is where the camera is: the
   authored camera, tweened with its baked camera-motion offset (`_parallaxMotionOffset`,
   tweened when either key has one, like the other camera channels), moved by the follow
   clips active at the frame's time.
-- **Follow clips** (`styk_eval::follow`, `camera-follow.mjs`): per tick the followed
+- **Follow clips** (`styk_eval::follow`): per tick the followed
   figures are evaluated in a projection of the document holding only them, the figures
-  they hang from and the camera (`followSamplingReport`), and measured from their
+  they hang from and the camera, and measured from their
   geometry (`ObjectGeometry::extent`, `figureBounds`: visible segments with half their
   stroke, circles by radius, curves by their points, every polygon including culled
   surfaces, a movieclip's handle). A forward pass shapes the samples per clip frame
   (dead zone with hysteresis, look-ahead, holding the last seen target or aiming at the
   first one ahead, a critically damped spring per axis, framing zoom) into offsets and a
-  log zoom stored in single precision, as the editor's `Float32Array`; overlapping clips
+  log zoom stored in single precision; overlapping clips
   blend by weight. The pass is sequential: a clip's path is shaped once per prepared
   document, lazily up to the frame asked for and 256 frames beyond, by whichever thread
   needs it first, outside any lock (the longest path published wins: a pointer swap under
-  a spinning lock, D7). The editor keeps its paths across edits and resamples from the
-  key before a change; the engine shapes each revision's paths afresh.
-- **Parallax** (`styk_eval::parallax`, `layer-parallax.mjs`): each layer whose parallax
+  a spinning lock, D7). The engine shapes each revision's paths afresh.
+- **Parallax** (`styk_eval::parallax`): each layer whose parallax
   is on moves by `(1 - response) × (travel - reference - baked offset)` per axis; a
   joined figure moves with the layer of its join chain's root. `Frame::parallax` holds
   the offset of every object by slot (`None` when nothing moves, and always for a
@@ -217,11 +216,12 @@ with the frame and draws them.
   list takes as one more per-object translation after a drag's
   (`Parallax::translations`); geometry, records and editing never see it. Onion skins
   take none: the editor shows them only with the camera off.
-- **Impulses** (`camera::at_time`, `sampleCameraMotion`) shake the shot from the
-  travelled camera.
+- **Impulses** (`camera::at_time`) shake the shot from the travelled camera.
 - **Edit frames** carry their time on the camera-motion clips (`_cameraMotionTick`); in
-  the camera preview the stage draws them through `cameraAtTime` worked out against the
+  the camera preview the stage draws them through the shot worked out against the
   published generation (a follow path reflects an edit once the session publishes it).
+  The interface does not evaluate camera motion: it reads the shot with `shot` and maps
+  points through the camera of the frame it holds (`effectiveCamera`).
 
 ## Retained movieclip sources
 
@@ -343,7 +343,7 @@ selection is the editor's to tell with a call, and the frame does not depend on 
   effects with their keys sampled at a tick) are the session's reads too (`Editor::interface_query`, at the editor's
   whole view): a document the session does not answer them for (one that is not on a layer sheet) is read by the
   editor from the frame and geometry the engine gave it (`unported: …`). The other queries the owner leaves to the editor
-  (`animationChannel`, `nativePoseChannel`, `getSpatialCamera`, `resolveTranslationSelection`, …) read stored
+  (`animationChannel`, `getSpatialCamera`, `resolveTranslationSelection`, …) read stored
   records and the engine's frame and geometry; none evaluates a pose at the playhead.
 - A read the session refuses (`figureDocument` of nothing to export, `sampleVfxClip` of a clip that is not there) reaches the
   interface as the localized error a refused call is: the session raises the message key, with the values the message
@@ -360,6 +360,14 @@ selection is the editor's to tell with a call, and the frame does not depend on 
 The editor evaluates the frame itself where the engine does not hold its document (a document the session answers
 `unported: …` for). A movieclip being edited is a
 document of the engine like any other: it has a session, and the frame, geometry, onion skins and trails are its.
+
+What the interface still computes in JavaScript about motion is not the frame's evaluation: validation of the stored data that open,
+save and paste run (`validateAnimationDocument`, `validateCameraMotion`, `validateVfxClips`, `validateIK`, the rig and pose-choice
+validators), reads of stored records (the channel list, a key's fields, a definition's topology: `ikChain`, `rigConstraintPlan`
+for the rig inspector), the style overlay of an instance over its definition (`resolveInstanceFigure`, applied to the engine's
+object), and drawing maths (the easing curve of `keyframe-easing-view.mjs`, the gizmos' quaternions, a clip's fade envelope).
+Everything that computes what the frame shows (a sampled channel, a pose, a camera, a solved IK chain or rig, an effect clip's
+state) is the engine's.
 
 ## The interface's views
 
@@ -392,6 +400,13 @@ playhead's. `src/engine/engine-shown.mjs` asks `EditSession.query` (`Session::qu
   the inspector's graph plots an edit that is not stored yet (a follow clip's path is shaped against the document's figures
   and kept while the clip and the document are the same); `framing` the offset that keeps followed figures where they stand
   in the frame on show (`styk_eval::follow::framing_offset`).
+- **Effect clips** (`styk-edit/src/vfx_clips.rs`, `styk-edit/src/interface.rs`): `vfxClips` answers, for clip records the interface
+  holds (the document's, or a gesture's preview of one) and a tick, `{tail, active, plays}` per clip: the ticks its particles
+  stay visible after its end (`generated::clip_tail`), whether the clip is on at the tick (`Clip::active_at`) and whether the
+  inspector lists it there (on, or its generated effects still showing). The effects timeline draws the tail and lists the
+  clips from it (`src/vfx-clip-views.mjs`). `vfxGroup` names, for a figure, the figures its connected effects filter together
+  at the playhead (`FrameVfx`'s attached group, owner first), or nothing when it owns no group; the effects gizmo measures them
+  from the geometry it holds.
 
 The same fixtures judge them: the evaluation fixtures (`tests/fixtures/eval/follow-*`, the camera records) for the
 camera, and `styk-edit/src/views_tests.rs` and `tests/onion-skins.test.mjs`, `tests/motion-trails.test.mjs`,

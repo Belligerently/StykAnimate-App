@@ -42,17 +42,6 @@ export function rotateOriginSupport(figure, object, delta) {
   const ghosts = Object.fromEntries(Object.entries(object._stykAnimationOrigin.ghosts).map(([index, pose]) => [index, {...pose, angle_rad: pose.angle_rad + delta}]));
   object._stykAnimationOrigin = {...object._stykAnimationOrigin, ghosts}; return object;
 }
-export function mirrorOriginSupport(figure, object, axis = 'horizontal') {
-  if (!figure?._styk?.animationOrigin?.support || !object._stykAnimationOrigin?.ghosts) return object;
-  const ghosts = Object.fromEntries(Object.entries(object._stykAnimationOrigin.ghosts).map(([index, pose]) => [index,
-    {...pose, angle_rad: axis === 'vertical' ? -pose.angle_rad : Math.PI - pose.angle_rad, bend_rad: -pose.bend_rad}]));
-  object._stykAnimationOrigin = {...object._stykAnimationOrigin, ghosts}; return object;
-}
-export function resetOriginSupport(figure, object) {
-  if (!figure?._styk?.animationOrigin?.support) return false;
-  const before = JSON.stringify(object._stykAnimationOrigin?.ghosts); initializeOriginSupport(figure, object);
-  return before !== JSON.stringify(object._stykAnimationOrigin?.ghosts);
-}
 export function initializeOriginSupport(figure, object) {
   const support = figure?._styk?.animationOrigin?.support; if (!support) return;
   const ghosts = {};

@@ -17,10 +17,6 @@ const number = (n, label, min, max) => {
   if (!Number.isFinite(n) || n < min || n > max) throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: validationLabel(label), min: min, max: max});
 };
 export function hasRigConstraints(figure) { return figure.segments.some(s => s._stykRig); }
-export function documentHasRigConstraints(document,seen=new Set()) {
-  if(seen.has(document))return false;seen.add(document);
-  return document.figure_types.some(f=>hasRigConstraints(f)||(f._styk?.movieclip&&documentHasRigConstraints(f._styk.movieclip.document,seen)));
-}
 
 /** O(V+E) compilation, iterative even for deeply nested connectors. Metadata is
  * immutable in commands; numeric signatures also catch external in-place edits. */

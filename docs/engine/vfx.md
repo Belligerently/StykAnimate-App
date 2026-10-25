@@ -41,7 +41,7 @@ their existing UI owners.
 | `registry.rs` | `Kind`, `Params` and one struct per type, `Spec`, option enums, `neutral`, `available` | `VFX_REGISTRY`, `neutralVfx`, `effectAvailable` |
 | `paint.rs` | `normalize`, `interpolate`, `js_round` | `vfxPaint`, `interpolateVfxColor`, `normalizePaint`, `samplePaint` |
 | `parse.rs` | saved effects, stacks and clips → typed (lenient) | `validateVfxStack`, `validateVfxOwner`, `validateVfxClips`, `vfxDescriptor` |
-| `clips.rs` | `Clip`, `Clips`, `Target`, `Channel`, `Key`, `sample_keys`, `Clip::{contains, time, fade, sample, active_at}` | `clipContains`, `clipTime`, `vfxFadeAt`, `sampleVfxKeys`, `sampleVfxClip`, `vfxClipActiveAt` |
+| `clips.rs` | `Clip`, `Clips`, `Target`, `Channel`, `Key`, `sample_keys`, `Clip::{contains, time, fade, sample, active_at}` | `clipContains`, `clipTime`, `vfxFadeAt`, `sampleVfxKeys`, `sampleVfxClip` (interface), `vfxClipActiveAt` (deleted) |
 | `frame.rs` | `evaluate` → `FrameVfx`, `generators` | `frameWithVfxTime`, `vfxRenderFrame`, `renderVfxOwner`, `connectedVfxGeometry` (planning), `collectLayers` (clips) |
 | `frame.rs` | `composed`: the `FrameVfx` of an edit frame from the fields the editor composed | `vfxRenderFrame` (its output), `connectedVfxGeometry` |
 | `layers.rs` | `objectBounds` for effect layers: `item_extent`, `rounded` | `objectBounds`, `drawableVfxPadding` |
@@ -52,9 +52,9 @@ The loader (`load.rs`) reads `_stykVfx`, `_stykVfxScope` and `_styk.vfxClips` (c
 
 ## Generated effects
 
-Particles, auras, energy beams, explosions and smoke create artwork instead of filtering it ([`VFX-GENERATORS.md`](../VFX-GENERATORS.md)). `styk_eval::vfx::generated` ports `src/vfx-generators.mjs` and its modules operation for operation, and its output is the editor's bit for bit (see Testing).
+Particles, auras, energy beams, explosions and smoke create artwork instead of filtering it ([`VFX-GENERATORS.md`](../VFX-GENERATORS.md)). `styk_eval::vfx::generated` is the only implementation: it replaced `src/vfx-generators.mjs` and its modules (deleted) operation for operation, and its output is the editor's bit for bit (see Testing). The interface reads from it only a clip's tail and whether the clip plays (`vfxClips`, [evaluation.md](evaluation.md#the-interfaces-views)).
 
-| Module (`vfx/generated/`) | Holds | JavaScript |
+| Module (`vfx/generated/`) | Holds | The JavaScript it replaced (deleted) |
 | --- | --- | --- |
 | `layers.rs` | the layer vocabulary: shapes, emitters, blending, rotation and size modes, `Spec` (one layer with the editor's defaults), materials, colour ramps | `vfx-generator-layers.mjs` |
 | `styles.rs` | every effect type and style compiled into layers (`compile`), `Context` | `vfx-generator-styles.mjs` |
@@ -89,7 +89,7 @@ Differences, on purpose or known:
 ## Differences from the JavaScript, on purpose
 
 - **Lenient reading**: the editor refuses a project with an invalid effect record; the engine drops the record (an effect, a stack entry, a key channel, a clip) and says so in `Document::notes`. Key easing is not validated, nor the limits on keys and simultaneous effects.
-- **Generators** are listed within their clip's range only: particles outlive a clip by a tail only the generator compiler knows (`generatorClipTail`); `vfx::generators(clips, tick, tail)` takes it. Whether the target is present (an anchor) is the generator's to check. Their colours are normalized paints; the editor's generator code reads the saved form.
+- **Generators** are listed within their clip's range only: particles outlive a clip by a tail only the generator compiler knows (`generated::clip_tail`); `vfx::generators(clips, tick, tail)` takes it. Whether the target is present (an anchor) is the generator's to check. Their colours are normalized paints; the editor's generator code reads the saved form.
 - **Connected groups** list every member; the renderer leaves out hidden ones and skips a group whose owner is hidden (the editor plans with visibility). The depth warning is given for every too-deep owner, hidden or not.
 - **Edit frames** the interface sends (a drawing's first stroke) take their effects from the pose it sends, never from the clips again: the editor's geometry already composed clip effects into each pose (`_stykVfx` per key, `_vfxConnectedEffects`, a scope a clip turned on) and the scene's into `_vfxTimelineScene`. `Loader::edit_frame` reads those fields (`Object::vfx_connected`; `_vfxTimelineScene` becomes the frame's scene stack) and `vfx::frame::composed` builds the `FrameVfx` from them: the same stacks, connected groups and movieclip contents as `evaluate`, with nothing sampled twice. The frame the stage draws from the open document's session (`Stage::edit_session`) is not composed: it carries its `tick`, and `vfx::frame::evaluate` samples the clips at it as a prepared frame's are. Movieclip contents are still evaluated by the engine at the instance's local time. Playback frames are evaluated by the engine itself (`evaluate`).
 - **Not evaluated**: the clips of a captured movieclip's retained source (`movieclipSource`, noted in `unsupported`; the engine does not read retained sources at all), and `_stykVfx` on a figure definition's segments, which nothing in the editor reads either.
@@ -99,7 +99,7 @@ Differences, on purpose or known:
 - Node stacks and node clips saved without a figure type (`*/handle`) are never drawn: renderers look node stacks up by the object's own figure type. The inspector always scopes, so only older or hand-made data has them.
 - With Auto easing, a native pose tween interpolates effect parameters linearly while the pose follows the Auto curve (`interpolateVfx` receives the raw progress).
 - `includeAttached` on a node clip is accepted and ignored.
-- The inspector's "active" (`vfxClipActiveAt`) ignores fades: a clip at a fade endpoint is listed though nothing is drawn.
+- The inspector's "active" (`Clip::active_at`, read through `vfxClips`) ignores fades: a clip at a fade endpoint is listed though nothing is drawn.
 - A scope on an object without any effect still counts toward the 16-level limit of nested groups.
 - Interpolating two gradients of different kinds or stop counts keeps the first, with no transition; a solid and a gradient interpolate on the gradient's layout.
 

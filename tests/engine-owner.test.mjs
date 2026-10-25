@@ -10,7 +10,6 @@ import {readdirSync, readFileSync} from 'node:fs';
 import {withDraws} from '../src/editor-draws.mjs';
 import {holdsRevision, registeredEngine} from '../src/engine/engine-open.mjs';
 import {createDrawingFigure, drawingMetadata} from '../src/drawing-model.mjs';
-import {cameraAtTime} from '../src/camera-motion.mjs';
 import {hasPinnedIK} from '../src/ik.mjs';
 import {MotionTrails} from '../src/motion-path.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
@@ -90,7 +89,7 @@ const probes = {
   '@motionFrame': editor => JSON.stringify(snapshotPoseFrame((editor._drag?.motionPath ? editor._drag.display?.frame : null) ?? editor.evaluatedFrame)),
   '@selection': editor => JSON.stringify(editor._selectionState()),
   '@restoreSelection': (editor, selection) => editor._restoreSelection(selection),
-  '@cameraAtTime': editor => cameraAtTime(editor.report, editor.evaluatedFrame),
+  '@cameraAtTime': editor => editor._shown.shot(),
 };
 /** A step of a tape on `editor`: `["@batch", label, steps]` groups its steps in one `movieclipBatch`. */
 const run = (editor, [name, ...args]) => {

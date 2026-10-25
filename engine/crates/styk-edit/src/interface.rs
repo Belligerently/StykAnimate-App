@@ -101,6 +101,33 @@ impl Editor {
         })
     }
 
+    /// The figures whose connected effects the figure `{uid}` filters together at the playhead (its `vfxScope`, or a clip that includes
+    /// the attached parts, with an effect active): `{members: [uid, …]}`, the owner first and then the figures attached to it, or
+    /// `null` when it owns no connected group (the effects gizmo measures the owner alone).
+    pub(crate) fn interface_vfx_group(&self, args: &Value) -> Result<String, EditError> {
+        let uid = args.get("uid").and_then(Value::as_f64).ok_or_else(|| EditError::Invalid("a connected group needs its owner's identity".into()))?;
+        let prepared = self.prepared()?;
+        if !prepared.has_vfx {
+            return Ok("null".into());
+        }
+        let record = self.interface_record(false)?;
+        let mut frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
+        if frame.retained_vfx_tick.is_some() {
+            return Err(EditError::Unported("connected effects with inherited effect clips".into()));
+        }
+        frame.vfx = styk_eval::vfx::frame::evaluate(&prepared.doc, &frame);
+        let attached = frame
+            .objects
+            .iter()
+            .position(|object| f64::from(object.uid) == uid)
+            .and_then(|slot| frame.vfx.as_ref()?.object(slot as u32)?.attached.as_ref());
+        let Some(attached) = attached else { return Ok("null".into()) };
+        let members: Vec<f64> = attached.members.iter().filter_map(|&slot| frame.objects.get(slot as usize)).map(|object| f64::from(object.uid)).collect();
+        let mut group = styk_doc::Obj::new();
+        group.set("members", Value::nums(&members));
+        Ok(styk_doc::json::to_string(&Value::object(group)))
+    }
+
     /// A figure, a set of figures or a movieclip with the pose on show as a document of its own (`nativeFigureDocument`; a
     /// library file, the rig test, the builder): `{figureUid | figureUids | figureTypeId, tick}`, as JSON.
     pub(crate) fn interface_figure_document(&self, args: &Value) -> Result<String, EditError> {

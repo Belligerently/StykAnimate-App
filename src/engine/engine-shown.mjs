@@ -243,7 +243,7 @@ export function createShown(owner) {
     trails: request => read('trails', request),
     /** The pose of the figures joined with `target` at `tick`, `{rx, ry, lines, circles}`, or `null`. */
     trailGhost: (target, tick) => read('ghost', {target, tick}),
-    /** The camera the frame on show is seen through at the playhead (`cameraAtTime`), `null` for none. */
+    /** The camera the frame on show is seen through at the playhead (follow travel, then the presets' impulse), `null` for none. */
     shot: () => read('shot'),
     /** The camera an evaluated frame of the document holds at `tick`, `null` for the default one. */
     frameCamera: tick => read('frameCamera', {tick}),
@@ -251,6 +251,15 @@ export function createShown(owner) {
     cameraSamples: (clip, ticks) => read('cameraSamples', {clip, ticks}),
     /** The framing offset that keeps these followed figures (`[{uid, weight}]`) where they stand in the frame on show. */
     framing: targets => read('framing', {targets}),
+    /**
+     * What the effects timeline reads of effect clips the interface holds (the document's, or a gesture's preview of one) at `tick`:
+     * `[{tail, active, plays} | null, …]`, one per clip. `tail` is the ticks after a timed clip's end that its particles stay visible,
+     * `active` whether it is on at `tick`, `plays` whether the inspector lists it there (it is on, or generated effects are still
+     * showing). `null` where the engine does not hold the document.
+     */
+    vfxClips: (clips, tick) => read('vfxClips', {clips, tick}),
+    /** The uids of the figures that the connected effects of figure `uid` filter together at the playhead (the owner first), `null` for none. */
+    vfxGroup: uid => read('vfxGroup', {uid})?.members ?? null,
     /** Forgets the geometry held (another document is open). */
     release() { held[0] = held[1] = null; },
   };

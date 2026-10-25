@@ -31,21 +31,6 @@ export function keyEasing(key) {
   const interpolation = easingMode(key);
   return {interpolation, ...(interpolation === 'bezier' ? {bezier: [...(key?.bezier ?? DEFAULT_BEZIER)]} : {})};
 }
-export function assignKeyEasing(key, easing) {
-  const fields = keyEasing(easing);
-  delete key.bezier;
-  Object.assign(key, fields);
-  return key;
-}
-/** New keys continue the nearest earlier visible key, or start with Hold. */
-export function inheritedKeyEasing(keys, tick, {property, autoEasing = false} = {}) {
-  if (isDiscreteAnimationProperty(property)) return keyEasing({interpolation: 'hold'});
-  let previous;
-  for (const key of keys) if (!key.hidden && key.tick < tick && (!previous || key.tick > previous.tick)) previous = key;
-  return keyEasing(previous
-    ? {...previous, interpolation: previous.interpolation ?? (autoEasing ? 'auto' : 'linear')}
-    : {interpolation: 'hold'});
-}
 const coordinate = (t, a, b) => 3 * (1 - t) ** 2 * t * a + 3 * (1 - t) * t * t * b + t ** 3;
 /** Invert x(u) before evaluating y(u); elapsed time is not the curve parameter. */
 export function cubicBezierProgress(t, points = DEFAULT_BEZIER) {
@@ -70,7 +55,6 @@ export function easedProgress(key, fraction) {
 export function usesLegacyNativeEasing(report, index) {
   return Boolean(report.auto_easing && !report.keyframes[index]?._styk?.easing);
 }
-export function hasFrameEasing(report) { return report.keyframes?.some(frame => frame._styk?.easing) ?? false; }
 
 /** Monotone cubic Hermite interpolation. Neighbours are optional {value, duration}
  * samples from adjoining Auto intervals. Shared, duration-weighted tangents give
@@ -93,13 +77,4 @@ export function autoValue(a, b, fraction, duration, previous, following) {
   const t = fraction, t2 = t * t, t3 = t2 * t;
   const value = a + (b - a) * (3 * t2 - 2 * t3) + duration * ((t3 - 2 * t2 + t) * m0 + (t3 - t2) * m1);
   return Math.max(Math.min(a, b), Math.min(Math.max(a, b), value));
-}
-
-/** Expand an edited key range to complete adjoining Auto runs before destructive
- * sampling. Converting only one span to holds would change its neighbour's slope.
- */
-export function autoKeyRange(keys, left, right, getEasing = key => key) {
-  while (left > 0 && easingMode(getEasing(keys[left - 1])) === 'auto') left--;
-  while (right < keys.length - 1 && easingMode(getEasing(keys[right])) === 'auto') right++;
-  return [left, right];
 }

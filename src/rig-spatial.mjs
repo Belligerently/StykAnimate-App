@@ -6,7 +6,6 @@ import {projectSpatial} from './spatial-projection.mjs';
 const EPS=1e-9;
 export const spatialBone=s=>Boolean(s?._stykRig?.spatial?.origin);
 export const spatialSkin=s=>Boolean(s?._stykRig?.spatial?.bindings);
-export const hasSpatialRig=figure=>Boolean(figure?.segments.some(s=>s._stykRig?.spatial));
 const sameVector=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===3&&b.length===3&&a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];
 const sameMotion=(a,b)=>a===b||Boolean(a&&b&&a.type===b.type&&a.min===b.min&&a.max===b.max&&
   (a.axis===b.axis||sameVector(a.axis,b.axis))&&a.driver?.joint===b.driver?.joint&&a.driver?.multiplier===b.driver?.multiplier);

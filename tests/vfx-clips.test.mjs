@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {newOwnedEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 import {vfxStack, vfxProperty} from '../src/vfx.mjs';
-import {validateVfxClips, clipContains, vfxRenderFrame} from '../src/vfx-clips.mjs';
+import {validateVfxClips, clipContains} from '../src/vfx-clips.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {appendVfxRows,visibleVfxKeys} from '../src/vfx-clip-timeline.mjs';
 import {filterVfxClips} from '../src/vfx-clip-inspector.mjs';
@@ -20,11 +20,10 @@ test('extending a timed effect before its source preserves keyed animation and u
  validateVfxClips(structuredClone(e.report._styk.vfxClips));assert.equal(e._undo.length,n+1);const after=e.report._styk.vfxClips;e.undo();assert.deepEqual(e.report._styk.vfxClips,before);e.redo();assert.deepEqual(e.report._styk.vfxClips,after);
  e.trimVfxClipStart(id,8);assert.deepEqual(e.getVfxClips()[0].keys,c.keys);e.trimVfxClipStart(id,4);assert.deepEqual(e.getVfxClips()[0].keys,c.keys);
 });
-test('authored pose drafts invalidate composed effect geometry throughout a drag',()=>{
+test('authored pose drafts move effect geometry throughout a drag',()=>{
  const e=fixture();e.select(1);e.addVfxClip(target,'wave');const clips=e.report._styk.vfxClips;
  e.beginTranslationDrag();
  for(const delta of [10,30,-5]){
-  vfxRenderFrame(e.report,e.evaluatedFrame); // Canvas controls read this before a move.
   e.moveSelection(delta,0,{fromStart:true});assert.equal(e.geometry.objects.get(0).root.x,120+delta);
  }
  e.commitDrag();assert.equal(e.geometry.objects.get(0).root.x,115);assert.deepEqual(e.report._styk.vfxClips,clips);
@@ -54,7 +53,7 @@ test('invalid state and locked edits fail atomically',()=>{const e=fixture(),id=
 
 test('At playhead excludes the selected clip outside its range; All and Selected are explicit',()=>{
  const e=fixture(),always=e.addVfxClip(target,'glow'),timed=e.addVfxClip(target,'tint',{start:10,duration:10});
- const clips=e.getVfxClips(),ids=options=>filterVfxClips(clips,{selected:timed,...options}).map(c=>c.id);
+ const clips=e.getVfxClips(),ids=options=>filterVfxClips(e,clips,{selected:timed,...options}).map(c=>c.id);
  assert.deepEqual(ids({tick:9}),[always]);assert.deepEqual(ids({tick:10}),[always,timed]);assert.deepEqual(ids({tick:20}),[always]);
  assert.deepEqual(ids({view:'selected',tick:0}),[timed]);assert.deepEqual(ids({view:'all',query:'TINT'}),[timed]);
 });
@@ -69,7 +68,7 @@ test('timeline shows only the primary selected figure and never adds parameter r
 test('At playhead filters inactive persistent effects by keyed strength and enabled state',()=>{
  const e=fixture(),id=e.addVfxClip(target,'glow'),fx=e.getVfxClips()[0].effects[0];
  e.setVfxClipParameter(id,fx.id,'effectStrength',0,{key:true,tick:0});e.setVfxClipParameter(id,fx.id,'effectStrength',1,{key:true,tick:10});
- const count=(tick,view)=>filterVfxClips(e.getVfxClips(),{tick,view,selected:id}).length;
+ const count=(tick,view)=>filterVfxClips(e,e.getVfxClips(),{tick,view,selected:id}).length;
  assert.equal(count(0),0);assert.equal(count(5),1);assert.equal(count(0,'selected'),1);
  e.setVfxClipParameter(id,fx.id,'enabled',0,{key:true,tick:20});assert.equal(count(25),0);
  e.setVfxClip(id,{enabled:false});assert.equal(count(25,'all'),1);assert.equal(count(25),0);
