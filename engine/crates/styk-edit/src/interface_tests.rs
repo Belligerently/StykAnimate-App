@@ -463,3 +463,21 @@ fn a_frame_with_a_figure_the_document_lacks_has_its_geometry_read_against_that_f
     let own = geometry(&mut session, None);
     assert_eq!(own.get("count").and_then(Value::as_f64), Some(objects.len() as f64));
 }
+
+#[test]
+fn the_frame_carries_the_playhead_as_the_time_of_the_effect_clips_the_document_has() {
+    let at = |session: &mut Session, kind: &str, tick: u32| parse(&session.query(kind, "{}", &format!(r#"{{"tick":{tick},"frameIndex":0}}"#)).unwrap());
+    let tick_of = |frame: &Value| frame.get("_vfxTimelineTick").and_then(Value::as_f64);
+    // Effect clips: the effects timeline reads the frame at the playhead; every kind of frame says so.
+    let (mut effects, _) = tape("vfx-clips-sheet");
+    for kind in ["frame", "document"] {
+        assert_eq!(tick_of(&at(&mut effects, kind, 7)), Some(7.0), "{kind}");
+    }
+    // A document with none leaves the frame as the editor shows it, camera-motion clips or not.
+    for name in ["gestures-sheet", "camera-motion-sheet"] {
+        let (mut plain, _) = tape(name);
+        let frame = at(&mut plain, "frame", 3);
+        assert_eq!(tick_of(&frame), None, "{name}");
+        assert_eq!(frame.get("_cameraMotionTick"), None, "{name}: the camera is read from the shot, not from a time");
+    }
+}

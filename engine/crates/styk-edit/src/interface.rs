@@ -30,7 +30,8 @@ pub(crate) struct Cache {
 impl Editor {
     /// The frame the interface shows: the gesture in progress, else the document at the playhead
     /// (`kind` `frame`); the document's own frame under any gesture (`document`); the motion-path
-    /// edit's display, `null` where it shows the document (`motion`).
+    /// edit's display, `null` where it shows the document (`motion`). Each carries the playhead as the time
+    /// the document's effect clips are read at ([`Editor::with_effect_time`]).
     pub(crate) fn interface_frame(&self, kind: &str) -> Result<String, EditError> {
         let record = match kind {
             "frame" => self.shown_frame()?,
@@ -41,7 +42,18 @@ impl Editor {
             },
             other => return Err(EditError::Invalid(format!("the interface has no frame '{other}'"))),
         };
-        Ok(styk_doc::json::to_string(&record))
+        Ok(styk_doc::json::to_string(&self.with_effect_time(record)))
+    }
+
+    /// `record` with the playhead as the time the document's effect clips are read at (`_vfxTimelineTick`, which the
+    /// effect gizmos compose the figures' effects at); a document with no effect clips leaves the frame as it is.
+    fn with_effect_time(&self, record: Value) -> Value {
+        if self.report.path(&["_styk", "vfxClips", "clips"]).and_then(Value::array_len).unwrap_or(0) == 0 {
+            return record;
+        }
+        let mut shown = record.as_obj().cloned().unwrap_or_default();
+        shown.set("_vfxTimelineTick", Value::Num(self.tick));
+        Value::object(shown)
     }
 
     /// The record of the frame the stage draws: the motion-path edit's display where one is asked for and shown,
