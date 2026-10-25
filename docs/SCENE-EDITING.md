@@ -70,7 +70,7 @@ Every color picker ends with the palette (`src/color-palette.mjs`), under a hair
 
 The color picker opens with canvas sampling off, so clicking outside the panel dismisses it. Click the Eyedropper button to enable sampling and its canvas cursor; click it again to turn sampling off. A floating loupe enlarges an 11×11 pixel neighborhood, marks the center pixel and shows its HEX color. Click to copy the rendered RGB color into the solid color or selected gradient stop, preserving opacity. Sampling keeps the picker and canvas selection open; Escape or clicking another control closes the picker. The normal paint command supplies undo. Pixels are read immediately after a requested render, with GPU handles omitted for that sample, so idle WebGPU canvases and scaled preview buffers are supported. Hover requests are coalesced to at most 30 per second with one readback in flight, stop when the pointer is idle, and cancel on leaving the canvas or closing the picker. The loupe never intercepts canvas input or enters the sampled artwork.
 
-`src/editor-scene.mjs` is installed on `Editor`. It supplies the first, second and last of these commands; `importSceneBackground` and `renameSceneBackground` are commands of the engine session (`styk-edit/src/scene_backgrounds.rs`, layer-sheet documents, which the app always opens):
+These are commands of the engine session (`styk-edit/src/property_edit.rs` for the colors and backgrounds, `scene_backgrounds.rs` for importing and renaming one; layer-sheet documents, which the app always opens) that `Editor` forwards to:
 
 | API | Behavior |
 | --- | --- |
@@ -99,11 +99,7 @@ existing figure arrays or unrelated images. Authored snapshots contain only
 changed channels and small source frames; the standard source-history lifecycle
 keeps required sources available through undo/redo and prunes unused captures.
 
-`tests/editor-scene.test.mjs` passes 12 cases covering sparse ranges, authored
-inbetween edits, null/transparent colors, atomic image import, name-only history,
-source pruning, invalid/locked/hidden edits and real PIV writer/reimport. A 2 MB
-unrelated image does not appear in color history; native color history stays below
-5 KB, and renaming a 1 MB image stays below 2 KB.
+The recorded edit tapes (`engine/tests/edit/*scene*.scenario.json`) and the session tests (`cargo test -p styk-edit`) state sparse ranges, authored inbetween edits, null/transparent colors, atomic image import, name-only history, invalid/locked/hidden edits and history sizes: a 2 MB unrelated image does not appear in color history, and renaming a 1 MB image stays small.
 
 Rendering uses the shared Scene override in Canvas, WebGPU, prepared playback and
 SVG. `tests/scene-background.browser.mjs` previously passed 35 checks with all four

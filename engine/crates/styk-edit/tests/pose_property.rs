@@ -8,12 +8,17 @@ use styk_edit::session::Session;
 fn json(text: &str) -> Value { styk_doc::json::parse(text.as_bytes()).unwrap() }
 
 fn session() -> Session {
+    open(None)
+}
+
+/// The recorded document, or `document` (the saved text of an edited one), opened the way the first step opens it.
+fn open(document: Option<Value>) -> Session {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/figures-sheet.reference.json");
     let reference = styk_doc::json::parse(&std::fs::read(path).unwrap()).unwrap();
     let first = reference.get("steps").unwrap().item(0).unwrap();
     let mut state = first.get("state").unwrap().as_obj().unwrap().clone();
     for (key, value) in reference.get("editor").unwrap().as_obj().unwrap().iter() { state.set(key, value.clone()); }
-    Session::start(json(first.get("document").unwrap().as_str().unwrap()), &styk_doc::json::to_string(&Value::object(state))).unwrap()
+    Session::start(document.unwrap_or_else(|| json(first.get("document").unwrap().as_str().unwrap())), &styk_doc::json::to_string(&Value::object(state))).unwrap()
 }
 
 fn call(session: &mut Session, method: &str, args: &str) -> Value { json(&session.call(method, args, "null")) }
@@ -181,3 +186,33 @@ fn a_figure_created_in_the_builder_leaves_every_frame_and_the_library_in_one_ent
     assert_eq!(text(&session), original);
 }
 
+
+/// The figures of every stored frame of the document, as `(unique_id, object_slot, join target identity, join target slot)`.
+fn stored_joins(session: &Session) -> Vec<Vec<(f64, f64, Option<f64>, Option<f64>)>> {
+    session.report().get("keyframes").and_then(Value::elements).unwrap().iter().map(|frame| {
+        frame.get("objects").and_then(Value::elements).unwrap().iter().map(|o| {
+            let join = o.get("join").filter(|j| !j.is_null());
+            (number(&o, "unique_id"), number(&o, "object_slot"), join.and_then(|j| j.get("target_unique_id")).and_then(Value::as_f64), join.and_then(|j| j.get("target_object_slot")).and_then(Value::as_f64))
+        }).collect()
+    }).collect()
+}
+
+#[test]
+fn a_figure_kept_joined_to_a_kept_figure_follows_it_to_its_new_slot() {
+    let mut session = session();
+    let original = text(&session);
+    // Figure 1's definition (type 1) leaves: figure 2, which hung from it, is detached, and figure 3 stays hung from figure 2, which now
+    // stands one slot lower. A join that kept its old slot would point figure 3 at itself.
+    assert_eq!(ok(&mut session, "discardNewFigure", r#"[1,{"label":"Discard new figure"}]"#), Value::Bool(true));
+    let frames = stored_joins(&session);
+    assert_eq!(frames.len(), 2);
+    for (index, frame) in frames.iter().enumerate() {
+        assert_eq!(frame, &vec![(2.0, 0.0, None, None), (3.0, 1.0, Some(2.0), Some(0.0))], "the figures that remain in frame {index}");
+    }
+    // The document the discard leaves is one that opens again.
+    let saved = styk_doc::json::parse(text(&session).as_bytes()).unwrap();
+    styk_edit::load::prepare_editor_load(saved).expect("the document after the discard can be reopened");
+    assert_eq!(shown(&mut session, 6, 3).get("join").and_then(|j| j.get("target_unique_id")).and_then(Value::as_f64), Some(2.0));
+    ok(&mut session, "undo", "[]");
+    assert_eq!(text(&session), original, "one undo brings back the definition and every instance");
+}

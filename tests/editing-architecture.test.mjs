@@ -1,12 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {packPoseSequences,expandPoseSequencesSteps} from '../src/pose-sequence-storage.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {buildGeometry,buildGeometrySteps,evaluatedFrame,evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
-import {projectNativePropertyChannel} from '../src/native-property-projection.mjs';
-import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
 import {plainEditorFor} from './support/plain-editor.mjs';
 
 function fixture(frames=12,parts=8) {
@@ -16,23 +13,6 @@ function fixture(frames=12,parts=8) {
   return plainEditorFor({demo:false,propertyChannels:true}, report);
 }
 const complete = iterator => {let result;do{result=iterator.next();}while(!result.done);return result.value;};
-
-test('compact pose storage round trips aliases, unknown fields and independent edits without mutating live data',()=>{
-  const e=fixture(200,40);e.select(1);e.beginTranslationDrag();e.moveSelection(4,3);e.commitDrag();
-  const animation=e.report._styk.animation,keys=animation.channels[0].keys;
-  // Reproduce a large shared rig without increasing native fixture geometry.
-  animation.channels=Array.from({length:40},(_,i)=>({...animation.channels[0],id:`figure:${i+1}:pose`,target:{kind:'figure',uid:i+1}}));
-  const before=JSON.stringify(e.report),packed=packPoseSequences(e.report),text=JSON.stringify(packed);
-  assert.equal(packed._styk.animation.version,2);assert.equal(packed._styk.animation.poseSequences.length,1);
-  assert.equal(e.report._styk.animation.version,1);assert.equal(JSON.stringify(e.report),before);
-  assert.ok(JSON.stringify(packed._styk.animation).length < JSON.stringify(animation).length/15);
-  const reopened=new Editor({demo:false,propertyChannels:true}).load(JSON.parse(text));
-  assert.deepEqual(reopened.report._styk.animation,animation);
-  assert.equal(new Set(reopened.animationChannels.map(c=>c.keys)).size,1);
-  const first=reopened.animationChannels[0];reopened.setAnimationKey(first.id,first.keys[0].id,{interpolation:'hold'});
-  assert.notEqual(reopened.animationChannels[0].keys,reopened.animationChannels[1].keys);
-  assert.deepEqual(e.animationChannels[0].keys,keys);
-});
 
 test('stored pose references reject corruption atomically and old array documents remain unchanged',()=>{
   for(const reference of [{sequence:-1},{sequence:1},{sequence:.2},{sequence:0,extra:true},[]]){
@@ -72,19 +52,6 @@ test('scoped native interpolation evaluates requested objects and both endpoint 
   }
 });
 
-test('attached coordinate projection shares X/Y history evaluations and invalidates after an edit',()=>{
-  const e=fixture(200,100),target={kind:'figure',uid:2};let calls=0;
-  const evaluate=tick=>{calls++;return evaluatedFrame(e.report,Math.floor(tick/3),0,tick);};
-  const x=projectNativePropertyChannel(e,target,'x',{},evaluate),first=calls;
-  const y=projectNativePropertyChannel(e,target,'y',{},evaluate);
-  assert.equal(first,200);assert.equal(calls,200,'Y must reuse the coordinates computed for X even beyond the 64-frame LRU.');
-  for(const i of [0,65,199]){const root=buildGeometry(e.report,e.report.keyframes[i]).objects.get(1).root;
-    assert.equal(x.keys[i].value,root.x);assert.equal(y.keys[i].value,root.y);}
-  e.addAnimationKey({kind:'figure',uid:1},'x',0,400);
-  const changed=projectNativePropertyChannel(e,target,'x',{},evaluate);
-  assert.notEqual(changed.keys[0].value,x.keys[0].value);assert.ok(calls>200);
-});
-
 test('dense single figures yield inside geometry without changing output',()=>{
   const e=fixture(1,1),figure=e.report.figure_types[0],template=figure.segments[0];
   figure.segments=Array.from({length:1024},(_,i)=>({...template,segment_id:i+1,parent_id:0,z_order:i}));
@@ -94,12 +61,4 @@ test('dense single figures yield inside geometry without changing output',()=>{
   const geometry=result.value,full=buildGeometry(e.report,e.frame);assert.deepEqual(geometry,full);
   assert.ok(progress.length>5);
 });
-
-test('Simple pose undo identifies its changed native frame',()=>{
-  const e=plainEditorFor({demo:false}, fixture().report);e.enableFrameDrafts({mode:'update'});e.select(1);
-  const events=[];e.addEventListener('change',event=>{if(event.detail.kind==='history')events.push(event.detail);});
-  e.beginDrag();e.moveSelection(10,2);e.commitDrag();e.undo();
-  assert.deepEqual(events.at(-1).frameIndices,[0]);
-});
-
 

@@ -15,12 +15,16 @@ export function figureFocusLocked(report, uid) {
   return layerFocusLocked(report, id);
 }
 
+/** The layer table a focus was last checked against: the session replaces it with every change of a layer, so the same table means the
+ * focused layers are all still there. */
+const layerTable = report => report._styk?.layers?.byId;
+
 function changed(editor, {notify = true} = {}) {
   editor._layerDescriptors = null;
   editor._nativeAnimationChannels = null;
   editor._layerRevision++;
   const focus = focusByReport.get(editor.report);
-  if (focus) focus.layerRevision = editor.layerRevision;
+  if (focus) focus.layers = layerTable(editor.report);
   if (notify) editor._emit('layer-focus', {layers: true, layerFocus: true, layerRevision: editor.layerRevision});
 }
 
@@ -52,7 +56,7 @@ export const editorLayerFocusMethods = {
     const previous = this.getLayerFocus();
     if (previous?.lock === lock && next.size === previous.ids.size && [...next].every(id => previous.ids.has(id))) return false;
     if (this.dragging) this.commitDrag();
-    focusByReport.set(this.report, {ids: next, lock});
+    focusByReport.set(this.report, {ids: next, lock, layers: layerTable(this.report)});
     this._layerFocusReport = this.report;
     if (lock) {
       const selected = [...this.selectedUids].filter(uid => !figureFocusLocked(this.report, uid));
@@ -84,10 +88,11 @@ export const editorLayerFocusMethods = {
     if (this._layerFocusReport && this._layerFocusReport !== this.report) return this.clearLayerFocus({notify: false});
     const focus = focusByReport.get(this.report);
     if (!focus) return false;
-    if (focus.layerRevision === this.layerRevision) return false;
+    const layers = layerTable(this.report);
+    if (focus.layers === layers) return false;
     let removed = false;
-    for (const id of focus.ids) if (!Object.hasOwn(this.report._styk.layers.byId, id)) { focus.ids.delete(id); removed = true; }
-    if (!removed) { focus.layerRevision = this.layerRevision; return false; }
+    for (const id of focus.ids) if (!Object.hasOwn(layers, id)) { focus.ids.delete(id); removed = true; }
+    if (!removed) { focus.layers = layers; return false; }
     if (!focus.ids.size) return this.clearLayerFocus({notify: false});
     changed(this, {notify: false});
     return true;

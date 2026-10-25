@@ -3,7 +3,6 @@ import {messageError} from './localized-error.mjs';
  * never embedded assets or animation poses. Valid native ordering is a combined
  * sequence; tied authored records retain the renderer's deterministic ordering. */
 import {resolveInstanceFigure, polygonIdentity} from './animation-style.mjs';
-import {beginBranchStyleAnimation, previewBranchStyleValues} from './editor-branch-style.mjs';
 
 const animatedOrder = editor => Boolean(editor.propertyChannels || editor.report._styk?.layerSheet);
 const orderFigure = editor => animatedOrder(editor) ? resolveInstanceFigure(editor.figure,editor.object) : editor.figure;
@@ -72,21 +71,18 @@ export function builderStyleProperty(editor,key,{branch=false}={}) {
     value:property==='z_order'?entries.findIndex(entry=>sameEntry(entry,selected))+1:(selected.item.alpha_raw!==undefined?1-selected.item.alpha_raw/255:selected.item.color_alpha??1)*100,
     label:property==='z_order'?`${branch&&selected.kind==='segment'?'Branch':selected.kind==='segment'?'Segment':'Polygon'} draw order`:'Polygon opacity'};
 }
-export function beginBuilderOrderAnimation(editor,binding) {
+/** The animation target of each drawable of `binding.entries` (the figure on show, in draw order): the targets one draw-order edit begins on. */
+export function builderOrderTargets(editor,binding) {
   const uid=editor.object.unique_id,figureTypeId=editor.figure.figure_type_id;
-  return beginBranchStyleAnimation(editor,{uid,property:'zIndex',entries:binding.entries.map(entry=>({
-    target:{kind:entry.kind,uid,figureTypeId,...(entry.kind==='segment'?{handleId:entry.item.segment_id}:{polygonId:polygonIdentity(entry.item,entry.index)})},
-    initialValue:entry.z,
-  }))});
+  return binding.entries.map(entry=>({kind:entry.kind,uid,figureTypeId,...(entry.kind==='segment'?{handleId:entry.item.segment_id}:{polygonId:polygonIdentity(entry.item,entry.index)})}));
 }
-export function previewBuilderOrderAnimation(editor,binding,value) {
+/** The position of each of `binding.entries` once the selected members move to position `value`. A move that changes nothing keeps the
+ * drawables' own values. Combined draw order changes assign a different held value to each drawable. */
+export function builderOrderValues(binding,value) {
   orderValue(value);
   if(!Number.isInteger(value)||value<1||value>binding.entries.length)throw messageError(new Error(''), "errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom", {length: binding.entries.length});
-  const next=reorderBuilderDrawables(binding.entries,binding.targets,value-binding.value);
-  previewBuilderOrderSequence(editor,binding.entries,next);
-}
-function previewBuilderOrderSequence(editor,original,next) {
+  const original=binding.entries,next=reorderBuilderDrawables(original,binding.targets,value-binding.value);
   const unchanged=original.every((entry,index)=>sameEntry(entry,next[index]));
   const positions=new Map(next.map((entry,index)=>[entryKey(entry),index+1]));
-  previewBranchStyleValues(editor,original.map(entry=>unchanged?entry.z:positions.get(entryKey(entry))));
+  return original.map(entry=>unchanged?entry.z:positions.get(entryKey(entry)));
 }

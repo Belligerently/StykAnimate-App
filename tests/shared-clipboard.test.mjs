@@ -161,9 +161,9 @@ test('document switch during a shared read does not modify the new clipboard or 
   assert.equal(b.editor._selectionClipboard, undefined); assert.equal(b.native.jobs.size, 0);
 });
 
-for (const layers of [false, true]) test(`library drop placement preserves sets and one undo (layers=${layers})`, () => {
-  const source = ownedEditorFor(); source.select(1); source.select(3, {add:true});
-  const doc = librarySnapshot(source), editor = new Editor({propertyChannels:true, layerTimeline:layers});
+test('library drop placement preserves sets and one undo', () => {
+  const source = ownedEditorFor({layerTimeline:true}); source.select(1); source.select(3, {add:true});
+  const doc = librarySnapshot(source), editor = ownedEditorFor({propertyChannels:true, layerTimeline:true});
   const before = editor.serialize(), history = editor._undo.length;
   editor.importFigure(doc, {position:{x:123,y:87}});
   const objects = editor.selectedObjects;

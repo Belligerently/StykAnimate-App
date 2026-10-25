@@ -8,37 +8,27 @@ import {UserActionError} from './user-action-error.mjs';
 import {editorVfxClipMethods} from './editor-vfx-clips.mjs';
 import {invalidateVfxRenderFrame, figureVfxClips, frameWithVfxTime} from './vfx-clips.mjs';
 import {frameWithCameraTime} from './camera-motion.mjs';
-import {editorCameraMotionMethods} from './editor-camera-motion.mjs';
 import {authoredRigTarget,hasRigConstraints} from './rig-constraints.mjs';
-import {editorTweenerMethods} from './editor-tweener.mjs';
 import {buildGeometry, evaluatedFrame, invalidateEvaluationCaches} from './pivot/geometry.mjs';
 import {timeline, shortest, isStatic} from './pivot/read-view.mjs';
 import {validateScene, validateObjectChanges, syncDerived} from './pivot/model.mjs';
 import {normalizeFrame, frameOrder, setOrder, deleteObject, moveLayer as reorderLayer, rotationEdits, resolveJoinSelection} from './pivot/structure.mjs';
-import {createDemo, emptyDocument, createObject, createFrame, defaultFigure} from './demo.mjs';
+import {createDemo, emptyDocument, createObject, defaultFigure} from './demo.mjs';
 import {createStartupDocument} from './startup-document.mjs';
-import {editorRangeMethods} from './editor-ranges.mjs';
-import {applyFrameTiming,captureTimingGeometry,restoreTimingGeometry} from './frame-timing-history.mjs';
 import {RetainedGeometryCache} from './playback-geometry-cache.mjs';
 import {editorSelectionMethods} from './editor-selection.mjs';
 import {editorLayerMethods} from './editor-layers.mjs';
-import {editorLayerFolderMethods} from './editor-layer-folders.mjs';
 import {editorLayerFocusMethods} from './editor-layer-focus.mjs';
-import {editorLayerAsyncMethods} from './editor-layer-async.mjs';
 import {ensureLayerState, validateLayerState, layerLocked} from './layers.mjs';
 import {editorAnimationMethods} from './editor-animation.mjs';
 import {validateAnimationDocument, animationEndTick} from './animation-channels.mjs';
 import {editorFrameMethods, validateFrameIdentities} from './editor-frames.mjs';
 import {invalidateFrameIndex} from './frame-ids.mjs';
-import {editorAuthoredPoseMethods} from './editor-authored-pose.mjs';
 import {applyNativePropertyCommand} from './native-property-edit.mjs';
-import {editorCameraMethods} from './editor-camera.mjs';
-import {editorRangeCommandMethods} from './editor-range-commands.mjs';
-import {editorSceneMethods} from './editor-scene.mjs';
 import {editorVfxMethods} from './editor-vfx.mjs';
 import {remapVfxOwner} from './vfx.mjs';
 import {editorHandleCommandMethods} from './editor-handle-commands.mjs';
-import {editorFrameDraftMethods, validateSimpleFrameDraft, installFrameDraftPreflights} from './editor-frame-draft.mjs';
+import {editorFrameDraftMethods} from './editor-frame-draft.mjs';
 import {repairTopologyStyles, topologyAnimationPatch, reverseGradientEndpoints} from './editor-style-topology.mjs';
 import {prepareEditorLoad} from './editor-load.mjs';
 import {prepareLoad, prepareLoadNow} from './engine/engine-open.mjs';
@@ -49,11 +39,10 @@ import {rotateOriginSupport,mirrorOriginSupport,resetOriginSupport} from './anim
 import {animationHistoryBytes} from './animation-history.mjs';
 import {editorIKMethods} from './editor-ik.mjs';
 import {editorMovieclipMethods, applyMovieclipCommand} from './editor-movieclips.mjs';
-import {editorLayerSheetMethods, applyLayerSheetCommand} from './editor-layer-sheet.mjs';
+import {editorLayerSheetMethods} from './editor-layer-sheet.mjs';
 import {validateLayerSheet} from './layer-sheet.mjs';
 import {isMovieclip, invalidateMovieclipTypes,movieclipSourceFrames,snapshotFigureDefinition} from './movieclips.mjs';
 import {hasPinnedIK, translateIKTargets, remapIKFollowers, ikChain} from './ik.mjs';
-import {editorMotionPathMethods} from './editor-motion-path.mjs';
 import {snapshotPoseObject} from './pose-snapshot.mjs';
 import {cloneTopologySnapshot,topologyHistoryBytes} from './topology-history.mjs';
 import {presencePlayback} from './movieclip-presence.mjs';
@@ -275,14 +264,10 @@ export class Editor extends EventTarget {
   }
   _record(command) {
     if (this._authoredPoseEdit?.transaction && (command.kind === 'import'||this.report._styk?.layerSheet&&command.kind==='project')) return;
-    this._recordFrameDraft?.(command);
     if (this._authoredCommandLabel) command.label = this._authoredCommandLabel;
     if (this._pendingSourceLayerChanges?.length) {
       command.layerChanges = [...(command.layerChanges ?? []), ...this._pendingSourceLayerChanges]; this._pendingSourceLayerChanges = null; command.layers = true;
     }
-    this._captureRemovedFrameSources(command);
-    for (const change of command.frameSourceChanges ?? []) if (change.after?.exists && !change.before?.exists) this._generatedFrameSources.add(change.id);
-    this._trackLayerCommand(command, 'after', {record: true});
     let collectSources = this._redo.length > 0;
     command.beforeRevision = this._revision; command.afterRevision = ++this._revisionSerial;
     this._revision = command.afterRevision;
@@ -310,7 +295,7 @@ export class Editor extends EventTarget {
       this._historySize -= retired.shift().bytes;
       collectSources = true;
     }
-    if (collectSources){this._pruneFrameSources();this._collectDrawingHistory();}
+    if (collectSources) this._collectDrawingHistory();
   }
   /** Lets the drawing store go of the pixels no history entry refers to any more. */
   _collectDrawingHistory() {drawingResourcesFor(this.report)?.collectHistory([...this._undo,...this._redo]);}
@@ -330,35 +315,27 @@ export class Editor extends EventTarget {
   _applyCommand(command, direction, drawingPrepared) {
     if(applyDrawingCommand(this,command,direction,drawingPrepared))return;
     if(applyAudioCommand(this,command,direction))return;
-    if(applyLayerSheetCommand(this,command,direction))return;
     if (command.kind === 'movieclip-batch') {
       for (const child of direction === 'before' ? [...command.commands].reverse() : command.commands) this._applyCommand(child,direction,drawingPrepared);
-      if(command.frameDraftJournal){this._prepareFrameDraftHistory(command,direction);this._applyFrameDraftHistory(command,direction);}
       if(command[`${direction}Selection`])this._restoreSelection(command[`${direction}Selection`]);
       this._revision=command[`${direction}Revision`];return;
     }
     if (applyMovieclipCommand(this,command,direction)) return;
-    const timingGeometry=command.kind==='frame-timing'?captureTimingGeometry(this):null;
     const selection = command[`${direction}Selection`];
     const localObjects = command.kind === 'objects' && !command.structural && !command.timing &&
       !command.layerChanges && !command.layerAnimationPatch && !command.frameSourceChanges &&
       !this._frameDraftEnabled && !this.report._styk?.animation?.channels?.length;
     const retained = localObjects && command.index === this.frameIndex && selection?.frameIndex === this.frameIndex && selection.tick === this.tick
       ? {previous: this._geometry ?? this._incremental?.previous, dirtySlots: this._geometry ? [] : this._incremental?.dirtySlots ?? []} : null;
-    this._prepareFrameDraftHistory?.(command, direction);
     // Animation commands publish immutable tables/channels; later edits copy the
     // touched channel. Replay must not copy every unrelated key in the project.
     const value = ['animation','camera-motion','vfx-clips'].includes(command.kind) ? command[direction]
       : command.kind === 'topology' ? cloneTopologySnapshot(command[direction]) : clone(command[direction]);
     if (command.kind === 'frame') this.report.keyframes[command.index] = value;
-    else if(command.kind==='frame-timing')applyFrameTiming(this,command,direction);
     else if (command.kind === 'objects') this._replaceObjects(command.index, value);
     else if (command.kind === 'native-properties') applyNativePropertyCommand(this, command, direction);
-    else if (command.kind === 'camera') this._applyCameraSnapshot(value);
     else if(command.kind==='vfx-clips'){if(value==null)delete this.report._styk.vfxClips;else this.report._styk.vfxClips=value;}
     else if(command.kind==='camera-motion'){if(value==null)delete this.report._styk.cameraMotion;else this.report._styk.cameraMotion=value;}
-    else if (command.kind === 'scene') this._applySceneSnapshot(value);
-    else if (command.kind === 'figure-range') this._applyFigureRangeCommand(command, direction);
     else if (command.kind === 'splice') {
       const previous = command[direction === 'before' ? 'after' : 'before'];
       this.report.keyframes.splice(command.index, previous.length, ...value);
@@ -403,31 +380,22 @@ export class Editor extends EventTarget {
       if (direction === 'before') this.report.figure_types.splice(index, figures.length);
       else this.report.figure_types.splice(index, 0, ...clone(figures));
     }
-    this._trackLayerCommand(command, direction);
-    this._applyFrameSourceChanges(command, direction);
-    if (command.layerAnimationPatch) this._applyLayerAnimationPatch(command.layerAnimationPatch, direction);
     if (command.draftAnimation) {
       const animation = command.draftAnimation[direction];
       if (animation === null) delete this.report._styk.animation;
       else this.report._styk.animation = animation;
     }
     if (['frame', 'splice', 'ranges', 'import', 'figure-splice', 'project'].includes(command.kind)) invalidateFrameIndex(this.report);
-    if (command.kind === 'layers') this._applyLayerChanges(command.changes, direction);
-    else if (command.layerChanges) this._applyLayerChanges(command.layerChanges, direction);
     if(command.layerSheetPatch)this.report._styk.layerSheet=command.layerSheetPatch[direction];
-    this._restoreFrameDraftOverlay?.(command, direction);
     invalidateMovieclipTypes(this.report);
     this._invalidate({timing: command.kind !== 'animation', retainGeometry: command.kind === 'animation' || command.retainGeometry});
     this._restoreSelection(command[`${direction}Selection`]);
     this._revision = command[`${direction}Revision`];
-    this._applyFrameDraftHistory?.(command, direction);
-    restoreTimingGeometry(this,timingGeometry);
     if (retained?.previous) this._invalidateObjects(value.map(o => o.unique_id), retained);
     this._emit('history', {label: command.label, structural: command.structural, timing: command.timing, timingOnly: command.timingOnly,
       definition: Boolean(command.definition || command.figureDefinitionSplice || ['figure','import','figure-splice','topology'].includes(command.kind)),
       animation: command.kind === 'animation' || Boolean(command.layerAnimationPatch),
       ...(command.kind==='camera-motion'?{cameraMotion:true,frameIndices:[]}:{}),
-      ...(command.kind==='frame-timing'?{frameIndices:command.changes.map(change=>change.index)}:{}),
       ...(['objects','frame'].includes(command.kind)&&!command.structural&&!command.frameDraftStored?{frameIndices:[command.index]}:{}),
       ...(localObjects ? {frameIndices: [command.index], changedUids: value.map(o => o.unique_id)} : {})});
   }
@@ -545,7 +513,6 @@ export class Editor extends EventTarget {
   selectFrame(index) {
     if (this._drag) this.commitDrag();
     const next = clamp(Math.trunc(finite(index, 'Frame index')), 0, this.report.keyframes.length - 1);
-    this._beforeFrameDraftSeek?.(next);
     this.frameIndex = next;
     this.tick = this.timeline[this.frameIndex]?.start ?? 0;
     this.selectedJoint = -1; this._invalidate({viewOnly: true}); this._emit('seek'); return this.frame;
@@ -556,7 +523,6 @@ export class Editor extends EventTarget {
     const nextTick = clamp(finite(tick, 'Timeline tick'), 0, allowBeyondEnd ? 10000000 : Math.max(0, this.totalTicks - 1));
     let low = 0, high = this.timeline.length - 1;
     while (low < high) { const mid = Math.ceil((low + high) / 2); if (this.timeline[mid].start <= nextTick) low = mid; else high = mid - 1; }
-    this._beforeFrameDraftSeek?.(low);
     this.tick = nextTick; this.frameIndex = low; this._invalidate({viewOnly: true}); this._emit('seek'); return evaluate ? this.evaluatedFrame : this.frame;
   }
 
@@ -921,76 +887,10 @@ export class Editor extends EventTarget {
     try { if (!this.copySelection()) return []; return this.pasteSelection({newIdentities: true, pasteMode, offset}); }
     finally { this._selectionClipboard = groupClipboard; this._figureClipboard = singleClipboard; }
   }
-  _frameSplice(label, index, remove, insert) {
-    if (this._drag) this.commitDrag();
-    const beforeSelection = this._selectionState(), before = this.report.keyframes.slice(index, index + remove).map(clone);
-    insert = this._newInsertedFrames(insert);
-    this.report.keyframes.splice(index, remove, ...insert);
-    const command = {kind: 'splice', label, index, before, after: clone(insert), beforeSelection, structural: true, timing: true};
-    this._captureRemovedFrameSources(command); this._invalidate({timing: true});
-    invalidateFrameIndex(this.report);
-    this.frameIndex = Math.min(index, this.report.keyframes.length - 1); this.tick = this.timeline[this.frameIndex]?.start ?? 0;
-    this._selectIds(this.selectedObjects.map(o => o.unique_id));
-    command.afterSelection = this._selectionState(); this._record(command);
-    this._emit('edit', {label, structural: true, timing: true}); return this.frame;
-  }
-  addFrame({blank = false} = {}) {
-    const frame = blank ? createFrame() : clone(this.frame);
-    if (blank && this.frame._styk?.easing) frame._styk = {easing: clone(this.frame._styk.easing)};
-    return this._frameSplice('Add keyframe', this.frameIndex + 1, 0, [frame]);
-  }
-  duplicateFrame() { return this._frameSplice('Duplicate keyframe', this.frameIndex + 1, 0, [clone(this.frame)]); }
   _frameIndices(indices) {
     const result = [...new Set(indices ?? [this.frameIndex])].sort((a, b) => a - b);
     if (result.some(i => !Number.isInteger(i) || i < 0 || i >= this.report.keyframes.length)) throw messageError(new Error(''), "errors.editor.selectExistingKeyframes", {});
     return result;
-  }
-  _rangesEdit(label, changes, {retainSelection = false, structural = true, timing = true, timingOnly = false, selectIndex, frameEasing = false, animationPlan} = {}) {
-    if (!changes.length) return false;
-    if (this._drag) this.commitDrag();
-    const beforeSelection = this._selectionState();
-    const previous = new Map(this.report.keyframes.map(frame => [frame._styk.frameId, frame])), applied = [];
-    for (const change of [...changes].sort((a, b) => b.index - a.index)) {
-      const inserted = clone(change.after); applied.push([change, inserted]);
-      this.report.keyframes.splice(change.index, change.before.length, ...inserted);
-    }
-    this._reconcileFrameIds(previous);
-    for (const [change, inserted] of applied) change.after = clone(inserted);
-    const command = {kind: 'ranges', label, changes, beforeSelection, structural, timing, timingOnly};
-    if (animationPlan) {
-      command.draftAnimation = {before: animationPlan.before, after: animationPlan.after};
-      command.hadFrameSourceTable = this.report._styk.frameSources !== undefined;
-      command.frameSourceChanges = animationPlan.frameSourceChanges;
-      this._applyFrameSourceChanges(command, 'after');
-      if (animationPlan.after === null) delete this.report._styk.animation;
-      else this.report._styk.animation = animationPlan.after;
-      this._nextFrameIdentity = animationPlan.nextFrameIdentity;
-    }
-    if (frameEasing) command.frameEasing = true;
-    this._captureRemovedFrameSources(command);
-    this._invalidate({timing});
-    if (retainSelection) this._restoreSelection(beforeSelection);
-    else { this.frameIndex = Math.min(selectIndex ?? changes[0].index, this.report.keyframes.length - 1);
-      this.tick = this.timeline[this.frameIndex]?.start ?? 0; this._selectIds(this.selectedObjects.map(o => o.unique_id)); }
-    command.afterSelection = this._selectionState(); this._record(command);
-    this._emit('edit', {label, structural, timing, timingOnly, ...(!structural ? {frameIndices: changes.flatMap(change => change.after.map((_, offset) => change.index + offset))} : {})}); return true;
-  }
-  deleteFrames(indices = [this.frameIndex], label = 'Delete keyframes') {
-    const selected = this._frameIndices(indices); if (!selected.length) return 0;
-    if (selected.length === this.report.keyframes.length) this._frameSplice(label, 0, selected.length, [createFrame()]);
-    else this._rangesEdit(label, selected.map(index => ({index, before: [clone(this.report.keyframes[index])], after: []})));
-    return selected.length;
-  }
-  reverseFrames(indices = [this.frameIndex]) {
-    const selected = this._frameIndices(indices); if (selected.length < 2) return false;
-    const frames = selected.map(index => clone(this.report.keyframes[index]));
-    return this._rangesEdit('Reverse keyframes', selected.map((index, i) => ({index, before: [frames[i]], after: [frames[frames.length - i - 1]]})));
-  }
-  deleteFrame() {
-    if (this.report.keyframes.length === 1) return this.transaction('Clear keyframe', frame => {
-      frame.objects = []; frame.object_draw_order = []; frame.object_draw_order_unique_ids = []; this.selectedUid = null;
-    }, {structural: true});
-    return this._frameSplice('Delete keyframe', this.frameIndex, 1, []);
   }
   updateObject(patch) {
     if (this.selectedObjects.length > 1 && Object.keys(patch).every(k => ['color_override_raw', 'field28', 'image_text_flags', 'name', '_styk'].includes(k))) return this.updateSelection(patch);
@@ -1703,30 +1603,21 @@ export class Editor extends EventTarget {
   }
 }
 
-Object.assign(Editor.prototype, editorRangeMethods);
 Object.assign(Editor.prototype, editorSpatialMethods);
 Object.assign(Editor.prototype, editorSelectionMethods);
-Object.assign(Editor.prototype, editorLayerMethods, editorLayerFolderMethods, editorLayerFocusMethods);
-Object.assign(Editor.prototype, editorLayerAsyncMethods);
+Object.assign(Editor.prototype, editorLayerMethods, editorLayerFocusMethods);
 Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorAnimationMethods));
 Object.assign(Editor.prototype, editorFrameMethods);
-Object.assign(Editor.prototype, editorAuthoredPoseMethods);
-Object.assign(Editor.prototype, editorCameraMethods, editorCameraMotionMethods);
 Object.assign(Editor.prototype, editorIKMethods);
 Object.assign(Editor.prototype, editorMovieclipMethods);
 Object.assign(Editor.prototype, editorLayerSheetMethods);
 Object.assign(Editor.prototype, editorDrawingMethods);
-Object.assign(Editor.prototype, editorRangeCommandMethods);
-Object.assign(Editor.prototype, editorSceneMethods);
 Object.assign(Editor.prototype, editorVfxMethods, editorVfxClipMethods);
 Object.assign(Editor.prototype, editorHandleCommandMethods);
 Object.assign(Editor.prototype, editorOriginMutationMethods);
-Object.assign(Editor.prototype, editorMotionPathMethods);
-Object.assign(Editor.prototype, editorTweenerMethods);
 Object.assign(Editor.prototype, editorAudioMethods);
 Object.assign(Editor.prototype, editorSessionMethods);
 Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorFrameDraftMethods));
 Editor.prototype._topologyEdit.frameDraftAware = true;
 Editor.prototype.replaceFigureDefinition.frameDraftAware = true;
-installFrameDraftPreflights(Editor);
 export {createDemo, emptyDocument, defaultFigure};

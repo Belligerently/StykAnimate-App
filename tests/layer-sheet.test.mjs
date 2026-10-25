@@ -3,26 +3,47 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
-import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
-import {sheetKeyAt,validateLayerSheet} from '../src/layer-sheet.mjs';
-import {plainEditorFor} from './support/plain-editor.mjs';
+import {validateLayerSheet} from '../src/layer-sheet.mjs';
+import {createLayerState} from '../src/layers.mjs';
+import {animationChannelId, normalizeAnimationTarget, validateAnimationDocument} from '../src/animation-channels.mjs';
+import {inheritedKeyEasing} from '../src/keyframe-easing.mjs';
 
-function fixture({legacy=false}={}){
+function frames(){
   const report=emptyDocument(),figure=report.figure_types[0];
   report.keyframes=[0,10,20].map(x=>createFrame([createObject(figure,1,x,200),createObject(figure,2,100+x,200)],10));
-  const e=(legacy?plainEditorFor:engineEditor)({demo:false,propertyChannels:true,layerTimeline:!legacy}, report);
+  return report;
+}
+function fixture(){
+  const e=engineEditor({demo:false,propertyChannels:true,layerTimeline:true}, frames());
   const layer=e.createLayer('Effects');e.assignFiguresToLayer([2],layer.id);return e;
 }
+/** A document from a file of the native timeline: the same frames with the figure 2 on a second layer, and the property channels it
+ * authors (`channels`: {target, property, keys: [{tick, value, ...easing}]}). */
+function legacyDocument(channels=[]){
+  const report=frames(),layers=report._styk.layers=createLayerState();
+  layers.byId['layer-2']={name:'Effects',visible:true,locked:false};layers.order.push('layer-2');layers.nextId=3;layers.assignments['2']='layer-2';layers.activeId='layer-2';
+  if(channels.length){
+    let nextKeyId=1;
+    report._styk.animation={version:1,nextKeyId:1,channels:channels.map(({target,property,keys})=>{
+      const normalized=normalizeAnimationTarget(target),stored=[];
+      for(const {tick,value,...easing} of keys)stored.push({id:`key-${nextKeyId++}`,tick,value,...inheritedKeyEasing(stored,tick,{property}),...easing});
+      return {id:animationChannelId(normalized,property),target:normalized,property,keys:stored};
+    })};
+    report._styk.animation.nextKeyId=nextKeyId;validateAnimationDocument(report);
+  }
+  return report;
+}
+/** The document as the native timeline evaluates it, read from the session. */
+const legacyEditor=document=>engineEditor({demo:false,propertyChannels:true,layerTimeline:false}, document);
 function sample(e,tick){e.seek(tick,{allowBeyondEnd:true});return e.evaluatedFrame.objects.map(o=>({uid:o.unique_id,x:o.root_x}));}
 test('native import uses exact original evaluation and holds object identities',()=>{
-  const old=fixture({legacy:true}),e=plainEditorFor({demo:false,layerTimeline:true}, old.serialize());
+  const old=legacyEditor(legacyDocument()),e=engineEditor({demo:false,layerTimeline:true}, old.serialize());
   for(let i=0;i<=20;i++)assert.deepEqual(sample(e,i),sample(old,i));
   assert.equal(e.report._styk.animation,undefined);assert.equal(e.report._styk.layerSheet.duration,21);
 });
 test('existing independent property animation remains exact on import',()=>{
-  const old=fixture({legacy:true});old.addAnimationKey({kind:'figure',uid:1},'x',0,0);old.addAnimationKey({kind:'figure',uid:1},'x',20,200);
-  const c=old.animationChannels.find(c=>c.property==='x');old.setAnimationKeysEasing([{channelId:c.id,keyIds:[c.keys[0].id]}],{interpolation:'bezier',bezier:[.2,.1,.8,.9]});
-  const e=plainEditorFor({demo:false,layerTimeline:true}, old.serialize());for(let i=0;i<20;i++)assert.deepEqual(sample(e,i),sample(old,i));
+  const old=legacyEditor(legacyDocument([{target:{kind:'figure',uid:1},property:'x',keys:[{tick:0,value:0,interpolation:'bezier',bezier:[.2,.1,.8,.9]},{tick:20,value:200}]}]));
+  const e=engineEditor({demo:false,layerTimeline:true}, old.serialize());for(let i=0;i<20;i++)assert.deepEqual(sample(e,i),sample(old,i));
 });
 test('key insertion and retiming affect only the selected layer',()=>{
   const e=fixture(),before=e.serialize();e.sheetInsertKey(['layer-1'],5);e.sheetMoveFrames(['layer-1'],5,5,2);
@@ -183,7 +204,7 @@ test('extending a movieclip exposure continues its loop through the added cells'
 });
 
 test('legacy Pivot holds remain held on import and can become explicit modern tweens',()=>{
-  const source=fixture({legacy:true}).serialize();source.version=4;const e=plainEditorFor({demo:false,layerTimeline:true}, source);
+  const source=legacyDocument();source.version=4;const e=engineEditor({demo:false,layerTimeline:true}, source);
   assert.equal(sample(e,5).find(o=>o.uid===1).x,0);e.sheetSetEasing(['layer-1'],0,0,{interpolation:'linear'});
   assert.equal(sample(e,5).find(o=>o.uid===1).x,5);
 });
@@ -198,10 +219,9 @@ test('layer metadata edits cannot mutate earlier pose history snapshots',()=>{
 });
 
 for(const operation of ['split','delete','replace'])test(`imported segment animations survive ${operation} rig edits, save and undo`,()=>{
-  const old=fixture({legacy:true});old.select(1,operation==='split'?0:old.report.figure_types[0].segments.length-1);
-  const handle=old.figure.segments[old.selectedJoint].segment_id;
-  old.addAnimationKeys([0,20].map(tick=>({target:{kind:'segment',uid:1,handleId:handle},property:'opacity',tick,value:tick?.8:.2})));
-  const e=engineEditor({demo:false,propertyChannels:true,layerTimeline:true}, old.serialize());e.select(1,old.selectedJoint);const before=e.serialize();
+  const base=frames(),segments=base.figure_types[0].segments,joint=operation==='split'?0:segments.length-1,handle=segments[joint].segment_id;
+  const old=legacyDocument([{target:{kind:'segment',uid:1,handleId:handle},property:'opacity',keys:[{tick:0,value:.2},{tick:20,value:.8}]}]);
+  const e=engineEditor({demo:false,propertyChannels:true,layerTimeline:true}, old);e.select(1,joint);const before=e.serialize();
   if(operation==='split')e.splitSegment(.4);
   else if(operation==='delete')e.deleteSegment();
   else{const definition=structuredClone(e.figure);definition.segments=definition.segments.filter(s=>s.segment_id!==handle);e.replaceFigureDefinition(definition.figure_type_id,definition);}
@@ -241,8 +261,8 @@ test('applying the sheet camera preserves visible geometry and is reversible',as
 });
 
 test('blank Camera and Scene cells reset imported values and resume at the next key',()=>{
-  const source=fixture({legacy:true}).serialize();for(const frame of source.keyframes){frame.camera={is_default:false,x:25,y:0,scale:1,angle_rad:0};frame._stykBackgroundColor=0xffabcdef;}
-  const e=plainEditorFor({demo:false,layerTimeline:true}, source),before=e.serialize();e.sheetInsertKey(['camera','scene'],5,{blank:true});
+  const source=legacyDocument();for(const frame of source.keyframes){frame.camera={is_default:false,x:25,y:0,scale:1,angle_rad:0};frame._stykBackgroundColor=0xffabcdef;}
+  const e=engineEditor({demo:false,layerTimeline:true}, source),before=e.serialize();e.sheetInsertKey(['camera','scene'],5,{blank:true});
   for(const tick of [4,5,9,10]){e.seek(tick);const blank=tick>=5&&tick<10;assert.equal(e.evaluatedFrame.camera.x,blank?0:25);assert.equal(e.evaluatedFrame._stykBackgroundColor,blank?undefined:0xffabcdef);}
   e.undo();assert.deepEqual(e.serialize(),before);
 });
@@ -258,7 +278,6 @@ test('Stick Nodes project layers retain source movieclips, geometry and edits ac
   const reopened=engineEditor({demo:false,layerTimeline:true}, e.serialize());assert.deepEqual(geometry(reopened),geometry(e));
   e.undo();assert.deepEqual(e.serialize(),before);
 });
-
 
 test('inserting frames at the start retains the opening pose and identities',()=>{
   const e=fixture(),before=e.serialize(),opening=sample(e,0);
@@ -304,11 +323,6 @@ test('a pose entry without a value captures the interpolated pose at its tick',(
   assert.deepEqual(e.layerFrameKeys('layer-1').map(k=>k.tick),[0,10,15,20]);
   assert.equal(sample(e,15).find(o=>o.uid===1).x,15);assert.equal(sample(e,19).find(o=>o.uid===1).x,19);
   assert.equal(e.report._styk.animation,undefined);
-});
-test('property channels cannot persist into a layer document',()=>{
-  const e=fixture();assert.throws(()=>e.setAnimationKeysEasing([{channelId:'x',keyIds:['y']}],{interpolation:'linear'}));
-  const legacy=fixture({legacy:true});legacy.addAnimationKey({kind:'figure',uid:1},'x',0,5);
-  assert.equal(legacy.animationChannels.length,1);legacy.setAnimationKeysEasing([{channelId:legacy.animationChannels[0].id,keyIds:[legacy.animationChannels[0].keys[0].id]}],{interpolation:'linear'});
 });
 
 test('inserting opening frames keeps movieclips visible through the inserted time',()=>{

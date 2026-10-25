@@ -52,7 +52,7 @@ test('auto key keys the camera at the playhead', () => {
   const cameraKeys = () => editor.layerFrameKeys('camera').map(key => key.tick);
   const before = cameraKeys();
   editor.seek(6);
-  editor.transaction('Camera', frame => { frame.camera = {x: 0, y: 0, scale: 1, angle_rad: 0, ...frame.camera, is_default: false, x: 40}; });
+  editor.setCameraValues({x: 40});
   assert.ok(cameraKeys().includes(6), `camera keyed at the playhead: ${cameraKeys()}`);
   assert.ok(before.every(tick => cameraKeys().includes(tick)));
 });

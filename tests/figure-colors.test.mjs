@@ -7,7 +7,6 @@ import {timeline} from '../src/pivot/read-view.mjs';
 import {figurePalette,displayedSegmentPaint} from '../src/figure-colors.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
-import {planFigureFrameOperation} from '../src/range-figure-operations.mjs';
 import {ownedScope} from './support/owned-scope.mjs';
 import {plainScope} from './support/plain-editor.mjs';
 import {pivotDocument} from './support/engine-export.mjs';
@@ -176,15 +175,11 @@ test('recolored legacy instances retain their palette when copied across Pivot v
 });
 
 test('materializing legacy layer ordering preserves held poses at every output tick',()=>{
-  const e=fixture({plain:true,version:4,raw:196,layerTimeline:false,propertyChannels:false}),layer=e.createLayer('Other');
-  e.assignFiguresToLayer([2],layer.id);e.moveLayerTo(layer.id,0);
+  const e=fixture({plain:true,version:4,raw:196,layerTimeline:false,propertyChannels:false}),document=e.serialize(),layers=document._styk.layers;
+  // A second layer in front, holding figure 2.
+  layers.byId['layer-2']={name:'Other',visible:true,locked:false};layers.order=['layer-2','layer-1'];layers.nextId=3;layers.assignments['2']='layer-2';e.load(document);
   const output=pivotDocument(e.serialize());assert.equal(output.version,5);
   const sample=(report,tick)=>{const rows=timeline(report);let index=0;while(index+1<rows.length&&rows[index+1].start<=tick)index++;return evaluatedFrame(report,index,rows[index].count?(tick-rows[index].start)/rows[index].count:0,tick);};
   for(let tick=0;tick<e.totalTicks;tick++)assert.deepEqual(sample(output,tick).objects.map(o=>[o.unique_id,o.root_x,o.root_y]),sample(e.report,tick).objects.map(o=>[o.unique_id,o.root_x,o.root_y]));
 });
 
-test('opacity-only color commands retain a captured color transition',()=>{
-  const e=fixture(),frame=e.report.keyframes[0],transition={from:0xff112233,to:0xff223344,t:.5};frame.objects[0].color_transition=transition;
-  const plan=planFigureFrameOperation(e.report,frame,[1],{kind:'recolor',mode:'all',opacity:.4});
-  assert.equal(plan.frame.objects[0].color_transition,transition);assert.equal(plan.frame.objects[0].field28,153);
-});

@@ -43,7 +43,7 @@ import {createOwnedDrawings, DRAWING_COMMITS} from './engine-owner-drawing.mjs';
 import {appBoundsMarker} from './engine-edit-bounds.mjs';
 import {createShown} from './engine-shown.mjs';
 import {createClipboards} from './engine-clipboards.mjs';
-import {SESSION_COMMANDS, REFUSED_CALLS, VIEW_CALLS} from './engine-commands.mjs';
+import {SESSION_COMMANDS, VIEW_CALLS} from './engine-commands.mjs';
 import {yieldLoadTask} from '../yield-task.mjs';
 
 /** How many values of each kind a call that draws many identities is handed. */
@@ -61,6 +61,8 @@ const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxCl
 const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings', 'getSpatialPose', 'getSpatialMotion', 'sampleVfxClip'];
 /** What the session's error says when it does not answer for a document (`styk_edit::session::UNPORTED`). */
 const UNPORTED = 'unported: ';
+/** Where the values a refusal names start in its message (`styk_edit::PARAMS`). */
+const PARAMS = '\u001f';
 
 /**
  * A call's arguments as text for the session. Frame ranges keep their `sheetTicks`, and the app's figure-bounds callback is the
@@ -119,7 +121,7 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
       catch (error) {
         // What the session does not evaluate yet, the editor does.
         if (String(error?.message ?? error).startsWith(UNPORTED)) return null;
-        throw error;
+        throw queryFailure(error);
       }
     },
     source(motion) {
@@ -434,7 +436,8 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
     if (!opened) return;
     // The edit it replaces ended with the call, and its preview with it.
     if (editor._animationEdit?.engine && editor._sheetPropertyPreview) { editor._sheetPropertyPreview = null; editor._invalidate(); }
-    const {target, property, exactTarget, tick, initialValue, changed} = opened, edit = {engine: true, target, property, exactTarget, tick, initialValue, selection: editor._selectionState(), changed};
+    // An edit of several targets (a branch, a draw order) names them all (`targets`) and holds a value for each.
+    const {target, targets, property, exactTarget, tick, initialValue, changed} = opened, edit = {engine: true, target, ...(targets ? {targets} : {}), property, exactTarget, tick, initialValue, selection: editor._selectionState(), changed};
     editor._animationEdit = opened.sheet ? Object.assign(edit, {sheet: true, value: opened.value, frame: baseFrame()})
       : Object.assign(edit, {before: editor.report._styk?.animation ?? null, beforeChannel: editor.animationChannel(target, property, {exactTarget})});
   };
@@ -604,8 +607,9 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   /** The frame the session retained, while the editor still shows it. */
   let retainedShown = null;
   /** `bakeMovieclip()`: the session samples the clip in slices (`bakeMovieclipBegin`, `bakeMovieclipSample`, `bakeMovieclipPublish`,
-   * `movieclip_bake.rs`) and the interface gets the thread back between them, so a long bake never stalls it (D7). Each slice is sized
-   * from how long the last one took. An edit between slices ends the bake, as the session ends its job. */
+   * `movieclip_bake.rs`) and the interface gets the thread back between them (D7), so the sampling of a long clip does not hold it. Each slice is
+   * sized from how long the last one took. Publication is one step (0.2 to 2.6 s on large documents, docs/engine/editing.md). An edit between
+   * slices ends the bake, as the session ends its job. */
   const bakeCall = async () => {
     callSession('bakeMovieclipBegin', []);
     const report = editor.report, revision = editor.revision;
@@ -710,7 +714,6 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   }
   layer.movieclipBatch = function owned(...args) { return batchCall(args); };
   layer.bakeMovieclip = function owned() { return bakeCall(); };
-  for (const name of REFUSED_CALLS) layer[name] = function refused() { throw refuse(name, 'a native timeline has no engine command'); };
   // The reads the session answers.
   for (const name of SESSION_READS) {
     const original = editor[name];
@@ -720,9 +723,8 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
       let text;
       try { text = session.query(name, JSON.stringify(args), adopting ? 'null' : JSON.stringify(view())); }
       catch (error) {
-        const message = String(error?.message ?? error);
-        if (message.startsWith(UNPORTED)) return original.apply(this, args);
-        throw failure(message);
+        if (String(error?.message ?? error).startsWith(UNPORTED)) return original.apply(this, args);
+        throw queryFailure(error);
       }
       return JSON.parse(text).v;
     };
@@ -859,6 +861,15 @@ function failure(error, params) {
     if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error});
     return messageError(new Error(''), error, values);
   } catch { return new Error(error); }
+}
+
+/** The editor's error for a refusal of a read: the session raises the message key, followed by the values the message names after
+ * `PARAMS` (`styk_edit::error_key`, `error_params`), where a call's answer carries them apart. What is not a message of the
+ * editor's (an engine failure) is raised as it came. */
+function queryFailure(error) {
+  const [key, params] = String(error?.message ?? error).split(PARAMS);
+  if (!Object.hasOwn(english, key)) return error;
+  try { return failure(key, params === undefined ? undefined : JSON.parse(params)); } catch { return error; }
 }
 
 /** The error for a call the session refuses (a document it does not edit yet): the call ran nowhere. */

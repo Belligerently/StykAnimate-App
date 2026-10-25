@@ -345,6 +345,10 @@ selection is the editor's to tell with a call, and the frame does not depend on 
   editor from the frame and geometry the engine gave it (`unported: …`). The other queries the owner leaves to the editor
   (`animationChannel`, `nativePoseChannel`, `getSpatialCamera`, `resolveTranslationSelection`, …) read stored
   records and the engine's frame and geometry; none evaluates a pose at the playhead.
+- A read the session refuses (`figureDocument` of nothing to export, `sampleVfxClip` of a clip that is not there) reaches the
+  interface as the localized error a refused call is: the session raises the message key, with the values the message
+  names after a separator, and the owner turns it into the editor's error (`queryFailure`). A message that is not one of the
+  editor's (an engine failure) is raised as it came.
 - `previewGeometry` is the geometry of a frame the document does not hold: the first stroke on a drawing layer previews
   the frame on show with the new cel's figure and object added (`Editor::interface_preview_geometry`: the document with
   that figure and layer assignment, the given frame read against it, the full geometry of the result;

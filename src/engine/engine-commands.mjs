@@ -57,9 +57,3 @@ export const SESSION_COMMANDS = Object.freeze([
   'updateFigureStyle', 'updateFiguresInFrames', 'updateMotionPathEdit', 'updateObject', 'updatePolygon', 'updateProject', 'updateSegment',
   'updateSegmentBranchStyle', 'updateSegmentStyle', 'updateSelection', 'updateTween',
 ]);
-
-/** Calls the interface can still make that the session has no command for: the keyframe commands of a native timeline (the app
- * gives every document a layer sheet). They are refused, never run. */
-export const REFUSED_CALLS = Object.freeze([
-  'addFrame', 'deleteFrame', 'duplicateFrame', 'reverseFrames', 'insertBlankFrame',
-]);
