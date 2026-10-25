@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {spawnSync} from 'node:child_process';
 import '../engine/tools/v8-pin.mjs';
-import {Editor} from '../src/editor.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 import {emptyDocument,createObject,createFrame} from '../src/demo.mjs';
 // Figures of a thigh, a shin and a foot, as a native document.
 function documentOf(figures,place){
@@ -13,7 +13,7 @@ function documentOf(figures,place){
  return document;
 }
 const limb=()=>[[11,0,90,.8],[22,11,90,2],[33,22,35,0]];
-const open=document=>new Editor({demo:false}).load(document);
+const open=document=>ownedEditorFor({demo:false},document);
 // A second native keyframe after the current one, `ticks` long on the first.
 function nextKey(e,ticks){
  if(e.report._styk?.layerSheet)e.sheetSetDuration(ticks);else e.setFramesDuration([e.frameIndex],ticks);
@@ -45,7 +45,7 @@ test('last safe counter allocation remains saveable and undo/redo preserves it',
  const e=open(report(MAX-1));e.seek(3);e.addFigure(4);assert.equal(e.report._styk.animation.nextKeyId,MAX);const saved=plain(e.serialize());open(JSON.parse(saved)).serialize();e.undo();e.redo();assert.equal(plain(e.serialize()),saved);
 });
 test('valid double key collision terminates atomically instead of freezing insertion',()=>{
- const code=`import fs from 'node:fs';import {Editor} from './src/editor.mjs';const plain=report=>JSON.stringify(report,(key,value)=>key==='runtime_segments'?undefined:value);const e=new Editor({demo:false}).load(JSON.parse(fs.readFileSync(0,'utf8')));e.seek(3);const before=plain(e.report),state=JSON.stringify(e._selectionState()),counters=JSON.stringify([e._nextUid,e._nextFrameIdentity,e.revision,e._revisionSerial,e.layerRevision,e.historySize]),events=[];e.serialize();e.addEventListener('change',event=>events.push(event.detail));let key=null;try{e.addFigure(4);}catch(error){key=error.messageKey;}e.serialize();new Editor({demo:false}).load(JSON.parse(plain(e.serialize()))).serialize();console.log(JSON.stringify({key,same:before===plain(e.report),stateSame:state===JSON.stringify(e._selectionState()),countersSame:counters===JSON.stringify([e._nextUid,e._nextFrameIdentity,e.revision,e._revisionSerial,e.layerRevision,e.historySize]),events:events.length}));`;
+ const code=`import fs from 'node:fs';import {Editor} from './src/editor.mjs';import {installEngineOwner} from './src/engine/engine-owner.mjs';const plain=report=>JSON.stringify(report,(key,value)=>key==='runtime_segments'?undefined:value);const e=new Editor({demo:false}).load(JSON.parse(fs.readFileSync(0,'utf8')));installEngineOwner(e,{verify:false});e.seek(3);const before=plain(e.report),state=JSON.stringify(e._selectionState()),counters=JSON.stringify([e._nextUid,e._nextFrameIdentity,e.revision,e._revisionSerial,e.layerRevision,e.historySize]),events=[];e.serialize();e.addEventListener('change',event=>events.push(event.detail));let key=null;try{e.addFigure(4);}catch(error){key=error.messageKey;}e.serialize();new Editor({demo:false}).load(JSON.parse(plain(e.serialize()))).serialize();console.log(JSON.stringify({key,same:before===plain(e.report),stateSame:state===JSON.stringify(e._selectionState()),countersSame:counters===JSON.stringify([e._nextUid,e._nextFrameIdentity,e.revision,e._revisionSerial,e.layerRevision,e.historySize]),events:events.length}));`;
  const result=spawnSync(process.execPath,['--import','./tests/support/register-engine.mjs','--input-type=module','-e',code],{cwd:process.cwd(),input:JSON.stringify(report(MAX,[MAX,MAX+1])),encoding:'utf8',timeout:4000});
  assert.equal(result.status,0,`actual editor insertion did not finish: ${result.error?.code??result.stderr}`);
  assert.deepEqual(JSON.parse(result.stdout),{key:'errors.animationChannels.invalidAnimationKeyIdentityCounter',same:true,stateSame:true,countersSame:true,events:0});
