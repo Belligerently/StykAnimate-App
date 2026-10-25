@@ -139,6 +139,11 @@ export class DocumentExporter {
   }
 
   async _export(report, {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, signal, getRevision, originalRevision, started, revision}) {
+    // The engine makes the document of a Pivot or figure export on the worker: it joins the shared memory and is told, with
+    // the export, which engine and revision (and a flag, in that memory, that stops it). A page that is not cross-origin isolated
+    // cannot share the memory with a worker (nor make the flag), so it makes no such file.
+    const engine = ENGINE_FORMATS.has(format) ? this.engine : null;
+    if (ENGINE_FORMATS.has(format) && (!engine?.join || globalThis.crossOriginIsolated === false)) throw Object.assign(messageError(new Error(''), "errors.documentExport.theEngineCannotMakeThisFileHere", {}), {telemetryCode: 'engine_failed', telemetryStage: 'prepare'});
     const reusedWorker = Boolean(this.worker);
     const worker = this.worker ??= new Worker(new URL('./document-export-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate document export'});
     if (!reusedWorker) {
@@ -151,10 +156,6 @@ export class DocumentExporter {
       worker.addEventListener('error', idleFailure);
       worker.addEventListener('messageerror', idleFailure);
     }
-    // The engine makes the document of a Pivot or figure export on the worker: it joins the shared memory and is told, with
-    // the export, which engine and revision (and a flag, in that memory, that stops it).
-    const engine = ENGINE_FORMATS.has(format) ? this.engine : null;
-    if (ENGINE_FORMATS.has(format) && !engine?.join) throw Object.assign(messageError(new Error(''), "errors.documentExport.theEngineCannotMakeThisFileHere", {}), {telemetryCode: 'engine_failed', telemetryStage: 'prepare'});
     const cancelFlag = engine ? new Int32Array(new SharedArrayBuffer(4)) : null;
     this.cancelFlag = cancelFlag;
     const backendJob = codecJob({host: this.codecHost ?? browserCodecHost()});
