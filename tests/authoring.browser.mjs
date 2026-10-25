@@ -141,7 +141,7 @@ try {
     await page.waitForTimeout(100);
   } while (Date.now() < deadline);
   check('Autosave writes a persistent source-bearing native Blob', stored?.name === 'Authoring recovery' && stored?.isBlob && stored.blobSize > 0);
-  await value(() => styk.editor.markSaved()); await page.reload(); await page.waitForFunction(() => styk?.ready);
+  await value(() => styk.editor.markSaved()); await page.reload(); await page.waitForFunction(() => window.styk?.ready);
   recoveryProbe = await value(async () => {
     const record = await (await import('/src/browser-recovery.mjs')).readBrowserRecovery();
     return {url: location.href, name: record?.name, blobSize: record?.blob.size, banner: !!document.getElementById('restore-recovery')};

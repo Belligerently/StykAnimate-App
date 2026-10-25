@@ -42,7 +42,7 @@ async function drag(uid,id,target,{keys=[],button='left',cancel=false,name='drag
   for(const key of [...keys].reverse())await page.keyboard.up(key); await settle(); return route;
 }
 try {
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   for (const point of [{x:360,y:220},{x:350,y:255}]) {
     await setup();
     const start=await screenPoint(point);

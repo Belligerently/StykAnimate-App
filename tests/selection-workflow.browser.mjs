@@ -63,7 +63,7 @@ async function selectRange(mode) {
   await page.evaluate(()=>styk.editor.select(1));await settle();
 }
 try {
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   await setup();
   await click(1);await click(2);check('Ctrl-click adds without losing selected figures',JSON.stringify(await selected())==='[1,2]');
   await click(1);check('Ctrl-click removes only the clicked figure',JSON.stringify(await selected())==='[2]');
@@ -104,10 +104,10 @@ try {
   await page.evaluate(()=>{styk.state.locked.add(1);styk.state.hidden.add(2);});
   await marquee({x:150,y:150},{x:600,y:450});check('Origins ignore hidden and locked figures',(await selected()).length===0);
   await page.waitForFunction(()=>JSON.parse(localStorage.getItem('stykanimate.editor.settings.v1'))?.marqueeSelection==='origins');
-  await page.reload();await page.waitForFunction(()=>styk?.ready);
+  await page.reload();await page.waitForFunction(()=>window.styk?.ready);
   check('Origin preference survives reopening',await page.evaluate(()=>styk.state.settings.marqueeSelection==='origins'));
   await page.evaluate(()=>{const key='stykanimate.editor.settings.v1',settings=JSON.parse(localStorage.getItem(key));settings.hotkeys={...settings.hotkeys,'toggle-selection-origins':['Mod+Shift+KeyB'],'toggle-range-edit':['Mod+Shift+KeyR']};localStorage.setItem(key,JSON.stringify(settings));});
-  await page.reload();await page.waitForFunction(()=>styk?.ready);
+  await page.reload();await page.waitForFunction(()=>window.styk?.ready);
   await page.locator('#viewport').focus();await page.keyboard.press('Control+Shift+b');await settle();
   check('Remapped origin shortcut changes the saved selection setting',await page.evaluate(()=>styk.state.settings.marqueeSelection==='bounds'));
   await page.keyboard.press('Control+Shift+b');await settle();

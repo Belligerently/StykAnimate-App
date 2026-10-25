@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
- await page.goto('http://127.0.0.1:47832');await page.waitForFunction(()=>window.styk?.ready);
+ await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
  await page.evaluate(async()=>{const {emptyDocument,createObject,createFrame}=await import('/src/demo.mjs');const {initializeLayerSheet}=await import('/src/editor-layer-sheet.mjs');const e=styk.editor,doc=emptyDocument();doc.keyframes=[0,1,2].map(()=>createFrame([createObject(doc.figure_types[0],1,320,320)],20));e.load(doc);initializeLayerSheet(e.report);e._invalidate({timing:true});e.select(1);window.vfxFailures=[];const onError=styk.vfx.onError;styk.vfx.onError=error=>{vfxFailures.push(error.message);onError(error);};styk.vfx.setVisible(true);styk.vfx.scope='figure';styk.vfx.sync();});
  await page.getByRole('tab',{name:'VFX',exact:true}).click();await page.getByRole('button',{name:'Add effect',exact:true}).click();await page.getByRole('button',{name:'Glow',exact:true}).click();
  assert.equal(await page.evaluate(()=>styk.editor.getVfxClips().length),1);

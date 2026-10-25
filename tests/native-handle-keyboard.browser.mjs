@@ -30,7 +30,7 @@ async function setup({camera=false,previous=false}={}){
 async function hover(id=11){const point=await page.evaluate(id=>__screen(styk.editor.geometry.objects.get(0).joints.get(id)),id);await page.mouse.move(point.x,point.y);await page.locator('#viewport').focus();}
 const values=()=>page.evaluate(()=>({points:__points(),angles:styk.editor.object.angles.slice(),history:styk.editor._undo.length,hover:styk.state.hoverHandle,dragging:styk.editor.dragging,frame:styk.editor.frameIndex,uid:styk.editor.selectedUid}));
 try{
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   await setup({camera:true});await hover(0);
   const originBefore=await page.evaluate(()=>__screen(styk.editor.geometry.objects.get(0).root));
   for(let i=0;i<5;i++)await page.keyboard.down('ArrowRight');await page.keyboard.up('ArrowRight');

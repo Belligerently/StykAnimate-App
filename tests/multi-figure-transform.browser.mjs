@@ -43,7 +43,7 @@ async function drag(uid,id,target,{keys=[],button='left',cancel=false,name='drag
   for(const key of [...keys].reverse())await page.keyboard.up(key); await settle(); return route;
 }
 try {
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   for(const [name,keys,rotates,scales] of [['Alt',['Alt'],true,true],['Alt-Control',['Alt','Control'],true,false],['Alt-Shift',['Alt','Shift'],false,true]]) {
     await setup();const origin=await worldPoint(2,0),start=await worldPoint(2,1);
     const before=await page.evaluate(()=>({angles:styk.editor.object.angles.slice(),scale:styk.editor.object.scale,parent:JSON.stringify(styk.editor.frame.objects[0])}));

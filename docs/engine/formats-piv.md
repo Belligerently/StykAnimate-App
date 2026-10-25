@@ -87,9 +87,8 @@ Every build runs it the same way: in a worker of the editor page.
 
 - In JavaScript: `tests/codec-engine.test.mjs` (the built module, trap recovery, cancellation, and
   one document against the Python oracle), `tests/codec-web-shell.test.mjs`,
-  `tests/codec-web-host.test.mjs` (shared flags and the terminate fallback),
-  `tests/desktop-samples.test.mjs` (the sample rules against the oracle) and, in a browser,
-  `tests/codec-cancellation.browser.mjs`.
+  `tests/codec-web-host.test.mjs` (shared flags and the terminate fallback) and
+  `tests/desktop-samples.test.mjs` (the sample rules against the oracle).
 
 - `cargo test -p styk-piv`: unit tests next to the code, and `tests/service.rs`, `tests/formats.rs` (the behaviours the Python tests assert, on generated fixtures). `tests/fixtures/expected.json` and `upgraded-legacy-v*.json` are what the Python codec answered for the fixtures; `.venv/bin/python engine/tools/piv/fixtures.py` regenerates fixtures and answers, `--check` verifies them.
 - Parity with the Python codec: `engine/tools/piv/parity.sh` records the oracle (`oracle.py`) and replays it (`styk-piv replay`), comparing import JSON (as parsed documents: numbers equal as doubles, negative zero included), `STYKPIV1` bytes, export bytes, native containers (as documents) and error responses. Suites that need the private corpus (`~/Downloads/pivs`, `WafflesPack`, `Valthim - Yuki.piv`) are skipped without it. `STYK_PIV_PARITY=<dir> cargo test -p styk-piv --test parity` replays an existing recording.

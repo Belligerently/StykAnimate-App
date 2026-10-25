@@ -11,7 +11,7 @@ const report={checks:[],errors:[]};page.on('pageerror',e=>report.errors.push(e.m
 async function stored() {return page.evaluate(async()=>{const record=await (await import('/src/browser-recovery.mjs')).readBrowserRecovery(undefined,{id:styk.recovery.id});return record?{name:record.name,bytes:record.blob.size}:null;});}
 async function waitForRecovery(name) {const deadline=Date.now()+8000;let record;do{record=await stored();if(record?.name===name)return record;await page.waitForTimeout(100);}while(Date.now()<deadline);return record;}
 try {
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   await page.evaluate(()=>{const e=styk.editor;e.newDocument();e.addFrame();e.selectFrame(0);e.name='Recovery after scrub';e.markSaved();});
   const x=page.locator('[data-field="root_x"]');await x.fill('93');await x.press('Tab');
   const box=await page.locator('.sheet-scroll').boundingBox();await page.mouse.click(box.x+16,box.y+14);

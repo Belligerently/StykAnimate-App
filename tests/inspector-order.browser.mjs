@@ -26,7 +26,7 @@ try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
   page = await browser.newPage({viewport: {width: 1440, height: 960}});
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(backend.origin); await page.waitForFunction(() => styk?.ready);
+  await page.goto(backend.origin); await page.waitForFunction(() => window.styk?.ready);
   for (const mode of ['advanced', 'simple']) {
     await page.evaluate(async mode => {
       const {emptyDocument, createObject, createFrame} = await import('/src/demo.mjs');

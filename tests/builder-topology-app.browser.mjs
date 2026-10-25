@@ -13,7 +13,7 @@ const near = (a,b) => assert.ok(Math.abs(a-b) < .001, `${a} != ${b}`);
 try {
   browser = await chromium.launch({channel:'chrome',headless:true}); page = await browser.newPage({viewport:{width:1500,height:1020},acceptDownloads:true});
   page.setDefaultTimeout(15000); page.on('pageerror',error=>errors.push(error.stack||error.message));
-  await page.goto(backend.origin); await page.waitForFunction(()=>styk?.ready);
+  await page.goto(backend.origin); await page.waitForFunction(()=>window.styk?.ready);
   await page.evaluate(async()=>{
     const {emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'), report=emptyDocument(), figure=report.figure_types[0], base=figure.segments[0];
     report.canvas_width=800; report.canvas_height=450; figure.name='Builder verification';

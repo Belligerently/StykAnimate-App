@@ -18,7 +18,7 @@ const check = (name, value) => {
 };
 try {
   await page.goto(process.env.STYK_URL || "http://127.0.0.1:47831");
-  await page.waitForFunction(() => styk.ready);
+  await page.waitForFunction(() => window.styk?.ready);
   await page.evaluate(async () => {
     const { emptyDocument, createFrame, createObject } = await import(
       "/src/demo.mjs"
