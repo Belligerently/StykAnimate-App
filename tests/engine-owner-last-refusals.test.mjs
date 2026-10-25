@@ -1,8 +1,8 @@
 // The calls the engine session used to refuse for a document or a selection (and the editor ran instead) now run in the
 // session: each leaves the document, the history entries and what undo and redo give back as the editor alone does
-// (tests/support/owned-vs-plain.mjs), and nothing is refused or run in the editor.
+// (tests/support/owned-vs-plain.mjs; the editor alone's answers are recorded in tests/fixtures/owner-references), and nothing
+// is refused or run in the editor.
 import '../engine/tools/v8-pin.mjs';
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import {engineBuilt} from './support/engine-node.mjs';
 import {Editor} from '../src/editor.mjs';
@@ -11,7 +11,9 @@ import {createFrame, createObject, defaultFigure, emptyDocument} from '../src/de
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {bothWays, recordedDocument} from './support/owned-vs-plain.mjs';
+import {ownerReferences} from './support/owner-references.mjs';
 
+const refs = ownerReferences(import.meta.url);
 const opts = {skip: !engineBuilt};
 /** The clipboard the interface reads, as text with its keys in order (the owned editor's mirror lists them differently). */
 const clipboardText = editor => JSON.stringify(editor._selectionClipboard, (key, value) => {
@@ -19,12 +21,12 @@ const clipboardText = editor => JSON.stringify(editor._selectionClipboard, (key,
   return value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : 1)) : value;
 });
 
-test('copying, cutting or duplicating a selected branch makes a figure of its own', opts, async () => {
+refs.test('copying, cutting or duplicating a selected branch makes a figure of its own', opts, async take => {
   for (const [name, uid, joint] of [['origin-join-layout-sheet', 1, 0], ['origin-join-layout-sheet', 1, 1], ['sheet-layers', 1, 0], ['sheet-layers', 1, 3], ['sheet-layers', 2, 0], ['branch-thickness-origin-sheet', 1, 3]]) {
     for (const how of ['copy', 'cut', 'duplicate']) {
       // A figure keeps at least one segment: cutting all of them is refused (the same in both editors).
       if (how === 'cut' && [['origin-join-layout-sheet', 0], ['sheet-layers', 0], ['sheet-layers', 2]].some(([n, j]) => n === name && j === joint && uid !== 3)) continue;
-      const {owned} = await bothWays(recordedDocument(name), editor => {
+      const {owned} = await bothWays(take, recordedDocument(name), editor => {
         const before = editor.report.figure_types.length;
         editor.selectBranch(uid, joint);
         const count = how === 'cut' ? editor.cutSelection() : how === 'copy' ? editor.copySelection() : editor.duplicateSelection().length;
@@ -41,12 +43,12 @@ test('copying, cutting or duplicating a selected branch makes a figure of its ow
   }
 });
 
-test('a branch whose face is drawn from joints outside it cannot be copied alone', opts, async () => {
+refs.test('a branch whose face is drawn from joints outside it cannot be copied alone', opts, async take => {
   const document = recordedDocument('origin-join-layout-sheet');
   const [fill] = document.figure_types[0].polyfills;
   fill.segment_ids = fill.segment_ids_raw = [44, 55, 66];
   fill._stykSurface.basis = [44, 55, 33];
-  const {owned} = await bothWays(document, editor => {
+  const {owned} = await bothWays(take, document, editor => {
     editor.selectBranch(1, 3);
     try { editor.copySelection(); } catch (error) { return error.messageKey; }
     return 'copied';
@@ -54,11 +56,11 @@ test('a branch whose face is drawn from joints outside it cannot be copied alone
   assert.equal(owned.result, 'errors.editorSelection.copyTheWholeFigureToIncludeItsFace');
 });
 
-test('the effects of a copied branch go with it to its new definition', opts, async () => {
+refs.test('the effects of a copied branch go with it to its new definition', opts, async take => {
   const document = recordedDocument('figure-vfx');
   // The figure's pinned limbs name joints the branch may not hold: the editor refuses to paste those.
   for (const frame of document.keyframes) for (const object of frame.objects) delete object._stykIK;
-  const {owned} = await bothWays(document, editor => {
+  const {owned} = await bothWays(take, document, editor => {
     // Effects are kept on a handle ("<definition>/<handle>", "*/<handle>") or on the whole figure.
     const [object] = editor.evaluatedFrame.objects;
     const figure = editor.report.figure_types.find(type => type.figure_type_id === object.figure_type_id);
@@ -74,19 +76,20 @@ test('the effects of a copied branch go with it to its new definition', opts, as
 });
 
 /** The file of two examples joined into one assembly (as a file holds it): the second hangs from `handle` of the first. */
-function assembly(first, second, handle, tune = () => {}) {
-  const editor = new Editor({demo: false});
-  editor.load(rigExampleDocument(first));
-  const child = editor.importFigure(rigExampleDocument(second));
-  editor.select(child.unique_id);
-  editor.joinFigure(1, handle);
-  tune(editor, child.unique_id);
-  return editor.serialize();
+function assembly(take, first, second, handle) {
+  return take(`assembly ${first} ${second}`, () => {
+    const editor = new Editor({demo: false});
+    editor.load(rigExampleDocument(first));
+    const child = editor.importFigure(rigExampleDocument(second));
+    editor.select(child.unique_id);
+    editor.joinFigure(1, handle);
+    return editor.serialize();
+  });
 }
 
-test('combining joined figures keeps their rig relationships', opts, async () => {
-  const document = assembly('articulated-piston', 'sliding-carriage', 3);
-  const {owned} = await bothWays(document, editor => {
+refs.test('combining joined figures keeps their rig relationships', opts, async take => {
+  const document = assembly(take, 'articulated-piston', 'sliding-carriage', 3);
+  const {owned} = await bothWays(take, document, editor => {
     editor.select(1);
     const combined = editor.combineJoinedFigure(1);
     assert.equal(editor.undoLabel, 'Combine joined figures');
@@ -96,9 +99,9 @@ test('combining joined figures keeps their rig relationships', opts, async () =>
   assert.equal(owned.result, 1);
 });
 
-test('combining joined figures keeps the faces drawn from joints and their paint order', opts, async () => {
-  const document = assembly('solid-cylinder-3d', 'solid-gem-3d', 0);
-  await bothWays(document, editor => {
+refs.test('combining joined figures keeps the faces drawn from joints and their paint order', opts, async take => {
+  const document = assembly(take, 'solid-cylinder-3d', 'solid-gem-3d', 0);
+  await bothWays(take, document, editor => {
     editor.select(1, -1);
     editor.combineJoinedFigure();
     assert.ok(editor.figure.polyfills.some(fill => fill._stykSurface), 'the faces kept their surfaces');
@@ -106,7 +109,7 @@ test('combining joined figures keeps the faces drawn from joints and their paint
   }, {expectEntries: 1});
 });
 
-test('combining joined figures draws pinned limbs as they stand and keeps colour transitions', opts, async () => {
+refs.test('combining joined figures draws pinned limbs as they stand and keeps colour transitions', opts, async take => {
   for (const name of ['ik-joined-late', 'ik-joined-unpinned']) {
     const document = recordedDocument(name);
     const root = document.keyframes[0].objects.find(object => !object.join && document.keyframes[0].objects.some(other => other.join?.target_object_slot === object.object_slot));
@@ -114,7 +117,7 @@ test('combining joined figures draws pinned limbs as they stand and keeps colour
     const withTransition = structuredClone(document);
     withTransition.keyframes[0].objects.find(object => object.unique_id === root.unique_id).color_transition = {from: 0xff112233, to: 0xff223344, t: 0.5};
     for (const source of [document, withTransition]) {
-      await bothWays(source, editor => {
+      await bothWays(take, source, editor => {
         editor.select(root.unique_id);
         editor.combineJoinedFigure(root.unique_id);
         assert.equal(editor.undoLabel, 'Combine joined figures');
@@ -124,23 +127,25 @@ test('combining joined figures draws pinned limbs as they stand and keeps colour
 });
 
 /** A document of "sprite-segment-sparse-native" with its media figure (3) joined to the end of a limb of figure 1. */
-function mediaAssembly(tune = () => {}) {
-  const source = recordedDocument('sprite-segment-sparse-native');
-  tune(source);
-  const editor = new Editor({demo: false}).load(source);
-  editor.select(3);
-  editor.joinFigure(1, 33);
-  return editor.serialize();
+function mediaAssembly(take, what, tune = () => {}) {
+  return take(`media assembly ${what}`, () => {
+    const source = recordedDocument('sprite-segment-sparse-native');
+    tune(source);
+    const editor = new Editor({demo: false}).load(source);
+    editor.select(3);
+    editor.joinFigure(1, 33);
+    return editor.serialize();
+  });
 }
 
-test('combining joined figures moves their images and text into the new figure', opts, async () => {
-  const texts = mediaAssembly(source => {
+refs.test('combining joined figures moves their images and text into the new figure', opts, async take => {
+  const texts = mediaAssembly(take, 'text', source => {
     // The same figure, drawing its text instead of its picture.
     const [segment] = source.figure_types[2].segments;
     Object.assign(segment, {primitive_code: 5, flags: 261, segment_type: 'text', segment_kind: 'text'});
   });
-  for (const [what, document, table] of [['an image', mediaAssembly(), 'image_assets'], ['text', texts, 'text_assets']]) {
-    const {owned} = await bothWays(document, editor => {
+  for (const [what, document, table] of [['an image', mediaAssembly(take, 'image'), 'image_assets'], ['text', texts, 'text_assets']]) {
+    const {owned} = await bothWays(take, document, editor => {
       editor.select(1);
       editor.combineJoinedFigure(1);
       assert.equal(editor.figure[table].length, 1, `${what} came along`);
@@ -152,9 +157,9 @@ test('combining joined figures moves their images and text into the new figure',
   }
 });
 
-test('a segment of an animation-origin figure is disconnected unless it holds the origin', opts, async () => {
+refs.test('a segment of an animation-origin figure is disconnected unless it holds the origin', opts, async take => {
   const document = recordedDocument('origin-join-layout-sheet');
-  const {owned} = await bothWays(document, editor => {
+  const {owned} = await bothWays(take, document, editor => {
     editor.select(1, 2);
     editor.disconnectSegment();
     assert.equal(editor.undoLabel, 'Disconnect segment');
@@ -162,7 +167,7 @@ test('a segment of an animation-origin figure is disconnected unless it holds th
     return editor.report.figure_types.filter(figure => figure._styk?.animationOrigin).length;
   }, {expectEntries: 1});
   assert.equal(owned.result, 2, 'both figures with an origin keep it');
-  const {owned: refused} = await bothWays(document, editor => {
+  const {owned: refused} = await bothWays(take, document, editor => {
     editor.select(1, 0);
     try { editor.disconnectSegment(); } catch (error) { return error.messageKey; }
     return 'disconnected';
@@ -195,11 +200,11 @@ function headClip(kind) {
   return {document: {...emptyDocument(), figure_types: [body, head], keyframes: [createFrame([figure, clip])]}, handle};
 }
 
-test('breaking apart a movieclip of 3D meshes or turning drawings makes the figures it shows', opts, async () => {
+refs.test('breaking apart a movieclip of 3D meshes or turning drawings makes the figures it shows', opts, async take => {
   for (const kind of ['mesh', 'drawings']) {
     const {document, handle} = headClip(kind);
     for (const pose of [{}, {turn: 135 * Math.PI / 180, pitch: -35 * Math.PI / 180, bend: 25 * Math.PI / 180}]) {
-      const {owned} = await bothWays(document, async editor => {
+      const {owned} = await bothWays(take, document, async editor => {
         editor.select(1, handle - 1);
         if (pose.turn !== undefined) editor.setSpatialPose(pose);
         editor.select(2);
@@ -212,7 +217,7 @@ test('breaking apart a movieclip of 3D meshes or turning drawings makes the figu
   }
 });
 
-test('breaking apart a movieclip that holds a joined mesh or turning drawings places them on their bone', opts, async () => {
+refs.test('breaking apart a movieclip that holds a joined mesh or turning drawings places them on their bone', opts, async take => {
   for (const kind of ['mesh', 'drawings']) {
     const {document: inner, handle} = headClip(kind);
     // The head turned a quarter and bent, inside a clip of its own.
@@ -221,7 +226,7 @@ test('breaking apart a movieclip that holds a joined mesh or turning drawings pl
     const outer = movieclipFigure(10, 'Outer', inner, {duration: 1, pivot: {x: 0, y: 0}});
     const body = defaultFigure(1);
     const document = {...emptyDocument(), figure_types: [body, outer], keyframes: [createFrame([createObject(body, 1, 100, 100), createObject(outer, 2, 300, 200, {_stykMovieclip: {mode: 'single', offset: 0}})])]};
-    const {owned} = await bothWays(document, async editor => {
+    const {owned} = await bothWays(take, document, async editor => {
       editor.select(2);
       await editor.breakApartMovieclip();
       return editor.report.figure_types.length;

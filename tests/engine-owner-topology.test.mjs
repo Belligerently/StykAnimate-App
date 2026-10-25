@@ -1,7 +1,7 @@
 // The builder and topology calls the engine session used to refuse (and the editor then ran) run in the session
-// under the owner (D19): each is run on an editor the engine owns and on a plain editor on the same repository
-// document, and the two must end alike at every step, in the error a refused edit shows, and through undo and redo.
-// Nothing is refused and nothing runs in the editor.
+// under the owner (D19): each is run on an editor the engine owns, and must end as a plain editor did on the same repository
+// document (the frozen references of tests/support/owner-references.mjs) at every step, in the error a refused edit shows,
+// and through undo and redo. Nothing is refused and nothing runs in the editor.
 import '../engine/tools/v8-pin.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,8 +11,10 @@ import {createImageFigure} from '../src/media-authoring.mjs';
 import {createFrame, createObject, emptyDocument} from '../src/demo.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditorSync} from './support/owned-editor.mjs';
+import {canonical, ownerReferences} from './support/owner-references.mjs';
 import {buildRotatingCube} from './helpers/rotating-cube.mjs';
 
+const refs = ownerReferences(import.meta.url);
 const SHEET = {demo: false, layerTimeline: true, propertyChannels: true};
 const NATIVE = {demo: false};
 const read = path => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -30,7 +32,7 @@ const at = (editor, handle) => editor.select(editor.selectedUid, jointOf(editor,
 const selection = editor => JSON.stringify({uids: [...editor.selectedUids], uid: editor.selectedUid, joint: editor.selectedJoint,
   polygon: editor.selectedPolygonIndex, segments: [...editor.selectedSegmentIds], branch: editor.branchSelected});
 
-/** One run of `script` on an editor: its document and history label after every call, what each returned or raised,
+/** One run of `script` on an editor (the plain one only when its references are recorded): its document and history label after every call, what each returned or raised,
  * and the document after every undo and redo. */
 async function trace({options, document, owned, script}) {
   const made = owned ? ownedEditorSync(options, document, {recorded: false}) : null;
@@ -50,13 +52,13 @@ async function trace({options, document, owned, script}) {
   } finally { made?.owner.release(); }
 }
 
-/** The script on a plain editor and on an owned one: the same steps, nothing refused, nothing run in the editor
+/** The script on an owned editor, and what a plain editor gave for it (its references): the same steps, nothing refused, nothing run in the editor
  * (but `refusing`, the refusals the test expects, and `alsoInEditor` more calls the editor runs because of them).
  * Returns the steps by name for the test to say what the calls did. */
-async function same(options, document, script, refusing = {}, alsoInEditor = 0) {
-  const plain = await trace({options, document, owned: false, script});
+async function same(take, options, document, script, refusing = {}, alsoInEditor = 0) {
+  const plain = {steps: await take('plain', async () => (await trace({options, document, owned: false, script})).steps)};
   const owned = await trace({options, document, owned: true, script});
-  assert.deepEqual(owned.steps, plain.steps);
+  assert.deepEqual(canonical(owned.steps), plain.steps);
   assert.deepEqual(owned.refused, refusing, 'the session refused what is expected');
   assert.equal(owned.fallback, Object.values(refusing).reduce((total, count) => total + count, alsoInEditor), 'only the refused calls ran in the editor');
   const named = {};
@@ -64,10 +66,10 @@ async function same(options, document, script, refusing = {}, alsoInEditor = 0) 
   return named;
 }
 
-/** The rotating cube, a rigged figure with connectors, stretch drivers and six faces, on the layer sheet. */
-function cube() {
-  const builder = new Editor(NATIVE), q = buildRotatingCube(builder);
-  return {document: structuredClone(builder.report), q};
+/** The rotating cube, a rigged figure with connectors, stretch drivers and six faces, on the layer sheet (built by a plain editor, once: its reference). */
+async function cube(take) {
+  const built = await take('cube', () => { const builder = new Editor(NATIVE), q = buildRotatingCube(builder); return {document: JSON.stringify(builder.report), q}; });
+  return {document: JSON.parse(built.document), q: built.q};
 }
 
 /** The default figure with three poses and a second figure joined to its hand. */
@@ -86,9 +88,9 @@ function walker() {
   return report;
 }
 
-test('Smart Stretch on a connector measures the span it is drawn across', {skip: !engineBuilt}, async () => {
-  const {document, q} = cube();
-  const steps = await same(SHEET, document, (editor, call) => {
+refs.test('Smart Stretch on a connector measures the span it is drawn across', {skip: !engineBuilt}, async take => {
+  const {document, q} = await cube(take);
+  const steps = await same(take, SHEET, document, (editor, call) => {
     at(editor, q.edges[0]);
     call('enableSmartStretch', () => editor.enableSmartStretch(true));
     call('disable', () => editor.enableSmartStretch(false));
@@ -99,9 +101,9 @@ test('Smart Stretch on a connector measures the span it is drawn across', {skip:
   assert.equal(steps.enableSmartStretch[0].undo, 'Enable Smart Stretch');
 });
 
-test('a stroke drawn into a rigged figure is stored in the space its parent is drawn in', {skip: !engineBuilt}, async () => {
-  const {document, q} = cube();
-  const steps = await same(SHEET, document, (editor, call) => {
+refs.test('a stroke drawn into a rigged figure is stored in the space its parent is drawn in', {skip: !engineBuilt}, async take => {
+  const {document, q} = await cube(take);
+  const steps = await same(take, SHEET, document, (editor, call) => {
     at(editor, q.top[0]);
     call('addSegment', () => editor.addSegment({length: 30, angle: 0.4}));
     call('addSegments', () => editor.addSegments([{length: 20, angle: 0.1}, {length: 12, angle: -0.6, thickness: 4}]));
@@ -111,9 +113,9 @@ test('a stroke drawn into a rigged figure is stored in the space its parent is d
   assert.ok(steps.addSegment.every(step => step.changed && !step.error) && steps.addSegments[0].changed);
 });
 
-test('a face visibility surface is checked against the joints on show and stored with the polygon', {skip: !engineBuilt}, async () => {
-  const {document, q} = cube();
-  const steps = await same(SHEET, document, (editor, call) => {
+refs.test('a face visibility surface is checked against the joints on show and stored with the polygon', {skip: !engineBuilt}, async take => {
+  const {document, q} = await cube(take);
+  const steps = await same(take, SHEET, document, (editor, call) => {
     call('back', () => editor.updatePolygon(0, {surface: {basis: q.basis, side: 'back'}}));
     call('flipped', () => editor.updatePolygon(0, {surface: {basis: q.basis, side: 'back', flipped: true}}));
     call('depth', () => editor.updatePolygon(1, {surface: {basis: q.basis, depth: [q.depth]}}));
@@ -127,9 +129,9 @@ test('a face visibility surface is checked against the joints on show and stored
   for (const name of ['missing', 'repeated', 'side', 'flat', 'depthTest']) assert.ok(steps[name][0].error, `${name} is refused with the editor's message`);
 });
 
-test('a sprite attaches to a joint of a rigged figure', {skip: !engineBuilt}, async () => {
-  const {document, q} = cube();
-  const steps = await same(SHEET, document, (editor, call) => {
+refs.test('a sprite attaches to a joint of a rigged figure', {skip: !engineBuilt}, async take => {
+  const {document, q} = await cube(take);
+  const steps = await same(take, SHEET, document, (editor, call) => {
     at(editor, q.top[2]);
     call('addSpriteSegment', () => editor.addSpriteSegment(sprite()));
     at(editor, q.turn);
@@ -139,21 +141,21 @@ test('a sprite attaches to a joint of a rigged figure', {skip: !engineBuilt}, as
   assert.equal(steps.addSpriteSegment[0].undo, 'Add sprite segment');
 });
 
-test('a sprite attached over a pose that only holds derived lengths keeps them', {skip: !engineBuilt}, async () => {
+refs.test('a sprite attached over a pose that only holds derived lengths keeps them', {skip: !engineBuilt}, async take => {
   const report = walker();
   for (const frame of report.keyframes) {
     const object = frame.objects[0], figure = report.figure_types[0];
     object.runtime_segments = figure.segments.map((segment, index) => ({angle_rad: object.angles[index], length: segment.length + 7, bend_rad: 0.15}));
   }
-  const steps = await same(SHEET, report, (editor, call) => {
+  const steps = await same(take, SHEET, report, (editor, call) => {
     editor.select(1, 3);
     call('addSpriteSegment', () => editor.addSpriteSegment(sprite()));
   });
   assert.ok(steps.addSpriteSegment[0].changed && !steps.addSpriteSegment[0].error);
 });
 
-test('deleting segments named by a Set of selected joints', {skip: !engineBuilt}, async () => {
-  const steps = await same(SHEET, walker(), (editor, call) => {
+refs.test('deleting segments named by a Set of selected joints', {skip: !engineBuilt}, async take => {
+  const steps = await same(take, SHEET, walker(), (editor, call) => {
     editor.select(1, 2);
     call('delete one', () => editor.deleteSegment({handleIds: editor.selectedSegmentIds, branch: false}));
     editor.select(1, 1); editor.toggleSegment(1, 4); editor.toggleSegment(1, 5);
@@ -166,9 +168,9 @@ test('deleting segments named by a Set of selected joints', {skip: !engineBuilt}
   assert.equal(steps['delete several'][0].undo, 'Delete selected segments');
 });
 
-test('a 3D mesh stays valid through topology edits and keeps the joints it is bound to', {skip: !engineBuilt}, async () => {
+refs.test('a 3D mesh stays valid through topology edits and keeps the joints it is bound to', {skip: !engineBuilt}, async take => {
   const document = read('../engine/crates/styk-eval/tests/fixtures/spatial/mesh-sheet.json');
-  const steps = await same(SHEET, document, (editor, call) => {
+  const steps = await same(take, SHEET, document, (editor, call) => {
     editor.select(1, 0);
     call('add', () => editor.addSegment({parentId: 0, length: 40, angle: 0.3}));
     call('delete single', () => editor.deleteSingleSegment());
@@ -194,7 +196,7 @@ test('a 3D mesh stays valid through topology edits and keeps the joints it is bo
     assert.equal(steps[name][0].error, 'errors.surfaces.thisJointMovesOrOrientsThe3dMesh', name);
 });
 
-test('topology edits of a figure with pose choices are validated with them', {skip: !engineBuilt}, async () => {
+refs.test('topology edits of a figure with pose choices are validated with them', {skip: !engineBuilt}, async take => {
   const document = read('../engine/tests/edit/ik-spatial-free.document.json');
   const figure = document.figure_types[0], bones = figure.segments.filter(segment => segment._stykRig?.spatial?.origin);
   figure._styk = {...figure._styk, poseChoices: [{name: 'Hand', choices: [
@@ -203,7 +205,7 @@ test('topology edits of a figure with pose choices are validated with them', {sk
   ]}]};
   const hidden = figure.segments.find(segment => segment._stykRig?.spatial?.origin && segment.length > 0 && segment.segment_id !== bones[1].segment_id);
   hidden._stykPoseChoice = {group: 'Mouth', label: 'Wide', shown: hidden.length, hidden: 0};
-  const steps = await same(SHEET, document, (editor, call) => {
+  const steps = await same(take, SHEET, document, (editor, call) => {
     editor.select(1, 0);
     call('add', () => editor.addSegment({parentId: 0, length: 33, angle: 0.2}));
     call('add chain', () => editor.addSegments([{length: 10, angle: 0.1}, {length: 12, angle: 0.5}]));
@@ -218,10 +220,10 @@ test('topology edits of a figure with pose choices are validated with them', {sk
   assert.ok(steps['delete choice bone'][0].error, 'a pose choice needs the bone it names');
 });
 
-test('duplicating a 3D joint renames the joints its rig names to the copies', {skip: !engineBuilt}, async () => {
+refs.test('duplicating a 3D joint renames the joints its rig names to the copies', {skip: !engineBuilt}, async take => {
   const document = read('../engine/tests/edit/ik-spatial-free.document.json');
   const bone = document.figure_types[0].segments.find(segment => segment._stykRig?.spatial?.origin && segment.parent_id === 7).segment_id;
-  const steps = await same(SHEET, document, (editor, call) => {
+  const steps = await same(take, SHEET, document, (editor, call) => {
     at(editor, 7);
     call('duplicate', () => editor.duplicateSegment({angleOffset: 0.3}));
     at(editor, 7);
@@ -232,9 +234,9 @@ test('duplicating a 3D joint renames the joints its rig names to the copies', {s
   assert.ok(steps.duplicate[0].changed && steps['duplicate branch'][0].changed);
 });
 
-test('the controllers of figures joined to an edited figure follow its handles', {skip: !engineBuilt}, async () => {
+refs.test('the controllers of figures joined to an edited figure follow its handles', {skip: !engineBuilt}, async take => {
   const document = read('../engine/crates/styk-eval/tests/fixtures/ik/joined.json');
-  const steps = await same(SHEET, document, (editor, call) => {
+  const steps = await same(take, SHEET, document, (editor, call) => {
     editor.select(3, 0);
     call('switch on', () => editor.setNodeIK({enabled: true}));
     editor.select(1, 0);
@@ -256,20 +258,22 @@ test('the controllers of figures joined to an edited figure follow its handles',
   assert.ok(first['22']?.chainLength >= 1 && first['22'].followers, 'the controller of the joined figure is still there');
 });
 
-/** The default figure with a saved animation of one segment's opacity (the baseline an imported file brings). */
-function animated() {
-  const builder = new Editor({demo: false, propertyChannels: true}).load(walker());
-  builder.select(1, 4);
-  const target = {kind: 'segment', uid: 1, handleId: 5};
-  builder.addAnimationKey(target, 'opacity', 0, 1);
-  builder.addAnimationKey(target, 'opacity', 2, 0.25);
-  assert.equal(builder.report._styk.animation.channels.length, 1);
-  return structuredClone(builder.report);
+/** The default figure with a saved animation of one segment's opacity (the baseline an imported file brings), built by a plain editor once: its reference. */
+async function animated(take) {
+  return JSON.parse(await take('animated', () => {
+    const builder = new Editor({demo: false, propertyChannels: true}).load(walker());
+    builder.select(1, 4);
+    const target = {kind: 'segment', uid: 1, handleId: 5};
+    builder.addAnimationKey(target, 'opacity', 0, 1);
+    builder.addAnimationKey(target, 'opacity', 2, 0.25);
+    assert.equal(builder.report._styk.animation.channels.length, 1);
+    return JSON.stringify(builder.report);
+  }));
 }
 
-test('saved channels follow the segment they animate through topology edits', {skip: !engineBuilt}, async () => {
-  const document = animated();
-  const steps = await same(SHEET, document, (editor, call) => {
+refs.test('saved channels follow the segment they animate through topology edits', {skip: !engineBuilt}, async take => {
+  const document = await animated(take);
+  const steps = await same(take, SHEET, document, (editor, call) => {
     const channels = () => editor.report._styk.layerSheet.legacyAnimation.channels.map(channel => [channel.id, channel.keys.map(key => key.id)]);
     call('channels', channels);
     at(editor, 5);
@@ -293,9 +297,9 @@ test('saved channels follow the segment they animate through topology edits', {s
   assert.ok(channels('after split')[1][1].every(key => !channels('channels')[0][1].includes(key)));
 });
 
-test('a fill, several joints or a branch selected do not send the next call to the editor', {skip: !engineBuilt}, async () => {
-  const {document, q} = cube();
-  const steps = await same(SHEET, document, (editor, call) => {
+refs.test('a fill, several joints or a branch selected do not send the next call to the editor', {skip: !engineBuilt}, async take => {
+  const {document, q} = await cube(take);
+  const steps = await same(take, SHEET, document, (editor, call) => {
     const uid = editor.selectedUid;
     call('selectPolygon', () => editor.selectPolygon(uid, 2));
     call('recolor', () => editor.updatePolygon(2, {color: '#ff3366'}));
@@ -316,8 +320,8 @@ test('a fill, several joints or a branch selected do not send the next call to t
   for (const name of ['recolor', 'face', 'remove', 'add', 'style', 'bind', 'flip']) assert.ok(steps[name][0].changed || steps[name][0].error, name);
 });
 
-test('flipping, ordering, styling and deleting a selected branch or several joints', {skip: !engineBuilt}, async () => {
-  const steps = await same(SHEET, walker(), (editor, call) => {
+refs.test('flipping, ordering, styling and deleting a selected branch or several joints', {skip: !engineBuilt}, async take => {
+  const steps = await same(take, SHEET, walker(), (editor, call) => {
     // Two forearms chosen with Shift.
     at(editor, 1);
     call('stretch driver', () => editor.enableSmartStretch(true));
@@ -347,8 +351,8 @@ test('flipping, ordering, styling and deleting a selected branch or several join
   assert.equal(steps['delete leg'][0].undo, 'Delete segment branches');
 });
 
-test('copying a selected branch hands the clipboard a definition of its own, and the session pastes it', {skip: !engineBuilt}, async () => {
-  const steps = await same(SHEET, walker(), (editor, call) => {
+refs.test('copying a selected branch hands the clipboard a definition of its own, and the session pastes it', {skip: !engineBuilt}, async take => {
+  const steps = await same(take, SHEET, walker(), (editor, call) => {
     call('select', () => editor.selectBranch(1, 4));
     call('copy', () => editor.copySelection());
     // The branch is extracted as a definition of its own, which pastes as a new one.
@@ -361,13 +365,13 @@ test('copying a selected branch hands the clipboard a definition of its own, and
   for (const name of ['paste', 'duplicate', 'cut']) assert.ok(steps[name][0].changed && !steps[name][0].error, name);
 });
 
-test('topology edits of poses that only hold derived lengths keep them', {skip: !engineBuilt}, async () => {
+refs.test('topology edits of poses that only hold derived lengths keep them', {skip: !engineBuilt}, async take => {
   const report = walker();
   for (const frame of report.keyframes) {
     const object = frame.objects[0], figure = report.figure_types[0];
     object.runtime_segments = figure.segments.map((segment, index) => ({angle_rad: object.angles[index], length: segment.length + 7, bend_rad: 0.15}));
   }
-  const steps = await same(SHEET, report, (editor, call) => {
+  const steps = await same(take, SHEET, report, (editor, call) => {
     editor.select(1, 3);
     call('duplicate', () => editor.duplicateSegment({angleOffset: 0.2}));
     editor.select(1, 3);

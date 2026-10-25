@@ -432,8 +432,8 @@ write. A property key is composed by the evaluator with the pivots corrected. A 
 exact pivot it holds, and a command that only copies, moves in time or lists poses keeps them as they are. Only an
 origin figure the pivots cannot follow makes a call run in the editor (`origin_component_gate`): one with a 3D pose, a
 mesh, a movieclip or a drawing, a 2D rig that does not validate, or an origin that does not decode or lost its pivot.
-`tests/engine-owner-origins.test.mjs` runs each family on an editor the engine owns and on one it does not, and
-compares the documents, the history labels and undo and redo.
+`tests/engine-owner-origins.test.mjs` runs each family on an editor the engine owns and compares the documents, the
+history labels and undo and redo with the recorded references of an editor it does not own.
 
 A call answers `Unported`, and changes nothing, on documents with property channels on a
 native timeline (a layer sheet's `legacyAnimation`, which every document opened in the app
@@ -745,6 +745,15 @@ compared to the read view after every call. Thirteen tapes end where the engine 
 (`expectedFrontiers`: a bounds callback other than the app's, native documents with property channels); none needs
 the editor to run a call. `tests/engine-owner-gestures.test.mjs` states what the interface reads of the duplicate
 drag, the tweener, grouped edits, working frames, audio and the calls that run in the editor.
+The other owner tests that compare an owned editor with an editor alone
+(`engine-owner-{clipboard-ports,clipboards,drawing,misc,movieclip-ports,movieclip-scope,origins,refusals,topology}`,
+the gesture and edit pairs of `engine-owner.test.mjs`, `engine-edit-selection-metadata`, and the documents
+`camera-follow`, `camera-motion` and `movieclip-extend` build with a plain editor) compare it with frozen
+references: `tests/fixtures/owner-references/<test file>.json`, the documents, history labels, answers, depths and
+dirty state each test compares, recorded from the plain editor by `node engine/tools/owner-reference-fixtures.mjs`
+(`tests/support/owner-references.mjs`: a test takes each reference in order with `take(label, produce)`; replaying
+returns the recorded value and never runs `produce`). They are an oracle as the tapes are: regenerate them only when
+the contract a test states changes, never to make a comparison pass. Regenerating gives the same bytes.
 Known differences: the frame on show may lack the derived `object_count` the editor's
 caches sometimes keep, the internal `layerRevision` cache key can differ by one around
 source pruning, and the display frame of a saved origin motion on a native document differs from the editor's

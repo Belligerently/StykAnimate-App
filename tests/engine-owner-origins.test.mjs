@@ -1,13 +1,16 @@
 // Commands on a document with animation origins run in the engine session (docs/engine/editing.md): they leave the
-// document, the history labels and what undo and redo give back exactly as the editor alone does, and the session
-// refuses none of them. Each case runs the same calls on an editor the engine owns and on one it does not.
+// document, the history labels and what undo and redo give back exactly as the editor alone gave (the frozen references of
+// tests/support/owner-references.mjs), and the session refuses none of them. Each case runs the same calls on an editor the
+// engine owns and compares them with what an editor it does not own gave.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
+import {canonical, ownerReferences} from './support/owner-references.mjs';
 
+const refs = ownerReferences(import.meta.url);
 const folder = new URL('../engine/tests/edit/', import.meta.url);
 const OPTIONS = {demo: false, layerTimeline: true, propertyChannels: true};
 const fixture = name => JSON.parse(readFileSync(new URL(`${name}.document.json`, folder), 'utf8'));
@@ -37,12 +40,13 @@ async function trace(document, steps, owned, digits) {
   } finally { owner?.release(); }
 }
 
-/** The steps give the same document, answers and history in both editors, and the session takes every call.
+/** The steps give the same document, answers and history in the owned editor as the references of an editor alone, and the session takes every call.
  * `digits`: numbers are compared to that many digits, where an IK solution may differ in its last bits between the two solvers. */
-async function agree(document, steps, {digits} = {}) {
-  const alone = await trace(document, steps, false, digits), owned = await trace(document, steps, true, digits);
-  assert.equal(owned.kept.length, alone.kept.length);
-  alone.kept.forEach((entry, at) => assert.deepEqual(owned.kept[at], entry, `step ${at} (${entry.label ?? 'start'})`));
+async function agree(take, document, steps, {digits} = {}) {
+  const alone = await take('alone', async () => { const {kept, depth} = await trace(document, steps, false, digits); return {kept, depth}; });
+  const owned = await trace(document, steps, true, digits), ownedKept = canonical(owned.kept);
+  assert.equal(ownedKept.length, alone.kept.length);
+  alone.kept.forEach((entry, at) => assert.deepEqual(ownedKept[at], entry, `step ${at} (${entry.label ?? 'start'})`));
   assert.deepEqual(owned.refused, [], 'the session refused a call');
   assert.ok(alone.depth > 0, 'the steps changed the document');
   return alone;
@@ -56,8 +60,8 @@ const scrub = (target, property, value) => editor => {
   return editor.commitAnimationEdit();
 };
 
-test('layers, palette, project, camera and scene commands run in the session on an origin document', {skip: !engineBuilt}, async () => {
-  await agree(originDocument(), [
+refs.test('layers, palette, project, camera and scene commands run in the session on an origin document', {skip: !engineBuilt}, async take => {
+  await agree(take, originDocument(), [
     ['addPaletteColor', '#12ab34'], ['addPaletteColors', ['#223344', '#ff0000']], ['movePaletteColor', '#223344', 0], ['removePaletteColor', '#12ab34'],
     ['createLayer', 'Extra'], ['renameLayer', 'layer-1', '  Hero  '], ['setLayerColor', ['layer-1'], 'violet'], ['setLayerVisible', 'layer-1', false],
     ['setLayerVisible', 'layer-1', true], ['setLayerLocked', 'layer-1', true], ['setLayerLocked', 'layer-1', false], ['createLayerFolder', 'Group', ['layer-1']],
@@ -68,8 +72,8 @@ test('layers, palette, project, camera and scene commands run in the session on 
   ]);
 });
 
-test('frame timing and keys run in the session on an origin document', {skip: !engineBuilt}, async () => {
-  await agree(originDocument(), [
+refs.test('frame timing and keys run in the session on an origin document', {skip: !engineBuilt}, async take => {
+  await agree(take, originDocument(), [
     ['seek', 2], ['sheetDuplicateFrameAfter'], ['sheetInsertFrames', ['layer-1'], 2, 2], ['sheetSetDuration', 3], ['sheetAppendFrame'],
     ['sheetInsertKey', ['layer-1'], 4], ['sheetSetEasing', ['layer-1'], 0, 4, {interpolation: 'hold'}], ['sheetClearKeys', ['layer-1'], 4, 4],
     ['sheetRemoveFrames', ['layer-1'], 1, 1], ['sheetClearFrames', ['layer-1'], 5, 5],
@@ -77,8 +81,8 @@ test('frame timing and keys run in the session on an origin document', {skip: !e
   ]);
 });
 
-test('figures are edited, copied and removed in the session; the pivots follow where they now stand', {skip: !engineBuilt}, async () => {
-  await agree(originDocument(), [
+refs.test('figures are edited, copied and removed in the session; the pivots follow where they now stand', {skip: !engineBuilt}, async take => {
+  await agree(take, originDocument(), [
     ['select', 1, -1], ['updateObject', {scale: 1.5}], ['updateObject', {root_x: 300, root_y: 210}], ['duplicateFigure'],
     ['select', 1, -1], ['copySelection'], ['pasteSelection', {offset: 12}], ['duplicateSelection', {offset: 10}],
     ['select', 1, 2], ['nudgeHandle', 5, -3], ['setSegmentValues', {angle: 45}],
@@ -88,14 +92,14 @@ test('figures are edited, copied and removed in the session; the pivots follow w
   ]);
 });
 
-test('a flip of a branch of an origin figure runs in the session', {skip: !engineBuilt}, async () => {
-  await agree(originDocument(), [
+refs.test('a flip of a branch of an origin figure runs in the session', {skip: !engineBuilt}, async take => {
+  await agree(take, originDocument(), [
     ['select', 1, 2], ['mirrorSelection', 'horizontal'], ['mirrorFigure', 'vertical'], ['select', 2, 3], ['mirrorSelection', 'vertical'], ['select', 1, -1], ['mirrorFigure', 'horizontal'],
   ]);
 });
 
-test('rig relationships and IK limbs of origin figures are posed in the session', {skip: !engineBuilt}, async () => {
-  await agree(fixture('origin-rig-pose-support-sheet'), [
+refs.test('rig relationships and IK limbs of origin figures are posed in the session', {skip: !engineBuilt}, async take => {
+  await agree(take, fixture('origin-rig-pose-support-sheet'), [
     ['seek', 4], ['select', 2, 4], ['setNodeIK', {enabled: true, chainLength: 3}],
     ['select', 1, 2], ['poseJoint', 233.7, 228.35, {stretch: true, snap: false}], ['rotateJoint', 0.23], ['bendJoint', 241.9, 227.2, {stretch: true, snap: false}],
     ['select', 1, 3], ['poseJoint', 325, 270, {stretch: true, snap: false}], ['select', 1, 5], ['slideConnector', 272.7, 264.3], ['setConnectorPosition', 0.75],
@@ -103,23 +107,23 @@ test('rig relationships and IK limbs of origin figures are posed in the session'
   ], {digits: 9});
 });
 
-test('the Rig tool edits the relationships of an origin figure in the session', {skip: !engineBuilt}, async () => {
-  await agree(fixture('origin-rig-pose-support-sheet'), [
+refs.test('the Rig tool edits the relationships of an origin figure in the session', {skip: !engineBuilt}, async take => {
+  await agree(take, fixture('origin-rig-pose-support-sheet'), [
     ['seek', 3.5], ['select', 1, 2], ['beginRigDrag', {reposition: false}], ['editRigJoint', 266, 210, {stretch: true}], ['commitRigDrag'],
     ['beginRigDrag', {reposition: true}], ['editRigJoint', 290.4, 187.1], ['cancelRigDrag'],
   ]);
 });
 
-test('rig patches and angle locks of origin figures with IK limbs run in the session', {skip: !engineBuilt}, async () => {
-  await agree(fixture('origin-angle-lock-support-sheet'), [
+refs.test('rig patches and angle locks of origin figures with IK limbs run in the session', {skip: !engineBuilt}, async take => {
+  await agree(take, fixture('origin-angle-lock-support-sheet'), [
     ['seek', 3.5], ['select', 2, 4], ['setNodeIK', {enabled: true, chainLength: 2}],
     ['select', 1, 3], ['setRigBehavior', {response: {mode: 'rigid'}}], ['setRigBehavior', {orientation: 'world'}], ['setAngleLock', 'figure'], ['setAngleLock', 'parent'], ['setSecondaryAngleReference', 33], ['setAngleLock', 'off'],
     ['select', 1, 2], ['enableSmartStretch', true], ['setRigBehavior', {stretch: {min: 0.5, width: 'scale'}}], ['enableSmartStretch', false],
   ]);
 });
 
-test('animation keys of every property, the camera and the scene run in the session on an origin document', {skip: !engineBuilt}, async () => {
-  await agree(originDocument(), [
+refs.test('animation keys of every property, the camera and the scene run in the session on an origin document', {skip: !engineBuilt}, async take => {
+  await agree(take, originDocument(), [
     ['select', 1, -1], ['seek', 3],
     scrub({kind: 'figure', uid: 1}, 'opacity', 0.5),
     scrub({kind: 'figure', uid: 1}, 'color', 4281368768),
@@ -133,8 +137,8 @@ test('animation keys of every property, the camera and the scene run in the sess
   ]);
 });
 
-test('pose keys of a figure the frame does not hold, and of a figure it does, run in the session on an origin document', {skip: !engineBuilt}, async () => {
-  await agree(originDocument(), [
+refs.test('pose keys of a figure the frame does not hold, and of a figure it does, run in the session on an origin document', {skip: !engineBuilt}, async take => {
+  await agree(take, originDocument(), [
     ['select', 1, -1],
     ['addAnimationKey', {kind: 'figure', uid: 3}, 'x', 7, 580], ['addAnimationKey', {kind: 'figure', uid: 99}, 'rotation', 4, 0.5],
     ['addAnimationKey', {kind: 'figure', uid: 1}, 'rotation', 4, 0.5], ['addAnimationKeys', [{target: {kind: 'figure', uid: 2}, property: 'x', tick: 6, value: 430}, {target: {kind: 'figure', uid: 1}, property: 'scale', tick: 6, value: 1.2}]],
@@ -143,8 +147,8 @@ test('pose keys of a figure the frame does not hold, and of a figure it does, ru
   ]);
 });
 
-test('the motion path of the camera is edited in the session on an origin document', {skip: !engineBuilt}, async () => {
-  await agree(originDocument(), [
+refs.test('the motion path of the camera is edited in the session on an origin document', {skip: !engineBuilt}, async take => {
+  await agree(take, originDocument(), [
     ['seek', 2], ['select', 1, -1], ['beginTranslationDrag'], ['moveSelection', 4, 3],
     ['beginMotionPathEdit', {kind: 'camera'}, 3], ['updateMotionPathEdit', {x: 420, y: 300}], ['commitMotionPathEdit'],
     ['beginMotionPathEdit', {kind: 'camera'}, 2, {falloff: {radius: 4, shape: 'smooth'}}], ['updateMotionPathEdit', {x: 400, y: 320}], ['commitMotionPathEdit'],
@@ -152,8 +156,8 @@ test('the motion path of the camera is edited in the session on an origin docume
   ]);
 });
 
-test('IK limbs of origin figures are edited across frames in the session', {skip: !engineBuilt}, async () => {
-  await agree(fixture('origin-pose-support-free-sheet'), [
+refs.test('IK limbs of origin figures are edited across frames in the session', {skip: !engineBuilt}, async take => {
+  await agree(take, fixture('origin-pose-support-free-sheet'), [
     ['select', 2, -1], ['unjoinFigure'], ['joinTo', 1, 55], ['select', 1, -1], ['rotateFiguresInFrames', 0.17, [0], {ticks: [0, 4]}], ['mirrorFiguresInFrames', 'horizontal', [0], {ticks: [2]}], ['scaleFiguresInFrames', 1.2, [0], {ticks: [4]}],
     ['centerFiguresInFrames', [0], {ticks: [4]}], ['resetPoseInFrames', [0], {ticks: [2]}], ['updateFiguresInFrames', {opacity: 0.5}, [0]],
     ['select', 2, -1], ['detachFiguresInFrames', [0], {ticks: [0, 2]}], ['joinFiguresInFrames', 1, 55, [0], {ticks: [0]}], ['deleteFiguresInFrames', [0], {ticks: [4]}],
@@ -161,16 +165,16 @@ test('IK limbs of origin figures are edited across frames in the session', {skip
   ], {digits: 9});
 });
 
-test('a pose choice is changed in the session on an origin figure with a joint, several figures or IK', {skip: !engineBuilt}, async () => {
-  await agree(fixture('origin-pose-choice-mixed-support-sheet'), [
+refs.test('a pose choice is changed in the session on an origin figure with a joint, several figures or IK', {skip: !engineBuilt}, async take => {
+  await agree(take, fixture('origin-pose-choice-mixed-support-sheet'), [
     ['seek', 3], ['select', 1, 3], ['setPoseChoice', 'Expression', 2], ['setPoseChoice', 'Eyes', 7],
     ['select', 1, -1], ['setPoseChoice', 'Expression', 1], ['selectMany', [1]], ['setPoseChoice', 'Eyes', 4],
     ['select', 1, 4], ['setNodeIK', {enabled: true, chainLength: 2}], ['setPoseChoice', 'Expression', 2],
   ], {digits: 9});
 });
 
-test('an origin document with saved property channels runs its commands in the session', {skip: !engineBuilt}, async () => {
-  await agree(fixture('origin-channels-saved-layout-sheet'), [
+refs.test('an origin document with saved property channels runs its commands in the session', {skip: !engineBuilt}, async take => {
+  await agree(take, fixture('origin-channels-saved-layout-sheet'), [
     ['addPaletteColor', '#12ab34'], ['createLayer', 'Extra'], ['setFPS', 30], ['setCameraValues', {x: 40}],
     ['seek', 3], ['select', 1, 2], ['beginFigureHandleDrag'], ['transformFigureHandle', 300, 200], ['commitFigureHandleDrag'],
     ['select', 1, 3], ['poseJoint', 330, 260], ['rotateJoint', 0.2], ['updateObject', {scale: 1.2}], ['duplicateFigure'],
@@ -179,19 +183,19 @@ test('an origin document with saved property channels runs its commands in the s
   ], {digits: 9});
 });
 
-test('keys of a figure whose rig appears in a later pose run in the session beside an origin figure', {skip: !engineBuilt}, async () => {
+refs.test('keys of a figure whose rig appears in a later pose run in the session beside an origin figure', {skip: !engineBuilt}, async take => {
   const target = uid => ({kind: 'figure', uid});
-  await agree(fixture('origin-future-rig-sheet'), [['select', 1, -1], ['addAnimationKey', target(3), 'rotation', 8, 0.47], ['addAnimationKeys', [{target: target(3), property: 'rotation', tick: 8, value: 0.31}]], scrub(target(3), 'rotation', 0.2)]);
-  await agree(fixture('origin-future-rig-joined-sheet'), [['select', 1, -1], ['addAnimationKey', target(2), 'x', 8, 410.75], ['addAnimationKeys', [{target: target(2), property: 'x', tick: 8, value: 405}]], ['moveSelectionInFrames', 4.25, -2.125, [1]]]);
-  await agree(fixture('origin-changing-rig-sheet'), [['select', 1, -1], ['addAnimationKey', target(3), 'rotation', 8, 0.47], ['rotateFiguresInFrames', 0.27, [1], {uids: [3], ticks: [8]}]]);
+  await agree(take, fixture('origin-future-rig-sheet'), [['select', 1, -1], ['addAnimationKey', target(3), 'rotation', 8, 0.47], ['addAnimationKeys', [{target: target(3), property: 'rotation', tick: 8, value: 0.31}]], scrub(target(3), 'rotation', 0.2)]);
+  await agree(take, fixture('origin-future-rig-joined-sheet'), [['select', 1, -1], ['addAnimationKey', target(2), 'x', 8, 410.75], ['addAnimationKeys', [{target: target(2), property: 'x', tick: 8, value: 405}]], ['moveSelectionInFrames', 4.25, -2.125, [1]]]);
+  await agree(take, fixture('origin-changing-rig-sheet'), [['select', 1, -1], ['addAnimationKey', target(3), 'rotation', 8, 0.47], ['rotateFiguresInFrames', 0.27, [1], {uids: [3], ticks: [8]}]]);
 });
 
-test('a movieclip holding figures with IK limbs, rigs and origins breaks apart in the session', {skip: !engineBuilt}, async () => {
+refs.test('a movieclip holding figures with IK limbs, rigs and origins breaks apart in the session', {skip: !engineBuilt}, async take => {
   const selectClip = editor => {
     const clip = editor.evaluatedFrame.objects.find(object => editor.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.movieclip);
     editor.select(clip.unique_id, -1);
   };
   const breakApart = [['seek', 2], ['selectMany', [1, 2]], ['createMovieclip', {start: 0, end: 6, replace: true, name: 'Clip'}], ['seek', 3], selectClip, ['breakApartMovieclip']];
-  await agree(fixture('origin-pose-support-pinned-sheet'), breakApart, {digits: 9});
-  await agree(fixture('origin-rig-pose-support-sheet'), breakApart, {digits: 9});
+  await agree(take, fixture('origin-pose-support-pinned-sheet'), breakApart, {digits: 9});
+  await agree(take, fixture('origin-rig-pose-support-sheet'), breakApart, {digits: 9});
 });

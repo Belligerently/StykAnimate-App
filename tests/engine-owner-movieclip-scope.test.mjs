@@ -9,11 +9,13 @@ import {Editor} from '../src/editor.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {bothWays, recordedDocument} from './support/owned-vs-plain.mjs';
+import {canonical, ownerReferences} from './support/owner-references.mjs';
 import {animationChannelId} from '../src/animation-channels.mjs';
 import {normalizeEditorSettings} from '../src/settings.mjs';
 import {OnionController} from '../src/onion-controller.mjs';
 import {MotionTrails} from '../src/motion-path.mjs';
 
+const refs = ownerReferences(import.meta.url);
 const text = editor => JSON.stringify(editor.report, (key, value) => key.startsWith('_') && key !== '_styk' ? undefined : value);
 const documents = ['startup', 'sheet-layers'];
 
@@ -82,10 +84,9 @@ for (const name of documents) {
 // While a movieclip is entered, the history and dirty state shown are the clip's own, as the editor alone shows them (the
 // app once reported unsaved work inside a clip as saved).
 for (const name of documents) {
-  test(`${name}: inside an entered movieclip the history and dirty state are the clip's`, {skip: !engineBuilt}, async () => {
+  refs.test(`${name}: inside an entered movieclip the history and dirty state are the clip's`, {skip: !engineBuilt}, async take => {
     const document = JSON.parse(readFileSync(new URL(`../engine/tests/edit/${name}.document.json`, import.meta.url), 'utf8'));
-    const states = [];
-    for (const owned of [false, true]) {
+    const run = owned => {
       const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(structuredClone(document));
       const owner = owned ? installEngineOwner(editor) : null;
       try {
@@ -96,12 +97,14 @@ for (const name of documents) {
         const entered = [editor.undoLabel, editor.canUndo, editor.dirty];
         editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
         editor.moveSelection(25, 10);
-        states.push({entered, moved: [editor.undoLabel, editor.canUndo, editor.dirty]});
+        const state = {entered, moved: [editor.undoLabel, editor.canUndo, editor.dirty]};
         editor.leaveMovieclip();
+        return state;
       } finally { owner?.release(); }
-    }
-    assert.deepEqual(states[1], states[0]);
-    assert.equal(states[1].moved[2], true, 'a move inside the clip leaves the project with unsaved changes');
+    };
+    const alone = take('alone', () => run(false)), owned = run(true);
+    assert.deepEqual(canonical(owned), alone);
+    assert.equal(owned.moved[2], true, 'a move inside the clip leaves the project with unsaved changes');
   });
 }
 
@@ -120,8 +123,8 @@ const enter = editor => {
 };
 
 for (const name of documents) {
-  test(`${name}: posing a figure in a movieclip, then leaving, undoing and redoing`, {skip: !engineBuilt}, async () => {
-    const {owned} = await bothWays(recordedDocument(name), (editor, mark) => {
+  refs.test(`${name}: posing a figure in a movieclip, then leaving, undoing and redoing`, {skip: !engineBuilt}, async take => {
+    const {owned} = await bothWays(take, recordedDocument(name), (editor, mark) => {
       enter(editor); mark('entered');
       editor.moveSelection(25, 10); mark('moved');
       editor.leaveMovieclip(); mark('left');
@@ -132,8 +135,8 @@ for (const name of documents) {
     assert.equal(at('left').undo, 'Edit movieclip');
   });
 
-  test(`${name}: adding a figure to a movieclip`, {skip: !engineBuilt}, async () => {
-    await bothWays(recordedDocument(name), (editor, mark) => {
+  refs.test(`${name}: adding a figure to a movieclip`, {skip: !engineBuilt}, async take => {
+    await bothWays(take, recordedDocument(name), (editor, mark) => {
       enter(editor);
       const before = editor.evaluatedFrame.objects.length;
       editor.addFigure();
@@ -143,8 +146,8 @@ for (const name of documents) {
     }, {options: sheet, expectEntries: 2});
   });
 
-  test(`${name}: undo and redo inside a movieclip are the clip's, and leaving it keeps what is done`, {skip: !engineBuilt}, async () => {
-    await bothWays(recordedDocument(name), async (editor, mark) => {
+  refs.test(`${name}: undo and redo inside a movieclip are the clip's, and leaving it keeps what is done`, {skip: !engineBuilt}, async take => {
+    await bothWays(take, recordedDocument(name), async (editor, mark) => {
       enter(editor);
       editor.moveSelection(25, 10); mark('moved');
       editor.moveSelection(-5, 3); mark('moved again');
@@ -157,8 +160,8 @@ for (const name of documents) {
     }, {options: sheet, expectEntries: 2});
   });
 
-  test(`${name}: a movieclip left unchanged or discarded leaves no entry`, {skip: !engineBuilt}, async () => {
-    await bothWays(recordedDocument(name), (editor, mark) => {
+  refs.test(`${name}: a movieclip left unchanged or discarded leaves no entry`, {skip: !engineBuilt}, async take => {
+    await bothWays(take, recordedDocument(name), (editor, mark) => {
       editor.select(firstFigure(editor), -1);
       editor.createMovieclip({start: editor.tick, end: editor.tick + 6});
       mark('made');
@@ -169,8 +172,8 @@ for (const name of documents) {
     }, {options: sheet, expectEntries: 1});
   });
 
-  test(`${name}: nested movieclips are edited in their own sessions, one entry each when left`, {skip: !engineBuilt}, async () => {
-    await bothWays(recordedDocument(name), (editor, mark) => {
+  refs.test(`${name}: nested movieclips are edited in their own sessions, one entry each when left`, {skip: !engineBuilt}, async take => {
+    await bothWays(take, recordedDocument(name), (editor, mark) => {
       enter(editor);
       const inner = editor.createMovieclip({start: editor.tick, end: editor.tick + 3});
       mark('inner made');
@@ -238,8 +241,8 @@ for (const [name, edit] of [
   ['deleting a segment', editor => editor.deleteSegment()],
   ['adding a segment', editor => editor.addSegment({length: 20, angle: 0.5})],
 ]) {
-  test(`${name} in a movieclip repairs the poses and animation the clip retains`, {skip: !engineBuilt}, async () => {
-    await bothWays(animatedDocument(), async (editor, mark) => {
+  refs.test(`${name} in a movieclip repairs the poses and animation the clip retains`, {skip: !engineBuilt}, async take => {
+    await bothWays(take, animatedDocument(), async (editor, mark) => {
       enter(editor);
       const retained = () => editor.report._styk.movieclipSource.document;
       const poses = () => JSON.stringify([retained().keyframes, retained()._styk.layerSheet?.legacyAnimation]);
@@ -275,8 +278,8 @@ test('closing a project ends the sessions it holds, those of the movieclips it w
 
 // A movieclip made inside an entered movieclip retains the poses it was made from, which the clip it was made in
 // retains too: those are cut down to the figures the new clip holds, as the editor alone does.
-test('a movieclip made inside another keeps only its own figures in the poses it retains', {skip: !engineBuilt}, async () => {
-  await bothWays(recordedDocument('origin-future-rig-joined-sheet'), (editor, mark) => {
+refs.test('a movieclip made inside another keeps only its own figures in the poses it retains', {skip: !engineBuilt}, async take => {
+  await bothWays(take, recordedDocument('origin-future-rig-joined-sheet'), (editor, mark) => {
     editor.select(firstFigure(editor), -1);
     const clip = editor.createMovieclip({start: 0, end: 4});
     mark('outer made');
