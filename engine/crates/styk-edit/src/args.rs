@@ -6,8 +6,10 @@
 //! - `{"@number": "NaN" | "Infinity" | "-Infinity"}` where the editor was given such a number: decoded to the number, so the
 //!   finite checks refuse it with the editor's own message;
 //! - `{"@undefined": true}` as an object member that was `undefined`: an absent member for every command, except the ones that
-//!   give it a meaning ([`keeps_undefined`]: `setRigBehavior` merges a patch over the rig it edits, and a member set to
-//!   `undefined` removes the old one, as `{...old, ...patch}` followed by JSON does).
+//!   give it a meaning ([`keeps_undefined`]). Those take a patch over a record they edit, and a member set to `undefined` removes the
+//!   old one, as `{...old, ...patch}` or `Object.assign(record, patch)` followed by JSON does: `setRigBehavior` (every member of a
+//!   rig, and the members of a merged one), `updateObject` and `updateSelection` (a figure's field). A command that keeps the marker
+//!   decodes it itself and never stores it (`tests/engine-owner-undefined.test.mjs` sends it to every command).
 
 use styk_doc::{Obj, Value};
 
@@ -16,7 +18,7 @@ const NUMBER: &str = "@number";
 
 /// The commands whose patches give an `undefined` member a meaning (see [`is_undefined`]).
 pub(crate) fn keeps_undefined(method: &str) -> bool {
-    method == "setRigBehavior"
+    matches!(method, "setRigBehavior" | "updateObject" | "updateSelection")
 }
 
 /// Whether `value` is the encoding of an `undefined` object member.
@@ -101,7 +103,7 @@ mod tests {
         let kept = decode(&args, true).item(0).unwrap();
         assert!(is_undefined(kept.get("pitch").unwrap()));
         assert!(is_undefined(kept.get("nested").unwrap().get("x").unwrap()));
-        assert!(keeps_undefined("setRigBehavior") && !keeps_undefined("updateSegment"));
+        assert!(keeps_undefined("setRigBehavior") && keeps_undefined("updateObject") && !keeps_undefined("updateSegment"));
     }
 
     #[test]

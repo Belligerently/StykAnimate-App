@@ -414,6 +414,15 @@ fn command_projection_checked(
             flags(&mut metadata, true, false);
             projection_bytes(&mut metadata, record.is_some(), check)?
         }
+        CommandKind::FigureDiscard { figure_index, figure, frames } => {
+            metadata.set("kind", Value::str("figure-discard"));
+            metadata.set("figureIndex", Value::Num(*figure_index as f64));
+            metadata.set("figure", figure.clone());
+            metadata.set("before", Value::array(frames.iter().map(|frame| frame.before.clone()).collect()));
+            metadata.set("after", Value::array(frames.iter().map(|frame| frame.after.clone()).collect()));
+            flags(&mut metadata, true, false);
+            projection_bytes(&mut metadata, record.is_some(), check)?
+        }
         CommandKind::CameraMotion {
             before,
             after,
@@ -732,7 +741,7 @@ fn command_projection_checked(
             CommandKind::Ranges { .. } => &["kind", "label", "changes", "beforeSelection", "structural", "timing", "afterSelection"],
             // These existing owners retain exact weight support. Full enumerable
             // observation needs their own recorded optional construction fields.
-            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Scene { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::Disconnect { .. } | CommandKind::DrawingPixels { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
+            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::FigureDiscard { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Scene { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::Disconnect { .. } | CommandKind::DrawingPixels { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
         };
         let mut fields = Obj::new();
         for key in order.iter().chain(["layerChanges", "layers", "beforeRevision", "afterRevision"].iter()) {

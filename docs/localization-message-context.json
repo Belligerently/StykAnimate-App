@@ -3479,6 +3479,12 @@
     ],
     "context": "editor.replaceFigureDefinition(this.typeId, clone(this.baselineFigure), {label: interfaceText(\"builderSession.discardFigureEdits\"), labelKey: \"builderSession.di"
   },
+  "builderSession.discardNewFigure": {
+    "locations": [
+      "src/builder-session.mjs:171"
+    ],
+    "context": "this.editor.discardNewFigure(typeId, {label: interfaceText(\"builderSession.discardNewFigure\"), labelKey: \"builderSession.discardNewFigure\"});"
+  },
   "builderSurfaceUi.apply": {
     "locations": [
       "src/builder-surface-ui.mjs:23"
@@ -14982,7 +14988,7 @@
   "errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip": {
     "locations": [
       "src/editor-movieclips.mjs:266",
-      "src/engine/engine-owner.mjs:558"
+      "src/engine/engine-owner.mjs:562"
     ],
     "context": "if(drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), \"errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMoviecl"
   },
@@ -15051,7 +15057,8 @@
   },
   "errors.editorMovieclips.theSceneChangedWhileBakingTryAgain": {
     "locations": [
-      "src/editor-movieclips.mjs:517"
+      "src/editor-movieclips.mjs:517",
+      "src/engine/engine-owner.mjs:621"
     ],
     "context": "if(performance.now()-lastYield>6){await new Promise(resolve=>setTimeout(resolve,0));lastYield=performance.now();if(this.report!==report||this.revision!==revisio"
   },
@@ -15519,14 +15526,14 @@
   },
   "errors.engineOwner.invalidValue": {
     "locations": [
-      "src/engine/engine-owner.mjs:830"
+      "src/engine/engine-owner.mjs:859"
     ],
     "context": "if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error}"
   },
   "errors.engineOwner.notSupported": {
     "locations": [
       "src/engine/engine-owner.mjs:8",
-      "src/engine/engine-owner.mjs:837",
+      "src/engine/engine-owner.mjs:866",
       "src/native-property-edit.mjs:293"
     ],
     "context": "* or has no command for, raises the refusal (`errors.engineOwner.notSupported`, counted in `report.refused`) and changes nothing,"
@@ -16464,33 +16471,21 @@
   },
   "errors.inspectorBindings.canvasDimensionsMustBeWholePixelsBetween1": {
     "locations": [
-      "src/inspector-bindings.mjs:243"
+      "src/inspector-bindings.mjs:183"
     ],
     "context": "throw messageError(new Error(''), \"errors.inspectorBindings.canvasDimensionsMustBeWholePixelsBetween1\", {});"
   },
   "errors.inspectorBindings.enterAFiniteNumber": {
     "locations": [
-      "src/inspector-bindings.mjs:178"
+      "src/inspector-bindings.mjs:139"
     ],
     "context": "if (!Number.isFinite(value)) throw messageError(new Error(''), \"errors.inspectorBindings.enterAFiniteNumber\", {});"
   },
   "errors.inspectorBindings.selectionSizeMustBeGreaterThanZero": {
     "locations": [
-      "src/inspector-bindings.mjs:188"
+      "src/inspector-bindings.mjs:149"
     ],
     "context": "throw messageError(new Error(''), \"errors.inspectorBindings.selectionSizeMustBeGreaterThanZero\", {});"
-  },
-  "errors.inspectorBindings.thatParentJointDoesNotExist": {
-    "locations": [
-      "src/inspector-bindings.mjs:259"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.inspectorBindings.thatParentJointDoesNotExist\", {});"
-  },
-  "errors.inspectorBindings.thisAttachmentWouldCreateACycle": {
-    "locations": [
-      "src/inspector-bindings.mjs:159"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.inspectorBindings.thisAttachmentWouldCreateACycle\", {});"
   },
   "errors.inspectorHeader.theInspectorHeaderNeedsItsTargetSlot": {
     "locations": [
@@ -17521,7 +17516,7 @@
   },
   "errors.nativePropertyEdit.chooseAFigureFirst": {
     "locations": [
-      "src/native-property-edit.mjs:364"
+      "src/native-property-edit.mjs:363"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.chooseAFigureFirst\", {});"
   },
@@ -17545,7 +17540,7 @@
   },
   "errors.nativePropertyEdit.increaseTheSelectionSizeBeforeScaling": {
     "locations": [
-      "src/native-property-edit.mjs:408"
+      "src/native-property-edit.mjs:409"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativePropertyEdit.increaseTheSelectionSizeBeforeScaling\", {});"
   },
@@ -37834,7 +37829,7 @@
   },
   "vfxChannels.enabled": {
     "locations": [
-      "src/engine/engine-owner.mjs:817",
+      "src/engine/engine-owner.mjs:846",
       "src/vfx-clip-inspector.mjs:63",
       "src/vfx-localization.mjs:9",
       "src/vfx.mjs:25"

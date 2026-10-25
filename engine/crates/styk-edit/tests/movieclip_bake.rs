@@ -258,3 +258,60 @@ fn the_interface_call_bakes_as_the_worker_entry_does() {
         assert_eq!(called.state_value().get("undoLabel").and_then(Value::as_str), Some("Bake animation"));
     }
 }
+
+/// The interface bakes in slices (`bakeMovieclipBegin`, `bakeMovieclipSample`, `bakeMovieclipPublish`) so that it can give the thread back
+/// between them: the document is the one the single call makes, whatever the size of a slice.
+#[test]
+fn a_bake_in_slices_makes_the_document_the_single_call_makes() {
+    for name in ["bake-native-live", "bake-sheet-live"] {
+        let mut whole = live(name);
+        whole.call("bakeMovieclip", &[]).unwrap();
+        for slice in [1.0, 2.0, 1000.0] {
+            let mut sliced = live(name);
+            let begun = sliced.call("bakeMovieclipBegin", &[]).unwrap();
+            let total = begun.get("total").and_then(Value::as_f64).unwrap();
+            assert!(total >= 1.0, "{name}: the ticks to sample");
+            let mut calls = 0;
+            loop {
+                let step = sliced.call("bakeMovieclipSample", &[Value::Num(slice)]).unwrap();
+                calls += 1;
+                // Sampling changes nothing in the document: it is published at the end.
+                assert!(!sliced.report_json().is_empty());
+                if step.get("done").and_then(Value::as_bool).unwrap() {
+                    assert_eq!(step.get("completed").and_then(Value::as_f64), Some(total), "{name}: every tick sampled");
+                    break;
+                }
+                assert!(calls < 10_000);
+            }
+            if slice < total {
+                assert!(calls > 1, "{name}: slices of {slice} take more than one call");
+            }
+            assert_ne!(sliced.state_value().get("undoLabel").and_then(Value::as_str), Some("Bake animation"), "{name}: nothing is published before the end");
+            sliced.call("bakeMovieclipPublish", &[]).unwrap();
+            assert_eq!(sliced.report_json(), whole.report_json(), "{name}: slices of {slice} make the same document");
+            assert_eq!(sliced.state_value().get("undoLabel").and_then(Value::as_str), Some("Bake animation"));
+        }
+    }
+}
+
+#[test]
+fn an_edit_between_slices_ends_the_bake_and_a_cancelled_bake_leaves_nothing() {
+    let mut editor = live("bake-sheet-live");
+    editor.call("bakeMovieclipBegin", &[]).unwrap();
+    // (Beginning ends the gesture the fixture has open: the document to come back to is the one after that.)
+    let original = editor.report_json();
+    editor.call("bakeMovieclipSample", &[Value::Num(1.0)]).unwrap();
+    editor.call("setCanvasSize", &[Value::Num(321.0), Value::Num(240.0)]).unwrap();
+    let stale = editor.call("bakeMovieclipSample", &[Value::Num(1.0)]);
+    assert!(matches!(&stale, Err(EditError::Invalid(key)) if key == "errors.editorMovieclips.theSceneChangedWhileBakingTryAgain"), "{stale:?}");
+    // The job ended with its error: nothing is left to publish.
+    assert!(matches!(editor.call("bakeMovieclipPublish", &[]), Err(EditError::Invalid(_))));
+    editor.call("undo", &[]).unwrap();
+    assert_eq!(editor.report_json(), original, "nothing of the bake was kept");
+    editor.call("bakeMovieclipBegin", &[]).unwrap();
+    editor.call("bakeMovieclipSample", &[Value::Num(1.0)]).unwrap();
+    assert_eq!(editor.call("bakeMovieclipCancel", &[]).unwrap(), Value::Bool(true));
+    assert_eq!(editor.call("bakeMovieclipCancel", &[]).unwrap(), Value::Bool(false));
+    assert!(matches!(editor.call("bakeMovieclipSample", &[Value::Num(1.0)]), Err(EditError::Invalid(_))));
+    assert_eq!(editor.report_json(), original);
+}
