@@ -783,7 +783,9 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     }
     // The clipboards the call pastes are the session's: the ones the interface wrote or another project copied reach it first.
     clipboards.handOver(name, live, (kind, data, foreign) => {
-      const handed = JSON.parse(live.call('@setClipboard', JSON.stringify([kind, data, foreign]), JSON.stringify(view())));
+      const handing = JSON.stringify([kind, data, foreign]), handingView = JSON.stringify(view());
+      report.capture?.push({name: '@setClipboard', args: handing, view: handingView});
+      const handed = JSON.parse(live.call('@setClipboard', handing, handingView));
       if (handed.status === 'error') throw failure(handed.error, handed.errorParams);
       if (handed.status !== 'ok') throw new Error(`The engine did not take the ${kind} clipboard: ${handed.reason}`);
     }, (holder, kind) => JSON.parse(holder.query('clipboard', JSON.stringify([kind]), 'null')).v);
