@@ -12,14 +12,18 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {parse} from '../vendor/text/opentype.mjs';
 import {engineEditor, ownedEditorWithDrawings} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject, defaultFigure} from '../src/demo.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
+import {compileTextFigure} from '../src/text-authoring.mjs';
+import {createImageFigure} from '../src/media-authoring.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback} from '../src/movieclip-presence.mjs';
 import {inspectorDescriptor, inspectorView} from '../src/inspector-view.mjs';
-import {ikControlsView} from '../src/ik-view.mjs';
+import {ikControlsView, ikSection} from '../src/ik-view.mjs';
 import {INSPECTOR_BUDGET, MAX_TITLE_ACTIONS, ROW_KINDS, inspectorBudgetProblems, renderInspector} from '../src/inspector-kit.mjs';
 import {QUICK_ACTIONS, QUICK_CONTEXTS, quickDefaults} from '../src/ui/quick-actions.mjs';
 import {legacyIkControlsView, legacyInspectorView} from './fixtures/inspector-legacy.mjs';
@@ -145,6 +149,13 @@ const assertBudget = (descriptor, label, options = {}) => assert.deepEqual(inspe
 const sections = (descriptor, place) => descriptor.sections.filter(section => section && !section.hidden && (section.place ?? 'core') === place).map(section => section.id);
 
 
+const fonts = await Promise.all(['Regular'].map(async style => {
+  const bytes = readFileSync(new URL(`../vendor/text/NotoSans-${style}.ttf`, import.meta.url));
+  return parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+}));
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=';
+
+
 test('scene, camera, keyframe and layer contexts keep every control', () => {
   const editor = engineEditor();
   for (const context of ['scene', 'camera', 'frame', 'layer']) assertNothingLost({editor, context}, context);
@@ -213,6 +224,51 @@ test('Build’s rig keeps every control while its behaviours are on, each block 
   editor.select(1, editor.figure.segments.findIndex(segment => segment.segment_id === weighted.segment_id));
   assertNothingLost({editor, builder: true}, 'a weighted joint');
   assert.equal(inspectorDescriptor({editor, builder: true}).sections.find(section => section?.id === 'rig-controls').title, 'Weighted joint');
+});
+
+test('text, image, connector, two-tone and IK joints keep every control', () => {
+  const text = engineEditor({demo: false, layerTimeline: true});
+  text.importFigure(compileTextFigure({text: 'Hello', fontSize: 42, color: [70, 40, 170]}, fonts[0]));
+  assertNothingLost({editor: text}, 'text');
+  const image = engineEditor({demo: false, layerTimeline: true});
+  image.importFigure(createImageFigure({dataUrl: PNG, width: 1, height: 1, name: 'Placed <sprite> & "co"'}));
+  assertNothingLost({editor: image}, 'image');
+  image.select(image.selectedUid, 0);
+  assertNothingLost({editor: image}, 'an image segment');
+
+  const rig = engineEditor({demo: false, layerTimeline: true}, rigExampleDocument('sliding-carriage'));
+  rig.select(1, 2);
+  assertNothingLost({editor: rig}, 'a connector (slider)');
+  assertNothingLost({editor: rig, builder: true}, 'a connector in the builder');
+  rig._connectorInspector = {uid: 1, id: 3, part: 'segment'};
+  assertNothingLost({editor: rig}, 'a connector (segment)');
+  rig.select(1, 0);
+  assertNothingLost({editor: rig}, 'an anchor segment');
+
+  const tone = engineEditor({demo: false, layerTimeline: true});
+  tone.addFigure();
+  tone.select(tone.selectedUid, 0);
+  tone.updateSegmentStyle({color: '#f8356a', opacity: 0.7, gradient: {color: '#2cd876', opacity: 0.6}});
+  for (const shape of ['circle', 'circleFill', 'circleClear', 'line', 'squareLine']) {
+    tone.convertSegment(shape);
+    assertNothingLost({editor: tone}, `a ${shape} segment`);
+  }
+  tone.convertSegment('circleFill');
+  tone.figure.segments[0].secondary = null;
+  assertNothingLost({editor: tone}, 'a circle without a second colour');
+
+  const ik = engineEditor({layerTimeline: true});
+  ik.select(1, 4);
+  ik.setNodeIK({enabled: true});
+  assertNothingLost({editor: ik}, 'an IK joint');
+  for (const settings of [
+    {enabled: false, pinned: false, allowStretch: false, bendDirection: 0, chainLength: 2, maxLength: 3, target: {rotation: 0}},
+    {enabled: true, pinned: true, allowStretch: true, bendDirection: -1, chainLength: 3, maxLength: 3, target: {rotation: 0.5}},
+  ]) {
+    const now = ikControlsView(settings);
+    for (const where of controls(legacyIkControlsView(settings))) assert.ok(find(now, where), `IK ${settings.enabled ? 'on' : 'off'} keeps ${JSON.stringify(where)}`);
+    assert.equal(ikSection(settings).id, 'ik');
+  }
 });
 
 test('fills, long palettes, 3D rigs and the drawing tools keep every control', () => {
@@ -415,6 +471,31 @@ test('connector joints: the Connector section opens with Segment │ Slider; the
   assertParity(today, now, {id: 'segment-color'}, ['type', 'aria-label']);
   assertNumberParity(today, now, 'thickness');
   assert.doesNotMatch(now, /id="rig-position"|id="static-joint"|data-property="joint_angle"/);
+});
+
+test('second colour: a titled section whose switch sits after its title and which opens while it is on', () => {
+  const editor = engineEditor({demo: false, layerTimeline: true});
+  editor.addFigure();
+  editor.select(editor.selectedUid, 0);
+  editor.updateSegmentStyle({color: '#f8356a', opacity: 0.7, gradient: {color: '#2cd876', opacity: 0.6}});
+  editor.convertSegment('circle');
+  let today = legacyInspectorView({editor}), now = inspectorView({editor});
+  assertSwitchParity(today, now, {id: 'segment-gradient-enabled'}, ['type', 'role', 'checked', 'aria-controls'], {name: false});
+  assert.equal(tag(now, {id: 'segment-gradient-enabled'}).attrs['aria-label'], 'Secondary color');
+  assert.ok(!('hidden' in tag(now, {id: 'segment-secondary-controls'}).attrs));
+  assertParity(today, now, {id: 'segment-gradient-color'}, ['type', 'value', 'aria-label']);
+  assertNumberParity(today, now, 'segment_gradient_opacity');
+  assertNumberParity(today, now, 'segment_opacity');
+  assert.ok('data-open' in tag(now, {'data-section': 'second-colour'}).attrs, 'it opens while the second colour is on');
+
+  editor.updateSegmentStyle({gradient: null});
+  today = legacyInspectorView({editor}); now = inspectorView({editor});
+  assert.ok('hidden' in tag(now, {id: 'segment-secondary-controls'}).attrs, 'the region stays, hidden');
+  assert.doesNotMatch(now, /id="segment-gradient-color"/);
+  editor.convertSegment('line');
+  now = inspectorView({editor});
+  assert.doesNotMatch(now, /segment-gradient-enabled/);
+  assert.ok(now.includes('<section class="ui-section" data-section="second-colour" hidden></section>'));
 });
 
 test('the camera: Level, Center and Reset under its name; Preview with Guides, Transform with Copy and Paste, Framing titled', () => {

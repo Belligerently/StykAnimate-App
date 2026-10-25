@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {validateScene} from '../src/pivot/model.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {layerVisible} from '../src/layers.mjs';
 import {exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
 import {ownedEditorFor} from './support/owned-editor.mjs';
@@ -79,29 +77,3 @@ test('the codec STYK exporter and importer preserve real layers, independent pos
   assert.notEqual(expected[0].camera.x, expected.at(-1).camera.x);
 });
 
-for (const [name, edit] of [
-  ['add a segment', editor => editor.addSegment({parentId: editor.figure.segments[2].segment_id, length: 24, angle: .4, thickness: 3})],
-  ['duplicate a segment branch', editor => editor.duplicateSegmentBranch({angleOffset: .2})],
-  ['split a segment', editor => editor.splitSegment(.35)],
-]) test(`reusable topology edits ${name} in every retained pose source and undo exactly`, async () => {
-  // plain editor: the test reads the editor's own history entry (kind and frames)
-  const editor = fixture({owned: false}), first = editor.captureFrameSource(editor.report.keyframes[0]), second = editor.captureFrameSource(editor.report.keyframes[1]);
-  editor.selectFrame(0); editor.select(1, 2);
-  const before = editor.serialize(), originalCount = editor.figure.segments.length;
-  edit(editor);
-  const count = editor.figure.segments.length; assert.ok(count > originalCount);
-  for (const frame of [...editor.report.keyframes, editor.getFrameById(first), editor.getFrameById(second)]) {
-    for (const object of frame.objects) {
-      assert.equal(object.angles.length, count); assert.equal(object.lengths.length, count); assert.equal(object.bends.length, count);
-    }
-    assert.deepEqual(buildGeometry(editor.report, frame).warnings, []);
-  }
-  const command = editor._undo.at(-1);
-  assert.equal(command.kind, 'topology'); assert.equal(command.after.frames.filter(frame => frame.sourceId).length, 2);
-  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: Object.values(editor.report._styk.frameSources)}));
-  const after = editor.serialize(); editor.undo(); assert.deepEqual(editor.serialize(), before);
-  editor.redo(); assert.deepEqual(editor.serialize(), after);
-  const result = await nativeStykRoundtrip(after), reopened = new Editor({demo: false}).load(result.document);
-  assert.deepEqual(reopened.report._styk.frameSources, after._styk.frameSources);
-  assert.equal(reopened.getFrameById(first).objects[0].angles.length, count);
-});

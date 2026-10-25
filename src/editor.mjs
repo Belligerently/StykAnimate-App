@@ -1,8 +1,6 @@
 import {validationLabel} from "./validation-labels.mjs";
 import {messageError} from './localized-error.mjs';
 import {editorSpatialMethods} from './editor-spatial.mjs';
-import {editorRigConstraintMethods} from './editor-rig-constraints.mjs';
-import {editorColorMethods} from './editor-colors.mjs';
 import {invalidateVfxRenderFrame, frameWithVfxTime} from './vfx-clips.mjs';
 import {frameWithCameraTime} from './camera-motion.mjs';
 import {editorCameraMotionMethods} from './editor-camera-motion.mjs';
@@ -14,10 +12,6 @@ import {createDemo, emptyDocument, defaultFigure} from './demo.mjs';
 import {createStartupDocument} from './startup-document.mjs';
 import {editorRangeMethods} from './editor-ranges.mjs';
 import {RetainedGeometryCache} from './playback-geometry-cache.mjs';
-import {editorBuilderMethods} from './editor-builder.mjs';
-import {editorCombineMethods} from './editor-combine.mjs';
-import {editorDisconnectMethods} from './editor-disconnect.mjs';
-import {editorRigMethods} from './editor-rig.mjs';
 import {editorSelectionMethods} from './editor-selection.mjs';
 import {editorLayerMethods} from './editor-layers.mjs';
 import {editorLayerFolderMethods} from './editor-layer-folders.mjs';
@@ -30,9 +24,6 @@ import {editorFrameMethods, validateFrameIdentities} from './editor-frames.mjs';
 import {invalidateFrameIndex} from './frame-ids.mjs';
 import {editorAuthoredPoseMethods} from './editor-authored-pose.mjs';
 import {editorCameraMethods} from './editor-camera.mjs';
-import {editorHandleEditMethods} from './editor-handle-edit.mjs';
-import {editorFigureTransformMethods} from './editor-figure-transform.mjs';
-import {editorDuplicateDragMethods} from './editor-duplicate-drag.mjs';
 import {editorRangeCommandMethods} from './editor-range-commands.mjs';
 import {editorSceneMethods} from './editor-scene.mjs';
 import {editorVfxMethods} from './editor-vfx.mjs';
@@ -373,12 +364,7 @@ export class Editor extends EventTarget {
 }
 
 Object.assign(Editor.prototype, editorRangeMethods);
-Object.assign(Editor.prototype, editorColorMethods);
-Object.assign(Editor.prototype, editorBuilderMethods);
-Object.assign(Editor.prototype, editorCombineMethods);
-Object.assign(Editor.prototype, editorDisconnectMethods);
-Object.assign(Editor.prototype, editorRigMethods);
-Object.assign(Editor.prototype, editorRigConstraintMethods, editorSpatialMethods);
+Object.assign(Editor.prototype, editorSpatialMethods);
 Object.assign(Editor.prototype, editorSelectionMethods);
 Object.assign(Editor.prototype, editorLayerMethods, editorLayerFolderMethods, editorLayerFocusMethods);
 Object.assign(Editor.prototype, editorLayerAsyncMethods);
@@ -386,13 +372,10 @@ Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(edito
 Object.assign(Editor.prototype, editorFrameMethods);
 Object.assign(Editor.prototype, editorAuthoredPoseMethods);
 Object.assign(Editor.prototype, editorCameraMethods, editorCameraMotionMethods);
-Object.assign(Editor.prototype, editorHandleEditMethods);
 Object.assign(Editor.prototype, editorIKMethods);
 Object.assign(Editor.prototype, editorMovieclipMethods);
 Object.assign(Editor.prototype, editorLayerSheetMethods);
 Object.assign(Editor.prototype, editorDrawingMethods);
-Object.assign(Editor.prototype, editorFigureTransformMethods);
-Object.assign(Editor.prototype, editorDuplicateDragMethods);
 Object.assign(Editor.prototype, editorRangeCommandMethods);
 Object.assign(Editor.prototype, editorSceneMethods);
 Object.assign(Editor.prototype, editorVfxMethods);

@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import english from '../src/locales/en.mjs';
 import {interfaceLocalization} from '../src/localization.mjs';
-import {Editor} from '../src/editor.mjs';
 import {engineEditor, newOwnedEditor} from './support/owned-editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument,createDemo} from '../src/demo.mjs';
