@@ -248,7 +248,7 @@ export function createShown(owner) {
     trails: request => read('trails', request),
     /** The pose of the figures joined with `target` at `tick`, `{rx, ry, lines, circles}`, or `null`. */
     trailGhost: (target, tick) => read('ghost', {target, tick}),
-    /** The camera the frame on show is seen through at the playhead (`cameraAtTime`), `null` for none. */
+    /** The camera the frame on show is seen through at the playhead (follow travel, then the presets' impulse), `null` for none. */
     shot: () => read('shot'),
     /** The camera an evaluated frame of the document holds at `tick`, `null` for the default one. */
     frameCamera: tick => read('frameCamera', {tick}),
