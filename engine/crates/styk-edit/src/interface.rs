@@ -119,9 +119,6 @@ impl Editor {
     pub(crate) fn interface_vfx_extent(&self, args: &Value) -> Result<String, EditError> {
         let uids: Vec<f64> = args.get("uids").and_then(Value::numbers).ok_or_else(|| EditError::Invalid("an extent needs the identities of its figures".into()))?;
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let record = self.interface_record(false)?;
         let frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         let slots: Vec<u32> = frame.objects.iter().enumerate().filter(|(_, object)| uids.contains(&f64::from(object.uid))).map(|(slot, _)| slot as u32).collect();
