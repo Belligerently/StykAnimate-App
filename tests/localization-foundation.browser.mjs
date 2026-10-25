@@ -23,7 +23,7 @@ try {
   await page.evaluate(async()=>{
     const {createToasts}=await import('/src/ui/ui-toast.mjs');
     window.taskToasts=createToasts({document});
-    window.localizedTask=taskToasts.task({title:'Preparing canvas',titleKey:'app.preparingCanvas',meta:'Camera effects preview restored.',metaKey:'rendererStatus.effectsRestored',delay:0});
+    window.localizedTask=taskToasts.task({title:'Preparing canvas and effects…',titleKey:'app.preparingCanvasAndEffects',meta:'Graphics device lost',metaKey:'rendererStatus.deviceLost',delay:0});
   });
   await page.waitForSelector('.ui-toast-progress');
   await page.evaluate(()=>{window.retainedStatus=document.querySelector('#status');styk.localization.localization.setPseudo('long');});

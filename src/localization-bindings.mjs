@@ -186,8 +186,6 @@ export const APP_CHROME_BINDINGS = Object.freeze([
   ['#window-controls [data-action="close"]', { 'aria-label': 'chrome.close' }],
   ['.left-panel .panel-tabs [data-tab="layers"]', { text: 'layers.title' }],
   ['.left-panel .panel-tabs [data-tab="assets"]', { text: 'chrome.assets' }],
-  ['.right-panel .panel-tabs [data-inspector="design"]', { text: 'chrome.design' }],
-  ['.right-panel .panel-tabs [data-inspector="animation"]', { text: 'settings.animation' }],
   ['.panel-bottom [data-action="import"]', { text: 'chrome.importFigures' }],
   ['.panel-bottom [data-action="help"]', { title: 'menu.shortcuts' }],
   ['.timeline-title', { text: 'timeline.title' }],

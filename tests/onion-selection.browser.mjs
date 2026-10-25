@@ -53,23 +53,27 @@ try {
   await grid.press('F6');
   await page.evaluate(() => { styk.editor.select(1); styk.editor.updateObject({root_x: 500}); styk.editor.seek(1); });
   await ghosts([[240], [500]], 'F6 inserts a new neighboring onion pose in Advanced');
-  await page.evaluate(() => styk.editor.sheetMoveFrames(['layer-1'], 5, 5, 7));
-  await ghosts([[240], [620]], 'Retiming chooses the new nearest key');
-  await page.evaluate(() => styk.editor.sheetInsertKey(['layer-1'], 5, {blank: true}));
-  await ghosts([[240], []], 'Blank keys remove their layer artwork');
-  await toolbar('undo').click(); await ghosts([[240], [620]], 'Undo restores artwork after a blank key');
+  // The range is a distance in ticks (docs/onion-skin.md): 8 after the playhead reaches both the key at 5 and the one at 3.
+  await page.evaluate(() => styk.editor.sheetMoveFrames(['layer-1'], 10, 10, -7));
+  // The farthest skin is listed first, so the nearer ones draw over it.
+  await ghosts([[500], [240], [620]], 'Retiming brings a later key within the range and nearest');
+  await page.evaluate(() => styk.editor.sheetInsertKey(['layer-1'], 3, {blank: true}));
+  await ghosts([[240], [500]], 'Blank keys remove their layer artwork');
+  await toolbar('undo').click(); await ghosts([[500], [240], [620]], 'Undo restores artwork after a blank key');
   await page.screenshot({path: `${output}/onion-advanced.png`});
 
-  await page.evaluate(async () => {
+  // Four coloured segments on two figures; `parents` gives each segment's parent id (0: the figure's root).
+  const loadSegments = parents => page.evaluate(async parents => {
     const {emptyDocument, createObject, createFrame} = await import('/src/demo.mjs');
     const report = emptyDocument(), figure = report.figure_types[0];
-    figure.segments = figure.segments.slice(0, 4).map((s, i) => ({...s, segment_id: i + 1, parent_id: 0,
+    figure.segments = figure.segments.slice(0, 4).map((s, i) => ({...s, segment_id: i + 1, parent_id: parents[i],
       z_order: i + 1, angle_rad: [.3, -.3, .6, -.6][i], length: 150, thickness: 26,
       color_rgb: [[225, 65, 65], [60, 180, 90], [60, 120, 230], [165, 75, 195]][i]}));
     figure.segment_count = 4;
     report.keyframes = [createFrame([createObject(figure, 1, 360, 270), createObject(figure, 2, 630, 270)], 1)];
     styk.editor.load(report); styk.state.onion = false; styk.editor.select(1, 0); styk.fit();
-  });
+  }, parents);
+  await loadSegments([0, 0, 0, 0]);
   assert.deepEqual(await renderedOrder(), [1, 2, 3, 4]);
   await page.screenshot({path: `${output}/segment-before.png`});
   await toolbar('selection-front').click();
@@ -85,12 +89,13 @@ try {
   assert.deepEqual(await renderedOrder(), [2, 3, 4, 1]);
   await toolbar('selection-back').click(); assert.deepEqual(await renderedOrder(), [1, 2, 3, 4]);
   checks.push('Topbar segment ordering supports undo, redo, both directions and Shift one-step moves');
-  await page.evaluate(() => { styk.editor.figure.segments[1].parent_id = 1; styk.editor.selectBranch(1, 0); });
+  await loadSegments([0, 1, 0, 0]);
+  await page.evaluate(() => styk.editor.selectBranch(1, 0));
   await toolbar('selection-front').click(); assert.deepEqual(await renderedOrder(), [3, 4, 1, 2]);
   assert.equal(await page.evaluate(() => styk.editor.branchSelected), true);
   checks.push('Topbar orders the selected branch as a group');
   await page.evaluate(() => styk.editor.select(1));
-  await toolbar('selection-front').click();
+  await toolbar('layer-front').click();   // a figure's tile; a joint's is selection-front
   assert.deepEqual(await page.evaluate(() => styk.editor.evaluatedFrame.object_draw_order_unique_ids), [2, 1]);
   checks.push('Whole-figure selection still reorders figures');
   await page.evaluate(() => styk.editor.selectMany([]));

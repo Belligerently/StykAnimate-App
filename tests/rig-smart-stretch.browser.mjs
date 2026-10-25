@@ -35,7 +35,9 @@ try{
   await page.locator('#rig-test-joint').selectOption('2');await settle();assert.equal(await page.locator('#rig-test-angle').isDisabled(),true);
   await page.screenshot({path:`${output}/test-rig.png`});
   await page.locator('#dialog [data-action="close-dialog"]').last().click();await settle();
-  await page.evaluate(()=>{const e=styk.editor;const c=e.addConnector(1,7);e.select(1,e.figure.segments.findIndex(s=>s===c));});await settle();
+  await page.evaluate(()=>{const e=styk.editor;const c=e.addConnector(1,7);e.select(1,e.figure.segments.findIndex(s=>s.segment_id===c.segment_id));});await settle();
+  // A connector opens on its Slider; Smart stretch belongs to its Segment.
+  await page.locator('[data-connector-part="segment"]').click();await settle();await openRig();
   await page.locator('#rig-stretch-enabled').check();await settle();await page.locator('#rig-source').selectOption('combined');await settle();
   await value('rig-rest-position',50);
   assert.equal(await page.evaluate(()=>styk.editor.figure.segments[styk.editor.selectedJoint]._stykRig.stretch.source),'combined');

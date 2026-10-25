@@ -43,6 +43,13 @@ test('moving, renaming and ungrouping folders retain layers and undo their metad
   e.undo();assert.deepEqual(e.serialize(),before);
   e.deleteLayer('layer-1');assert.equal(e.getLayerFolders().length,1);e.undo();assert.equal(e.getLayer('layer-1').folderId,f.id);
 });
+test('a folder argument left undefined keeps the arranged layers where they are, as one left out does', () => {
+  // The timeline's drop passes the target's folder, undefined for a folder dragged among layers: its layers must stay in it.
+  const e=editor(), folder=e.createLayerFolder('Shot',['layer-1','layer-2']);
+  e.arrangeLayers(['layer-3','layer-4','layer-1','layer-2'],['layer-1','layer-2'],undefined);
+  assert.deepEqual(e.report._styk.layers.order,['layer-3','layer-4','layer-1','layer-2']);
+  assert.equal(e.getLayer('layer-1').folderId,folder.id);assert.equal(e.getLayer('layer-2').folderId,folder.id);
+});
 test('arranging layers restacks them and changes their folder in one undo step', () => {
   const e=editor(), folder=e.createLayerFolder('Shot',['layer-1','layer-2']), start=e.serialize(), steps=e._undo.length;
   // Into the folder, between its layers.

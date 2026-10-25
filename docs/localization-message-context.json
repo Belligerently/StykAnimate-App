@@ -553,7 +553,8 @@
   },
   "app.followWithCamera": {
     "locations": [
-      "src/app.mjs:4222"
+      "src/app.mjs:4222",
+      "src/ui/command-catalog.mjs:271"
     ],
     "context": "messageTuple([\"camera-follow\", \"camera\", interfaceText(\"app.followWithCamera\"), \"\", Boolean(builderMode?.active)], {2: {key: \"app.followWithCamera\", params: {}}"
   },
@@ -3421,7 +3422,8 @@
   },
   "builderOutliner.smartSnapping": {
     "locations": [
-      "src/builder-outliner.mjs:83"
+      "src/builder-outliner.mjs:83",
+      "src/ui/command-catalog.mjs:259"
     ],
     "context": "<button id=\"builder-snap\" aria-pressed=\"true\" aria-label=\"Smart snapping\" title=\"Smart snapping · Alt to bypass\" data-strip-action=\"3\" data-i18n-aria-label=\"bui"
   },
@@ -4565,7 +4567,7 @@
   "chrome.canvasZoom": {
     "locations": [
       "index.html:192",
-      "src/localization-bindings.mjs:198"
+      "src/localization-bindings.mjs:196"
     ],
     "context": "<button type=\"button\" class=\"ui-button stage-zoom\" id=\"zoom-label\" data-variant=\"ghost\" data-size=\"sm\" data-action=\"zoom-menu\" aria-haspopup=\"menu\" aria-label=\""
   },
@@ -4623,12 +4625,6 @@
       "index.html:142"
     ],
     "context": "<button type=\"button\" class=\"ui-tool-button\" data-action=\"delete-single-segment\" aria-label=\"Delete part\" data-tooltip=\"Delete part\" data-icon=\"trash\" data-i18n"
-  },
-  "chrome.design": {
-    "locations": [
-      "src/localization-bindings.mjs:189"
-    ],
-    "context": "['.right-panel .panel-tabs [data-inspector=\"design\"]', { text: 'chrome.design' }],"
   },
   "chrome.discardTheChangesToThisMovieclip": {
     "locations": [
@@ -4768,7 +4764,7 @@
   },
   "chrome.findLayer": {
     "locations": [
-      "src/localization-bindings.mjs:194"
+      "src/localization-bindings.mjs:192"
     ],
     "context": "['#layer-search', { placeholder: 'chrome.searchLayers', 'aria-label': 'chrome.findLayer' }],"
   },
@@ -4907,7 +4903,7 @@
   },
   "chrome.importFigures": {
     "locations": [
-      "src/localization-bindings.mjs:191"
+      "src/localization-bindings.mjs:189"
     ],
     "context": "['.panel-bottom [data-action=\"import\"]', { text: 'chrome.importFigures' }],"
   },
@@ -5190,7 +5186,7 @@
   },
   "chrome.sceneLayers": {
     "locations": [
-      "src/localization-bindings.mjs:195"
+      "src/localization-bindings.mjs:193"
     ],
     "context": "['#layer-list', { 'aria-label': 'chrome.sceneLayers' }],"
   },
@@ -5202,7 +5198,7 @@
   },
   "chrome.searchLayers": {
     "locations": [
-      "src/localization-bindings.mjs:194"
+      "src/localization-bindings.mjs:192"
     ],
     "context": "['#layer-search', { placeholder: 'chrome.searchLayers', 'aria-label': 'chrome.findLayer' }],"
   },
@@ -5339,7 +5335,7 @@
   "chrome.timelineZoom": {
     "locations": [
       "index.html:304",
-      "src/localization-bindings.mjs:197"
+      "src/localization-bindings.mjs:195"
     ],
     "context": "data-i18n-aria-label=\"chrome.timelineZoom\" />"
   },
@@ -5420,7 +5416,7 @@
   "chrome.zoomOptions": {
     "locations": [
       "index.html:192",
-      "src/localization-bindings.mjs:198"
+      "src/localization-bindings.mjs:196"
     ],
     "context": "<button type=\"button\" class=\"ui-button stage-zoom\" id=\"zoom-label\" data-variant=\"ghost\" data-size=\"sm\" data-action=\"zoom-menu\" aria-haspopup=\"menu\" aria-label=\""
   },
@@ -5821,67 +5817,67 @@
   },
   "commands.about": {
     "locations": [
-      "src/ui/command-catalog.mjs:325"
+      "src/ui/command-catalog.mjs:328"
     ],
     "context": "['about', english[\"commands.about\"], 'help', {labelKey: \"commands.about\"}],"
   },
   "commands.addFigure": {
     "locations": [
-      "src/ui/command-catalog.mjs:191"
+      "src/ui/command-catalog.mjs:192"
     ],
     "context": "['add-figure', english[\"commands.addFigure\"], 'person', {labelKey: \"commands.addFigure\", keywords: ['new figure', 'insert']}],"
   },
   "commands.addSpriteSegment": {
     "locations": [
-      "src/ui/command-catalog.mjs:258"
+      "src/ui/command-catalog.mjs:260"
     ],
     "context": "['add-sprite-segment', english[\"commands.addSpriteSegment\"], 'image', {labelKey: \"commands.addSpriteSegment\", ...build, keywords: ['sprite', 'picture']}],"
   },
   "commands.addToLibrary": {
     "locations": [
-      "src/ui/command-catalog.mjs:219"
+      "src/ui/command-catalog.mjs:220"
     ],
     "context": "['add-to-library', english[\"commands.addToLibrary\"], 'layers', {labelKey: \"commands.addToLibrary\", requires: ['figure'], keywords: ['save', 'asset']}],"
   },
   "commands.alignBottom": {
     "locations": [
-      "src/ui/command-catalog.mjs:213"
+      "src/ui/command-catalog.mjs:214"
     ],
     "context": "['align-bottom', english[\"commands.alignBottom\"], 'align-bottom', {labelKey: \"commands.alignBottom\", requires: ['figures']}],"
   },
   "commands.alignCenterX": {
     "locations": [
-      "src/ui/command-catalog.mjs:209"
+      "src/ui/command-catalog.mjs:210"
     ],
     "context": "['align-center-x', english[\"commands.alignCenterX\"], 'align-horizontal-center', {labelKey: \"commands.alignCenterX\", requires: ['figures'], keywords: ['centre']}"
   },
   "commands.alignCenterY": {
     "locations": [
-      "src/ui/command-catalog.mjs:212"
+      "src/ui/command-catalog.mjs:213"
     ],
     "context": "['align-center-y', english[\"commands.alignCenterY\"], 'align-vertical-center', {labelKey: \"commands.alignCenterY\", requires: ['figures']}],"
   },
   "commands.alignLeft": {
     "locations": [
-      "src/ui/command-catalog.mjs:208"
+      "src/ui/command-catalog.mjs:209"
     ],
     "context": "['align-left', english[\"commands.alignLeft\"], 'align-left', {labelKey: \"commands.alignLeft\", requires: ['figures']}],"
   },
   "commands.alignRight": {
     "locations": [
-      "src/ui/command-catalog.mjs:210"
+      "src/ui/command-catalog.mjs:211"
     ],
     "context": "['align-right', english[\"commands.alignRight\"], 'align-right', {labelKey: \"commands.alignRight\", requires: ['figures']}],"
   },
   "commands.alignTop": {
     "locations": [
-      "src/ui/command-catalog.mjs:211"
+      "src/ui/command-catalog.mjs:212"
     ],
     "context": "['align-top', english[\"commands.alignTop\"], 'align-top', {labelKey: \"commands.alignTop\", requires: ['figures']}],"
   },
   "commands.backgroundStyle": {
     "locations": [
-      "src/ui/command-catalog.mjs:232"
+      "src/ui/command-catalog.mjs:233"
     ],
     "context": "['background-style', english[\"commands.backgroundStyle\"], 'image', {labelKey: \"commands.backgroundStyle\", keywords: ['backdrop', 'color', 'colour']}],"
   },
@@ -5899,7 +5895,7 @@
   },
   "commands.builderOrder": {
     "locations": [
-      "src/ui/command-catalog.mjs:254"
+      "src/ui/command-catalog.mjs:255"
     ],
     "context": "['builder-order', english[\"commands.builderOrder\"], 'layers', {...internal, labelKey: \"commands.builderOrder\"}],"
   },
@@ -5911,83 +5907,83 @@
   },
   "commands.cameraAlignView": {
     "locations": [
-      "src/ui/command-catalog.mjs:276"
+      "src/ui/command-catalog.mjs:279"
     ],
     "context": "['camera-align-view', english[\"commands.cameraAlignView\"], 'fit', {labelKey: \"commands.cameraAlignView\", keywords: ['align', 'match view']}],"
   },
   "commands.cameraApplyFigures": {
     "locations": [
-      "src/ui/command-catalog.mjs:280"
+      "src/ui/command-catalog.mjs:283"
     ],
     "context": "['camera-apply-figures', english[\"commands.cameraApplyFigures\"], 'person', {labelKey: \"commands.cameraApplyFigures\", keywords: ['bake']}],"
   },
   "commands.cameraCenter": {
     "locations": [
       "src/hotkey-labels.mjs:220",
-      "src/ui/command-catalog.mjs:273"
+      "src/ui/command-catalog.mjs:276"
     ],
     "context": "\"key\": \"commands.cameraCenter\""
   },
   "commands.cameraCenterX": {
     "locations": [
-      "src/ui/command-catalog.mjs:274"
+      "src/ui/command-catalog.mjs:277"
     ],
     "context": "['camera-center-x', english[\"commands.cameraCenterX\"], 'align-horizontal-center', {labelKey: \"commands.cameraCenterX\", requires: ['figure'], keywords: ['centre'"
   },
   "commands.cameraCenterY": {
     "locations": [
-      "src/ui/command-catalog.mjs:275"
+      "src/ui/command-catalog.mjs:278"
     ],
     "context": "['camera-center-y', english[\"commands.cameraCenterY\"], 'align-vertical-center', {labelKey: \"commands.cameraCenterY\", requires: ['figure'], keywords: ['centre']}"
   },
   "commands.cameraCopy": {
     "locations": [
       "src/hotkey-labels.mjs:226",
-      "src/ui/command-catalog.mjs:270"
+      "src/ui/command-catalog.mjs:273"
     ],
     "context": "\"key\": \"commands.cameraCopy\""
   },
   "commands.cameraDone": {
     "locations": [
-      "src/ui/command-catalog.mjs:269"
+      "src/ui/command-catalog.mjs:272"
     ],
     "context": "['camera-done', english[\"commands.cameraDone\"], 'check', {labelKey: \"commands.cameraDone\", requires: ['camera-session']}],"
   },
   "commands.cameraGuides": {
     "locations": [
-      "src/ui/command-catalog.mjs:281"
+      "src/ui/command-catalog.mjs:284"
     ],
     "context": "['camera-guides', english[\"commands.cameraGuides\"], 'grid', {labelKey: \"commands.cameraGuides\", toggle: true, keywords: ['safe area', 'thirds']}],"
   },
   "commands.cameraLevel": {
     "locations": [
-      "src/ui/command-catalog.mjs:277"
+      "src/ui/command-catalog.mjs:280"
     ],
     "context": "['camera-level', english[\"commands.cameraLevel\"], 'level', {labelKey: \"commands.cameraLevel\", keywords: ['straighten', 'angle']}],"
   },
   "commands.cameraLocateNext": {
     "locations": [
-      "src/ui/command-catalog.mjs:279"
+      "src/ui/command-catalog.mjs:282"
     ],
     "context": "['camera-locate-next', english[\"commands.cameraLocateNext\"], 'chevron-right', {labelKey: \"commands.cameraLocateNext\"}],"
   },
   "commands.cameraLocatePrevious": {
     "locations": [
-      "src/ui/command-catalog.mjs:278"
+      "src/ui/command-catalog.mjs:281"
     ],
     "context": "['camera-locate-previous', english[\"commands.cameraLocatePrevious\"], 'chevron-left', {labelKey: \"commands.cameraLocatePrevious\"}],"
   },
   "commands.cameraPaste": {
     "locations": [
       "src/hotkey-labels.mjs:229",
-      "src/ui/command-catalog.mjs:271"
+      "src/ui/command-catalog.mjs:274"
     ],
     "context": "\"key\": \"commands.cameraPaste\""
   },
   "commands.cameraReset": {
     "locations": [
       "src/hotkey-labels.mjs:217",
-      "src/ui/command-catalog.mjs:272"
+      "src/ui/command-catalog.mjs:275"
     ],
     "context": "\"key\": \"commands.cameraReset\""
   },
@@ -6000,31 +5996,31 @@
   },
   "commands.cancelPolygon": {
     "locations": [
-      "src/ui/command-catalog.mjs:234"
+      "src/ui/command-catalog.mjs:235"
     ],
     "context": "['cancel-polygon', english[\"commands.cancelPolygon\"], 'close', {...internal, labelKey: \"commands.cancelPolygon\"}],"
   },
   "commands.center": {
     "locations": [
-      "src/ui/command-catalog.mjs:197"
+      "src/ui/command-catalog.mjs:198"
     ],
     "context": "['center', english[\"commands.center\"], 'center', {labelKey: \"commands.center\", requires: ['figure'], keywords: ['centre', 'middle']}],"
   },
   "commands.chainCancel": {
     "locations": [
-      "src/ui/command-catalog.mjs:236"
+      "src/ui/command-catalog.mjs:237"
     ],
     "context": "['chain-cancel', english[\"commands.chainCancel\"], 'close', {...internal, labelKey: \"commands.chainCancel\"}],"
   },
   "commands.chainFinish": {
     "locations": [
-      "src/ui/command-catalog.mjs:235"
+      "src/ui/command-catalog.mjs:236"
     ],
     "context": "['chain-finish', english[\"commands.chainFinish\"], 'check', {...internal, labelKey: \"commands.chainFinish\"}],"
   },
   "commands.checkUpdates": {
     "locations": [
-      "src/ui/command-catalog.mjs:327"
+      "src/ui/command-catalog.mjs:330"
     ],
     "context": "['check-updates', english[\"commands.checkUpdates\"], 'import', {labelKey: \"commands.checkUpdates\", requires: ['desktop:updates']}],"
   },
@@ -6037,13 +6033,13 @@
   },
   "commands.close": {
     "locations": [
-      "src/ui/command-catalog.mjs:342"
+      "src/ui/command-catalog.mjs:345"
     ],
     "context": "['close', english[\"commands.close\"], 'close', {labelKey: \"commands.close\", requires: ['desktop'], keywords: ['exit', 'close window']}],"
   },
   "commands.closeDialog": {
     "locations": [
-      "src/ui/command-catalog.mjs:343"
+      "src/ui/command-catalog.mjs:346"
     ],
     "context": "['close-dialog', english[\"commands.closeDialog\"], 'close', {...internal, labelKey: \"commands.closeDialog\"}],"
   },
@@ -6066,13 +6062,13 @@
   },
   "commands.combineFigures": {
     "locations": [
-      "src/ui/command-catalog.mjs:217"
+      "src/ui/command-catalog.mjs:218"
     ],
     "context": "['combine-figures', english[\"commands.combineFigures\"], 'combine', {labelKey: \"commands.combineFigures\", requires: ['figure'], keywords: ['merge']}],"
   },
   "commands.copyBuilderAppearance": {
     "locations": [
-      "src/ui/command-catalog.mjs:255"
+      "src/ui/command-catalog.mjs:256"
     ],
     "context": "['copy-builder-appearance', english[\"commands.copyBuilderAppearance\"], 'duplicate', {labelKey: \"commands.copyBuilderAppearance\", ...build, requires: ['joint'], "
   },
@@ -6086,178 +6082,178 @@
   "commands.deleteSegment": {
     "locations": [
       "src/hotkey-labels.mjs:295",
-      "src/ui/command-catalog.mjs:242"
+      "src/ui/command-catalog.mjs:243"
     ],
     "context": "\"key\": \"commands.deleteSegment\""
   },
   "commands.deleteSingleSegment": {
     "locations": [
-      "src/ui/command-catalog.mjs:241"
+      "src/ui/command-catalog.mjs:242"
     ],
     "context": "['delete-single-segment', english[\"commands.deleteSingleSegment\"], 'trash', {labelKey: \"commands.deleteSingleSegment\", ...build, hotkey: 'delete', requires: ['j"
   },
   "commands.depthHold": {
     "locations": [
       "src/hotkey-labels.mjs:106",
-      "src/ui/command-catalog.mjs:293"
+      "src/ui/command-catalog.mjs:296"
     ],
     "context": "\"key\": \"commands.depthHold\""
   },
   "commands.detachFigure": {
     "locations": [
-      "src/ui/command-catalog.mjs:216"
+      "src/ui/command-catalog.mjs:217"
     ],
     "context": "['detach-figure', english[\"commands.detachFigure\"], 'detach', {labelKey: \"commands.detachFigure\", aliasOf: 'join-figure', palette: false}],"
   },
   "commands.disconnectSegment": {
     "locations": [
-      "src/ui/command-catalog.mjs:218"
+      "src/ui/command-catalog.mjs:219"
     ],
     "context": "['disconnect-segment', english[\"commands.disconnectSegment\"], 'cut', {labelKey: \"commands.disconnectSegment\", modes: ['animate'], requires: ['joint'], keywords:"
   },
   "commands.donate": {
     "locations": [
-      "src/ui/command-catalog.mjs:332"
+      "src/ui/command-catalog.mjs:335"
     ],
     "context": "['donate', english[\"commands.donate\"], 'heart', {labelKey: \"commands.donate\", requires: ['desktop:updates'], keywords: ['donate']}],"
   },
   "commands.drawingApply": {
     "locations": [
       "src/hotkey-labels.mjs:388",
-      "src/ui/command-catalog.mjs:306"
+      "src/ui/command-catalog.mjs:309"
     ],
     "context": "\"key\": \"commands.drawingApply\""
   },
   "commands.drawingBrush": {
     "locations": [
       "src/hotkey-labels.mjs:301",
-      "src/ui/command-catalog.mjs:296"
+      "src/ui/command-catalog.mjs:299"
     ],
     "context": "\"key\": \"commands.drawingBrush\""
   },
   "commands.drawingDeselect": {
     "locations": [
       "src/hotkey-labels.mjs:394",
-      "src/ui/command-catalog.mjs:308"
+      "src/ui/command-catalog.mjs:311"
     ],
     "context": "\"key\": \"commands.drawingDeselect\""
   },
   "commands.drawingEraser": {
     "locations": [
       "src/hotkey-labels.mjs:304",
-      "src/ui/command-catalog.mjs:297"
+      "src/ui/command-catalog.mjs:300"
     ],
     "context": "\"key\": \"commands.drawingEraser\""
   },
   "commands.drawingFill": {
     "locations": [
       "src/hotkey-labels.mjs:307",
-      "src/ui/command-catalog.mjs:298"
+      "src/ui/command-catalog.mjs:301"
     ],
     "context": "\"key\": \"commands.drawingFill\""
   },
   "commands.drawingFillSelection": {
     "locations": [
       "src/hotkey-labels.mjs:400",
-      "src/ui/command-catalog.mjs:310"
+      "src/ui/command-catalog.mjs:313"
     ],
     "context": "\"key\": \"commands.drawingFillSelection\""
   },
   "commands.drawingFlipView": {
     "locations": [
-      "src/ui/command-catalog.mjs:313"
+      "src/ui/command-catalog.mjs:316"
     ],
     "context": "['drawing-flip-view', english[\"commands.drawingFlipView\"], 'flip', {labelKey: \"commands.drawingFlipView\", ...draw, toggle: true, keywords: ['mirror canvas']}],"
   },
   "commands.drawingHarder": {
     "locations": [
       "src/hotkey-labels.mjs:325",
-      "src/ui/command-catalog.mjs:304"
+      "src/ui/command-catalog.mjs:307"
     ],
     "context": "\"key\": \"commands.drawingHarder\""
   },
   "commands.drawingInvertSelection": {
     "locations": [
       "src/hotkey-labels.mjs:397",
-      "src/ui/command-catalog.mjs:309"
+      "src/ui/command-catalog.mjs:312"
     ],
     "context": "\"key\": \"commands.drawingInvertSelection\""
   },
   "commands.drawingLarger": {
     "locations": [
       "src/hotkey-labels.mjs:319",
-      "src/ui/command-catalog.mjs:302"
+      "src/ui/command-catalog.mjs:305"
     ],
     "context": "\"key\": \"commands.drawingLarger\""
   },
   "commands.drawingLasso": {
     "locations": [
       "src/hotkey-labels.mjs:310",
-      "src/ui/command-catalog.mjs:299"
+      "src/ui/command-catalog.mjs:302"
     ],
     "context": "\"key\": \"commands.drawingLasso\""
   },
   "commands.drawingMirror": {
     "locations": [
-      "src/ui/command-catalog.mjs:311"
+      "src/ui/command-catalog.mjs:314"
     ],
     "context": "['drawing-mirror', english[\"commands.drawingMirror\"], 'flip', {labelKey: \"commands.drawingMirror\", ...draw, toggle: true, keywords: ['symmetry']}],"
   },
   "commands.drawingSelectAll": {
     "locations": [
       "src/hotkey-labels.mjs:391",
-      "src/ui/command-catalog.mjs:307"
+      "src/ui/command-catalog.mjs:310"
     ],
     "context": "\"key\": \"commands.drawingSelectAll\""
   },
   "commands.drawingShape": {
     "locations": [
       "src/hotkey-labels.mjs:313",
-      "src/ui/command-catalog.mjs:300"
+      "src/ui/command-catalog.mjs:303"
     ],
     "context": "\"key\": \"commands.drawingShape\""
   },
   "commands.drawingSmaller": {
     "locations": [
       "src/hotkey-labels.mjs:316",
-      "src/ui/command-catalog.mjs:301"
+      "src/ui/command-catalog.mjs:304"
     ],
     "context": "\"key\": \"commands.drawingSmaller\""
   },
   "commands.drawingSofter": {
     "locations": [
       "src/hotkey-labels.mjs:322",
-      "src/ui/command-catalog.mjs:303"
+      "src/ui/command-catalog.mjs:306"
     ],
     "context": "\"key\": \"commands.drawingSofter\""
   },
   "commands.drawingSwapColors": {
     "locations": [
-      "src/ui/command-catalog.mjs:312"
+      "src/ui/command-catalog.mjs:315"
     ],
     "context": "['drawing-swap-colors', english[\"commands.drawingSwapColors\"], 'reset', {labelKey: \"commands.drawingSwapColors\", ...draw, keywords: ['colours', 'foreground', 'b"
   },
   "commands.duplicateBranch": {
     "locations": [
-      "src/ui/command-catalog.mjs:249"
+      "src/ui/command-catalog.mjs:250"
     ],
     "context": "['duplicate-branch', english[\"commands.duplicateBranch\"], 'duplicate', {labelKey: \"commands.duplicateBranch\", ...build, requires: ['joint']}],"
   },
   "commands.duplicateSegment": {
     "locations": [
-      "src/ui/command-catalog.mjs:248"
+      "src/ui/command-catalog.mjs:249"
     ],
     "context": "['duplicate-segment', english[\"commands.duplicateSegment\"], 'duplicate', {labelKey: \"commands.duplicateSegment\", ...build, hotkey: 'duplicate', requires: ['join"
   },
   "commands.editInBuildMode": {
     "locations": [
-      "src/ui/command-catalog.mjs:220"
+      "src/ui/command-catalog.mjs:221"
     ],
     "context": "['edit-in-build-mode', english[\"commands.editInBuildMode\"], 'nodes', {labelKey: \"commands.editInBuildMode\", requires: ['figure'], keywords: ['build', 'rig', 'bu"
   },
   "commands.editText": {
     "locations": [
-      "src/ui/command-catalog.mjs:193"
+      "src/ui/command-catalog.mjs:194"
     ],
     "context": "['edit-text', english[\"commands.editText\"], 'text', {labelKey: \"commands.editText\", requires: ['text']}],"
   },
@@ -6371,14 +6367,14 @@
   },
   "commands.feedback": {
     "locations": [
-      "src/ui/command-catalog.mjs:329"
+      "src/ui/command-catalog.mjs:332"
     ],
     "context": "['feedback', english[\"commands.feedback\"], 'message', {labelKey: \"commands.feedback\", requires: ['desktop:feedback'], keywords: ['feedback', 'support', 'bug']}]"
   },
   "commands.finishPolygon": {
     "locations": [
       "src/hotkey-labels.mjs:298",
-      "src/ui/command-catalog.mjs:233"
+      "src/ui/command-catalog.mjs:234"
     ],
     "context": "\"key\": \"commands.finishPolygon\""
   },
@@ -6406,7 +6402,7 @@
   "commands.handleEditHold": {
     "locations": [
       "src/hotkey-labels.mjs:100",
-      "src/ui/command-catalog.mjs:291"
+      "src/ui/command-catalog.mjs:294"
     ],
     "context": "\"key\": \"commands.handleEditHold\""
   },
@@ -6432,14 +6428,14 @@
   "commands.isolateHold": {
     "locations": [
       "src/hotkey-labels.mjs:103",
-      "src/ui/command-catalog.mjs:292"
+      "src/ui/command-catalog.mjs:295"
     ],
     "context": "\"key\": \"commands.isolateHold\""
   },
   "commands.joinFigure": {
     "locations": [
-      "src/ui/command-catalog.mjs:214",
-      "src/ui/command-catalog.mjs:215"
+      "src/ui/command-catalog.mjs:215",
+      "src/ui/command-catalog.mjs:216"
     ],
     "context": "['join-figure', english[\"commands.joinFigure\"], 'join-figure', {labelKey: \"commands.joinFigure\", requires: ['figure'], keywords: ['attach', 'unjoin', 'detach', "
   },
@@ -6452,29 +6448,29 @@
   },
   "commands.layerBack": {
     "locations": [
-      "src/ui/command-catalog.mjs:203",
-      "src/ui/command-catalog.mjs:207"
+      "src/ui/command-catalog.mjs:204",
+      "src/ui/command-catalog.mjs:208"
     ],
     "context": "['layer-back', english[\"commands.layerBack\"], 'send-to-back', {labelKey: \"commands.layerBack\", requires: ['figure'], keywords: ['arrange', 'order']}],"
   },
   "commands.layerDown": {
     "locations": [
-      "src/ui/command-catalog.mjs:202",
-      "src/ui/command-catalog.mjs:206"
+      "src/ui/command-catalog.mjs:203",
+      "src/ui/command-catalog.mjs:207"
     ],
     "context": "['layer-down', english[\"commands.layerDown\"], 'step-down', {labelKey: \"commands.layerDown\", requires: ['figure'], keywords: ['arrange', 'order']}],"
   },
   "commands.layerFront": {
     "locations": [
-      "src/ui/command-catalog.mjs:200",
-      "src/ui/command-catalog.mjs:204"
+      "src/ui/command-catalog.mjs:201",
+      "src/ui/command-catalog.mjs:205"
     ],
     "context": "['layer-front', english[\"commands.layerFront\"], 'bring-to-front', {labelKey: \"commands.layerFront\", requires: ['figure'], keywords: ['arrange', 'order']}],"
   },
   "commands.layerUp": {
     "locations": [
-      "src/ui/command-catalog.mjs:201",
-      "src/ui/command-catalog.mjs:205"
+      "src/ui/command-catalog.mjs:202",
+      "src/ui/command-catalog.mjs:206"
     ],
     "context": "['layer-up', english[\"commands.layerUp\"], 'step-up', {labelKey: \"commands.layerUp\", requires: ['figure'], keywords: ['arrange', 'order']}],"
   },
@@ -6506,148 +6502,148 @@
   },
   "commands.libraryOpen": {
     "locations": [
-      "src/ui/command-catalog.mjs:318"
+      "src/ui/command-catalog.mjs:321"
     ],
     "context": "['library-open', english[\"commands.libraryOpen\"], 'import', {...internal, labelKey: \"commands.libraryOpen\"}],"
   },
   "commands.libraryRename": {
     "locations": [
       "src/hotkey-labels.mjs:415",
-      "src/ui/command-catalog.mjs:319"
+      "src/ui/command-catalog.mjs:322"
     ],
     "context": "\"key\": \"commands.libraryRename\""
   },
   "commands.locateNext": {
     "locations": [
-      "src/ui/command-catalog.mjs:223"
+      "src/ui/command-catalog.mjs:224"
     ],
     "context": "['locate-next', english[\"commands.locateNext\"], 'match-next', {labelKey: \"commands.locateNext\", keywords: ['locate', 'copy pose']}],"
   },
   "commands.locatePrevious": {
     "locations": [
-      "src/ui/command-catalog.mjs:222"
+      "src/ui/command-catalog.mjs:223"
     ],
     "context": "['locate-previous', english[\"commands.locatePrevious\"], 'match-prev', {labelKey: \"commands.locatePrevious\", keywords: ['locate', 'copy pose']}],"
   },
   "commands.maximize": {
     "locations": [
-      "src/ui/command-catalog.mjs:341"
+      "src/ui/command-catalog.mjs:344"
     ],
     "context": "['maximize', english[\"commands.maximize\"], 'maximize', {labelKey: \"commands.maximize\", requires: ['desktop']}],"
   },
   "commands.menu": {
     "locations": [
-      "src/ui/command-catalog.mjs:336"
+      "src/ui/command-catalog.mjs:339"
     ],
     "context": "['menu', english[\"commands.menu\"], 'more', {...internal, labelKey: \"commands.menu\"}],"
   },
   "commands.minimize": {
     "locations": [
-      "src/ui/command-catalog.mjs:340"
+      "src/ui/command-catalog.mjs:343"
     ],
     "context": "['minimize', english[\"commands.minimize\"], 'minimize', {labelKey: \"commands.minimize\", requires: ['desktop']}],"
   },
   "commands.mirror": {
     "locations": [
       "src/hotkey-labels.mjs:232",
-      "src/ui/command-catalog.mjs:194"
+      "src/ui/command-catalog.mjs:195"
     ],
     "context": "\"key\": \"commands.mirror\""
   },
   "commands.mirrorBranch": {
     "locations": [
-      "src/ui/command-catalog.mjs:245"
+      "src/ui/command-catalog.mjs:246"
     ],
     "context": "['mirror-branch', english[\"commands.mirrorBranch\"], 'flip', {labelKey: \"commands.mirrorBranch\", ...build, requires: ['joint'], keywords: ['mirror']}],"
   },
   "commands.mirrorBranchVertical": {
     "locations": [
-      "src/ui/command-catalog.mjs:246"
+      "src/ui/command-catalog.mjs:247"
     ],
     "context": "['mirror-branch-vertical', english[\"commands.mirrorBranchVertical\"], 'flip-vertical', {labelKey: \"commands.mirrorBranchVertical\", ...build, requires: ['joint'],"
   },
   "commands.mirrorSegment": {
     "locations": [
-      "src/ui/command-catalog.mjs:243"
+      "src/ui/command-catalog.mjs:244"
     ],
     "context": "['mirror-segment', english[\"commands.mirrorSegment\"], 'flip', {labelKey: \"commands.mirrorSegment\", ...build, hotkey: 'mirror', requires: ['joint'], keywords: ['"
   },
   "commands.mirrorSegmentVertical": {
     "locations": [
-      "src/ui/command-catalog.mjs:244"
+      "src/ui/command-catalog.mjs:245"
     ],
     "context": "['mirror-segment-vertical', english[\"commands.mirrorSegmentVertical\"], 'flip-vertical', {labelKey: \"commands.mirrorSegmentVertical\", ...build, hotkey: 'mirror-v"
   },
   "commands.mirrorVertical": {
     "locations": [
       "src/hotkey-labels.mjs:235",
-      "src/ui/command-catalog.mjs:195"
+      "src/ui/command-catalog.mjs:196"
     ],
     "context": "\"key\": \"commands.mirrorVertical\""
   },
   "commands.movieclipBake": {
     "locations": [
-      "src/ui/command-catalog.mjs:186"
+      "src/ui/command-catalog.mjs:187"
     ],
     "context": "['movieclip-bake', english[\"commands.movieclipBake\"], 'layers', {labelKey: \"commands.movieclipBake\", requires: ['movieclip']}],"
   },
   "commands.movieclipBreak": {
     "locations": [
-      "src/ui/command-catalog.mjs:185"
+      "src/ui/command-catalog.mjs:186"
     ],
     "context": "['movieclip-break', english[\"commands.movieclipBreak\"], 'split', {labelKey: \"commands.movieclipBreak\", requires: ['movieclip']}],"
   },
   "commands.movieclipCancel": {
     "locations": [
-      "src/ui/command-catalog.mjs:183"
+      "src/ui/command-catalog.mjs:184"
     ],
     "context": "['movieclip-cancel', english[\"commands.movieclipCancel\"], 'close', {labelKey: \"commands.movieclipCancel\", requires: ['movieclip-session']}],"
   },
   "commands.movieclipCreate": {
     "locations": [
-      "src/ui/command-catalog.mjs:179"
+      "src/ui/command-catalog.mjs:180"
     ],
     "context": "['movieclip-create', english[\"commands.movieclipCreate\"], 'frame', {labelKey: \"commands.movieclipCreate\", requires: ['figure'], keywords: ['clip', 'symbol']}],"
   },
   "commands.movieclipDone": {
     "locations": [
-      "src/ui/command-catalog.mjs:182"
+      "src/ui/command-catalog.mjs:183"
     ],
     "context": "['movieclip-done', english[\"commands.movieclipDone\"], 'check', {labelKey: \"commands.movieclipDone\", requires: ['movieclip-session']}],"
   },
   "commands.movieclipEdit": {
     "locations": [
-      "src/ui/command-catalog.mjs:181"
+      "src/ui/command-catalog.mjs:182"
     ],
     "context": "['movieclip-edit', english[\"commands.movieclipEdit\"], 'frame', {labelKey: \"commands.movieclipEdit\", requires: ['movieclip']}],"
   },
   "commands.movieclipExport": {
     "locations": [
-      "src/ui/command-catalog.mjs:187"
+      "src/ui/command-catalog.mjs:188"
     ],
     "context": "['movieclip-export', english[\"commands.movieclipExport\"], 'export', {labelKey: \"commands.movieclipExport\", requires: ['movieclip']}],"
   },
   "commands.movieclipExtend": {
     "locations": [
-      "src/ui/command-catalog.mjs:188"
+      "src/ui/command-catalog.mjs:189"
     ],
     "context": "['movieclip-extend', english[\"commands.movieclipExtend\"], 'plus', {...internal, labelKey: \"commands.movieclipExtend\"}],"
   },
   "commands.movieclipNew": {
     "locations": [
-      "src/ui/command-catalog.mjs:178"
+      "src/ui/command-catalog.mjs:179"
     ],
     "context": "['movieclip-new', english[\"commands.movieclipNew\"], 'frame', {labelKey: \"commands.movieclipNew\", keywords: ['clip', 'symbol']}],"
   },
   "commands.movieclipRange": {
     "locations": [
-      "src/ui/command-catalog.mjs:180"
+      "src/ui/command-catalog.mjs:181"
     ],
     "context": "['movieclip-range', english[\"commands.movieclipRange\"], 'frame', {labelKey: \"commands.movieclipRange\", keywords: ['clip', 'range']}],"
   },
   "commands.movieclipUnique": {
     "locations": [
-      "src/ui/command-catalog.mjs:184"
+      "src/ui/command-catalog.mjs:185"
     ],
     "context": "['movieclip-unique', english[\"commands.movieclipUnique\"], 'duplicate', {labelKey: \"commands.movieclipUnique\", requires: ['movieclip']}],"
   },
@@ -6660,14 +6656,14 @@
   "commands.nextExposure": {
     "locations": [
       "src/hotkey-labels.mjs:187",
-      "src/ui/command-catalog.mjs:177"
+      "src/ui/command-catalog.mjs:178"
     ],
     "context": "\"key\": \"commands.nextExposure\""
   },
   "commands.nextFigure": {
     "locations": [
       "src/hotkey-labels.mjs:256",
-      "src/ui/command-catalog.mjs:227"
+      "src/ui/command-catalog.mjs:228"
     ],
     "context": "\"key\": \"commands.nextFigure\""
   },
@@ -6693,19 +6689,19 @@
   },
   "commands.originSegment": {
     "locations": [
-      "src/ui/command-catalog.mjs:247"
+      "src/ui/command-catalog.mjs:248"
     ],
     "context": "['origin-segment', english[\"commands.originSegment\"], 'origin', {labelKey: \"commands.originSegment\", ...build, requires: ['joint'], keywords: ['root', 'pivot']}"
   },
   "commands.paletteNext": {
     "locations": [
-      "src/ui/command-catalog.mjs:229"
+      "src/ui/command-catalog.mjs:230"
     ],
     "context": "['palette-next', english[\"commands.paletteNext\"], 'chevron-right', {...internal, labelKey: \"commands.paletteNext\"}],"
   },
   "commands.palettePrevious": {
     "locations": [
-      "src/ui/command-catalog.mjs:228"
+      "src/ui/command-catalog.mjs:229"
     ],
     "context": "['palette-previous', english[\"commands.palettePrevious\"], 'chevron-left', {...internal, labelKey: \"commands.palettePrevious\"}],"
   },
@@ -6759,7 +6755,7 @@
   },
   "commands.pasteBuilderAppearance": {
     "locations": [
-      "src/ui/command-catalog.mjs:256"
+      "src/ui/command-catalog.mjs:257"
     ],
     "context": "['paste-builder-appearance', english[\"commands.pasteBuilderAppearance\"], 'clipboard', {labelKey: \"commands.pasteBuilderAppearance\", ...build, requires: ['joint'"
   },
@@ -6797,27 +6793,27 @@
   },
   "commands.polygonsNext": {
     "locations": [
-      "src/ui/command-catalog.mjs:231"
+      "src/ui/command-catalog.mjs:232"
     ],
     "context": "['polygons-next', english[\"commands.polygonsNext\"], 'chevron-right', {...internal, labelKey: \"commands.polygonsNext\"}],"
   },
   "commands.polygonsPrevious": {
     "locations": [
-      "src/ui/command-catalog.mjs:230"
+      "src/ui/command-catalog.mjs:231"
     ],
     "context": "['polygons-previous', english[\"commands.polygonsPrevious\"], 'chevron-left', {...internal, labelKey: \"commands.polygonsPrevious\"}],"
   },
   "commands.previousExposure": {
     "locations": [
       "src/hotkey-labels.mjs:184",
-      "src/ui/command-catalog.mjs:176"
+      "src/ui/command-catalog.mjs:177"
     ],
     "context": "\"key\": \"commands.previousExposure\""
   },
   "commands.previousFigure": {
     "locations": [
       "src/hotkey-labels.mjs:253",
-      "src/ui/command-catalog.mjs:226"
+      "src/ui/command-catalog.mjs:227"
     ],
     "context": "\"key\": \"commands.previousFigure\""
   },
@@ -6843,7 +6839,7 @@
   },
   "commands.privacy": {
     "locations": [
-      "src/ui/command-catalog.mjs:331"
+      "src/ui/command-catalog.mjs:334"
     ],
     "context": "['privacy', english[\"commands.privacy\"], 'lock', {labelKey: \"commands.privacy\", requires: ['desktop:telemetry'], keywords: ['telemetry']}],"
   },
@@ -6856,7 +6852,7 @@
   },
   "commands.releaseNotes": {
     "locations": [
-      "src/ui/command-catalog.mjs:326"
+      "src/ui/command-catalog.mjs:329"
     ],
     "context": "['release-notes', english[\"commands.releaseNotes\"], 'file', {labelKey: \"commands.releaseNotes\", requires: ['desktop:updates'], keywords: ['release notes', 'chan"
   },
@@ -6876,73 +6872,73 @@
   },
   "commands.resetColor": {
     "locations": [
-      "src/ui/command-catalog.mjs:199"
+      "src/ui/command-catalog.mjs:200"
     ],
     "context": "['reset-color', english[\"commands.resetColor\"], 'reset', {labelKey: \"commands.resetColor\", requires: ['figure'], keywords: ['colours']}],"
   },
   "commands.resetPose": {
     "locations": [
-      "src/ui/command-catalog.mjs:198"
+      "src/ui/command-catalog.mjs:199"
     ],
     "context": "['reset-pose', english[\"commands.resetPose\"], 'reset', {labelKey: \"commands.resetPose\", requires: ['figure']}],"
   },
   "commands.restartUpdate": {
     "locations": [
-      "src/ui/command-catalog.mjs:328"
+      "src/ui/command-catalog.mjs:331"
     ],
     "context": "['restart-update', english[\"commands.restartUpdate\"], 'import', {labelKey: \"commands.restartUpdate\", requires: ['update-ready']}],"
   },
   "commands.rigBindBranch": {
     "locations": [
-      "src/ui/command-catalog.mjs:264"
+      "src/ui/command-catalog.mjs:266"
     ],
     "context": "['rig-bind-branch', english[\"commands.rigBindBranch\"], 'stretch-horizontal', {labelKey: \"commands.rigBindBranch\", ...build, requires: ['joint'], keywords: ['rig"
   },
   "commands.rigConnect": {
     "locations": [
-      "src/ui/command-catalog.mjs:259"
+      "src/ui/command-catalog.mjs:261"
     ],
     "context": "['rig-connect', english[\"commands.rigConnect\"], 'link', {labelKey: \"commands.rigConnect\", ...build, requires: ['figure'], keywords: ['rig', 'anchor']}],"
   },
   "commands.rigExamples": {
     "locations": [
-      "src/ui/command-catalog.mjs:266"
+      "src/ui/command-catalog.mjs:268"
     ],
     "context": "['rig-examples', english[\"commands.rigExamples\"], 'layers', {labelKey: \"commands.rigExamples\", keywords: ['samples', 'library']}],"
   },
   "commands.rigPickDriver": {
     "locations": [
-      "src/ui/command-catalog.mjs:263"
+      "src/ui/command-catalog.mjs:265"
     ],
     "context": "['rig-pick-driver', english[\"commands.rigPickDriver\"], 'cursor', {labelKey: \"commands.rigPickDriver\", ...build, palette: false}],"
   },
   "commands.rigPickEnd": {
     "locations": [
-      "src/ui/command-catalog.mjs:262"
+      "src/ui/command-catalog.mjs:264"
     ],
     "context": "['rig-pick-end', english[\"commands.rigPickEnd\"], 'cursor', {labelKey: \"commands.rigPickEnd\", ...build, palette: false}],"
   },
   "commands.rigPickStart": {
     "locations": [
-      "src/ui/command-catalog.mjs:261"
+      "src/ui/command-catalog.mjs:263"
     ],
     "context": "['rig-pick-start', english[\"commands.rigPickStart\"], 'cursor', {labelKey: \"commands.rigPickStart\", ...build, palette: false}],"
   },
   "commands.rigTest": {
     "locations": [
-      "src/ui/command-catalog.mjs:265"
+      "src/ui/command-catalog.mjs:267"
     ],
     "context": "['rig-test', english[\"commands.rigTest\"], 'play', {labelKey: \"commands.rigTest\", ...build, keywords: ['preview', 'rig']}],"
   },
   "commands.rigWeighted": {
     "locations": [
-      "src/ui/command-catalog.mjs:260"
+      "src/ui/command-catalog.mjs:262"
     ],
     "context": "['rig-weighted', english[\"commands.rigWeighted\"], 'nodes', {labelKey: \"commands.rigWeighted\", ...build, requires: ['joint'], keywords: ['rig']}],"
   },
   "commands.rotate": {
     "locations": [
-      "src/ui/command-catalog.mjs:196"
+      "src/ui/command-catalog.mjs:197"
     ],
     "context": "['rotate', english[\"commands.rotate\"], 'rotate-step', {labelKey: \"commands.rotate\", requires: ['figure']}],"
   },
@@ -6973,31 +6969,31 @@
   },
   "commands.segmentOrderBack": {
     "locations": [
-      "src/ui/command-catalog.mjs:253"
+      "src/ui/command-catalog.mjs:254"
     ],
     "context": "['segment-order-back', english[\"commands.segmentOrderBack\"], 'send-to-back', {labelKey: \"commands.segmentOrderBack\", ...build, requires: ['joint'], keywords: ['"
   },
   "commands.segmentOrderDown": {
     "locations": [
-      "src/ui/command-catalog.mjs:252"
+      "src/ui/command-catalog.mjs:253"
     ],
     "context": "['segment-order-down', english[\"commands.segmentOrderDown\"], 'down', {labelKey: \"commands.segmentOrderDown\", ...build, requires: ['joint'], keywords: ['arrange'"
   },
   "commands.segmentOrderFront": {
     "locations": [
-      "src/ui/command-catalog.mjs:250"
+      "src/ui/command-catalog.mjs:251"
     ],
     "context": "['segment-order-front', english[\"commands.segmentOrderFront\"], 'bring-to-front', {labelKey: \"commands.segmentOrderFront\", ...build, requires: ['joint'], keyword"
   },
   "commands.segmentOrderUp": {
     "locations": [
-      "src/ui/command-catalog.mjs:251"
+      "src/ui/command-catalog.mjs:252"
     ],
     "context": "['segment-order-up', english[\"commands.segmentOrderUp\"], 'up', {labelKey: \"commands.segmentOrderUp\", ...build, requires: ['joint'], keywords: ['arrange', 'order"
   },
   "commands.segmentValues": {
     "locations": [
-      "src/ui/command-catalog.mjs:224"
+      "src/ui/command-catalog.mjs:225"
     ],
     "context": "['segment-values', english[\"commands.segmentValues\"], 'exact', {labelKey: \"commands.segmentValues\", requires: ['joint'], keywords: ['segment editor', 'angle', '"
   },
@@ -7016,7 +7012,7 @@
   },
   "commands.selectionMore": {
     "locations": [
-      "src/ui/command-catalog.mjs:221"
+      "src/ui/command-catalog.mjs:222"
     ],
     "context": "['selection-more', english[\"commands.selectionMore\"], 'more', {...internal, labelKey: \"commands.selectionMore\"}],"
   },
@@ -7028,21 +7024,21 @@
   },
   "commands.splitSegment": {
     "locations": [
-      "src/ui/command-catalog.mjs:239"
+      "src/ui/command-catalog.mjs:240"
     ],
     "context": "['split-segment', english[\"commands.splitSegment\"], 'split', {labelKey: \"commands.splitSegment\", ...build, requires: ['joint'], keywords: ['segment', 'part']}],"
   },
   "commands.timelineLayerDown": {
     "locations": [
       "src/hotkey-labels.mjs:181",
-      "src/ui/command-catalog.mjs:175"
+      "src/ui/command-catalog.mjs:176"
     ],
     "context": "\"key\": \"commands.timelineLayerDown\""
   },
   "commands.timelineLayerUp": {
     "locations": [
       "src/hotkey-labels.mjs:178",
-      "src/ui/command-catalog.mjs:174"
+      "src/ui/command-catalog.mjs:175"
     ],
     "context": "\"key\": \"commands.timelineLayerUp\""
   },
@@ -7060,13 +7056,13 @@
   },
   "commands.toggleAudio": {
     "locations": [
-      "src/ui/command-catalog.mjs:173"
+      "src/ui/command-catalog.mjs:174"
     ],
     "context": "['toggle-audio', english[\"commands.toggleAudio\"], 'music', {labelKey: \"commands.toggleAudio\", toggle: true, keywords: ['sound', 'music', 'track']}],"
   },
   "commands.toggleBuilderBranch": {
     "locations": [
-      "src/ui/command-catalog.mjs:257"
+      "src/ui/command-catalog.mjs:258"
     ],
     "context": "['toggle-builder-branch', english[\"commands.toggleBuilderBranch\"], 'builder-branch', {labelKey: \"commands.toggleBuilderBranch\", ...build, toggle: true}],"
   },
@@ -7090,7 +7086,7 @@
   },
   "commands.toggleIsolate": {
     "locations": [
-      "src/ui/command-catalog.mjs:225"
+      "src/ui/command-catalog.mjs:226"
     ],
     "context": "['toggle-isolate', english[\"commands.toggleIsolate\"], 'eye', {labelKey: \"commands.toggleIsolate\", toggle: true, keywords: ['solo', 'focus']}],"
   },
@@ -7133,70 +7129,70 @@
   },
   "commands.toolCircle": {
     "locations": [
-      "src/ui/command-catalog.mjs:288"
+      "src/ui/command-catalog.mjs:291"
     ],
     "context": "['tool-circle', english[\"commands.toolCircle\"], 'circle', {labelKey: \"commands.toolCircle\", ...build}],"
   },
   "commands.toolHand": {
     "locations": [
-      "src/ui/command-catalog.mjs:286"
+      "src/ui/command-catalog.mjs:289"
     ],
     "context": "['tool-hand', english[\"commands.toolHand\"], 'hand', {labelKey: \"commands.toolHand\", keywords: ['hand', 'scroll']}],"
   },
   "commands.toolLine": {
     "locations": [
-      "src/ui/command-catalog.mjs:287"
+      "src/ui/command-catalog.mjs:290"
     ],
     "context": "['tool-line', english[\"commands.toolLine\"], 'line', {labelKey: \"commands.toolLine\", ...build}],"
   },
   "commands.toolPolygon": {
     "locations": [
-      "src/ui/command-catalog.mjs:289"
+      "src/ui/command-catalog.mjs:292"
     ],
     "context": "['tool-polygon', english[\"commands.toolPolygon\"], 'polygon', {labelKey: \"commands.toolPolygon\", ...build, keywords: ['fill', 'shape']}],"
   },
   "commands.toolPose": {
     "locations": [
       "src/hotkey-labels.mjs:79",
-      "src/ui/command-catalog.mjs:285"
+      "src/ui/command-catalog.mjs:288"
     ],
     "context": "\"key\": \"commands.toolPose\""
   },
   "commands.toolRig": {
     "locations": [
       "src/hotkey-labels.mjs:91",
-      "src/ui/command-catalog.mjs:290"
+      "src/ui/command-catalog.mjs:293"
     ],
     "context": "\"key\": \"commands.toolRig\""
   },
   "commands.toolSelect": {
     "locations": [
-      "src/ui/command-catalog.mjs:284"
+      "src/ui/command-catalog.mjs:287"
     ],
     "context": "['tool-select', english[\"commands.toolSelect\"], 'cursor', {labelKey: \"commands.toolSelect\", keywords: ['select tool', 'pose']}],"
   },
   "commands.tutorialLeave": {
     "locations": [
-      "src/ui/command-catalog.mjs:324"
+      "src/ui/command-catalog.mjs:327"
     ],
     "context": "['tutorial-leave', english[\"commands.tutorialLeave\"], 'close', {labelKey: \"commands.tutorialLeave\", ...internal}],"
   },
   "commands.tutorials": {
     "locations": [
       "src/application-menu.mjs:93",
-      "src/ui/command-catalog.mjs:323"
+      "src/ui/command-catalog.mjs:326"
     ],
     "context": "help: [messageTuple(['help', 'help', interfaceText(\"applicationMenu.keyboardShortcuts\"), '?'], {2: {key: \"applicationMenu.keyboardShortcuts\", params: {}}}), mes"
   },
   "commands.unsplitSegment": {
     "locations": [
-      "src/ui/command-catalog.mjs:240"
+      "src/ui/command-catalog.mjs:241"
     ],
     "context": "['unsplit-segment', english[\"commands.unsplitSegment\"], 'builder-unsplit', {labelKey: \"commands.unsplitSegment\", ...build, requires: ['joint'], keywords: ['merg"
   },
   "commands.website": {
     "locations": [
-      "src/ui/command-catalog.mjs:333"
+      "src/ui/command-catalog.mjs:336"
     ],
     "context": "['website', english[\"commands.website\"], 'link', {labelKey: \"commands.website\", requires: ['desktop:telemetry']}],"
   },
@@ -7284,7 +7280,7 @@
       "desktop/main.cjs:180",
       "src/app.mjs:4213",
       "src/application-menu.mjs:35",
-      "src/localization-bindings.mjs:209",
+      "src/localization-bindings.mjs:207",
       "src/touch/timeline-scrubber.mjs:52",
       "src/ui/command-catalog.mjs:104",
       "src/ui/quick-actions.mjs:92"
@@ -7294,7 +7290,7 @@
   "common.cut": {
     "locations": [
       "desktop/main.cjs:180",
-      "src/localization-bindings.mjs:209",
+      "src/localization-bindings.mjs:207",
       "src/touch/timeline-scrubber.mjs:53",
       "src/ui/command-catalog.mjs:103"
     ],
@@ -7305,7 +7301,7 @@
       "desktop/main.cjs:181",
       "src/camera-motion-ui.mjs:77",
       "src/color-picker.mjs:157",
-      "src/localization-bindings.mjs:210",
+      "src/localization-bindings.mjs:208",
       "src/shell/layout-popover.mjs:212",
       "src/studio-shell.mjs:126",
       "src/touch/timeline-scrubber.mjs:55",
@@ -7336,7 +7332,7 @@
       "desktop/main.cjs:181",
       "src/app.mjs:4216",
       "src/application-menu.mjs:59",
-      "src/localization-bindings.mjs:210",
+      "src/localization-bindings.mjs:208",
       "src/studio-shell.mjs:107",
       "src/ui/command-catalog.mjs:109",
       "src/ui/quick-actions.mjs:92",
@@ -7350,7 +7346,7 @@
       "desktop/main.cjs:173",
       "src/app.mjs:4057",
       "src/application-menu.mjs:31",
-      "src/localization-bindings.mjs:208",
+      "src/localization-bindings.mjs:206",
       "src/ui/command-catalog.mjs:81"
     ],
     "context": "item(t('common.export'), 'export'),"
@@ -7397,7 +7393,7 @@
       "src/app.mjs:4204",
       "src/app.mjs:4214",
       "src/application-menu.mjs:35",
-      "src/localization-bindings.mjs:210",
+      "src/localization-bindings.mjs:208",
       "src/touch/timeline-scrubber.mjs:54",
       "src/ui/command-catalog.mjs:105",
       "src/ui/quick-actions.mjs:92"
@@ -7410,7 +7406,7 @@
       "src/app.mjs:4051",
       "src/application-menu.mjs:34",
       "src/hotkey-labels.mjs:49",
-      "src/localization-bindings.mjs:205",
+      "src/localization-bindings.mjs:203",
       "src/ui/command-catalog.mjs:102"
     ],
     "context": "item(t('common.undo'), 'undo'), item(t('common.redo'), 'redo'),"
@@ -7453,7 +7449,7 @@
       "src/app.mjs:4047",
       "src/application-menu.mjs:20",
       "src/localization-bindings.mjs:181",
-      "src/localization-bindings.mjs:205",
+      "src/localization-bindings.mjs:203",
       "src/ui/command-catalog.mjs:65"
     ],
     "context": "item(t('common.save'), 'save'),"
@@ -7465,7 +7461,7 @@
       "src/app.mjs:4029",
       "src/app.mjs:4048",
       "src/application-menu.mjs:21",
-      "src/localization-bindings.mjs:205",
+      "src/localization-bindings.mjs:203",
       "src/ui/command-catalog.mjs:66"
     ],
     "context": "item(t('common.saveAs'), 'save-as'),"
@@ -7489,7 +7485,7 @@
       "src/app.mjs:4050",
       "src/application-menu.mjs:34",
       "src/hotkey-labels.mjs:46",
-      "src/localization-bindings.mjs:205",
+      "src/localization-bindings.mjs:203",
       "src/ui/command-catalog.mjs:101"
     ],
     "context": "item(t('common.undo'), 'undo'), item(t('common.redo'), 'redo'),"
@@ -13821,7 +13817,7 @@
   },
   "errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip": {
     "locations": [
-      "src/engine/engine-owner.mjs:560"
+      "src/engine/engine-owner.mjs:564"
     ],
     "context": "if (name === 'createMovieclip' && drawingResourcesFor(editor.report)?.stats.unpublished) throw messageError(new Error(''), 'errors.editorMovieclips.finishDrawin"
   },
@@ -13839,7 +13835,7 @@
   },
   "errors.editorMovieclips.theSceneChangedWhileBakingTryAgain": {
     "locations": [
-      "src/engine/engine-owner.mjs:620"
+      "src/engine/engine-owner.mjs:624"
     ],
     "context": "if (editor.report !== report || editor.revision !== revision) throw messageError(new Error(''), 'errors.editorMovieclips.theSceneChangedWhileBakingTryAgain', {}"
   },
@@ -13884,14 +13880,14 @@
   },
   "errors.engineOwner.invalidValue": {
     "locations": [
-      "src/engine/engine-owner.mjs:854"
+      "src/engine/engine-owner.mjs:858"
     ],
     "context": "if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error}"
   },
   "errors.engineOwner.notSupported": {
     "locations": [
       "src/engine/engine-owner.mjs:8",
-      "src/engine/engine-owner.mjs:870",
+      "src/engine/engine-owner.mjs:874",
       "src/native-property-edit.mjs:261"
     ],
     "context": "* or has no command for, raises the refusal (`errors.engineOwner.notSupported`, counted in `report.refused`) and changes nothing,"
@@ -23832,8 +23828,8 @@
   },
   "menu.createText": {
     "locations": [
-      "src/localization-bindings.mjs:207",
-      "src/ui/command-catalog.mjs:192"
+      "src/localization-bindings.mjs:205",
+      "src/ui/command-catalog.mjs:193"
     ],
     "context": "'import-background': 'menu.importBackground', 'add-text': 'menu.createText',"
   },
@@ -23857,21 +23853,21 @@
   },
   "menu.importBackground": {
     "locations": [
-      "src/localization-bindings.mjs:207",
+      "src/localization-bindings.mjs:205",
       "src/ui/command-catalog.mjs:76"
     ],
     "context": "'import-background': 'menu.importBackground', 'add-text': 'menu.createText',"
   },
   "menu.importFigures": {
     "locations": [
-      "src/localization-bindings.mjs:206",
+      "src/localization-bindings.mjs:204",
       "src/ui/command-catalog.mjs:74"
     ],
     "context": "import: 'menu.importFigures', 'import-sprite': 'menu.importSprite',"
   },
   "menu.importSprite": {
     "locations": [
-      "src/localization-bindings.mjs:206",
+      "src/localization-bindings.mjs:204",
       "src/ui/command-catalog.mjs:75"
     ],
     "context": "import: 'menu.importFigures', 'import-sprite': 'menu.importSprite',"
@@ -23880,7 +23876,7 @@
     "locations": [
       "desktop/main.cjs:166",
       "src/hotkey-labels.mjs:4",
-      "src/localization-bindings.mjs:204",
+      "src/localization-bindings.mjs:202",
       "src/ui/command-catalog.mjs:61"
     ],
     "context": "item(t('menu.newAnimation'), 'new'),"
@@ -23888,29 +23884,29 @@
   "menu.openProject": {
     "locations": [
       "desktop/main.cjs:168",
-      "src/localization-bindings.mjs:204",
+      "src/localization-bindings.mjs:202",
       "src/ui/command-catalog.mjs:63"
     ],
     "context": "item(t('menu.openProject'), 'open'),"
   },
   "menu.openRecent": {
     "locations": [
-      "src/localization-bindings.mjs:204",
+      "src/localization-bindings.mjs:202",
       "src/ui/command-catalog.mjs:64"
     ],
     "context": "new: 'menu.newAnimation', open: 'menu.openProject', 'open-recent': 'menu.openRecent',"
   },
   "menu.performance": {
     "locations": [
-      "src/localization-bindings.mjs:209",
-      "src/ui/command-catalog.mjs:330"
+      "src/localization-bindings.mjs:207",
+      "src/ui/command-catalog.mjs:333"
     ],
     "context": "performance: 'menu.performance', copy: 'common.copy', cut: 'common.cut',"
   },
   "menu.settings": {
     "locations": [
-      "src/localization-bindings.mjs:208",
-      "src/ui/command-catalog.mjs:339"
+      "src/localization-bindings.mjs:206",
+      "src/ui/command-catalog.mjs:342"
     ],
     "context": "export: 'common.export', settings: 'menu.settings', help: 'menu.shortcuts',"
   },
@@ -23918,9 +23914,9 @@
     "locations": [
       "desktop/main.cjs:194",
       "src/hotkey-labels.mjs:40",
-      "src/localization-bindings.mjs:192",
-      "src/localization-bindings.mjs:208",
-      "src/ui/command-catalog.mjs:322"
+      "src/localization-bindings.mjs:190",
+      "src/localization-bindings.mjs:206",
+      "src/ui/command-catalog.mjs:325"
     ],
     "context": "{ label: t('desktop.main.help'), submenu: [item(t('menu.shortcuts'), 'help'), item(t('desktop.main.checkForUpdates'), 'check-updates'), item(t('desktop.main.wha"
   },
@@ -25112,7 +25108,7 @@
   "overlays.palette.open": {
     "locations": [
       "src/app.mjs:4041",
-      "src/ui/command-catalog.mjs:338"
+      "src/ui/command-catalog.mjs:341"
     ],
     "context": "{ command: \"command-palette\", icon: \"search\", label: commands.label(\"command-palette\"), labelKey: \"overlays.palette.open\","
   },
@@ -25149,37 +25145,37 @@
   },
   "playback.frameRate": {
     "locations": [
-      "src/localization-bindings.mjs:196"
+      "src/localization-bindings.mjs:194"
     ],
     "context": "['#fps', { 'aria-label': 'playback.frameRate' }],"
   },
   "playback.loop": {
     "locations": [
-      "src/localization-bindings.mjs:200"
+      "src/localization-bindings.mjs:198"
     ],
     "context": "['#loop-button', { title: 'playback.loop' }],"
   },
   "playback.pause": {
     "locations": [
-      "src/localization-bindings.mjs:306"
+      "src/localization-bindings.mjs:304"
     ],
     "context": "const key = previewing ? 'playback.stop' : playing ? 'playback.pause' : 'playback.play';"
   },
   "playback.play": {
     "locations": [
-      "src/localization-bindings.mjs:306"
+      "src/localization-bindings.mjs:304"
     ],
     "context": "const key = previewing ? 'playback.stop' : playing ? 'playback.pause' : 'playback.play';"
   },
   "playback.playPauseHint": {
     "locations": [
-      "src/localization-bindings.mjs:199"
+      "src/localization-bindings.mjs:197"
     ],
     "context": "['#play-button', { title: 'playback.playPauseHint' }],"
   },
   "playback.stop": {
     "locations": [
-      "src/localization-bindings.mjs:306"
+      "src/localization-bindings.mjs:304"
     ],
     "context": "const key = previewing ? 'playback.stop' : playing ? 'playback.pause' : 'playback.play';"
   },
@@ -26794,12 +26790,6 @@
       "src/settings.mjs:638"
     ],
     "context": "this.select(say('settings.altDragFigureRoot'), 'altDragDuplicate', [messageTuple(['instance', interfaceText(\"settings.linkedInstance\")], {1: {key: \"settings.lin"
-  },
-  "settings.animation": {
-    "locations": [
-      "src/localization-bindings.mjs:190"
-    ],
-    "context": "['.right-panel .panel-tabs [data-inspector=\"animation\"]', { text: 'settings.animation' }],"
   },
   "settings.appearance": {
     "locations": [
@@ -30822,7 +30812,8 @@
   "timeline.autoKey": {
     "locations": [
       "src/timeline-header.mjs:219",
-      "src/timeline-header.mjs:289"
+      "src/timeline-header.mjs:289",
+      "src/ui/command-catalog.mjs:173"
     ],
     "context": "localizedMarkup(autoKey, `<span class=\"tl-autokey-dot\" aria-hidden=\"true\"></span><span class=\"ui-label\" ${messageAttributes(\"timeline.autoKey\", {})}>${say(\"time"
   },
@@ -31183,7 +31174,7 @@
   },
   "timeline.title": {
     "locations": [
-      "src/localization-bindings.mjs:193",
+      "src/localization-bindings.mjs:191",
       "src/settings.mjs:626"
     ],
     "context": "['.timeline-title', { text: 'timeline.title' }],"
@@ -35828,7 +35819,7 @@
   },
   "vfxChannels.enabled": {
     "locations": [
-      "src/engine/engine-owner.mjs:841",
+      "src/engine/engine-owner.mjs:845",
       "src/vfx-clip-inspector.mjs:64",
       "src/vfx-localization.mjs:9",
       "src/vfx.mjs:24"

@@ -85,6 +85,9 @@ try {
   await page.locator('.workspace-switch [data-workspace-mode="rig"]').click(); await settle();
   assert.equal(await page.locator('.workspace').getAttribute('data-rail'), 'left', 'workspace arrangements are independent');
   viewport = await box('#viewport');
+  // Build's Structure starts folded to its strip; its button opens it as a sheet, and the sheet's tab drags it out.
+  assert.equal((await placement('structure')).dock, 'strip');
+  await page.locator('.shell-strip > [data-panel="structure"]').click(); await settle();
   await drag('#structure-tab', {x: viewport.x + viewport.width / 2, y: viewport.y + 70}, {label: 'Float here'});
   assert.equal((await placement('structure')).dock, 'float');
   assert.equal(await page.locator('#builder-outliner').isVisible(), true);
