@@ -95,3 +95,44 @@ fn invalid_join_slots_do_not_connect_unrelated_figures() {
         assert_eq!(editor.state().selected_uids, vec![4], "target {target}");
     }
 }
+
+#[test]
+fn external_ownership_candidates_skip_a_bridge_without_breaking_traversal() {
+    use std::collections::HashSet;
+    let reference = reference("native");
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    for cycle in [false, true] {
+        let mut report = styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap();
+        if cycle {
+            let objects = report.make_obj().unwrap().get_mut("keyframes").unwrap().make_arr().unwrap()[0]
+                .make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap();
+            objects[0].make_obj().unwrap().set("join", styk_doc::json::parse(br#"{"target_object_slot":1,"target_handle_id":22}"#).unwrap());
+        }
+        // Ownership lives at the caller, not in an invented engine document tag.
+        // Figure 2 bridges 1 and 3; a remote lock excludes it from additions.
+        let externally_owned = HashSet::from([2_u32]);
+        let candidates = Value::array((1..=4_u32).filter(|id| !externally_owned.contains(id))
+            .map(|id| Value::Num(id as f64)).collect());
+        let mut options = styk_doc::Obj::new();options.set("candidates", candidates);
+        let options = Value::object(options);
+        let mut editor = styk_edit::Editor::new(report.clone(), styk_edit::Options::default());
+        for start in [1, 2] {
+            let result = editor.call("selectConnected", &[Value::Num(start as f64), options.clone()]).unwrap();
+            assert_eq!(editor.state().selected_uids, vec![1,3]);
+            assert_eq!(editor.state().selected_uid, Some(if start == 1 { 1 } else { 3 }));
+            let ids: Vec<f64> = result.elements().unwrap().iter().map(|o| o.get("unique_id").unwrap().as_f64().unwrap()).collect();
+            assert_eq!(ids, vec![1.0,3.0]);
+            editor.take_events();
+            editor.call("selectConnected", &[Value::Num(start as f64), options.clone()]).unwrap();
+            assert!(editor.take_events().is_empty());
+            assert!(report.same_node(editor.report()));
+            assert!(!editor.state().can_undo);
+        }
+        // add preserves prior selections, even when the caller's eligibility changes.
+        editor.call("select", &[Value::Num(2.0)]).unwrap();
+        let mut add = options.as_obj().unwrap().clone();add.set("add", Value::Bool(true));
+        editor.call("selectConnected", &[Value::Num(1.0), Value::object(add)]).unwrap();
+        assert_eq!(editor.state().selected_uids, vec![2,1,3]);
+        assert!(report.same_node(editor.report()));
+    }
+}

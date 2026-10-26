@@ -400,6 +400,10 @@ impl Editor {
         key: &str,
         options: Option<&Value>,
     ) -> Result<Value, EditError> {
+        // Native timelines are tools and tests; their origin documents are recorded for the other calls only.
+        if !self.sheet() && self.report.get("figure_types").and_then(Value::elements).is_some_and(|figures| figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy))) {
+            return Err(EditError::Unported("a native builder property token on a document with animation origins".into()));
+        }
         let whole = match options {
             None => false,
             Some(options) => {

@@ -12,8 +12,8 @@ fixture.figure_types[0].segments.forEach((s,i)=>{s.parent_id=i<4?i:0;s.angle_rad
 fixture.keyframes[0].objects[0].angles=fixture.figure_types[0].segments.map(s=>s.angle_rad);
 try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47841');await page.waitForFunction(()=>window.styk?.ready);
- await page.evaluate(f=>{styk.editor.load(f);styk.editor.select(1,-1);styk.builder.enter();},fixture);
- await page.locator('.builder-footer [data-action=zoom-selection]').click();await page.locator('[data-tool=select]').click();await settle();
+ await page.evaluate(f=>{styk.editor.load(f);styk.editor.select(1,-1);styk.builder.enter();styk.workspace.dock('structure','left');},fixture);
+ await page.locator('.ui-quick [data-action=zoom-selection]').click();await page.locator('[data-tool=select]').click();await settle();
  const joints=await page.evaluate(()=>styk.editor.geometry.objects.get(styk.editor.selectedSlot).segments.map(s=>s.end));
  const a=await screen(joints[0]),b=await screen(joints[2]);
  await page.mouse.click(a.x,a.y);await page.keyboard.down('Shift');await page.mouse.click(b.x,b.y);await page.keyboard.up('Shift');await settle();

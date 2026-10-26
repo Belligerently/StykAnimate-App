@@ -42,8 +42,50 @@ accounting (`drawing-tile-memory.mjs`) and history orchestration (`drawing-histo
 `drawing-preparation.mjs`'s `DrawingPreparation`), which hold the JavaScript buffers that
 display, saving and the workers share; the presenters and reduced levels for the JavaScript
 renderer (`drawing-raster.mjs`), which go with it; Pivot flattening for export
-(`drawing-flatten.mjs`, the export path). Drawing commits are still recorded by the editor and
-written into the engine's session as external history entries, not session commands of their own.
+(`drawing-flatten.mjs`, the export path). The commits themselves are the engine session's
+commands and history entries ([History](#history)); the buffers stay here.
+
+## History
+
+A stroke, an erase, a fill, a pasted or moved selection and a resample are ordinary entries of the engine session's
+history (`styk-edit/src/drawing_pixels.rs`): labels, weights, grouping in batches, the 80-entry and byte limits, the
+revision and the dirty state are the session's, as for every other edit. The session never takes pixels (a stroke is
+megabytes, never JSON): its entry names the cel and the **record** of the interface's pixel history, which holds the
+before and after tiles (`DrawingHistory`: memory, then IndexedDB for records of 64 KiB and more), and carries the
+weight the interface measured. `src/engine/engine-owner-drawing.mjs` is the interface's half:
+
+* **Commit** (`commitDrawingPixels`): the store checks its memory (`checkHistory`), the session records the entry, which
+  names the record the history is about to make (for the first stroke on a blank exposure or on a v1 cel it writes the
+  cel's definition and key into the layer sheet in the same entry; the call carries the cel's figure and object, not
+  its pixels), then the tiles apply to the store, the history tracks the record, and the cel's definition (revision,
+  bounds) is sent to the session (`@publishCel`), all before the call's events reach the interface. A commit the session
+  refuses leaves no record; the pixels stay with the caller. A commit whose tiles the store cannot apply after the
+  session recorded the entry is taken back (`@retractDrawing`: the entry, with the cel it created, leaves the history
+  as the last entry; the redo branch its recording dropped stays dropped) and the record's identity is not used
+  again, so no entry names a record the history never made. The session records the entry as the last step of the
+  call for the same reason.
+* **Grouped edits** (`movieclipBatch`): the commits of a group are entries of the group. When the group fails the
+  interface first takes their tiles back, last commit first (`drawingBatch` names them), then the session aborts the
+  group and reverts its document and history.
+* **Undo and redo**: the session names the pixel commits of the entry on top (`drawingReplay`: cel and record, in the
+  order it applies them). The interface pins and loads those records (a cold record comes from the disk), prepares large
+  replacements in the pixel worker, checks nothing changed meanwhile (document, revision, cancellation), and only then
+  runs the session's undo or redo and applies the tiles in the same synchronous step. A failed read, a cancelled replay
+  or an intervening edit changes neither the pixels nor the history. A cel the undo removed (a creation undone) keeps
+  its pixels in the store for the redo.
+* **Weights**: a record whose tiles reach the disk weighs only its metadata; one whose write failed or whose tiles came
+  back weighs its pixels again. Either change reaches the session (`@drawingBytes`), which holds the history to its
+  byte limit; the entries it retires and the pose sources only they kept alive are collected in the session and in the
+  interface's read view alike (the answer's document changes are adopted as a call's).
+* **Retention**: when a call retires an entry that referred to drawings (the limit, a new edit after undos, an aborted
+  group) the answer says `drawingRetired`, and the store lets go of the records and cels no entry refers to any more
+  (`drawingRefs`: disk files, tiles, cel entries).
+* **Resample**: the session makes the cel of the new resolution (its identity is a draw of the call, its anchors scale with
+  the ratio) as one layer sheet entry; the interface installs the resampled tiles under it. The old cel keeps its pixels
+  for the undo.
+
+A document the session refuses to edit refuses a commit (`errors.engineOwner.notSupported`) as it refuses a new
+drawing layer: the editor no longer records drawing entries of its own under the owner.
 
 ## Live cels
 
@@ -145,7 +187,11 @@ the brush model and the undo codec through the facades in Node, checks the engin
 memory back, and that every error key the crate can raise is in the English catalogue.
 `tests/drawing.test.mjs`, `drawing-selection.test.mjs`, `drawing-preparation.test.mjs` and the
 other drawing tests run the controller, the resources and the history against the engine's
-operations in Node. `scripts/smoke-drawing.mjs` (`npm run test:drawing:desktop`) paints in the
+operations in Node. `cargo test -p styk-edit drawing_pixels` and
+`tests/engine-owner-drawing.test.mjs` state the commits as session entries: the entry and its weight, the retirement of
+records, strokes undone and redone exactly as on the plain editor (pixels, bounds, labels, events, dirty state), a created or
+migrated cel with its first stroke, a resample, and a cold undo from the disk that fails, is cancelled or finds the history
+changed. `scripts/smoke-drawing.mjs` (`npm run test:drawing:desktop`) paints in the
 Electron app with two brushes, erases, fills sampling all layers, selects with the wand, moves
 and applies the selection, undoes and redoes each step, paints, erases and undoes again on a turned and
 mirrored view (comparing what the stage shows), saves, restarts and reopens the file, and checks that

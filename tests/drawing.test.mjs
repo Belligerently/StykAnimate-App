@@ -5,17 +5,16 @@ import {DrawingResources,defaultTileBudget} from '../src/drawing-resources.mjs';
 import {applyTileChanges} from '../src/drawing-pixels.mjs';
 import {DrawingStroke} from './support/sketch-stroke.mjs';
 import {drawingEngineOperation} from '../src/engine/engine-drawing-worker.mjs';
-import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure} from '../src/drawing-model.mjs';
+import {drawingMetadata,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey} from '../src/drawing-tiles.mjs';
 import {encodeTileBlob,decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX} from '../src/drawing-tile-codec.mjs';
 import {encodeDrawingPNG,decodeDrawingPNG} from '../src/drawing-png.mjs';
 import {presenterScratch,levelStore,invalidateLevels,flattenedDrawingPNG} from '../src/drawing-raster.mjs';
-import {DrawingTileProvider} from '../src/drawing-provider.mjs';
 import {createDrawingFigure} from '../src/drawing-model.mjs';
 import {objectBounds} from '../src/renderer-geometry.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
-import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {createFrame,createObject} from '../src/demo.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 
 // The pixel worker (drawing-worker.mjs) answered in this thread by the drawing raster engine; the
 // browser tests exercise the real worker. OffscreenCanvas ops (preview, thumbnail) are not answered.
@@ -26,10 +25,16 @@ function workerStub(){
     return reply;
   },dispose(){}};
 }
+/** Opening a copy of the document: the engine checks drawing figures, tile blobs and cel identities as it opens it. */
+const opens=report=>new Editor({demo:false,layerTimeline:true}).load(structuredClone(report));
 function fixture(){
   const e=new Editor({demo:false,layerTimeline:true});e.report.canvas_width=64;e.report.canvas_height=64;
-  const resources=new DrawingResources(e.report,{worker:workerStub()});e.createDrawingLayer();return {e,resources};
+  const resources=new DrawingResources(e.report,{worker:workerStub()});
+  // The structure of a drawing layer (its cels, exposures and auto key) is the engine session's.
+  installEngineOwner(e);e.createDrawingLayer();return {e,resources};
 }
+/** The engine's geometry of `frame`, with `figure` (not in the document yet) as the figure of the object `uid` on the active layer. */
+const celGeometry=(e,frame,figure,uid)=>e._shown.previewGeometry(frame,figure,e.activeLayerId,uid);
 async function stroke(e,x=40,y=40){
   const target=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),surface=await e.drawingResources.surface(target.figure);
   const brush=new DrawingStroke(surface.store,{size:8,pressureSize:false});brush.sample({x,y});
@@ -151,12 +156,12 @@ test('tile blobs round-trip exact RGBA at negative coordinates and skip transpar
 
 test('v1 to v2 migration preserves pixel world positions with rotated, mirrored and reversed poses',async()=>{
   const {e,resources}=fixture();try{
-    const {figure:v1}=await legacyFigure(),migrated=migrateDrawingFigure(v1,99,{bounds:{x:0,y:0,width:96,height:64}});
+    const {figure:v1}=await legacyFigure({figureTypeId:50}),migrated=migrateDrawingFigure(v1,99,{bounds:{x:0,y:0,width:96,height:64}});
     assert.equal(drawingMetadata(migrated).version,2);assert.ok(/^cel-/.test(drawingMetadata(migrated).celId));
     for(const mirror of [0,1])for(const reverse of [0,1]){
       const object={...createObject(v1,7,0,0),angle_rad:.8,angles:[.8],scale:1.5,image_text_flags:0};
       for(const f of [v1,migrated])f.segments[0].extra_u8_a=reverse,f.segments[0].extra_u8_b=mirror;
-      const item=f=>buildGeometry({...e.report,figure_types:[f]},createFrame([{...object,figure_type_id:f.figure_type_id}])).drawables[0];
+      const item=f=>celGeometry(e,createFrame([{...object,figure_type_id:f.figure_type_id}]),f,7).drawables[0];
       const a=transformPoint(drawingMatrix(item(v1)),{x:50.25,y:60.75}),b=transformPoint(drawingPixelMatrix(item(migrated)),{x:50.25,y:60.75});
       assert.ok(Math.hypot(a.x-b.x,a.y-b.y)<1e-8,`mirror=${mirror} reverse=${reverse}`);
     }
@@ -173,7 +178,7 @@ test('v1 cels decode into tiles at crop offsets through the resource store',asyn
   }finally{resources.dispose();}
 });
 
-test('copyDrawingFigure plus a resource fork shares tiles until only the edited tile diverges',async()=>{
+test('an extended cel forks its resource and shares tiles until only the edited tile diverges',async()=>{
   const {e,resources}=fixture();try{
     const {target,surface}=await stroke(e);e.extendDrawing(undefined,9);e.seek(5);e.drawingKey();const copy=e.drawingTarget();
     assert.notEqual(drawingMetadata(copy.figure).celId,drawingMetadata(target.figure).celId);
@@ -214,18 +219,18 @@ test('checkHistory rejects tile work that would exceed the resident budget',asyn
   }finally{resources.dispose();}
 });
 
-test('validateDrawings accepts v1 and v2 figures and rejects malformed tile blobs',async()=>{
+test('opening accepts v1 and v2 figures and rejects malformed tile blobs',async()=>{
   const {e,resources}=fixture();try{
     await stroke(e);await resources.flush();
-    validateDrawings(e.report);
-    const {figure:v1}=await legacyFigure({figureTypeId:88});e.report.figure_types.push(v1);validateDrawings(e.report);
+    opens(e.report);
+    const {figure:v1}=await legacyFigure({figureTypeId:88});e.report.figure_types.push(v1);opens(e.report);
     const figure=e.drawingTarget().figure,asset=figure.image_assets[0];
     assert.ok(asset.styk_tiles?.startsWith(TILE_BLOB_PREFIX));
-    const bad=structuredClone(figure);bad._styk.drawing.celId='cel-bad-2';bad.image_assets[0].styk_tiles='data:image/png;base64,AAAA';
-    e.report.figure_types.push(bad);assert.throws(()=>validateDrawings(e.report),/tile blob/);e.report.figure_types.pop();
-    const dup=structuredClone(figure);e.report.figure_types.push(dup);assert.throws(()=>validateDrawings(e.report),/unique/);e.report.figure_types.pop();
+    const bad=structuredClone(figure);bad.figure_type_id=997;bad._styk.drawing.celId='cel-bad-2';bad.image_assets[0].styk_tiles='data:image/png;base64,AAAA';
+    e.report.figure_types.push(bad);assert.throws(()=>opens(e.report),/tile blob/);e.report.figure_types.pop();
+    const dup=structuredClone(figure);dup.figure_type_id=998;e.report.figure_types.push(dup);assert.throws(()=>opens(e.report),/unique/);e.report.figure_types.pop();
     drawingMetadata(figure).bounds={x:0,y:0,width:Number.MAX_SAFE_INTEGER,height:1};
-    assert.throws(()=>validateDrawings(e.report),/metadata/);
+    assert.throws(()=>opens(e.report),/metadata/);
   }finally{resources.dispose();}
 });
 
@@ -253,7 +258,7 @@ test('drawing target and atomic lock checks reject before mutation',()=>{
     e.seek(20,{allowBeyondEnd:true});assert.throws(()=>e.prepareDrawingCel(),/Blank drawing/);
     const second=e.createDrawingLayer('Second');e.setLayerLocked(second.id,true);const before=e.serialize();
     assert.throws(()=>e.drawingKey(['layer-2',second.id],0,{blank:true}),/unlock/i);assert.deepEqual(e.serialize(),before);
-    assert.throws(()=>e.sheetAssignFigures([],second.id),/drawing/i);
+    assert.throws(()=>e.assignFiguresToLayer([1],second.id),/drawing/i);
   }finally{resources.dispose();}
 });
 test('an unstabilized jittery stroke paints a continuous curve through its corner',()=>{
@@ -290,12 +295,9 @@ test('the stroke ends exactly on the final input at any stabilization',()=>{
     assert.ok(hit>200,`stabilization ${stabilization} endpoint dab at the last sample`);
   }
 });
-test('undo and redo retain a shared history byte budget',async()=>{
-  const {e,resources}=fixture();try{await stroke(e);const bytes=e.historySize;e.undo();assert.equal(e.historySize,bytes);e.redo();assert.equal(e.historySize,bytes);e.undo();const redo=e._redo.reduce((n,c)=>n+c.bytes,0);e.renameLayer(e.activeLayerId,'Ink');assert.equal(e.historySize,bytes-redo+e._undo.at(-1).bytes);}finally{resources.dispose();}
-});
 test('painting an existing cel does not publish structural timeline changes',async()=>{
   const {e,resources}=fixture();try{await stroke(e);const events=[];e.addEventListener('change',event=>events.push(event.detail));await stroke(e,80);
-    assert.equal(e._undo.at(-1).kind,'drawing-pixels');assert.ok(events.some(event=>event.drawing));assert.ok(events.every(event=>!event.structural&&!event.timing));
+    assert.equal(e.undoLabel,'Brush stroke');assert.ok(events.some(event=>event.drawing));assert.ok(events.every(event=>!event.structural&&!event.timing));
     e.undo();e.redo();assert.ok(events.every(event=>!event.structural&&!event.timing));
   }finally{resources.dispose();}
 });
@@ -306,15 +308,7 @@ test('sprite mapping inverts scale, rotation, mirror, reverse and crop anchor',(
   }
 });
 test('malformed and duplicate drawing metadata is rejected',async()=>{
-  const {e,resources}=fixture();try{const {target}=await stroke(e);validateDrawings(e.report);const copy=structuredClone(target.figure);e.report.figure_types.push(copy);assert.throws(()=>validateDrawings(e.report),/unique/);e.report.figure_types.pop();drawingMetadata(e.report.figure_types.at(-1)).bounds={x:0,y:0,width:0,height:1};assert.throws(()=>validateDrawings(e.report),/metadata/);}finally{resources.dispose();}
-});
-test('clipboard captures pending pixels once and remains independent of later source edits',async()=>{
-  const {e,resources}=fixture();try{
-    await stroke(e);e.sheetCopyFrames([e.activeLayerId],0,0);const source=e.drawingTarget(),original=storePixels(resources.entry(source.figure).store);
-    await stroke(e,80);const layer=e.createDrawingLayer('Pasted');e.sheetPasteFrames([layer.id],0);const pasted=await resources.surface(e.drawingTarget().figure);
-    assert.deepEqual(storePixels(pasted.store),original);assert.notEqual(e.drawingTarget().figure._styk.drawing.celId,source.figure._styk.drawing.celId);
-    await stroke(e,100);assert.notDeepEqual(storePixels(resources.entry(source.figure).store),storePixels(pasted.store));
-  }finally{resources.dispose();}
+  const {e,resources}=fixture();try{const {target}=await stroke(e);opens(e.report);const copy=structuredClone(target.figure);copy.figure_type_id=999;e.report.figure_types.push(copy);assert.throws(()=>opens(e.report),/unique/);e.report.figure_types.pop();drawingMetadata(e.report.figure_types.at(-1)).bounds={x:0,y:0,width:0,height:1};assert.throws(()=>opens(e.report),/metadata/);}finally{resources.dispose();}
 });
 test('history restores tile snapshots synchronously after a published store is evicted',async()=>{
   const {e,resources}=fixture();try{
@@ -323,25 +317,6 @@ test('history restores tile snapshots synchronously after a published store is e
     e.undo();const restored=await resources.surface(e.drawingTarget().figure);assert.deepEqual(storePixels(restored.store),first);
     e.redo();assert.notDeepEqual(storePixels(restored.store),first);
   }finally{resources.dispose();}
-});
-test('drawing onion samples skip the current held cel and retain frame-mode sampling',async()=>{
-  const {drawingOnionSamples}=await import('../src/onion-skin.mjs');const {e,resources}=fixture();try{await stroke(e);e.extendDrawing(undefined,9);e.seek(5);e.drawingKey();e.seek(7);
-    const settings={onionMode:'keys',onionBefore:2,onionAfter:2,onionStep:1};assert.deepEqual(drawingOnionSamples(e,settings).map(s=>s.tick),[0]);assert.deepEqual(drawingOnionSamples(e,{...settings,onionMode:'frames'}),[]);
-  }finally{resources.dispose();}
-});
-test('drawing onion samples show the nearest drawings from blank frames and past the layer end',async()=>{
-  const {drawingOnionSamples}=await import('../src/onion-skin.mjs'),{sheetKeyAt}=await import('../src/layer-sheet.mjs');
-  const e={tick:0,layers:[{id:'d',drawing:{version:1},visible:true}],report:{_styk:{layerSheet:{tracks:{d:{end:6,keys:[{tick:0,value:{frameId:'a'}},{tick:1,value:{frameId:null}},{tick:2,value:{frameId:'b'}},{tick:3,value:{frameId:null}},{tick:4,value:{frameId:null}}]}}}}}};
-  const ticks=(tick,settings={})=>{e.tick=tick;return drawingOnionSamples(e,{onionMode:'keyframes',onionBefore:2,onionAfter:2,onionStep:1,...settings}).map(s=>[s.direction,s.tick,s.distance]);};
-  assert.equal(sheetKeyAt(e.report._styk.layerSheet.tracks.d,4).index,4);
-  // Blank keys are skipped instead of using up the onion range.
-  assert.deepEqual(ticks(4),[[-1,2,1],[-1,0,2]]);
-  assert.deepEqual(ticks(1),[[-1,0,1],[1,2,1]]);
-  // Past the layer end, the last drawing is the nearest one before.
-  e.report._styk.layerSheet.tracks.d.keys.splice(3);e.report._styk.layerSheet.tracks.d.end=3;
-  assert.deepEqual(ticks(5),[[-1,2,1],[-1,0,2]]);
-  assert.deepEqual(ticks(2),[[-1,0,1]]);
-  assert.deepEqual(ticks(5,{onionStep:2}),[[-1,2,1]]);
 });
 test('a replacement document disposes drawing workers and their pending state',async()=>{
   const {e,resources}=fixture();await stroke(e);e.load(new Editor({demo:false}).report);assert.equal(resources.disposed,true);assert.equal(resources.entries.size,0);
@@ -360,29 +335,17 @@ test('out-of-order encode results never replace newer committed tiles',async()=>
     assert.equal(calls,2);assert.equal(entry.published.revision,entry.revision);assert.deepEqual(storePixels(entry.store),latest);
   }finally{resources.dispose();}
 });
-test('whole-scene paste matches drawing tracks by kind and pads extra drawing layers',async()=>{
-  const {pasteSheetClipboard}=await import('../src/shared-clipboard.mjs');const {e,resources}=fixture(),other=new Editor({demo:false,layerTimeline:true});
-  try{
-    e.sheetCopyFrames(['scene','camera',e.activeLayerId,'layer-1'],0,0);
-    const existing=other.createDrawingLayer('Existing ink'),surplus=other.createDrawingLayer('Spare ink');
-    other._sheetClipboard={...structuredClone(e._sheetClipboard),document:null};
-    const before=other.serialize();pasteSheetClipboard(other,[],0,{wholeScene:true,insert:true});
-    assert.ok(other.getLayer(existing.id).drawing);assert.ok(other.getLayer(surplus.id).drawing);assert.equal(other.layers.filter(l=>l.drawing).length,2);
-    other.undo();assert.deepEqual(other.serialize(),before);
-  }finally{resources.dispose();other.drawingResources.dispose();}
-});
 test('v2 cels place pixel (0,0) at the pointer world position independently of stage size',async()=>{
   const {e,resources}=fixture();try{
     e.report.canvas_width=8000;e.report.canvas_height=8000;
     const target=e.prepareDrawingCel({pixelsPerUnit:4,world:{x:3000,y:-100}});
     assert.equal(target.figure._styk.drawing.pixelsPerUnit,4);assert.equal(target.figure._styk.drawing.version,2);
-    const item=buildGeometry({...e.report,figure_types:[...e.report.figure_types,target.figure]},createFrame([target.object])).drawables[0];
+    const item=celGeometry(e,createFrame([target.object]),target.figure,target.object.unique_id).drawables[0];
     const origin=transformPoint(drawingPixelMatrix(item),{x:0,y:0});
     assert.ok(Math.hypot(origin.x-3000,origin.y+100)<1e-8);
-    validateDrawings({...e.report,figure_types:[...e.report.figure_types,target.figure]});
+    opens({...e.report,figure_types:[...e.report.figure_types,target.figure]});
   }finally{resources.dispose();}
 });
-
 
 test('an elliptical tip follows its fixed angle and the stroke direction',()=>{
   const spread=(settings,samples)=>{const store=new TileStore(),s=new DrawingStroke(store,{size:40,pressureSize:false,roundness:.15,...settings});for(const p of samples)s.sample(p);s.finish();return store.bounds;};
@@ -630,7 +593,7 @@ test('a stroke over the remaining tile budget evicts clean stores instead of thr
   const e=new Editor({demo:false,layerTimeline:true});e.report.canvas_width=64;e.report.canvas_height=64;
   const resources=new DrawingResources(e.report,{worker:workerStub(),tileBytes:4*TILE_BYTES});
   try{
-    e.createDrawingLayer();
+    installEngineOwner(e);e.createDrawingLayer();
     const t1=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),s1=await resources.surface(t1.figure);
     const b1=new DrawingStroke(s1.store,{size:8,pressureSize:false});b1.sample({x:40,y:40});e.commitDrawingPixels(t1,b1.finish());
     await resources.flush();
@@ -640,6 +603,8 @@ test('a stroke over the remaining tile budget evicts clean stores instead of thr
     const t2=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),s2=await resources.surface(t2.figure);
     // Four touched tiles + the resident cel exceed the 4-tile budget: the
     // clean store must evict rather than rejecting the edit.
+    // The pointer holds the cel it paints on until the commit, as the controller does.
+    s2.pinned=true;
     const b2=new DrawingStroke(s2.store,{size:48,pressureSize:false});
     b2.sample({x:32,y:32});b2.sample({x:230,y:32});
     e.commitDrawingPixels(t2,b2.finish());
@@ -678,57 +643,20 @@ test('forking a cel does not double-count copy-on-write tiles in the byte stats'
   }finally{resources.dispose();}
 });
 
-test('the drawing provider decodes published blobs and evicts LRU over budget',async()=>{
-  const store=new TileStore();store.set(-1,0,new Uint8ClampedArray([7,8,9,200]));store.set(3,3,new Uint8ClampedArray([4,5,6,255]));
-  const figure=id=>{const f=createDrawingFigure({celId:id});f._styk.drawing.revision=1;f._styk.drawing.bounds={...store.bounds};return f;};
-  const blob=await encodeTileBlob(store);
-  const provider=new DrawingTileProvider({budgetBytes:4*TILE_BYTES});
-  try{
-    const [a,b,c]=[figure('cel-a'),figure('cel-b'),figure('cel-c')];
-    a.image_assets[0].styk_tiles=blob;b.image_assets[0].styk_tiles=blob;c.image_assets[0].styk_tiles=blob;
-    await provider.prepare([a]);assert.equal(provider.presenter(a).store.pixel(-32,5)[3],200);
-    assert.equal(provider.presenter(a).store.tileBounds.x,-64);
-    await provider.prepare([b]);await provider.prepare([c]);
-    assert.equal(provider.presenter(a),null,'LRU eviction released the oldest cel');
-    assert.ok(provider.presenter(b)?.store&&provider.presenter(c)?.store);
-    assert.ok(provider.bytes<=provider.budgetBytes);
-    // A matching revision is a cache hit; a stale revision decodes again.
-    await provider.prepare([b]);b._styk.drawing.revision=2;await provider.prepare([b]);
-    assert.equal(provider.entries.get('cel-b').revision,2);
-  }finally{provider.dispose();}
-});
-
-test('the drawing provider never serves a superseded revision',async()=>{
-  const store=new TileStore();store.set(0,0,new Uint8ClampedArray([7,8,9,255]));
-  const blob=await encodeTileBlob(store);
-  const provider=new DrawingTileProvider();
-  try{
-    const figure=createDrawingFigure({celId:'cel-gate'});
-    figure._styk.drawing.revision=1;figure._styk.drawing.bounds={...store.bounds};figure.image_assets[0].styk_tiles=blob;
-    await provider.prepare([figure]);
-    assert.equal(provider.presenter(figure)?.store?.pixel(5,5)?.[3],255);
-    // A patch bumps the figure's revision before the worker re-decodes; the
-    // stale store must not answer bounds or paint queries in between.
-    figure._styk.drawing.revision=2;
-    assert.equal(provider.presenter(figure),null);
-    await provider.prepare([figure]);
-    assert.equal(provider.presenter(figure)?.revision,2);
-    assert.equal(provider.presenter(figure)?.store?.pixel(5,5)?.[3],255);
-  }finally{provider.dispose();}
-});
-
 test('a v2 cel world bounds equal its tile bounds through drawingPixelMatrix',()=>{
-  const figure=createDrawingFigure({celId:'cel-bounds'});
+  const {e,resources}=fixture();try{
+  const figure=createDrawingFigure({celId:'cel-bounds',figureTypeId:60});
   // Tile bounds that also cover the segment endpoints, which objectBounds
   // unions with the image quad for every figure.
   figure._styk.drawing.bounds={x:-64,y:-64,width:384,height:192};
   const object=createObject(figure,7,120,-40,{scale:1.5});
-  const item=buildGeometry({figure_types:[figure],canvas_width:640,canvas_height:480},createFrame([object])).drawables[0];
+  const item=celGeometry(e,createFrame([object]),figure,7).drawables[0];
   const bounds=objectBounds([item],{}),matrix=drawingPixelMatrix(item),b=figure._styk.drawing.bounds;
   const corners=[[b.x,b.y],[b.x+b.width,b.y],[b.x,b.y+b.height],[b.x+b.width,b.y+b.height]].map(([x,y])=>transformPoint(matrix,{x,y}));
   const x0=Math.min(...corners.map(p=>p.x)),y0=Math.min(...corners.map(p=>p.y)),x1=Math.max(...corners.map(p=>p.x)),y1=Math.max(...corners.map(p=>p.y));
   // objectBounds adds a 3px guard pad around painted geometry.
   assert.deepEqual(bounds,{x:Math.floor(x0-3),y:Math.floor(y0-3),width:Math.ceil(x1+3)-Math.floor(x0-3),height:Math.ceil(y1+3)-Math.floor(y0-3)});
+  }finally{resources.dispose();}
 });
 
 test('flattening a tile store yields a PNG at source resolution with source-space anchors',async()=>{
@@ -766,28 +694,6 @@ test('publication re-encodes only changed tiles and resends PNGs the worker cach
     const decoded=await decodeTileBlob(figure.image_assets[0].styk_tiles);
     assert.equal(decoded.length,entry.store.size);
     for(const t of decoded)assert.deepEqual([...t.pixels],[...entry.store.get(t.tx,t.ty).pixels]);
-  }finally{resources.dispose();}
-});
-
-test('an edit larger than the remaining history evicts older commands; oversized edits still apply with exact undo',async()=>{
-  const {e,resources}=fixture();try{
-    await stroke(e);const firstBytes=e._undo.at(-1).bytes;
-    const dab=x=>{const t=e.drawingTarget(),surface=resources.entry(t.figure);const b=new DrawingStroke(surface.store,{size:8,pressureSize:false});b.sample({x,y:40});e.commitDrawingPixels(t,b.finish());return e._undo.at(-1).bytes;};
-    const strokeBytes=dab(100);dab(200);
-    // Budget fits the creation batch plus two strokes, not three.
-    e.historyBytes=firstBytes+2*strokeBytes+64;
-    const before=e.revision;dab(300);
-    assert.equal(e._undo.length,3,'the creation command was evicted, not rejected');
-    assert.ok(e.historySize<=e.historyBytes);assert.ok(e.revision>before);
-    e.undo();e.undo();assert.equal(e._undo.length,1,'undo stops at the evicted boundary');
-    // An edit larger than the soft budget still applies and keeps an exact
-    // record; eviction — never rejection — bounds history memory.
-    e.historyBytes=64;
-    const tiles=[{tx:9,ty:9,before:null,after:new Uint8ClampedArray(TILE_BYTES).fill(255)},{tx:10,ty:9,before:null,after:new Uint8ClampedArray(TILE_BYTES).fill(255)}];
-    e.commitDrawingPixels(e.drawingTarget(),tiles);
-    assert.equal(e._undo.at(-1).kind,'drawing-pixels');
-    assert.equal(resources.entry(e.drawingTarget().figure).store.get(9,9)?.pixels.length,TILE_BYTES);
-    e.undo();assert.equal(resources.entry(e.drawingTarget().figure).store.get(9,9),undefined);
   }finally{resources.dispose();}
 });
 
@@ -900,7 +806,7 @@ test('sparse distant marks retain valid metadata and exact tiles after publicati
   const {e,resources}=fixture();try{
     const target=e.prepareDrawingCel({pixelsPerUnit:1});await resources.surface(target.figure);
     e.commitDrawingPixels(target,[{tx:0,ty:0,before:null,after:new Uint8ClampedArray([255,0,0,255])},{tx:300,ty:300,before:null,after:new Uint8ClampedArray([0,0,255,255])}]);
-    await resources.flush();validateDrawings(e.report);
+    await resources.flush();opens(e.report);
     const copy=new Editor({demo:false,layerTimeline:true});copy.load(structuredClone(e.report));
     const figure=copy.drawingTarget().figure,tiles=await decodeTileBlob(figure.image_assets[0].styk_tiles);
     assert.equal(tiles.length,2);assert.equal(drawingMetadata(figure).bounds.width,19264);
@@ -924,20 +830,6 @@ test('copy after undo of an evicted cel captures pending pixels independently',a
   }finally{resources.dispose();}
 });
 
-test('clipboard snapshots preserve deferred undo even when the source changes before paste',async()=>{
-  const {e,resources}=fixture(),{copyDrawingFigure}=await import('../src/drawing-model.mjs');try{
-    const t=e.prepareDrawingCel({pixelsPerUnit:1});await resources.surface(t.figure);
-    const red=new Uint8ClampedArray([255,0,0,255]),blue=new Uint8ClampedArray([0,0,255,255]);
-    e.commitDrawingPixels(t,[{tx:0,ty:0,before:null,after:red}]);
-    e.commitDrawingPixels(e.drawingTarget(),[{tx:0,ty:0,before:red,after:blue}]);await resources.flush();
-    const source=e.drawingTarget().figure;resources.entry(source).store=null;e.undo();
-    const clipboard={figures:[structuredClone(source)]};resources.captureClipboard(clipboard);e.redo();
-    const copy=copyDrawingFigure(clipboard.figures[0],999);e.report.figure_types.push(copy);resources.pasteClipboard([[clipboard.figures[0],copy]],clipboard);
-    assert.deepEqual((await resources.surface(copy)).store.pixel(0,0),[255,0,0,255]);
-    assert.deepEqual((await resources.surface(source)).store.pixel(0,0),[0,0,255,255]);
-  }finally{resources.dispose();}
-});
-
 test('a closing stroke commits to its original exposure after a view-only seek',async()=>{
   const {e,resources}=fixture();try{
     const {target}=await stroke(e);e.extendDrawing(undefined,2);e.nextDrawing(undefined,{blank:true});
@@ -949,25 +841,6 @@ test('a closing stroke commits to its original exposure after a view-only seek',
   }finally{resources.dispose();}
 });
 
-test('a movieclip of drawings gets its own figure layer, drawing keys and cels',async()=>{
-  const {e,resources}=fixture();try{
-    const layer=e.activeLayerId;await stroke(e,20,20);e.drawingKey([layer],1,{blank:true});e.seek(1);await stroke(e,44,44);await resources.flush();
-    const parentCels=new Set(e.report.figure_types.map(f=>drawingMetadata(f)?.celId).filter(Boolean)),shownOn=(id,tick)=>{e.seek(tick);return e.evaluatedFrame.objects.filter(o=>e.layerForUid(o.unique_id)===id).length;};
-    e.seek(0);const clip=e.createMovieclip({name:'Ink',start:0,end:2,uids:[]});
-    // Inside the clip the drawings are ordinary drawing keys with their own cels.
-    const doc=clip._styk.movieclip.document,keys=doc._styk.layerSheet.tracks[layer].keys;
-    assert.equal(keys.length,2);
-    for(const key of keys){
-      const frame=doc._styk.frameSources[key.value.frameId],figure=doc.figure_types.find(f=>f.figure_type_id===frame.objects[0].figure_type_id);
-      assert.equal(frame.objects.length,1);assert.ok(drawingMetadata(figure),'each key holds a drawing cel');assert.ok(!parentCels.has(drawingMetadata(figure).celId),'the clip owns fresh cel identities');
-    }
-    // The instance sits on a new figure layer; the drawing layer keeps only drawings.
-    const owner=e.getLayer(e.layerForUid(e.selectedUid));
-    assert.ok(owner&&!owner.drawing,'the clip is on a figure layer');assert.equal(owner.name,'Ink');
-    assert.deepEqual([shownOn(layer,0),shownOn(layer,1)],[0,0],'the captured drawings leave the drawing layer');
-    e.undo();assert.ok(!e.getLayer(owner.id),'undo removes the clip layer');assert.deepEqual([shownOn(layer,0),shownOn(layer,1)],[1,1],'undo restores the drawings');
-  }finally{resources.dispose();}
-});
 test('decoded tiles keep their published PNG as bytes for republication',()=>{
   const store=tileStoreFromList([{tx:0,ty:0,pixels:new ArrayBuffer(TILE_BYTES),png:new Uint8Array([1,2,3]).buffer}]);
   const png=store.get(0,0).png;assert.ok(png instanceof Uint8Array);assert.deepEqual([...png.slice()],[1,2,3]);

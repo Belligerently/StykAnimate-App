@@ -34,10 +34,9 @@ through `styk-piv`, `.styk` through `styk-formats`) or a document as JSON (a new
 document, a tutorial's, a recovery copy, a Stick Nodes import the importer worker decoded).
 `Engine::open_document` runs on an engine worker (`EngineHandle.open_document`, a job the interface
 polls on the progress counter and cancels with `cancel_open`) or, for a small document the editor needs
-at once, on the calling thread (`open_document_now`). It decodes, normalizes the document as the editor's
-load always did (`styk_edit::load::prepare_for_editor`: the validation and migration of
-`prepareEditorLoad`, then the layer sheet an editor with a layer timeline gives every document) and
-converts it into the typed views (`styk_eval::load::Loader`, the image atlas). The result, an
+at once, on the calling thread (`open_document_now`). It decodes, normalizes the document
+(`styk_edit::load::prepare_for_editor`: the validation and migration, then the layer sheet an editor with
+a layer timeline gives every document) and converts it into the typed views (`styk_eval::load::Loader`, the image atlas). The result, an
 `OpenedDocument`, holds the normalized tree, the indexes the editor adopts (next identities, figures per
 layer, tracks) and the typed views; nothing is published yet. A failure is an `OpenError`: a message
 key with its parameters where the editor has one (`errors.nativeContainer.*`, the load's keys), the
@@ -65,22 +64,51 @@ documents of one editor, so `holdsRevision` (the document identity the engine re
 engine holds a given document at a given state; the stage never brings the engine up to date itself.
 A document in a background tab keeps its session; coming to the front activates it again.
 
-Edits the editor makes outside the session's calls reach the session too, once the code that made them
-has finished (`settle` in `engine-owner.mjs`, at the editor's revision): a document marked as changed
-(a new revision with the tree untouched, published without converting anything), a definition published
-after leaving a movieclip, and the encoded tiles of a drawing attached to its definition in place (a
-derived publication, `DrawingResources.onPublished`; the revision does not move). A frame the stage
+Nothing but the session changes the document. Two things the interface does outside a command are told to it at once, by the
+owner (`owner.rs`, [editing.md](editing.md#phase-3-the-engine-owns-the-document), "Bookkeeping"): a document marked as changed
+(`editor.dirty = true`: `@touch`, a new revision with the tree untouched, published without converting anything), and the
+encoded tiles of a drawing attached to its definition (a derived publication, `DrawingResources.onPublished`:
+`@publishCel`; the revision does not move). A frame the stage
 draws of a cel that only a gesture's draft holds goes through `EngineHandle.set_draft`
 ([drawing.md](drawing.md#live-cels)).
 
 `Engine::open` (bytes and an extension, no normalization) remains for the command-line tools and the
 Rust tests that open recorded documents as they are.
 
+## Exports of the document
+
+The files that cannot hold the editable document are made from the document the engine holds: Pivot animations and
+figures (`.piv`, `.stk`), figure files (`.stkz`) and movieclip files (`.stykmov`). A `.styk` save is not among them: it
+needs no evaluation, so the interface sends the editable document to the export worker in bounded chunks and the worker
+writes the container.
+
+The document export worker (`src/document-export-worker.mjs`) joins the engine as the export renderer does, and calls
+`export_document` (`styk-wasm`, `styk_engine::document_export`) on the document the engine holds at the revision the
+interface exports (the editor's revision; the interface waits briefly for a change still being published, and a
+different revision is a cancelled export). Nothing of the document crosses to the worker, and the interface thread
+takes no part in the work (D7). The work is `styk_edit::export`:
+
+- **Pivot animation** (`pivot.rs`): the stored frames, or, when authored tracks, camera motion, parallax, layers, styles,
+  movieclips or IK are in play, one stored frame for each tick with them baked in (hidden poses keep their zero-duration
+  exposures). An imported layer sheet that is the identity of its native keys exports the stored frames as they are. A
+  working frame (`simpleFrameDraft`) is left out, the editor's identities and caches are dropped, and the result is
+  validated as a native document. Pivot cannot keep VFX, connectors, Smart Stretch, one-sided fills, Stick Nodes shapes
+  or gradient fills: each is a refusal naming the feature (`telemetryCode: unsupported_feature`).
+- **Pivot figure** (`style.rs`): one figure type with the style of the selected instance at the requested tick; instances
+  that look alike share a figure type.
+- **Figure files** (`figure.rs`, `pose_sequences.rs`): a figure, a set of figures or a movieclip with the pose it shows as a
+  document of its own, portable (without the project's source), with the poses its channels share stored once.
+
+The answer is the document as JSON (figure files, which the worker writes as a container) or the body of the codec's
+export request with the document in it (Pivot files, which the codec encodes). Drawing cels that Pivot cannot carry
+are flagged and flattened into pictures by the worker. The engine returns an error, never a panic, for what it
+refuses; the worker passes it on with its message key. The export asks `cancelled()` (a flag in shared memory) between
+the ticks it bakes, and a worker that joined gives its thread back before it ends (`release`).
+
 ## Invariants
 
 - No silent loss: a field the engine does not understand stays in the tree and
-  is written back; a feature it does not evaluate is named in
-  `Document::unsupported`, which the stage reads: the frame goes to the JavaScript renderer.
+  is written back.
 - Never mutate a published node: build a new path (`Arc::make_mut` on a clone).
 - Number identity: a value read and written unchanged is the same bytes.
 

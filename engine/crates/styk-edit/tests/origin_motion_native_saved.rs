@@ -170,10 +170,10 @@ fn saved_native_live_invalid_and_unrecorded_calls_preserve_both_views() {
     }
 }
 #[test]
-fn saved_native_future_retained_complex_poses_refuse_before_live_commit() {
+fn saved_native_future_retained_complex_poses_refuse_before_live_commit_but_a_rig_edits() {
     use styk_doc::Value;
     use styk_edit::{EditError, Editor, Options};
-    for kind in ["rig", "drawing", "spatialMesh", "poseChoices", "movieclip"] {
+    for kind in ["rig", "drawing", "spatialMesh", "movieclip"] {
         let mut report = document();
         let mut figure = report.get("figure_types").unwrap().item(0).unwrap();
         figure
@@ -233,6 +233,19 @@ fn saved_native_future_retained_complex_poses_refuse_before_live_commit() {
             .set("figure_type_id", Value::Num(9.0));
         let mut editor = Editor::new(report, Options::default());
         editor.take_events();
+        if kind == "rig" {
+            // A rigged figure is posed as the editor poses it; the rest of the kinds are still the editor's.
+            let original = editor.report_json();
+            assert_eq!(
+                editor.call("beginMotionPathEdit", &[target(), Value::Num(9.0)]).unwrap(),
+                Value::Bool(true),
+                "{kind}"
+            );
+            assert_eq!(editor.call("cancelMotionPathEdit", &[]).unwrap(), Value::Bool(true), "{kind}");
+            assert_eq!(editor.report_json(), original, "{kind}: a cancelled edit leaves the document as it was");
+            assert!(!editor.state().can_undo, "{kind}");
+            continue;
+        }
         let before = snapshot(&mut editor);
         assert!(
             matches!(

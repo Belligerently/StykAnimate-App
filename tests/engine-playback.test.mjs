@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {waitForEngineProgress} from '../src/engine/engine.mjs';
-import {createStagePlayback, engineTick, engineTicket} from '../src/engine/engine-playback.mjs';
+import {createStagePlayback, engineTicket} from '../src/engine/engine-playback.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 /** Waits for `condition`, polling for at most `ms`: a timer takes up to 16 ms to fire on Windows, so a fixed sleep is too short there. */
@@ -50,7 +50,7 @@ test('fractional range requests retain Float64 samples and distinct ready packet
   assert.equal(fractional.frame.tick, 3.5);
   assert.equal(fractional.frame.camera.x, 12);
   assert.equal(fractional.frame.background_id, 2);
-  assert.equal(engineTick(fractional.key), 3.5);
+  assert.equal(engineTicket(fractional.key)?.tick, 3.5);
   assert.notEqual(integer.key, fractional.key);
   assert.equal(playback.cache.size, 2);
 });
@@ -183,14 +183,14 @@ test('publication between metadata read and ticket admission cannot admit mismat
 
 test('only canonical finite engine identities are engine tickets', () => {
   assert.deepEqual(engineTicket('engine:7:2:3.5'), {generation: 7, epoch: 2, tick: 3.5});
-  assert.equal(engineTick('engine:7:2:0'), 0);
+  assert.equal(engineTicket('engine:7:2:0')?.tick, 0);
   for (const key of [null, '', 'legacy:7:2:3.5', 'engine:7:3.5', 'engine:0:2:3.5',
     'engine:7:-1:3.5', 'engine:7:2:NaN', 'engine:7:2:Infinity', 'engine:7:2:-0',
     'engine:7:2:-1', 'engine:7:2:', 'engine:07:2:3.5', 'engine:7:02:3.5',
     'engine:7:2:03.5', 'engine:7:2:3.5:extra', `engine:7:2:${'0'.repeat(100)}`,
     'engine:9007199254740992:2:3.5']) {
     assert.equal(engineTicket(key), null, String(key));
-    assert.equal(engineTick(key), null, String(key));
+    assert.equal(engineTicket(key)?.tick ?? null, null, String(key));
   }
 });
 

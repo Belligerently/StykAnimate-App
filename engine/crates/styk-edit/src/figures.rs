@@ -101,6 +101,30 @@ pub(crate) fn normalize_frame(frame: &mut Obj) {
     set_order(frame, &ids);
 }
 
+/// The fields `updateObject` sets on every selected figure at once (`updateSelection`'s): the rest are the geometry the group transforms own.
+/// `_stykZIndex` is the figure's stacking number.
+const SHARED: [&str; 6] = ["color_override_raw", "field28", "image_text_flags", "name", "_styk", "_stykZIndex"];
+
+/// The fields of a patch. A number the command checks (`root_x`, `root_y`, `scale`, `field28`) set to `undefined` (args.rs) is no
+/// value: it is absent. Any other member set to `undefined` stays, for [`assign`] to take the field away.
+fn patch_entries(patch: &Value) -> Vec<(String, Value)> {
+    const CHECKED: [&str; 4] = ["root_x", "root_y", "scale", "field28"];
+    patch.as_obj().map(|o| o.iter().filter(|(k, v)| !(CHECKED.contains(&&***k) && crate::args::is_undefined(v))).map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default()
+}
+
+/// `Object.assign(object, clone(patch)); delete object.runtime_segments`: a member set to `undefined` (args.rs) is gone from the
+/// figure, as JSON leaves it, and one deeper in a member is an absent field.
+fn assign(record: &mut Obj, entries: &[(String, Value)]) {
+    for (key, value) in entries {
+        if crate::args::is_undefined(value) {
+            record.remove(key);
+        } else {
+            record.set(key, crate::args::decode(value, false));
+        }
+    }
+    record.remove("runtime_segments");
+}
+
 impl Editor {
     /// `editor.selectedSlot`: the slot of the selected figure in the selection frame.
     fn selected_slot(&self) -> Result<Option<usize>, EditError> {
@@ -191,6 +215,10 @@ impl Editor {
     /// `deleteSelection()`: the selected figures leave the frame; figures joined to
     /// them stay where the join held them.
     pub(crate) fn delete_selection(&mut self) -> Result<bool, EditError> {
+        // A selected branch is deleted as segments, with the figures joined below it detached.
+        if self.branch_selected() {
+            return self.delete_segment(None);
+        }
         let selected: Vec<u32> = self.selected_objects()?.iter().filter_map(uid).collect();
         if selected.is_empty() {
             return Ok(false);
@@ -244,9 +272,7 @@ impl Editor {
         }
         let Some((_, object)) = self.object()? else { return Ok(Value::Null) };
         let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-        if figures.iter().find(|f| num(f, "figure_type_id") == num(&object, "figure_type_id")).is_some_and(|f| f.path(&["_styk", "movieclip"]).is_some_and(Value::truthy)) {
-            return Err(EditError::Unported("duplicating a movieclip instance".into()));
-        }
+        let clip = figures.iter().find(|f| num(f, "figure_type_id") == num(&object, "figure_type_id")).is_some_and(|f| f.path(&["_styk", "movieclip"]).is_some_and(Value::truthy));
         if self.next_uid > 0x7fff_fffe {
             return Err(EditError::Invalid("errors.editorLayerSheet.objectIdentityCapacityReached".into()));
         }
@@ -256,6 +282,11 @@ impl Editor {
         let mut copy = object.as_obj().cloned().unwrap_or_default();
         copy.set("unique_id", Value::Num(identity as f64));
         copy.remove("_stykMovieclipPart");
+        // A copy of a movieclip instance plays on the presence clock from its start, in the original's mode and speed.
+        if clip && self.sheet() {
+            let setting = |key: &str| object.path(&["_stykMovieclip", key]).filter(|v| !v.is_null()).cloned();
+            copy.set("_stykMovieclip", crate::movieclip_commands::presence_of(setting("mode"), setting("speed")));
+        }
         if let Some(original) = original {
             let layer = self.layer_of(original);
             self.new_layer_hints.insert(identity as u32, layer);
@@ -282,7 +313,9 @@ impl Editor {
             ids.push(identity as f64);
             set_order(frame, &ids);
             normalize_frame(frame);
+            // `selectedUid = uid`: the new figure is the whole selection, with no fill, joints or branch chosen.
             editor.selection = crate::Selection { uid: Some(identity as u32), uids: vec![identity as u32], joint: -1 };
+            editor.selection_metadata = crate::select::SelectionMetadata::default();
             Ok(())
         })?;
         Ok(self.object()?.map(|(_, o)| o).unwrap_or(Value::Null))
@@ -299,11 +332,9 @@ impl Editor {
         };
         let figure = figures.iter().find(|f| f.get("figure_type_id").is_some_and(|id| *id == wanted && !wanted.is_null())).cloned();
         let Some(figure) = figure else { return Err(EditError::Invalid("errors.editor.chooseAFigureFromTheLibrary".into())) };
-        if figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy) {
-            if !self.sheet() {
-                return self.insert_native_movieclip(&figure);
-            }
-            return Err(EditError::Unported("adding a movieclip".into()));
+        let clip = figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy);
+        if clip && !self.sheet() {
+            return self.insert_native_movieclip(&figure);
         }
         if !self.sheet() {
             return Err(EditError::Unported("adding a figure on a native timeline".into()));
@@ -319,7 +350,11 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorRangeCommands.figurePositionMustBeFinite".into()));
         }
         let identity = self.next_uid;
-        let object = with_origin_pivot(&figure, create_object(&figure, identity as u32, x, y));
+        let mut object = with_origin_pivot(&figure, create_object(&figure, identity as u32, x, y));
+        // A movieclip plays on the presence clock from the frame it is added at.
+        if let (true, Some(record)) = (clip, object.make_obj()) {
+            record.set("_stykMovieclip", crate::movieclip_commands::presence_of(None, None));
+        }
         // `insert(frame, payload)`: the frame on show with the figure added, slots following
         // unique ids, drawn in front.
         let shown = self.shown_frame()?;
@@ -329,7 +364,7 @@ impl Editor {
         if objects.len() >= 65535 {
             return Err(EditError::Invalid("errors.editorRangeCommands.aNativeKeyframeSupportsAtMost65535".into()));
         }
-        objects.push(object);
+        objects.push(object.clone());
         let count = objects.len();
         frame.set("objects", Value::array(objects));
         ids.push(identity as f64);
@@ -339,13 +374,17 @@ impl Editor {
             frame.set("object_count", Value::Num(count as f64));
         }
         // Published, the figure is selected and the next identity taken; refused, neither.
-        let (selection, previous) = (self.selection_state(), self.selection.clone());
+        let (selection, previous, branch) = (self.selection_state(), self.selection.clone(), self.selection_metadata.branch.take());
         self.selection = crate::Selection { uid: Some(identity as u32), uids: vec![identity as u32], joint: -1 };
         self.next_uid += 1;
         let mut frame = Value::object(frame);
         self.synchronize_origin_frame(&mut frame, &objects_of(&shown), true)?;
-        if let Err(error) = self.commit_sheet_range_with(&frame, &[identity as u32], &[identity as u32], &std::collections::HashMap::new(), Vec::new(), "Add figure", selection) {
+        // A movieclip added inside a layer's span is a replacement of its own, not a new pose of its neighbours.
+        let payload = std::slice::from_ref(&object);
+        let committed = self.commit_sheet_range(&[(self.tick, frame, vec![identity as u32])], &[identity as u32], &std::collections::HashMap::new(), Vec::new(), "Add figure", selection, clip.then_some((payload, false)), None);
+        if let Err(error) = committed {
             self.selection = previous;
+            self.selection_metadata.branch = branch;
             self.next_uid = identity;
             return Err(error);
         }
@@ -354,8 +393,7 @@ impl Editor {
 
     /// `updateObject(patch)`: the inspector's figure fields (several figures: `updateSelection`).
     pub(crate) fn update_object(&mut self, patch: &Value) -> Result<bool, EditError> {
-        const SHARED: [&str; 5] = ["color_override_raw", "field28", "image_text_flags", "name", "_styk"];
-        let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();
+        let entries = patch_entries(patch);
         if self.selected_objects()?.len() > 1 && entries.iter().all(|(k, _)| SHARED.contains(&k.as_str())) {
             return self.update_selection(patch);
         }
@@ -380,11 +418,7 @@ impl Editor {
         }
         let Some((slot, _)) = self.object()? else { return Ok(false) };
         self.object_edit_with("Edit figure", false, |editor| {
-            let record = editor.frame_object_mut(slot).unwrap();
-            for (key, value) in &entries {
-                record.set(key, value.clone());
-            }
-            record.remove("runtime_segments");
+            assign(editor.frame_object_mut(slot).unwrap(), &entries);
             Ok(())
         })
     }
@@ -392,8 +426,7 @@ impl Editor {
     /// `updateSelection(patch)`: names, colours, opacity, mirroring and metadata of every
     /// selected figure, in one edit.
     pub(crate) fn update_selection(&mut self, patch: &Value) -> Result<bool, EditError> {
-        const SHARED: [&str; 5] = ["color_override_raw", "field28", "image_text_flags", "name", "_styk"];
-        let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();
+        let entries = patch_entries(patch);
         if entries.iter().any(|(k, _)| !SHARED.contains(&k.as_str())) {
             return Err(EditError::Invalid("errors.editor.useGroupTransformCommandsToChangeSelectionGeometry".into()));
         }
@@ -401,11 +434,7 @@ impl Editor {
             let selected = editor.selection.uids.clone();
             let slots: Vec<usize> = editor.frame_objects().iter().enumerate().filter(|(_, o)| uid(o).is_some_and(|u| selected.contains(&u))).map(|(slot, _)| slot).collect();
             for slot in slots {
-                let record = editor.frame_object_mut(slot).unwrap();
-                for (key, value) in &entries {
-                    record.set(key, value.clone());
-                }
-                record.remove("runtime_segments");
+                assign(editor.frame_object_mut(slot).unwrap(), &entries);
             }
             Ok(())
         })

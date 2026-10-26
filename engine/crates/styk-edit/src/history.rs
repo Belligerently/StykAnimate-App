@@ -64,7 +64,7 @@ pub enum CommandKind {
     Objects { index: usize, before: Vec<Value>, after: Vec<Value> },
     /// The layer sheet and layer state before and after, and the pose sources the
     /// command captured (`kind: 'layer-sheet'`).
-    LayerSheet { before: Value, after: Value, before_layers: Value, after_layers: Value, sources: Vec<(String, Value)>, definitions: Option<(usize, Vec<Value>)>, retain_geometry: bool },
+    LayerSheet { before: Value, after: Value, before_layers: Value, after_layers: Value, sources: Vec<(String, Value)>, definitions: Option<(usize, Vec<Value>)>, backgrounds: Option<(usize, Vec<Value>)>, retain_geometry: bool },
     /// Paths of the layer state before and after, and the sheet when the layers' tracks
     /// changed with them (`kind: 'layers'`).
     Layers { changes: Vec<crate::layers::LayerChange>, sheet: Option<(Value, Value)>, migration: Option<crate::layer_planning::NativeMigration>, structural: bool, timing: bool },
@@ -84,6 +84,8 @@ pub enum CommandKind {
     /// The effect clips before (none when there were none) and after, and the sheet when
     /// the clips lengthened it (`kind: 'vfx-clips'`).
     VfxClips { before: Option<Value>, after: Value, sheet: Option<(Value, Value)> },
+    /// A background added to the table or fields of one of its entries changed (`kind: 'scene'`, `scene_backgrounds.rs`).
+    Scene { index: usize, change: crate::scene_backgrounds::Change },
     /// Fields of the document before (absent ones as none) and after (`kind: 'fields'`).
     Fields { before: Vec<(String, Option<Value>)>, after: Vec<(String, Value)>, timing: bool },
     /// A movieclip definition before (none when it was added) and after (none when removed)
@@ -97,11 +99,22 @@ pub enum CommandKind {
     FigureRange { changes: Vec<crate::range::FrameChange>, structural: bool, retain_geometry: bool },
     /// Paths of a figure definition before and after (`kind: 'native-properties'`, `scope: 'figure'`).
     NativeProperties { index: usize, before: crate::builder::Patch, after: crate::builder::Patch },
+    /// A figure definition taken out of the library with every instance of it in every frame that held one (`kind: 'figure-discard'`,
+    /// `figure_discard.rs`).
+    FigureDiscard { figure_index: usize, figure: Value, frames: Vec<crate::figure_discard::DiscardedFrame> },
     /// A figure definition and the poses it changed, before and after (`kind: 'topology'`).
     Topology { index: usize, before: crate::topology::Snapshot, after: crate::topology::Snapshot },
-    /// An edit the JavaScript editor made and undoes itself (D19, `external.rs`): its
-    /// identity there and the pose sources it keeps alive.
-    External { id: u64, retained: Vec<String> },
+    /// A branch made a figure of its own in every pose of the figure: the part inserted in each, the definitions added
+    /// to the library (`kind: 'disconnect'`, `disconnect.rs`).
+    Disconnect { piece: u32, figure_index: usize, figures: Vec<Value>, changes: Vec<crate::disconnect::Change> },
+    /// A drawing cel's pixels changed (`kind: 'drawing-pixels'`, `drawing_pixels.rs`): the cel and the interface's
+    /// record of the change, whose before and after tiles the interface's drawing store and history hold.
+    DrawingPixels { cel_id: String, record: u64 },
+}
+
+/// The name the interface gives an entry (`{label}` among a command's options), else the command's own.
+pub(crate) fn entry_label(options: &Value, default: &str) -> String {
+    options.get("label").and_then(Value::as_str).filter(|label| !label.is_empty()).unwrap_or(default).to_string()
 }
 
 /// `editor._movieclipBatch` in progress: its entries, label, the revision before it and the
@@ -209,6 +222,7 @@ impl Editor {
         self.history_size += entry.weight.bytes;
         Arc::make_mut(&mut self.undo).push(entry);
         if collect {
+            self.drawing_retired |= self.redo.iter().any(|entry| crate::drawing_pixels::references_drawings(&entry.command));
             self.redo = Arc::new(Vec::new());
         }
         self.trim_history(collect);
@@ -251,7 +265,7 @@ impl Editor {
             check: &mut impl FnMut() -> Result<(), EditError>,
         ) -> Result<Weight, EditError> {
             check()?;
-            if matches!(command.kind, CommandKind::External { .. }) { return Ok(previous.clone()); }
+            if matches!(command.kind, CommandKind::DrawingPixels { .. }) { return Ok(previous.clone()); }
             if matches!(command.kind, CommandKind::Topology { .. }) && previous.topology.is_none() {
                 return Err(EditError::Unported(
                     "original topology history estimate metadata is unavailable".into(),
@@ -349,7 +363,9 @@ impl Editor {
     fn trim_history(&mut self, mut collect: bool) {
         while self.undo.len() > self.history_limits.count || (self.worker_history && self.history_size > self.history_limits.bytes && self.undo.len() + self.redo.len() > 1) {
             let retired = if self.undo.len() > 1 { &mut self.undo } else if !self.redo.is_empty() { &mut self.redo } else { &mut self.undo };
-            self.history_size -= Arc::make_mut(retired).remove(0).weight.bytes; collect = true;
+            let removed = Arc::make_mut(retired).remove(0);
+            self.history_size -= removed.weight.bytes; collect = true;
+            self.drawing_retired |= crate::drawing_pixels::references_drawings(&removed.command);
         }
         if collect { self.prune_frame_sources(); }
     }
@@ -362,7 +378,7 @@ impl Editor {
         fn summary(command: &Command, weight: &Weight, kinds: bool, children: bool) -> Value {
             let mut value = styk_doc::Obj::new();
             if kinds { value.set("kind", Value::str(match &command.kind {
-                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology", CommandKind::External { .. } => "external",
+                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::FigureDiscard { .. } => "figure-discard", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Scene { .. } => "scene", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology", CommandKind::Disconnect { .. } => "disconnect", CommandKind::DrawingPixels { .. } => "drawing-pixels",
             })); }
             value.set("label", Value::str(&command.label)); value.set("bytes", Value::Num(weight.bytes));
             if children && let CommandKind::Batch { commands } = &command.kind { value.set("children", Value::array(commands.iter().zip(&weight.children).map(|(command, weight)| summary(command,weight,kinds,children)).collect())); }
@@ -412,6 +428,7 @@ impl Editor {
         for command in batch.commands.iter().rev() {
             self.apply(command, Direction::Before)?;
         }
+        self.drawing_retired |= batch.commands.iter().any(|entry| crate::drawing_pixels::references_drawings(&entry.command));
         self.revision = batch.revision;
         Ok(())
     }
@@ -445,7 +462,6 @@ impl Editor {
             self.cancel_drag()?;
         }
         if self.undo.is_empty() { return Ok(false) }
-        if let Some(id) = self.external_on_top(false) { return Err(EditError::Unported(format!("{}{id}", crate::external::EXTERNAL_ENTRY))); }
         let Some(command) = Arc::make_mut(&mut self.undo).pop() else { return Ok(false) };
         self.apply(&command, Direction::Before)?;
         Arc::make_mut(&mut self.redo).push(command);
@@ -455,25 +471,64 @@ impl Editor {
     pub(crate) fn redo(&mut self) -> Result<bool, EditError> {
         self.cancel_vfx_clip_edit()?;
         if self.redo.is_empty() { return Ok(false) }
-        if let Some(id) = self.external_on_top(true) { return Err(EditError::Unported(format!("{}{id}", crate::external::EXTERNAL_ENTRY))); }
         let Some(command) = Arc::make_mut(&mut self.redo).pop() else { return Ok(false) };
         self.apply(&command, Direction::After)?;
         Arc::make_mut(&mut self.undo).push(command);
         Ok(true)
     }
 
-    /// Records an entry whose weight the JavaScript editor measured (D19).
-    pub(crate) fn record_external_entry(&mut self, command: Command, bytes: f64) -> Result<(), EditError> {
+    /// Records a pixel commit whose weight the interface measured (its before and after tiles stay with the interface's drawing history).
+    pub(crate) fn record_pixels_entry(&mut self, command: Command, bytes: f64) -> Result<(), EditError> {
         self.record_weight(command, Some(Weight { bytes, children: Vec::new(), topology: None }), None)
     }
 
-    /// An external entry was applied by the JavaScript editor: it moves to the other
-    /// stack, and the revision is the one it restores.
-    pub(crate) fn move_history_entry(&mut self, redo: bool) {
-        let (from, to) = if redo { (&mut self.redo, &mut self.undo) } else { (&mut self.undo, &mut self.redo) };
-        let Some(entry) = Arc::make_mut(from).pop() else { return };
-        self.revision = if redo { entry.after_revision } else { entry.before_revision };
-        Arc::make_mut(to).push(entry);
+    /// The weight of the pixel commit `record` changed by `delta` bytes (its tiles left or came back to memory), wherever the commit is in
+    /// the history; the byte limit applies to the new total.
+    pub(crate) fn adjust_pixels_bytes(&mut self, record: u64, delta: f64) -> bool {
+        fn adjust(command: &Command, weight: &mut Weight, record: u64, delta: f64) -> bool {
+            match &command.kind {
+                CommandKind::DrawingPixels { record: held, .. } if *held == record => { weight.bytes = (weight.bytes + delta).max(0.0); true }
+                CommandKind::Batch { commands } => {
+                    let found = commands.iter().zip(weight.children.iter_mut()).any(|(child, child_weight)| adjust(child, child_weight, record, delta));
+                    if found { weight.bytes = (weight.bytes + delta).max(0.0); }
+                    found
+                }
+                _ => false,
+            }
+        }
+        let mut found = false;
+        for stack in [&mut self.undo, &mut self.redo] {
+            // Entries are shared with snapshots: copy a stack only when it holds the record.
+            if stack.iter().any(|entry| crate::drawing_pixels::references_drawings(&entry.command)) && Arc::make_mut(stack).iter_mut().any(|entry| adjust(&entry.command, &mut entry.weight, record, delta)) {
+                found = true;
+                break;
+            }
+        }
+        if found {
+            self.history_size = (self.history_size + delta).max(0.0);
+            self.trim_history(false);
+        }
+        found
+    }
+
+    /// The commands the grouped edit in progress holds, oldest first.
+    pub(crate) fn batch_commands(&self) -> impl Iterator<Item = &Command> {
+        self.batch.iter().flat_map(|batch| batch.commands.iter().map(|entry| &entry.command))
+    }
+
+    /// The pixel commit of `record`, when it is the entry recorded last (in the open grouped edit, else in the history), is taken back as an
+    /// undo takes it, but its entry is not kept for a redo. Whether it was.
+    pub(crate) fn retract_pixels_entry(&mut self, record: u64) -> Result<bool, EditError> {
+        let holds = |entry: &Entry| crate::drawing_pixels::holds_record(&entry.command, record);
+        let batched = self.batch.is_some();
+        let last = match &self.batch { Some(batch) => batch.commands.last(), None => self.undo.last() };
+        if !last.is_some_and(holds) { return Ok(false) }
+        let Some(entry) = (match self.batch.as_mut() { Some(batch) => batch.commands.pop(), None => Arc::make_mut(&mut self.undo).pop() }) else { return Ok(false) };
+        self.apply(&entry.command, Direction::Before)?;
+        if !batched { self.history_size -= entry.weight.bytes; }
+        self.drawing_retired = true;
+        if self.sheet() { self.prune_frame_sources(); }
+        Ok(true)
     }
 
     /// Existing undo/redo owner for a worker transaction. This bypasses no UI
@@ -526,6 +581,7 @@ impl Editor {
             CommandKind::Layers { .. } => self.apply_layers_command(command, direction)?,
             CommandKind::CameraMotion { .. } => self.apply_camera_command(command, direction)?,
             CommandKind::Palette { .. } => self.apply_palette_command(command, direction)?,
+            CommandKind::Scene { .. } => self.apply_scene_command(command, direction)?,
             CommandKind::Audio { .. } => self.apply_audio_command(command, direction)?,
             CommandKind::VfxClips { .. } => self.apply_vfx_command(command, direction)?,
             CommandKind::Fields { .. } => self.apply_fields_command(command, direction)?,
@@ -534,7 +590,9 @@ impl Editor {
             CommandKind::FigureRange { .. } => self.apply_figure_range_command(command, direction)?,
             CommandKind::NativeProperties { .. } => self.apply_native_properties(command, direction)?,
             CommandKind::Topology { .. } => self.apply_topology(command, direction)?,
-            CommandKind::External { id, .. } => return Err(EditError::Unported(format!("{}{id}", crate::external::EXTERNAL_ENTRY))),
+            CommandKind::FigureDiscard { .. } => self.apply_figure_discard(command, direction)?,
+            CommandKind::Disconnect { .. } => self.apply_disconnect(command, direction)?,
+            CommandKind::DrawingPixels { .. } => self.apply_drawing_pixels(command, direction)?,
             CommandKind::Batch { commands } => {
                 let ordered: Vec<&Command> = if direction == Direction::Before { commands.iter().rev().collect() } else { commands.iter().collect() };
                 for child in ordered {

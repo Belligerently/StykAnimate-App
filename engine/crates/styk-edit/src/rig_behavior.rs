@@ -1,4 +1,4 @@
-//! Rig relationships of the selected figure's definition (src/editor-rig-constraints.mjs):
+//! Rig relationships of the selected figure's definition:
 //! behaviours of a joint (stretch, follow, response, angle locks, angle paths, weighted
 //! joints, attachments), Smart Stretch over a branch, angle locks measured from the figure on
 //! show, and parts bound to a stretch driver. Each is one `native-properties` history entry
@@ -469,13 +469,23 @@ pub(crate) fn validate_rig(segments: &[Value]) -> Result<(), EditError> {
     Ok(())
 }
 
-/// `{...a, ...b}` of two optional objects (anything else spreads nothing).
+/// `{...a, ...b}` of two optional objects (anything else spreads nothing). A member of `b` set to `undefined` (args.rs)
+/// takes the member of `a` away, as an absent member does once the document is serialized.
 fn merged(a: Option<&Value>, b: Option<&Value>) -> Obj {
     let mut out = a.and_then(Value::as_obj).cloned().unwrap_or_default();
     for (key, value) in b.and_then(Value::as_obj).map(|o| o.iter().collect::<Vec<_>>()).unwrap_or_default() {
-        out.set(key, value.clone());
+        if crate::args::is_undefined(value) {
+            out.remove(key);
+        } else {
+            out.set(key, crate::args::decode(value, false));
+        }
     }
     out
+}
+
+/// Whether a patch member is truthy as the editor's `if (patch[key])` reads it: a member set to `undefined` (args.rs) is not.
+fn given_member(value: &Value) -> bool {
+    !crate::args::is_undefined(value) && value.truthy()
 }
 
 /// A value an object spread would take keys from that the engine does not reproduce
@@ -555,14 +565,10 @@ impl Editor {
         self.native_properties(label, index, entries)
     }
 
-    /// Every frame a pose of a figure lives in (`_allSourceFrames`): the keyframes and the
-    /// pose sources.
+    /// Every frame a pose of a figure lives in (`_allSourceFrames`): the keyframes, the pose sources and
+    /// those of the sources a movieclip retains.
     pub(crate) fn all_source_frames(&self) -> Vec<Value> {
-        let mut frames = items(self.report.get("keyframes"));
-        if let Some(sources) = self.report.path(&["_styk", "frameSources"]).and_then(Value::as_obj) {
-            frames.extend(sources.values().iter().cloned());
-        }
-        frames
+        crate::topology::places(&self.report).iter().filter_map(|place| crate::topology::frame_at(&self.report, place).cloned()).collect()
     }
 
     /// The rig commands by their JavaScript names; `None` for other calls.
@@ -615,7 +621,7 @@ impl Editor {
         }
         for key in ["response", "angleLock", "anglePath", "weighted", "spatial"] {
             if let Some(value) = patch.get(key) {
-                if value.truthy() {
+                if given_member(value) {
                     r.set(key, Value::object(merged(r.get(key), Some(value))));
                 } else {
                     r.remove(key);
@@ -623,19 +629,23 @@ impl Editor {
             }
         }
         if let Some(orientation) = patch.get("orientation") {
-            r.set("orientation", orientation.clone());
+            if crate::args::is_undefined(orientation) {
+                r.remove("orientation");
+            } else {
+                r.set("orientation", crate::args::decode(orientation, false));
+            }
         }
         if let Some(connector) = patch.get("connector") {
             if !r.get("connector").is_some_and(Value::truthy) {
                 return Err(invalid("errors.editorRigConstraints.createAConnectorWithConnectJoints"));
             }
-            if !connector.truthy() {
+            if !given_member(connector) {
                 return Err(invalid("errors.editorRigConstraints.deleteTheConnectorToRemoveItOrReconnect"));
             }
             r.set("connector", Value::object(merged(r.get("connector"), Some(connector))));
         }
         if let Some(stretch) = patch.get("stretch") {
-            if stretch.truthy() {
+            if given_member(stretch) {
                 let span = r.get("connector").filter(|c| c.truthy()).and_then(|c| c.get("restLength")).filter(|v| !v.is_null()).cloned().or_else(|| segment.get("length").cloned()).unwrap_or(Value::Null);
                 let mut next = Obj::new();
                 next.set("restLength", span);
@@ -657,7 +667,7 @@ impl Editor {
             }
         }
         if let Some(follow) = patch.get("follow") {
-            if follow.truthy() {
+            if given_member(follow) {
                 let mut base = Obj::new();
                 base.set("mode", Value::str("stretch"));
                 base.set("influence", Value::Num(1.0));
@@ -687,8 +697,8 @@ impl Editor {
         let scale = num(&object, "scale").filter(|_| object.get("scale").is_some_and(|s| !s.is_null())).unwrap_or(1.0).abs().max(1e-8);
         let connector = segment.path(&["_stykRig", "connector"]).filter(|c| c.truthy());
         let current = match self.drawn_joint(index)? {
-            // A connector's drawn end (its far anchor through the arc it bends along) is not kept by the engine's geometry.
-            Some(_) if connector.is_some() => return Err(EditError::Unported("Smart Stretch on a connector".into())),
+            // A connector stretches from the span it is drawn across: its far anchor, through the arc it bends along.
+            Some(shape) if connector.is_some() => shape.span / scale,
             Some(shape) => shape.length.abs() / scale,
             None => connector.and_then(|c| c.get("restLength")).filter(|v| !v.is_null()).and_then(Value::as_f64).unwrap_or_else(|| num(segment, "length").unwrap_or(f64::NAN).abs()),
         };
@@ -752,7 +762,15 @@ impl Editor {
             f.set("segments", Value::array(segments.clone()));
             f
         });
-        let indices = if whole { crate::builder::branch(&figure, index, true, false).indices } else { vec![index] };
+        let chosen = self.selected_segment_ids(Some(&figure));
+        let indices = if whole {
+            crate::builder::branch(&figure, index, true, false).indices
+        } else if chosen.len() > 1 {
+            // The joints selected with Shift.
+            segments.iter().enumerate().filter(|(_, s)| s.get("segment_id").is_some_and(|id| chosen.iter().any(|other| crate::history::js_strict_eq(other, id)))).map(|(i, _)| i).collect()
+        } else {
+            vec![index]
+        };
         let driver = driver.cloned().unwrap_or(Value::Null);
         let mut changes = Vec::new();
         for i in indices {
@@ -889,7 +907,9 @@ impl Editor {
         let Some(drawn) = shapes.get(index) else { return Ok(None) };
         let geometry = scene.objects.iter().find(|g| g.uid == frame.objects[at].uid && g.resolved);
         let rig = geometry.and_then(|g| g.rig.as_ref()).and_then(|r| r.get(index).copied());
-        Ok(Some(Shape { angle: drawn.angle, length: rig.map_or(drawn.length, |r| r.length), authored: rig.map(|r| r.authored) }))
+        // `shape.end - shape.start`: where the segment is drawn to (a connector's far anchor), not the handle its children attach at.
+        let span = geometry.and_then(|g| Some((g.starts.get(index).copied()?, g.raw_segments.get(index)?.drawing_end))).map_or(f64::NAN, |(start, end)| styk_math::hypot(end[0] - start[0], end[1] - start[1]));
+        Ok(Some(Shape { angle: drawn.angle, length: rig.map_or(drawn.length, |r| r.length), authored: rig.map(|r| r.authored), span }))
     }
 }
 
@@ -898,6 +918,8 @@ struct Shape {
     angle: f64,
     length: f64,
     authored: Option<f64>,
+    /// The distance from where the segment starts to where it is drawn to.
+    span: f64,
 }
 
 /// `changes.set(index, rig)`: a joint changed again keeps its place.
@@ -934,4 +956,22 @@ fn animation_rotation(figure: &Value, object: &Value) -> Result<f64, EditError> 
     let first = object.get("angles").and_then(|a| a.item(0));
     let rest = figure.get("segments").and_then(|s| s.item(0)).and_then(|s| s.get("angle_rad").cloned());
     Ok(number(first) - number(rest))
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    fn parse(text: &str) -> Value { styk_doc::json::parse(text.as_bytes()).unwrap() }
+
+    #[test]
+    fn a_member_set_to_undefined_takes_the_old_one_away() {
+        let old = parse(r#"{"driver":11,"pitch":22,"keys":[[0,1,2,3]]}"#);
+        let patch = parse(r#"{"driver":12,"pitch":{"@undefined":true},"nested":{"gone":{"@undefined":true},"kept":1}}"#);
+        let merged = merged(Some(&old), Some(&patch));
+        assert!(!merged.contains("pitch"), "the pitch is removed");
+        assert_eq!(merged.get("driver").and_then(Value::as_f64), Some(12.0));
+        assert!(merged.contains("keys"), "what the patch does not name stays");
+        assert!(!merged.get("nested").unwrap().as_obj().unwrap().contains("gone"), "markers deeper in are absent members");
+    }
 }

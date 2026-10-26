@@ -78,7 +78,7 @@ try{
   // ping-ponged through the preview image loader, invalidating the renderer
   // and re-rendering every frame forever.
   await page.mouse.move(5,5);await page.waitForTimeout(600);
-  const idle=await page.evaluate(async()=>{const r=styk.state.renderer,g0=r.generation,render=r.render;let n=0;r.render=function(...a){n++;return render.apply(this,a);};await new Promise(res=>setTimeout(res,1200));r.render=render;return {renders:n,bumps:r.generation-g0};});
+  const idle=await page.evaluate(async()=>{const r=styk.state.renderer,g0=r.generation??0,render=r.render;let n=0;r.render=function(...a){n++;return render.apply(this,a);};await new Promise(res=>setTimeout(res,1200));r.render=render;return {renders:n,bumps:(r.generation??0)-g0};});
   check('an idle document with drawings stops rendering and keeps its prepared scene',idle.renders<=1&&idle.bumps===0);
   // Stroke quality regressions, run against the same in-page stroke engine.
   const quality=await page.evaluate(async()=>{

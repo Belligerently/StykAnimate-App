@@ -1,11 +1,12 @@
 //! Recolouring figures (src/figure-colors.mjs `validateRecolor`, `recolorObject`, `figurePalette`,
 //! `attachedFigurePalette`; the overlays of src/animation-style.mjs `resolveInstanceFigure`; the
 //! paints of src/paint.mjs) and the commands that recolour across frames through the range
-//! operation (src/editor-colors.mjs `editFigureColors`, `setFigureColor`, `replaceFigureColor`,
+//! operation (`editFigureColors`, `setFigureColor`, `replaceFigureColor`,
 //! `resetFigureColors`; a polygon's colour from `updatePolygon`). A figure's colours become its
 //! own style overlay (`_stykStyle`); its definition stays shared.
 
 use styk_doc::{Obj, Value};
+use styk_eval::records::paint::{Paint, Stop, normalize_paint, rgb_of_value, rgb_value, segment_paint};
 
 use crate::range_plan::js_round;
 use crate::record::{num, uid};
@@ -21,7 +22,7 @@ pub(crate) fn to_uint32(x: f64) -> u32 {
 }
 
 /// `x | 0`.
-fn to_int32(x: f64) -> i32 {
+pub(crate) fn to_int32(x: f64) -> i32 {
     to_uint32(x) as i32
 }
 
@@ -34,17 +35,8 @@ fn key(id: f64) -> String {
     json(&Value::Num(id))
 }
 
-fn rgb_value(rgb: [f64; 3]) -> Value {
-    Value::array(rgb.iter().map(|&v| Value::Num(v)).collect())
-}
-
-fn rgb_of_value(value: Option<&Value>) -> Option<[f64; 3]> {
-    let list = value?.elements()?;
-    (list.len() == 3).then(|| [0, 1, 2].map(|i| list.get(i).and_then(|v| v.as_f64()).unwrap_or(f64::NAN)))
-}
-
 /// `rgbOf(color)`: a packed `0xRRGGBB` as three bytes.
-fn rgb_of(color: f64) -> [f64; 3] {
+pub(crate) fn rgb_of(color: f64) -> [f64; 3] {
     let n = to_uint32(color);
     [(n >> 16 & 255) as f64, (n >> 8 & 255) as f64, (n & 255) as f64]
 }
@@ -99,112 +91,6 @@ fn opacity(value: &Value) -> Result<f64, EditError> {
     }
 }
 
-/// A paint (`{type, angle, stops: [{offset, color, opacity}]}`).
-#[derive(Clone, Debug)]
-pub(crate) struct Paint {
-    kind: String,
-    angle: f64,
-    stops: Vec<Stop>,
-}
-
-#[derive(Clone, Debug)]
-struct Stop {
-    offset: f64,
-    color: Value,
-    opacity: f64,
-}
-
-impl Stop {
-    fn rgb(&self) -> [f64; 3] {
-        rgb_of_value(Some(&self.color)).unwrap_or([f64::NAN; 3])
-    }
-}
-
-impl Paint {
-    pub(crate) fn value(&self) -> Value {
-        let stops = self
-            .stops
-            .iter()
-            .map(|s| {
-                let mut stop = Obj::new();
-                stop.set("offset", Value::Num(s.offset));
-                stop.set("color", s.color.clone());
-                stop.set("opacity", Value::Num(s.opacity));
-                Value::object(stop)
-            })
-            .collect();
-        let mut out = Obj::new();
-        out.set("type", Value::str(&self.kind));
-        out.set("angle", Value::Num(self.angle));
-        out.set("stops", Value::array(stops));
-        Value::object(out)
-    }
-
-    pub(crate) fn solid(&self) -> bool {
-        self.kind == "solid"
-    }
-}
-
-/// `normalizePaint(paint)`.
-pub(crate) fn normalize_paint(paint: &Value) -> Result<Paint, EditError> {
-    let kind = paint.get("type").and_then(Value::as_str).filter(|t| ["solid", "linear", "radial", "angular", "diamond"].contains(t));
-    let Some(kind) = kind.filter(|_| paint.truthy()) else { return Err(invalid("errors.paint.invalidPaintType")) };
-    let finite = |v: Option<&Value>, min: f64, max: f64| match v.and_then(Value::as_f64) {
-        Some(n) if n.is_finite() && n >= min && n <= max => Ok(n),
-        _ => Err(invalid("errors.paint.invalidPaintValue")),
-    };
-    let stops: Vec<Value> = match paint.get("stops").and_then(Value::elements) {
-        Some(list) if paint.get("stops").is_some_and(Value::is_array) && list.len() >= if kind == "solid" { 1 } else { 2 } && list.len() <= 32 => list.iter().collect(),
-        _ => return Err(invalid("errors.paint.useBetween2And32GradientStops")),
-    };
-    let mut out = Vec::with_capacity(stops.len());
-    for stop in &stops {
-        let color: Vec<Value> = match stop.get("color").filter(|c| c.is_array()).and_then(Value::elements) {
-            Some(list) if list.len() == 3 => list.iter().collect(),
-            _ => return Err(invalid("errors.paint.invalidRgbColor")),
-        };
-        let offset = finite(stop.get("offset"), 0.0, 1.0)?;
-        let mut channels = Vec::with_capacity(3);
-        for v in &color {
-            channels.push(Value::Num(js_round(finite(Some(v), 0.0, 255.0)?)));
-        }
-        let opacity = finite(stop.get("opacity"), 0.0, 1.0)?;
-        out.push(Stop { offset, color: Value::array(channels), opacity });
-    }
-    out.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::Equal));
-    let angle = match paint.get("angle").filter(|a| !a.is_null()) {
-        None => 0.0,
-        Some(angle) => finite(Some(angle), -36000.0, 36000.0)?,
-    };
-    Ok(Paint { kind: kind.to_string(), angle, stops: out })
-}
-
-/// `segmentPaint(segment)`: a segment's paint, its first stop the segment's colour and
-/// transparency, a native gradient's end its last.
-fn segment_paint(segment: &Value) -> Result<Paint, EditError> {
-    let alpha = |value: Option<&Value>| 1.0 - value.and_then(Value::as_f64).unwrap_or(0.0) / 255.0;
-    let secondary = segment.get("secondary").filter(|s| s.truthy());
-    if let Some(paint) = segment.get("paint").filter(|p| p.truthy()) {
-        let mut p = normalize_paint(paint)?;
-        if let Some(color) = segment.get("color_rgb").filter(|c| !c.is_null()) {
-            p.stops[0].color = color.clone();
-        }
-        p.stops[0].opacity = alpha(segment.get("transparency"));
-        if let (Some(secondary), false) = (secondary, p.solid()) {
-            let last = p.stops.last_mut().unwrap();
-            last.color = secondary.get("rgb").cloned().unwrap_or(Value::Null);
-            last.opacity = alpha(secondary.get("a"));
-        }
-        return Ok(p);
-    }
-    let first = segment.get("color_rgb").filter(|c| !c.is_null()).cloned().unwrap_or_else(|| rgb_value([0.0; 3]));
-    let mut stops = vec![Stop { offset: 0.0, color: first, opacity: alpha(segment.get("transparency")) }];
-    if let Some(secondary) = secondary {
-        stops.push(Stop { offset: 1.0, color: secondary.get("rgb").cloned().unwrap_or(Value::Null), opacity: alpha(secondary.get("a")) });
-    }
-    Ok(Paint { kind: if secondary.is_some() { "linear" } else { "solid" }.into(), angle: 0.0, stops })
-}
-
 /// `samplePaint(p, t).color`.
 fn sample_paint(p: &Paint, t: f64) -> [f64; 3] {
     let stops = &p.stops;
@@ -230,13 +116,13 @@ pub(crate) fn uses_segment_colors(version: f64, figure: &Value, object: &Value) 
 }
 
 /// `color(raw).rgb`: a native colour (`0xAABBGGRR`) as bytes.
-fn native_rgb(raw: f64) -> [f64; 3] {
+pub(crate) fn native_rgb(raw: f64) -> [f64; 3] {
     let n = to_uint32(raw);
     [(n & 255) as f64, (n >> 8 & 255) as f64, (n >> 16 & 255) as f64]
 }
 
 /// `mixColor(base, raw)`: the override blended over a colour by its alpha.
-fn mix_color(base: [f64; 3], raw: f64) -> [f64; 3] {
+pub(crate) fn mix_color(base: [f64; 3], raw: f64) -> [f64; 3] {
     let k = (to_uint32(raw) >> 24) as f64;
     if k == 0.0 {
         return base;
@@ -302,7 +188,7 @@ fn mesh_colors(figure: &Value) -> usize {
 }
 
 /// `alphaByte(opacity)`.
-fn alpha_byte(opacity: f64) -> f64 {
+pub(crate) fn alpha_byte(opacity: f64) -> f64 {
     js_round((1.0 - opacity) * 255.0)
 }
 
@@ -907,7 +793,8 @@ impl Editor {
                 // `setFigureColor(color, {opacity, ...range})`.
                 let mut operation = Obj::new();
                 operation.set("mode", Value::str("all"));
-                if let Some(color) = args.first() {
+                // A color the caller left out (`undefined`) reaches the session as null.
+                if let Some(color) = args.first().filter(|color| !color.is_null()) {
                     operation.set("color", color.clone());
                 }
                 let mut range = arg(1).as_obj().cloned().unwrap_or_default();
@@ -938,6 +825,7 @@ impl Editor {
         let hidden_or_locked = |editor: &Editor, id: u32| {
             let layer = layers.as_ref().and_then(|l| l.get(&editor.layer_of(id)).cloned());
             layer.as_ref().is_some_and(|l| l.get("locked").and_then(Value::as_bool) == Some(true) || l.get("visible").and_then(Value::as_bool) == Some(false))
+                || editor.layer_focus_locked(&editor.layer_of(id))
         };
         if uids.iter().any(|&id| hidden_or_locked(self, id)) {
             return Err(invalid("errors.editorColors.showAndUnlockTheSelectedLayersBeforeRecoloring"));

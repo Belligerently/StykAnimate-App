@@ -238,7 +238,7 @@ export function createExportFlow(ctx) {
         onFrame: ({stage, tick}) => stage === 'rendering' ? progressUI.frameStarted(tick) : progressUI.frameRendered(),
         getRevision: () =>
           editor.report === source
-            ? `${editor.revision}:${editor.frameDraftRevision}`
+            ? `${editor.revision}`
             : "replaced",
       }, {stage: state.renderer, revision: editor.revision, range: [start, start + frames - 1], vector: format === 'svg'});
       await frameRenderer.load(report);

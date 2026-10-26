@@ -22,6 +22,7 @@ try {
     viewport: { width: 1440, height: 1000 },
     acceptDownloads: true,
   });
+  await page.addInitScript(() => { delete window.showSaveFilePicker; }); // headless Chrome aborts the save picker: exports take the download path
   page.on("pageerror", (error) => errors.push(error.message));
   // Exports are the engine's (src/engine/engine-export.mjs); its sampling is checked pixel by
   // pixel in engine/crates/styk-export/tests and its protocol in tests/engine-export.test.mjs.
@@ -36,12 +37,16 @@ try {
     styk.editor.select(1);
     styk.fit();
   });
+  // The edges setting shows for the types that draw pixels, so it is set once the type is chosen.
+  let edges = null;
   async function open(mode) {
     await page.locator('[data-action="export"]').first().click();
-    await page.locator("#export-smoothing").selectOption(mode);
+    edges = mode;
   }
   async function selectFormat(action) {
     await chooseExport(page, action);
+    const smoothing = page.locator("#export-smoothing");
+    if (edges && (await smoothing.isVisible())) await smoothing.selectOption(edges);
   }
   async function download(action, name) {
     await selectFormat(action);

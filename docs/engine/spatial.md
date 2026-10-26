@@ -5,12 +5,12 @@ How the Rust engine evaluates and draws StykAnimate's 3D: spatial poses
 (`_stykSurface`), figure meshes (`_styk.spatialMesh`) and attached movieclip
 meshes (`spatialMeshes`). The user-facing behaviour is in
 [`SPATIAL-MESHES.md`](../SPATIAL-MESHES.md) and [`RIG-CONSTRAINTS.md`](../RIG-CONSTRAINTS.md);
-the JavaScript editor is the oracle while both exist
-([`RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md)): `src/spatial-projection.mjs`,
-`src/rig-spatial.mjs`, `src/pivot/surfaces.mjs`, `src/spatial-mesh.mjs`,
-`src/movieclip-mesh.mjs`, the polygon and mesh steps of `buildGeometrySteps`
-(`src/pivot/geometry.mjs`), and for drawing `src/surface-raster.mjs`,
-`src/renderer-mesh-raster.mjs` and the raster path of `src/renderer.mjs`.
+the recorded fixtures were made from the JavaScript editor and are frozen
+([README](README.md#fixtures), [`RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md)). The port followed
+`src/spatial-projection.mjs`, `src/rig-spatial.mjs`, `src/pivot/surfaces.mjs`, `src/spatial-mesh.mjs`,
+`src/movieclip-mesh.mjs` and the polygon and mesh steps of the editor's geometry builder (`buildGeometrySteps`,
+`src/pivot/geometry.mjs`, deleted). The JavaScript that remains of surfaces and meshes checks what a document stores
+(`validateSurface`, `validateSpatialMesh`, `validateMovieclipMeshes`); the interface's groups carry no drawables for a mesh.
 
 ## Contract
 
@@ -19,7 +19,7 @@ the JavaScript editor is the oracle while both exist
   `Polyfill::surface` (`Surface`: reference triangle, side, flip, depth guides,
   depth test), `Segment::choice_scale` (a pose choice whose hidden length is 0),
   `Figure::mesh` (`spatial::MeshPlan`, compiled once against the figure's joints,
-  `spatialMeshPlan`) with `Figure::mesh_colors` (the palette after the instance's
+  the editor's `spatialMeshPlan`) with `Figure::mesh_colors` (the palette after the instance's
   `_stykStyle.meshColors`), `Movieclip::meshes` (`spatial::ClipMesh`, one per local
   frame). A mesh or clip mesh that is not a valid indexed mesh is left out and noted
   (`Document::notes`); the editor rejects such a file when it loads.
@@ -34,7 +34,7 @@ the JavaScript editor is the oracle while both exist
   Drawables gain `ItemKind::Mesh` (a painter-order bucket of a mesh's faces:
   `Item::mesh`, `Item::faces`), and a polygon that is a depth-tested surface carries
   one depth per point (`Item::depth`). `Item::depth_surface` is `depthSurface`.
-- `Document::unsupported` names no 3D feature, and the interface refuses no 3D document: drawings a spatial bone
+- The interface refuses no 3D document: drawings a spatial bone
   turns (`drawingRotation`) are evaluated too (step 6 below). `Movieclip::drawing_sets`
   and `Movieclip::drawing_rotation` hold a clip's forms and their rotation;
   `ObjectSpatial` keeps each joint's authored angle and a bone's start before perspective
@@ -47,17 +47,17 @@ Operation for operation as the editor, with V8's trigonometry and `Math.hypot`
 decided by a tolerance of 2e-7 relative to the face, so the last bits matter.
 
 1. **Spatial poses between keys** (`spatial::interpolate_pose`, called from
-   `eval::tween_object`): `interpolateSpatialPose`. The camera is always present (a
+   `eval::tween_object`). The camera is always present (a
    key without one takes strength 0, distance 600, its own root as centre), each
    value linear within its limits; proportions of the bones either key names.
-2. **Bones** (`rig::evaluate_spatial`, `evaluateSpatial`): the pose's perspective
-   (`spatial::Camera::of`, `projection`) projects every joint
-   (`projectSpatial`, near limit 0.05) and keeps the unprojected point; part
+2. **Bones** (`rig::evaluate_spatial`): the pose's perspective
+   (`spatial::Camera::of`, projection) projects every joint
+   (near limit 0.05) and keeps the unprojected point; part
    proportions move points radially (`shapeOffset`, also blended over the bindings
    of skin points); a hidden pose choice scales about the bone's origin by its
    stretch (`choiceScale`). Every spatial joint and every weighted joint with a depth
    anchor records its depth guide. Inverse kinematics evaluates without perspective,
-   as `createRigEvaluation(..., {project: false})`.
+   without projecting the rig.
 3. **Surfaces** (`spatial::evaluate_surface`, `project_face`): a depth-tested face of
    a perspective pose is clipped against the near plane before projection (a
    triangle may become a quad) and takes its corners' perspective depths; otherwise
@@ -81,18 +81,17 @@ decided by a tolerance of 2e-7 relative to the face, so the last bits matter.
    weights); otherwise placed flat by the instance's angle, scale and reflection. The
    form is `floor(local time)` clamped to the clip's forms. Faces are kept by their
    outward winding and clipped like surfaces.
-6. **Rotated drawings** (`geometry::rotated_drawing`, `rotatedDrawing`,
-   `drawingRotationReference`, `buildMovieclipGeometrySteps`): a movieclip joined to a
+6. **Rotated drawings** (`geometry::rotated_drawing`): a movieclip joined to a
    spatial bone shows the single frame its bone selects in the instance's form
-   (`drawingSelection`: the set holding the instance's frame): the bone's rotation as bend,
+   (`drawingSelection` in `src/movieclip-drawings.mjs` selects the set holding the instance's frame): the bone's rotation as bend,
    turn and pitch on the Euler branch nearest the native angles of its turn and tilt
-   controls up the chain (`rig::quaternion_pose`, `quaternionPose`), the turn rounded to one
+   controls up the chain (`rig::quaternion_pose`), the turn rounded to one
    of `steps` directions and the pitch past the tilt threshold choosing the up or down
    views. The instance is placed at the bone's start, turned by the bend (reflected with its
    parent) and the figure's rotation, scaled by the bone's stretch and, in perspective, by
    its depth (`1 / max(.05, 1 - k z)`), all with V8's trigonometry (`styk-math`).
 7. **Records** (`records.rs`): a tween of `_stykSpatial` is written as
-   `interpolateSpatialPose`'s record (camera, then proportions in ascending handle
+   the recorded spatial pose (camera, then proportions in ascending handle
    order), from the typed tween.
 
 ## Drawing
@@ -148,7 +147,7 @@ from a GPU, whose own vertex arithmetic decides them.
 
 ## Parity
 
-**Geometry** (`styk compare` against `engine/tools/reference.mjs`, which now dumps each
+**Geometry** (`styk compare` against the editor's dump, recorded once by a tool that is deleted, which dumped each
 evaluated mesh once per tick and every surface's depths; the comparison checks faces
 and palette entries exactly, vertices within `parity::TOLERANCE`, depths relative to
 their size, colours, bounds and depth ranges):
@@ -159,7 +158,7 @@ their size, colours, bounds and depth ranges):
 | All 183 `.stkz` figures and `.stykmov` clips of `AssetReleases/` | 183 | 4,627 | 7,608 | 0 |
 | `15-Guns-Pivot-3D.styk` (every tick) | 6 | 169 | 1,958 | 0 |
 
-**Fixtures** (`engine/tools/spatial-fixtures.mjs`, `tests/spatial.rs`): 14 projects built
+**Fixtures** (`tests/spatial.rs`, frozen): 14 projects built
 with the editor's commands (meshes authored as the asset builders author them and
 converted by the editor's own converter): native skin surfaces, surfaces under
 perspective and clipped at the near plane, the Box solid's one-sided faces, skinned
@@ -173,7 +172,7 @@ fixture matches; each stops matching without its
 meshes, its surfaces or its 3D poses, and without the part it is about (view
 targets, blended vertices, the depth-order offset, splitting primitives, instance
 palettes, reflection, mechanical joints, the hidden expression, depth guides); three
-reach the near-plane clip. 120 recorded `interpolateSpatialPose` results match bit for
+reach the near-plane clip. 120 recorded spatial pose tweens match bit for
 bit. Records: 512 recorded ticks of every editor-built fixture are produced and
 byte-identical, 102 of them spatial (34 with a tweened 3D pose).
 
@@ -196,8 +195,7 @@ pixels where near-coplanar faces meet ([rendering.md](rendering.md#measured)).
 - Invalid meshes are left out and noted where the editor refuses the file.
 - Faces nearly in one plane resolve by each renderer's last bits (on a GPU, its own vertex
   arithmetic): the CPU rasterizer and a GPU can pick different faces there.
-- The editor lowers raster densities when a scene exceeds its preview budget
-  (`previewRasterScale`); the engine does not (as for effects).
+- The engine does not lower raster densities when a scene exceeds a preview budget (as for effects).
 
 ### JavaScript behaviours reproduced that look wrong
 
@@ -286,23 +284,18 @@ of it the multisampled depth buffer of the layer pages); none without 3D.
 
 - **A new mesh or surface field**: read it in `spatial.rs` (`MeshPlan::compile`,
   `ClipMesh::parse`, `parse_surface`, `parse_pose`), evaluate it where the editor does,
-  add a fixture to `spatial-fixtures.mjs` that fails without it and a dependency check
-  in `tests/spatial.rs`.
-- **A change to the editor's 3D arithmetic**: change the JavaScript first, regenerate
-  the fixtures (`node engine/tools/spatial-fixtures.mjs`, `records-fixtures.mjs`), then
-  make the engine match. Keep `styk-math` in the spatial path.
+  add a Rust test in `tests/spatial.rs` that states the expected result and fails without it.
+- **A change to the 3D arithmetic**: the recorded fixtures are frozen ([README](README.md#fixtures));
+  state the new result in a Rust test and keep `styk-math` in the spatial path.
 - **Depth drawing**: the format is `styk-draw`'s (`K_DEPTH_RESET`, `F_DEPTH`,
   `window_depth`); GPU and CPU must keep passing the shared depth scene.
 
 ## Testing
 
 ```sh
-node engine/tools/spatial-fixtures.mjs        # tests/fixtures/spatial/ (byte-stable)
-node engine/tools/records-fixtures.mjs        # tests/fixtures/records/, spatial fixtures included
 cd engine && cargo test -p styk-eval --test spatial --test records
 cargo test -p styk-render -p styk-raster --test depth
 cargo build --release -p styk-cli
-node tools/reference.mjs <file.styk> /tmp/ref.json --every 1 && target/release/styk compare <file.styk> /tmp/ref.json
 target/release/styk render <file> <tick> gpu.png && target/release/styk raster <file> <tick> cpu.png && target/release/styk diff gpu.png cpu.png diff.png
-npm run engine:parity -- --corpus             # adds the catalogue's 3D scenes, every tick
+npm run engine:parity                         # the fixtures, the containers and the other suites
 ```

@@ -5,13 +5,13 @@ import {randomBytes, createHash} from 'node:crypto';
 import {DocumentExporter} from '../src/document-export.mjs';
 import {decodeDocument, openDocument} from './support/native-files.mjs';
 import {createDemo} from '../src/demo.mjs';
-import {Editor} from '../src/editor.mjs';
 import {FakeCodecHost} from './support/codec-host.mjs';
+import {ownedEditorFor} from './support/owned-editor.mjs';
 
 class WorkerFacade extends EventTarget {
   constructor() {
     super();
-    this.worker = new NodeWorker(new URL('./document-export-node-worker.mjs', import.meta.url));
+    this.worker = new NodeWorker(new URL('./document-export-node-worker.mjs', import.meta.url), {execArgv: []});
     this.worker.on('message', data => { const event = new Event('message'); event.data = data; this.dispatchEvent(event); });
     this.worker.on('error', error => { const event = new Event('error', {cancelable: true}); event.message = error.message; this.dispatchEvent(event); });
     this.worker.on('messageerror', () => this.dispatchEvent(new Event('messageerror')));
@@ -125,14 +125,14 @@ test('fresh workers reuse verified compressed bytes without retaining editable s
 test('real portable movieclip worker packs keys, prunes archives, and leaves the project editable', async t => {
   const exporter = environment(t), report = createDemo();
   report._stykSource = {source_base64: randomBytes(131072).toString('base64')};
-  const editor = new Editor({demo: false, layerTimeline: true}).load(report);
+  const editor = ownedEditorFor({demo: false, layerTimeline: true}, report);
   const uid = editor.report.keyframes[0].objects[0].figure_uid;
   editor.select(uid);
   const clip = editor.createMovieclip({start: 0, end: 1, name: 'Portable clip'});
   assert.ok(clip, 'movieclip creation succeeds');
   const figure = editor.report.figure_types.find(figure => figure._styk?.movieclip);
   const before = structuredClone(editor.report);
-  const output = await exporter.export(editor.report, {format: 'stykmov', figureTypeId: figure.figure_type_id});
+  const output = await exporter.export(editor.report, {format: 'stykmov', figureTypeId: figure.figure_type_id, revision: editor.revision});
   const reopened = await openDocument(new Uint8Array(await output.arrayBuffer()), 'stykmov', {verifySource: false});
   assert.equal(reopened.figure_types[0]._styk.movieclip.document._stykSource, undefined);
   assert.equal(reopened.figure_types[0]._styk.movieclip.document._styk?.movieclipSource?.document?._stykSource, undefined);

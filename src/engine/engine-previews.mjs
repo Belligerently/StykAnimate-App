@@ -21,7 +21,7 @@ import {loadEngine} from './engine.mjs';
 
 const WORKER_NAME = 'StykAnimate previews (engine)';
 /** How long an idle worker keeps its pictures and thread. */
-export const PREVIEW_IDLE_MS = 300000;
+const PREVIEW_IDLE_MS = 300000;
 /** How long a worker may take to release the engine memory it holds. */
 const RELEASE_MS = 5000;
 
@@ -284,7 +284,7 @@ export class EngineCameraMonitor {
 }
 
 /** A library file's extension as the engine reads it (`stkz`, `stykmov`, …), from its name. */
-export function libraryExtension(file, fallback = 'stkz') {
+function libraryExtension(file, fallback = 'stkz') {
   const match = /\.([a-z0-9]+)$/i.exec(file?.name ?? '');
   return match ? match[1].toLowerCase() : fallback;
 }

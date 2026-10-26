@@ -115,7 +115,7 @@ pub fn raster_resolution(scale: f64) -> f64 {
     2f64.powf(((scale.log2() * 4.0) - 1e-9).ceil() / 4.0).max(0.5)
 }
 
-/// `rasterBounds` (src/raster-view.mjs): a crop of `bounds` around `visible` on
+/// `rasterBounds`: a crop of `bounds` around `visible` on
 /// the complete raster's pixel grid. `[x, y, width, height]` in world units, or
 /// `None` when nothing is visible.
 pub fn raster_bounds(bounds: [f64; 4], visible: Option<[f64; 4]>, resolution: f64, max_dimension: f64, margin: f64, padding: f64) -> Option<[f64; 4]> {

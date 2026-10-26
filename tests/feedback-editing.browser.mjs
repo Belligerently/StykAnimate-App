@@ -109,7 +109,7 @@ try {
   });
   await run('Build right-drag bends reusable figure', async () => {
     await fixture();
-    await page.evaluate(() => {const e = styk.editor; e.figure.segments[0].is_static = true; e.figure.segments[0].aux_code = 1; e.touch();});
+    await page.evaluate(() => {const e = styk.editor; e.select(e.selectedUid, 0); e.updateSegment({is_static: true});});
     await mode('rig');
     const p = await page.evaluate(() => feedbackPoint());
     const before = await page.evaluate(() => JSON.stringify(styk.editor.serialize()));

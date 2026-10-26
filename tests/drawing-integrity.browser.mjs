@@ -42,11 +42,11 @@ try{
   });
   for(const [name,value] of Object.entries(selection))check('selection: '+name,value);
   const saved=await page.evaluate(async()=>{
-    const {Editor}=await import('/src/editor.mjs'),{DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{decodeTileBlob}=await import('/src/drawing-tile-codec.mjs');
-    const e=new Editor({demo:false,layerTimeline:true});e.createDrawingLayer();const t=e.prepareDrawingCel(),o=e.drawingResources;await o.surface(t.figure);
+    const { pageEditor }=await import('/tests/support/page-editor.mjs'),{DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{decodeTileBlob}=await import('/src/drawing-tile-codec.mjs');
+    const e=pageEditor({demo:false,layerTimeline:true});e.createDrawingLayer();const t=e.prepareDrawingCel(),o=e.drawingResources;await o.surface(t.figure);
     e.commitDrawingPixels(t,[{tx:-300,ty:0,before:null,after:new Uint8ClampedArray([1,2,3,255])},{tx:300,ty:300,before:null,after:new Uint8ClampedArray([4,5,6,255])}]);
     const exporter=new DocumentExporter();try{const blob=await exporter.export(e.report,{format:'styk',getRevision:()=>e.revision}),read=await new ImportClient().importFile(new File([blob],'wide.styk'));
-      const restored=new Editor({demo:false,layerTimeline:true});restored.load(read.document);const tiles=await decodeTileBlob(restored.drawingTarget().figure.image_assets[0].styk_tiles);return tiles.map(t=>({tx:t.tx,ty:t.ty,pixel:[...t.pixels.slice(0,4)]}));
+      const restored=pageEditor({demo:false,layerTimeline:true});restored.load(read.document);const tiles=await decodeTileBlob(restored.drawingTarget().figure.image_assets[0].styk_tiles);return tiles.map(t=>({tx:t.tx,ty:t.ty,pixel:[...t.pixels.slice(0,4)]}));
     }finally{exporter.dispose();o.dispose();}
   });
   assert.deepEqual(saved,[{tx:-300,ty:0,pixel:[1,2,3,255]},{tx:300,ty:300,pixel:[4,5,6,255]}]);check('distant sparse marks survive a real STYK save and reopen',true);

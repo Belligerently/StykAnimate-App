@@ -42,7 +42,7 @@ impl Cache {
         Some((&self.loader, self.prepared.as_ref()?))
     }
 
-    fn edit_frame(&mut self, record: &Value, prepared: &Arc<Prepared>) -> Result<styk_eval::eval::Frame, styk_eval::Error> {
+    pub(crate) fn edit_frame(&mut self, record: &Value, prepared: &Arc<Prepared>) -> Result<styk_eval::eval::Frame, styk_eval::Error> {
         let _scope = crate::prof::scope("frame::edit_frame");
         let previous = self.latest_typed.as_ref().filter(|pair| Arc::ptr_eq(&pair.prepared, prepared)).cloned();
         if let Some(pair) = &previous {
@@ -167,6 +167,12 @@ impl Editor {
         }
     }
 
+    /// The document at the playhead, with no gesture's draft, preview or retained frame over it:
+    /// the frame a gesture is composed on.
+    pub(crate) fn document_frame(&self) -> Result<Value, EditError> {
+        self.evaluated_mode(self.tick, true, true)
+    }
+
     /// `editor.selectionFrame.objects`: what selection reads. On a layer sheet the
     /// frame on show; on a native timeline with no saved channels the keyframe
     /// at the playhead.
@@ -253,9 +259,6 @@ impl Editor {
     /// This shares the existing Prepared lineage and latest typed view owner.
     pub(crate) fn evaluate_frame(&self) -> Result<(Arc<Prepared>, styk_eval::eval::Frame), EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let record = self.shown_frame()?;
         let frame = self.eval.borrow_mut().edit_frame(&record, &prepared).map_err(|error| EditError::Invalid(error.to_string()))?;
         Ok((prepared, frame))
@@ -1303,15 +1306,6 @@ mod tests {
         assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_shape(Some(&[0])).err().unwrap()));
         assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_joint_shape(Some(0), 0).err().unwrap()));
         assert!(Arc::ptr_eq(editor.eval.borrow().latest_typed.as_ref().unwrap(), &coherent), "conversion error never installs a partial typed frame");
-        let mut document = (*prepared.doc).clone();
-        document.unsupported.push("shape query unsupported control".into());
-        let loader = editor.eval.borrow().loader.clone();
-        editor.adopt_prepared(loader, Arc::new(Prepared::new(Arc::new(document))));
-        let old = editor.evaluate_only(Some(&[0])).err().unwrap();
-        assert!(matches!(&old, EditError::Unported(_)));
-        assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_shape(Some(&[0])).err().unwrap()), "unsupported preparation precedes malformed shown-frame conversion");
-        assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_joint_shape(Some(0), 0).err().unwrap()), "joint query retains preparation-before-conversion priority");
-        assert!(editor.eval.borrow().latest_typed.is_none());
     }
 
 }

@@ -45,7 +45,7 @@ fn malformed_choice_schema_preserves_a_changed_open_pose() {
     assert_eq!(refused, 26);
 }
 #[test]
-fn unrecorded_choice_combinations_preserve_live_document_shown_history_and_metadata() {
+fn choice_combinations_the_origin_cannot_follow_preserve_live_document_shown_history_and_metadata() {
     for feature in ["skin", "motion", "weighted", "stretch", "spatialMesh", "drawing", "movieclip", "ik", "malformed-ik", "projection", "missing-pivot", "cyclic-join", "missing-join", "invalid-id", "duplicate-id", "invalid-parent", "complex-ancestor", "same-definition-ancestor", "same-definition-follower"] {
         let mut editor = editor(["complex-ancestor", "same-definition-ancestor", "same-definition-follower"].contains(&feature));
         let index = if feature == "complex-ancestor" { 1 } else { 0 };
@@ -97,25 +97,26 @@ fn unrecorded_choice_combinations_preserve_live_document_shown_history_and_metad
         }
         editor.take_events();let before = snapshot(&mut editor);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| editor.call("setPoseChoice", &[Value::str("Expression"), Value::Num(1.0)])));
-        assert!(matches!(result, Ok(Err(EditError::Unported(_)))), "{feature}: {result:?}");assert_eq!(snapshot(&mut editor), before, "{feature}");
+        // An origin figure the pivots cannot follow, or a hierarchy or definition that does not hold together, is refused whole.
+        // Any other rig data is the ordinary pose owners' business: no panic, and a failure changes nothing.
+        if ["spatialMesh", "drawing", "movieclip", "projection", "missing-pivot", "cyclic-join", "missing-join", "invalid-id", "duplicate-id", "invalid-parent"].contains(&feature) {
+            assert!(matches!(result, Ok(Err(EditError::Unported(_)))), "{feature}: {result:?}");assert_eq!(snapshot(&mut editor), before, "{feature}");
+        } else {
+            let result = result.unwrap_or_else(|_| panic!("{feature} panicked"));
+            if result.is_err() { assert_eq!(snapshot(&mut editor), before, "{feature} failed but changed the live pose"); }
+        }
     }
 }
 #[test]
-fn choice_projection_selection_metadata_and_other_spatial_commands_remain_atomic() {
-    for options in [crate::Options {property_channels: true, ..crate::Options::default()}, crate::Options {layer_timeline: true, ..crate::Options::default()}] {
-        let mut unopened = Editor::new(document(false), options.clone());unopened.take_events();let before = snapshot(&mut unopened);
-        assert!(matches!(unopened.call("select", &[Value::Num(1.0), Value::Num(-1.0)]), Err(EditError::Unported(_))));assert_eq!(snapshot(&mut unopened), before);
-        // The owning selection gate currently refuses first. Test choice readiness
-        // independently on an already changed live pose without relaxing that gate.
-        let mut editor = editor(false);editor.options = options;editor.take_events();let before = snapshot(&mut editor);
-        assert!(matches!(editor.call("setPoseChoice", &[Value::str("Expression"), Value::Num(2.0)]), Err(EditError::Unported(_))));assert_eq!(snapshot(&mut editor), before);
-    }
+fn choice_during_another_gesture_and_other_spatial_commands_never_panic() {
+    let options = crate::Options {property_channels: true, ..crate::Options::default()};
+    let mut unopened = Editor::new(document(false), options);unopened.take_events();let before = snapshot(&mut unopened);
+    assert!(matches!(unopened.call("select", &[Value::Num(1.0), Value::Num(-1.0)]), Err(EditError::Unported(_))));assert_eq!(snapshot(&mut unopened), before);
     let mut foreign = editor(false);foreign.drag.as_mut().unwrap().translation = true;foreign.take_events();let before = snapshot(&mut foreign);
     assert!(matches!(foreign.call("setPoseChoice", &[Value::str("Expression"), Value::Num(1.0)]), Err(EditError::Unported(_))));assert_eq!(snapshot(&mut foreign), before);
-    let mut editor = editor(false);editor.set_selection_metadata(&styk_doc::json::parse(br#"{"branch":{"uid":1,"joint":3,"futureHiddenChoiceMetadata":[4,2]}}"#).unwrap()).unwrap();editor.take_events();let before = snapshot(&mut editor);
-    assert!(matches!(editor.call("setPoseChoice", &[Value::str("Expression"), Value::Num(1.0)]), Err(EditError::Unported(_))));assert_eq!(snapshot(&mut editor), before);
-    editor.set_selection_metadata(&Value::object(Obj::new())).unwrap();editor.take_events();let before = snapshot(&mut editor);
     for (method, args) in [("setSpatialPose", vec![styk_doc::json::parse(br#"{"turn":0.2}"#).unwrap()]), ("setSpatialFeetPinned", vec![Value::Bool(false)]), ("poseJoint", vec![Value::Num(200.0), Value::Num(200.0)]), ("rotateJoint", vec![Value::Num(0.2)]), ("beginRigDrag", vec![]), ("beginFigureHandleDrag", vec![])] {
-        assert!(matches!(editor.call(method, &args), Err(EditError::Unported(_))), "{method}");assert_eq!(snapshot(&mut editor), before, "{method}");
+        let mut editor = editor(false);editor.take_events();let before = snapshot(&mut editor);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| editor.call(method, &args))).unwrap_or_else(|_| panic!("{method} panicked"));
+        if result.is_err() { assert_eq!(snapshot(&mut editor), before, "{method} failed but changed the live pose"); }
     }
 }

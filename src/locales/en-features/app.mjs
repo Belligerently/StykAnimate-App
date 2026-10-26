@@ -154,11 +154,6 @@ export default Object.freeze({
   "app.restore": "Restore",
   "app.preservingAnimation": "Preserving animation",
   "app.layerChangeCancelled": "Layer change cancelled",
-  "app.frameCopied": {
-    "one": "{count} frame copied",
-    "other": "{count} frames copied"
-  },
-  "app.clipboardOperationCancelled": "Clipboard operation cancelled",
   "app.preparingCanvasAndEffects": "Preparing canvas and effects…",
   "app.editorReadyFileServiceUnavailable": "Editor ready · File service unavailable",
   "app.theCanvasCouldNotReconnectYourAnimationIs": "The canvas could not reconnect. Your animation is still here and can be saved.",
@@ -217,10 +212,6 @@ export default Object.freeze({
   "app.autoKeyOff": "Auto key off",
   "app.copyAnAppearanceFirst": "Copy an appearance first",
   "app.applyingLayerChanges": "Applying layer changes",
-  "app.copyingFrames": "Copying frames",
-  "app.cuttingFrames": "Cutting frames",
-  "app.pastingFrames": "Pasting frames",
-  "app.updatingFrames": "Updating frames",
   "app.loadingThePivotConverterFirstUseOnly": "Loading the Pivot converter (first use only)…",
   "app.startingThePivotConverter": "Starting the Pivot converter…",
   "app.recoveryOffer": "in {name} from {time}?",

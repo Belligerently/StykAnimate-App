@@ -9,6 +9,8 @@
 use std::collections::{HashMap, HashSet};
 
 use styk_doc::{Obj, Value};
+use styk_eval::eval::{Frame, Prepared};
+use styk_eval::geometry::Scene;
 use styk_math::{atan2, hypot, shortest, sin, cos};
 
 use crate::record::{join_target, num, uid};
@@ -180,7 +182,7 @@ pub(crate) fn set_item_at(object: &mut Obj, key: &str, index: usize, value: f64)
 }
 
 /// `object.angles[i] += delta` for each of `indices`, in the supplied order.
-fn add_angles(object: &mut Obj, indices: &[usize], delta: f64) {
+pub(crate) fn add_angles(object: &mut Obj, indices: &[usize], delta: f64) {
     let Some(angles) = object.get_mut("angles") else { return };
     if let Some(numbers) = angles.as_nums() {
         let mut values = numbers.to_vec();
@@ -250,18 +252,31 @@ impl Editor {
         };
         let (prepared, frame, scene) = self.evaluate_for_joint_shape(slot, joint)?;
         let Some(id) = uid(object) else { return Ok(None) };
+        Self::drawn_shape(&prepared, &frame, &scene, id, joint)
+    }
+
+    /// Segment `joint` of the figure `id` as `scene` draws it (`geometry.objects.get(slot).segments[joint]`): a rigged joint
+    /// as its rig evaluates it, any other with the angle its pinned limb solves to.
+    pub(crate) fn drawn_shape(prepared: &Prepared, frame: &Frame, scene: &Scene, id: u32, joint: usize) -> Result<Option<Shape>, EditError> {
         let Some(evaluated) = frame.objects.iter().find(|o| o.uid == id) else { return Ok(None) };
         let Some(geometry) = scene.objects.iter().find(|g| g.uid == id && g.resolved) else { return Ok(None) };
         let figure = evaluated.figure_override.as_ref().or_else(|| prepared.doc.figure(evaluated.figure));
         let Some(segment) = figure.and_then(|f| f.segments.get(joint)) else { return Ok(None) };
         let start = geometry.starts.get(joint).copied().unwrap_or([f64::NAN; 2]);
-        // A rigged joint is drawn as its rig evaluates it.
+        // A rigged joint is drawn as its rig evaluates it, drawn or not (a bone that paints nothing has no item).
         if let Some(rig) = &geometry.rig {
             let item = scene.items.iter().find(|item| item.slot == geometry.slot && item.index as usize == joint && !matches!(item.kind, styk_eval::geometry::ItemKind::Poly | styk_eval::geometry::ItemKind::Mesh));
-            let Some(item) = item else { return Err(EditError::Unported("posing a rigged joint the engine does not draw".into())) };
-            let points = if item.points.1 > item.points.0 { scene.points_of(item).to_vec() } else { vec![item.start, item.end] };
             let joint_rig = rig.get(joint).copied().unwrap_or_default();
-            return Ok(Some(Shape { start, angle: item.angle, bend: item.bend, length: item.length, end: item.end, points, space: joint_rig.space, connector: joint_rig.connector }));
+            return Ok(Some(match item {
+                Some(item) => {
+                    let points = if item.points.1 > item.points.0 { scene.points_of(item).to_vec() } else { vec![item.start, item.end] };
+                    Shape { start, angle: item.angle, bend: item.bend, length: item.length, end: item.end, points, space: joint_rig.space, connector: joint_rig.connector }
+                }
+                None => {
+                    let end = geometry.ends.get(joint).copied().unwrap_or([f64::NAN; 2]);
+                    Shape { start, angle: joint_rig.angle, bend: joint_rig.bend, length: joint_rig.length, end, points: vec![start, end], space: joint_rig.space, connector: joint_rig.connector }
+                }
+            }));
         }
         let (_, bend, _) = styk_eval::geometry::segment_pose(evaluated, segment, joint);
         // A straight Stick Nodes segment with a sagitta is drawn as a curve, which geometry
@@ -269,7 +284,7 @@ impl Editor {
         let bend = if bend.abs() < 1e-7 && styk_eval::sticknodes::shape_for(segment, evaluated).is_some_and(|s| s.sagitta != 0.0) { 1e-6 } else { bend };
         // A pinned limb is drawn with its solved angles.
         let slot = frame.objects.iter().position(|o| o.uid == id).unwrap();
-        let angle = crate::ik::shape_angle(&prepared, &frame, &scene, slot, joint);
+        let angle = crate::ik::shape_angle(prepared, frame, scene, slot, joint);
         let length = styk_eval::geometry::segment_pose(evaluated, segment, joint).2 * evaluated.scale;
         let end = geometry.ends.get(joint).copied().unwrap_or([f64::NAN; 2]);
         Ok(Some(Shape { start, angle, bend, length, end, points: vec![start, end], space: None, connector: false }))
@@ -641,7 +656,8 @@ impl Editor {
 
     fn set_connector_position_at(&mut self, slot: usize, joint: usize, position: f64) -> Result<bool, EditError> {
         rig_finite(position, 0.0, 1.0, "Slide position")?;
-        let figure_lengths = self.frame_objects().get(slot).and_then(|o| {
+        // The figure definition of the selected figure (`editor.figure`): the frame it is read in is the one on show, not the native keyframe a sheet document leaves empty.
+        let figure_lengths = self.selection_frame()?.get(slot).and_then(|o| {
             let figures = self.report.get("figure_types").and_then(Value::elements)?;
             let figure = figures.iter().find(|f| num(f, "figure_type_id") == num(o, "figure_type_id"))?;
             Some(segments_of(&figure).iter().map(|s| s.get("length").cloned().unwrap_or(Value::Null)).collect::<Vec<_>>())

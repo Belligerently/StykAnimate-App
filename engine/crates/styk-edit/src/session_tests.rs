@@ -446,7 +446,9 @@ fn compact_answers_preserve_recorded_publications_drafts_and_history() {
                     continue;
                 }
                 if key == "result" && complete.get("status").and_then(Value::as_str) == Some("ok") && matches!(method, "duplicateFigure" | "addFigure" | "importFigure" | "pasteSelection" | "duplicateSelection" | "sheetAppendFrame") {
-                    assert_eq!(small.get("result"), Some(&Value::Null));
+                    // (A paste or a duplicate that made nothing answers its empty list.)
+                    let nothing = complete.get("result").is_some_and(|result| result.array_len() == Some(0));
+                    assert_eq!(small.get("result"), if nothing { complete.get("result") } else { Some(&Value::Null) });
                     continue;
                 }
                 assert_eq!(complete.get(key).map(json), small.get(key).map(json), "{label}: {key}");

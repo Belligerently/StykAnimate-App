@@ -1,5 +1,4 @@
-//! The tweener and the Alt-drag duplicate on a document with animation origins
-//! (src/editor-tweener.mjs, src/editor-duplicate-drag.mjs): both are admitted, a tweened figure keeps its
+//! The tweener and the Alt-drag duplicate on a document with animation origins: both are admitted, a tweened figure keeps its
 //! pivot with its pose and a copy finds its pivot again where it stands.
 
 use styk_doc::Value;

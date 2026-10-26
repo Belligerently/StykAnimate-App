@@ -15,7 +15,6 @@ import {displayedSegmentPaint,displayedColor} from './figure-colors.mjs';
 import {openSurfaceReference} from './builder-surface-ui.mjs';
 import {openRigTest, openRigExamples} from './rig-test-ui.mjs';
 import {bucketRegion, pickFigureFill, drawFillHighlight} from './builder-fill.mjs';
-import {pickCanvasArtwork} from './canvas-artwork-pick.mjs';
 import {figureJoinAction, joinTargetUids} from './figure-join-action.mjs';
 import {duplicatePreview, drawDuplicatePreview} from './builder-duplicate-preview.mjs';
 import {createConstruction, strokeSegments} from './builder-construction.mjs';
@@ -41,7 +40,6 @@ import { markAppBounds } from "./engine/engine-edit-bounds.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
 import { createTimelineHost } from "./timeline-host.mjs";
-import { OnionSkinCache } from "./onion-skin.mjs";
 import {hasPinnedIK} from './ik.mjs';
 import { OnionControls } from "./onion-controls.mjs";
 import { OnionController } from "./onion-controller.mjs";
@@ -83,8 +81,6 @@ import {
   builderShowsStaticHandles,
   drawBuilderHighlight,
 } from "./builder-aids.mjs";
-import { installNativeFrameClipboard } from "./frame-clipboard-storage.mjs";
-import { ClipboardWorkerClient } from "./clipboard-worker-client.mjs";
 import { installShell } from "./shell/dock-host.mjs";
 import { createDockKeyboard } from "./shell/dock-keyboard.mjs";
 import { installDockTabs } from "./shell/dock-tabs.mjs";
@@ -157,7 +153,7 @@ import {
   imageFileToBackground,
 } from "./media-authoring.mjs";
 import { icon, hydrateIcons } from "./icons.mjs";
-import { MotionPathCache, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath, drawMotionPathGhost, affineProjection } from "./motion-path.mjs";
+import { MotionTrails, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath, drawMotionPathGhost, affineProjection } from "./motion-path.mjs";
 import { MOTION_PATH_FALLOFF_MAX } from "./motion-path-falloff.mjs";
 import { CanvasGuides } from "./canvas-guides.mjs";
 import { MotionPathControls } from "./motion-path-controls.mjs";
@@ -176,7 +172,6 @@ import { createCommandPalette } from "./ui/command-palette.mjs";
 import { kitText } from "./ui/ui-strings.mjs";
 import { installTooltips } from "./ui/ui-tooltip.mjs";
 import { withShiftHint } from "./ui/quick-actions.mjs";
-import { buildGeometry, evaluatedFrame } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
   gradientAngleFromBackground,
@@ -202,7 +197,6 @@ const editor = new Editor({ demo: false, propertyChannels: true, layerTimeline: 
   desktop = window.stykDesktop,
   importer = new ImportClient(),
   documentExporter = new DocumentExporter(),
-  clipboardWorker = new ClipboardWorkerClient(),
   exportJobs = new Set();
 const browserRecovery = desktop ? null : new BrowserRecoverySession();
 const manualSave = new DocumentSave(), recoveryDeadline = new RecoveryDeadline();
@@ -230,7 +224,6 @@ const projects = createProjectTabsHost({editor, hooks: {
 }});
 const audioEngine = new AudioEngine({desktop, onError: error => { pause(); fail(error); }});
 let audioPreparation, audioScrubController, audioScrubAt = 0;
-editor.setFrameClipboardWorker(clipboardWorker);
 function interruptRecovery() {
   let aborted = false;
   // A resting project's copy is not interrupted: nothing the person does in front can change what it stores.
@@ -253,6 +246,8 @@ async function runDocumentExport(format, consume, { recovery = false, controller
   telemetry.count(metric + '_started');
   try {
     const drawingRevision=editor.revision;await drawingBarrier(editor.report,{signal:controller.signal});if(drawingRevision!==editor.revision)throw messageError(new DOMException('', 'AbortError'), "errors.app.theDrawingChangedDuringExport", {});
+    // The engine makes Pivot and figure files from the document it holds: its session starts on the open document and takes what the editor changed.
+    if (format !== 'styk' && !editor._shown?.active) throw Object.assign(messageError(new Error(''), "errors.documentExport.theEngineCannotMakeThisFileHere", {}), {telemetryCode: 'engine_failed', telemetryStage: 'prepare'});
     const blob = await documentExporter.export(recovery ? editor.movieclipProjectReport() : editor.report, {
       format,
       name: recovery ? editor._movieclipScopes?.[0]?.parent.name ?? editor.name : editor.name,
@@ -260,8 +255,9 @@ async function runDocumentExport(format, consume, { recovery = false, controller
       figureTypeId: editor.object?.figure_type_id,
       figureUid: editor.selectedUid,
       tick: editor.tick,
+      revision: editor.revision,
       signal: controller.signal,
-      getRevision: () => `${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}`,
+      getRevision: () => `${editor.revision}:${saveMutationEpoch}`,
     });
     context.size = sizeBucket(blob.size);
     telemetry.performance.record('serialize',performance.now()-started);
@@ -413,18 +409,20 @@ function writeNativeBlob(bridge,blob,options={}){
   const context=telemetry.consent.diagnostics?telemetry.performance.context():null,epoch=telemetry.epoch;
   return writeNativeBlobRaw(bridge,blob,{...options,...(context?{onTiming:(metric,ms)=>{if(epoch===telemetry.epoch)telemetry.performance.record(metric,ms,context);}}:{})});
 }
+/** The stage's graphics backend as telemetry names it: the engine draws with WebGPU, or with WebGL2 where there is none. */
+const telemetryBackend = () => ({WebGPU: 'webgpu', WebGL2: 'webgl2'})[state.renderer?.stats?.backend] ?? 'unavailable';
 const telemetry = new DesktopTelemetryClient(desktop, { getContext: () => ({
   mode: state.settings.timelineMode, locale: state.settings.locale,
   playing: state.playing,
   pending:playback.stats.pendingFrames,cacheBytes:playback.stats.bytes,cache:playback.stats,
   performance:{
-    backend:state.renderer?.stats?.backend==='WebGPU'?'webgpu':'unavailable',
+    backend:telemetryBackend(),
     complexity:complexityBucket(state.renderer?.stats?.primitives),fps:fpsBucket(editor.report?.fps),
     pixels:canvas.width*canvas.height<1e6?'under-1mp':canvas.width*canvas.height<4e6?'1-4mp':'4mp-plus',
     phase:state.playing?'playing':'editing',quality:images.reduced||state.previewGovernor?.index?'reduced':'full',
     features:(state.onion?1:0)|(state.inspectorContext==='camera'?2:0)|(state.vfxEnabled?4:0)|(state.motionPaths?8:0)|(state.renderer?.stats?.textureObjects?16:0),
   },
-  backend: state.renderer?.stats?.backend === 'WebGPU' ? 'webgpu' : 'unavailable',
+  backend: telemetryBackend(),
   gauges: { gpu_memory_mb: state.renderer?.stats?.gpuBytes / 1048576, draw_calls: state.renderer?.stats?.drawCalls,
     upload_kb: state.renderer?.stats?.uploadBytes / 1024, scene_figures: state.renderer?.stats?.objects,
     scene_primitives: state.renderer?.stats?.primitives, scene_frames: editor.totalTicks },
@@ -583,20 +581,16 @@ function syncPlayback() {
   if (
     state.playbackRevision !== editor.revision ||
     playback.report !== editor.report ||
-    state.playbackHiddenKey !== hiddenKey ||
-    state.playbackDraftRevision !== editor.frameDraftRevision
+    state.playbackHiddenKey !== hiddenKey
   ) {
     if (
       state.playbackRevision !== editor.revision ||
       playback.report !== editor.report
     )
       playback.load(editor.report, {revision: editor.revision, hiddenUids, hiddenKey});
-    else if (state.playbackDraftRevision !== editor.frameDraftRevision)
-      playback.updateDocument({revision: editor.revision, hiddenUids, hiddenKey, frameIndices: []});
     else playback.updateView({hiddenUids, hiddenKey});
     state.playbackRevision = editor.revision;
     state.playbackHiddenKey = hiddenKey;
-    state.playbackDraftRevision = editor.frameDraftRevision;
     state.playbackPacket = null;
   }
 }
@@ -625,8 +619,8 @@ let warmGeneration=0;
 function warmPlayback({immediate = false} = {}) {
   const generation=++warmGeneration;
   clearTimeout(warmTimer);
-  const report=editor.report,revision=editor.revision,tick=editor.tick,draft=editor.frameDraftRevision;
-  const current=()=>generation===warmGeneration&&editor.report===report&&editor.revision===revision&&editor.tick===tick&&editor.frameDraftRevision===draft&&!state.playing&&!editingGestureActive()&&!state.scrubbing&&!document.hidden;
+  const report=editor.report,revision=editor.revision,tick=editor.tick;
+  const current=()=>generation===warmGeneration&&editor.report===report&&editor.revision===revision&&editor.tick===tick&&!state.playing&&!editingGestureActive()&&!state.scrubbing&&!document.hidden;
   warmTimer = setTimeout(async () => {
     if(!current())return;
     // Learn the current frame's real footprint before widening the idle window.
@@ -1052,15 +1046,32 @@ function requestOverlayRender() {
   state.dirtyOverlay = true;
   if (!raf) raf = requestAnimationFrame(loop);
 }
-function currentFrame() {
+/** A camera monitor picture arrived: only the monitor is painted again, not the scene. */
+function requestMonitorRender() {
+  state.dirtyMonitor = true;
+  if (!raf) raf = requestAnimationFrame(loop);
+}
+/** The frame on show; with `shot`, as the scene camera shoots it (the preview and playback always are). */
+/** The pose a motion-path edit shows at the playhead while it changes it (the engine's session builds it), else null. */
+function motionDisplay() { return editor._drag?.motionPath ? editor._drag.display : null; }
+function currentFrame({ shot = state.playing || state.previewing } = {}) {
   // Playback already evaluated this exact tick in the worker. Overlays need
   // its camera/scene metadata, not another evaluation of all figures on input.
   const packet = state.playing && state.playbackPacket;
-  const motionPath = editor._drag?.motionPath;
-  const frame = motionPath?.display?.frame ?? (packet?.tick === editor.tick ? packet.frame : editor.evaluatedFrame || editor.frame);
+  const frame = motionDisplay()?.frame ?? (packet?.tick === editor.tick ? packet.frame : editor.evaluatedFrame || editor.frame);
+  const seen = shot ? shotThrough(frame) : frame;
   return editor.report._styk?.layers?.fixed?.camera?.visible === false
-    ? { ...frame, camera: null }
-    : frame;
+    ? { ...seen, camera: null }
+    : seen;
+}
+const shotFrames = new WeakMap();
+/** A frame of the editor seen through the scene camera: shot with the camera the engine works out for the playhead (follow travel,
+ * then the presets' shake) instead of the authored one. A playback frame already is. */
+function shotThrough(frame) {
+  if (frame.engine || !editor.report._styk?.cameraMotion?.clips.length) return frame;
+  let shot = shotFrames.get(frame);
+  if (!shot) shotFrames.set(frame, shot = { ...frame, camera: editor._shown?.shot() ?? frame.camera });
+  return shot;
 }
 function previewPacket() {
   if (!state.previewing || state.scrubbing) return null;
@@ -1077,7 +1088,7 @@ function worldPoint(event) {
 function cameraSelected() {
   return state.inspectorContext === 'camera' && state.selectedTrackId === 'camera';
 }
-const pathCache = new MotionPathCache();
+const trails = new MotionTrails(editor);
 const PATH_COLORS = ['#0d99ff', '#e8590c', '#12b886', '#7048e8', '#e64980', '#f08c00', '#0ca678', '#1098ad'];
 /** Every active trail: the camera, each selected figure, or every figure when
  * "all targets" is on — with limb tips per figure when that is chosen. Each
@@ -1088,7 +1099,6 @@ function activeMotionPaths({sample = true} = {}) {
   if (!["select", "pose"].includes(state.tool)) return [];
   const camera = cameraSelected() && state.settings.showCamera;
   const range = Math.round(state.settings.motionPathRange) || 0;
-  const session = editor._drag?.motionPath ? editor._drag : null;
   let targets;
   if (camera) {
     const track = editor.report._styk?.layers?.fixed?.camera;
@@ -1098,8 +1108,8 @@ function activeMotionPaths({sample = true} = {}) {
   if (!targets.length) return [];
   const maxPoints = Math.min(1600, Math.floor(6400 / targets.length));
   const entries = sample
-    ? pathCache.sample(editor, targets, {session, range, deadline: performance.now() + pathCache.budgetMs, maxPoints})
-    : targets.map(target => pathCache.peek(editor, target));
+    ? trails.read(targets, {range, maxPoints})
+    : targets.map(target => trails.peek(target));
   const colors = new Map(), out = [];
   let pending = false;
   targets.forEach((target, i) => {
@@ -1320,6 +1330,8 @@ function fitSelection() {
 markAppBounds(boundsOf);
 const boundsCache = new WeakMap();
 function boundsOf(g) {
+  // The engine measured a group of its geometry with it (drawlist::app_bounds).
+  if (g.bounds) return g.bounds;
   let b = boundsCache.get(g);
   if (!b) {
     const items = [
@@ -1347,7 +1359,7 @@ function canvasHandles(geometry, {selectStatic = false} = {}) {
     settings = state.settings;
   const key = [
     builderMode?.active ? [...editor.selectedSegmentIds].join(',') : '',
-    editor.layerRevision,
+    editor.layerViewKey,
     showStaticHandles(),
     state.tool,
     state.figureJoin?.uid,
@@ -1424,7 +1436,6 @@ function drawCanvasHandles(geometry) {
     width: overlay.width / d, height: overlay.height / d, dpr: d, translations,
     outline: state.settings.outlineHandles});
 }
-const onionCache = new OnionSkinCache();
 let onionControls;
 const onionController = new OnionController({editor,
   getSettings: () => state.settings, getEnabled: () => state.onion,
@@ -1435,9 +1446,10 @@ let tweenerControls;
 let canvasGuides;
 // Motion path badges on the overlay draw text in the bundled UI font.
 onFontsReady(requestRender);
+/** The onion skins the engine draws behind the frame, or none when they are off or the animation plays. */
 function onionSkins() {
-  if (!state.onion || state.playing || state.previewing) return [];
-  return onionCache.get(editor, onionController.settings, {selected: selection(), hidden: effectiveHidden(), visibilityKey:[...state.hidden]});
+  if (!state.onion || state.playing || state.previewing) return null;
+  return editor._shown?.onions(onionController.request({selected: selection(), hidden: state.hidden})) ?? null;
 }
 /** What the open falloff gesture changes. */
 function pathInfluence(tick, falloff) {
@@ -1471,7 +1483,7 @@ function drawMotionPaths() {
       faint: motionPaths.length > 1 && focus && focus.key !== key,
     });
   }
-  if (ghost) drawMotionPathGhost(ctx, pathCache.ghost(editor.motionPathReport(), ghost.target, focus.tick, `${editor.revision}:${editor.layerRevision}`), project,
+  if (ghost) drawMotionPathGhost(ctx, trails.ghost(ghost.target, focus.tick), project,
     {color: ghost.color, entry: ghost.entry, relative, tick: editor.tick});
 }
 function overlayRender(geometry) {
@@ -1505,7 +1517,7 @@ function overlayRender(geometry) {
         ctx,
         cameraViewport(
           editor.report,
-          evaluatedFrame(editor.report, editor.frameIndex - 1),
+          { camera: editor._shown?.frameCamera(editor.timeline[editor.frameIndex - 1].start) },
           state.view,
         ),
         screenPoint,
@@ -1718,7 +1730,7 @@ function loop(now) {
       const frame = drawingPreview?.frame??currentFrame(),
         geometry =
           drawingPreview?.geometry ||
-          editor._drag?.motionPath?.display?.geometry ||
+          motionDisplay()?.geometry ||
           state.drag?.geometry ||
           keyboardHandleGesture?.geometry ||
           editor.geometry;
@@ -1728,12 +1740,14 @@ function loop(now) {
         documentReport: editor.report,
         frame,
         geometry,
+        // The engine draws the frame its session shows; the interface's own frame (a drawing's first stroke) crosses as poses.
+        source: drawingPreview ? null : editor._shown?.source(Boolean(motionDisplay())) ?? null,
         view: state.view,
         cameraEnabled: state.playing || state.previewing,
         editorBackgroundColor: builderBackgroundColor(state.settings, state),
         revision: editor.revision,
         artworkRevision: editor.definitionRevision,
-        onionFrames: onionSkins(),
+        onions: onionSkins(),
         hiddenUids: effectiveHidden(),
         clipToCanvas: false,
         dragTranslations: state.drag?.translations,
@@ -1767,14 +1781,8 @@ function loop(now) {
     // Final editor overlay pass: keep the actual camera above artwork and tool feedback.
     drawFinalOverlay();
     if(sampled){stages.overlay=performance.now()-stageStarted;stageStarted=performance.now();}
-    if (state.inspectorContext === 'camera') {
-      const frame = currentFrame();
-      syncCameraControls($('inspector'), frame, {activeKey:propertyControls?.activeKey,guides:state.cameraGuides});
-      drawCameraMonitor($('inspector').querySelector('[data-camera-monitor]'), {
-        onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,onRecovery:(kind,outcome)=>telemetry.performance.recovery(kind,outcome),
-        stage:state.renderer,report:editor.report,frame,
-      });
-    }
+    state.dirtyMonitor = false;
+    paintCameraMonitor();
     const elapsed = performance.now() - start;
     if(sampled)stages.camera=performance.now()-stageStarted;
     if(telemetry.isForeground)telemetry.performance.frame(elapsed,stages||{},sampled);
@@ -1799,7 +1807,7 @@ function loop(now) {
   if (state.dirtyOverlay && !scenePainted) {
     state.dirtyOverlay = false;
     if (!state.playing && !state.previewing) {
-      overlayRender(drawingController?.renderPreview?.geometry ?? editor._drag?.motionPath?.display?.geometry ??
+      overlayRender(drawingController?.renderPreview?.geometry ?? motionDisplay()?.geometry ??
         state.drag?.geometry ?? keyboardHandleGesture?.geometry ?? editor.geometry);
       drawingController?.overlayDraw(ctx);
       drawFinalOverlay();
@@ -1818,11 +1826,25 @@ function loop(now) {
       lastFpsUI = measuredAt;
     }
   }
+  if (state.dirtyMonitor) {
+    state.dirtyMonitor = false;
+    paintCameraMonitor();
+  }
   // A wheel zoom still gliding has more of the view to draw.
   if (wheelZoom.active) state.dirtyRender = true;
   // A seek/edit event can request the next frame while this callback runs.
   // Keep that request instead of starting a second animation loop.
-  if (!raf && (state.playing || state.dirtyRender || state.dirtyOverlay)) raf = requestAnimationFrame(loop);
+  if (!raf && (state.playing || state.dirtyRender || state.dirtyOverlay || state.dirtyMonitor)) raf = requestAnimationFrame(loop);
+}
+/** The camera inspector's readouts and monitor, for the frame on show. */
+function paintCameraMonitor() {
+  if (state.inspectorContext !== 'camera') return;
+  const frame = currentFrame();
+  syncCameraControls($('inspector'), frame, {activeKey:propertyControls?.activeKey,guides:state.cameraGuides});
+  drawCameraMonitor($('inspector').querySelector('[data-camera-monitor]'), {
+    onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,onRecovery:(kind,outcome)=>telemetry.performance.recovery(kind,outcome),
+    stage:state.renderer,report:editor.report,frame,
+  });
 }
 function drawFinalOverlay() {
   ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
@@ -2165,7 +2187,7 @@ function polygonClick(p, event = {}) {
     if(!region)return toast(interfaceText("app.noClosedRegionHereCloseTheOutlineAt"), "app.noClosedRegionHereCloseTheOutlineAt", {});
     cancelPolygonDraft();
     const polygon=editor.addPolygon(region.ids,{color:g.segments[editor.selectedJoint]?.rgb??g.segments[0]?.rgb??[43,43,43]});
-    editor.selectPolygon(editor.selectedUid,editor.figure.polyfills.indexOf(polygon));
+    editor.selectPolygon(editor.selectedUid,editor.figure.polyfills.findIndex(item=>item.polyfill_id===polygon.polyfill_id));
     state.bucketPreview=null;status({messageKey: "app.fillAdded", messageParams: {}});return;
   }
   if (!state.polygon && builderMode?.active && !pick(p)) {
@@ -2225,11 +2247,22 @@ function finishPolygon() {
   setTool("select");
   status({messageKey: "app.polygonAdded", messageParams: {}});
 }
+// A click on artwork asks the engine which figure the stage's frame paints at the point (engine-stage.mjs `pickArtwork`).
+function pickedArtwork(p, geometry) {
+  const hidden = [], locked = [];
+  for (const object of editor.evaluatedFrame.objects) {
+    if (isHidden(object.unique_id)) hidden.push(object.unique_id);
+    if (isLocked(object.unique_id)) locked.push(object.unique_id);
+  }
+  const hit = state.renderer.pickArtwork?.(p, {scale: state.view.scale, hiddenUids: hidden, lockedUids: locked});
+  const g = hit && geometry.objects.get(hit.slot);
+  return g ? {g, uid: hit.uid, joint: -1, id: 0, kind: 'body', point: g.root, action: 'select'} : null;
+}
 function pick(p, {preferSelected = false, artwork = false} = {}) {
   const geometry = editor.geometry;
   const body = () => {
     if (!artwork || builderMode?.active || !['select','pose','tweener'].includes(state.tool) || state.handleEditHeld) return null;
-    const hit = pickCanvasArtwork(geometry, p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale});
+    const hit = pickedArtwork(p, geometry);
     return (state.handles && state.tool !== 'tweener' && pickCanvasSegment(geometry, p,
       {handles: canvasHandles(geometry), uid: hit?.uid, scale: state.view.scale})) || hit;
   };
@@ -3512,7 +3545,7 @@ async function importMediaFile(
       return false;
     finishCurrentEdit();
     if (editor.report !== destination) return false;
-    if (background) editor.importBackground(media);
+    if (background) editor.importSceneBackground(media);
     else editor.importFigure(media);
     notify(interfaceText("app.imported2", {name: file.name}), "app.imported2", {name: file.name});
     return true;
@@ -3681,7 +3714,6 @@ async function performNativeSave({saveAs}) {
     interruptRecovery();
     status({messageKey: "app.savingProject", messageParams: {}}, false, true);
     const revision = editor.revision,
-      draftRevision = editor.frameDraftRevision,
       report = editor.report,
       documentToken = state.documentToken,
       name = editor.name;
@@ -3741,7 +3773,6 @@ async function performNativeSave({saveAs}) {
         editor.report === report &&
         state.documentToken === documentToken &&
         editor.revision === revision &&
-        editor.frameDraftRevision === draftRevision &&
         saveMutationEpoch === checkpoint.epoch &&
         !editor.dirty,
     );
@@ -3757,7 +3788,7 @@ async function performNativeSave({saveAs}) {
 function documentStateNow() {
   const open = projects.summary();
   return {name: editor.name || "Untitled", dirty: open.unsaved > 0, activeDirty: editor.dirty, unsaved: open.unsaved, unsavedName: open.unsavedName,
-    revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}:${saveMutationEpoch}:${open.stamp}`};
+    revision: `${state.documentToken}:${editor.revision}:${saveMutationEpoch}:${open.stamp}`};
 }
 /** Close/restart only the saved revision, including changes arriving during IPC. */
 async function finishDocumentAction(action, savedCheckpoint = null) {
@@ -3768,7 +3799,7 @@ async function finishDocumentAction(action, savedCheckpoint = null) {
   if (!current()) return false;
   finalizingDocument = true;
   try {
-    for (const flush of [() => workspaceLayout?.flushPreferences(), () => editorSettings?.flush(), () => nativeFrameClipboard?.flush()]) {
+    for (const flush of [() => workspaceLayout?.flushPreferences(), () => editorSettings?.flush()]) {
       await flush();
       if (!current()) return false;
     }
@@ -4413,25 +4444,20 @@ const actions = {
   "next-keyframe": () => { pause(); runTimelineHotkey(timelineUI, 'next-keyframe'); },
   "add-frame": () => addFrameKeepingDrag(() => {
     if(editor.getLayer(editor.activeLayerId)?.drawing)return editor.addDrawingFrame();
-    if(editor.report._styk?.layerSheet) {
-      if(state.settings.timelineMode !== 'simple')
-        return timelineUI.addFrameCell();
-      const result=editor.sheetDuplicateFrameAfter(['scene','camera',...editor.report._styk.layers.order]);
-      timelineUI.revealPlayhead();
-      return result;
-    }
-    return editor.addFrame();
+    if(state.settings.timelineMode !== 'simple')
+      return timelineUI.addFrameCell();
+    const result=editor.sheetDuplicateFrameAfter(['scene','camera',...editor.report._styk.layers.order]);
+    timelineUI.revealPlayhead();
+    return result;
   }),
   "extend-keyframe": () => {
     pause();finishCurrentEdit();
     if(drawingController?.active)return editor.extendDrawing(timelineUI?.ids?.length?timelineUI.ids:[editor.activeLayerId],drawingController.settings.length);
-    if(editor.report._styk?.layerSheet) return timelineUI.extendKeyframe();
-    return editor.setFrameDuration(editor.frame.duration_raw + 1);
+    return timelineUI.extendKeyframe();
   },
   "delete-frame": () => {
     pause();
-    if(editor.report._styk?.layerSheet)return state.settings.timelineMode === "simple"?timelineUI.action("delete"):timelineUI.removeFrames();
-    editor.deleteFrame();
+    return state.settings.timelineMode === "simple"?timelineUI.action("delete"):timelineUI.removeFrames();
   },
   "add-figure": () => {
     pause();
@@ -4618,8 +4644,8 @@ const actions = {
       finishCurrentEdit();
       if (editor.branchSelected) return editor.cutSelection();
       if (rangeFrames()) {
-        const count = editor.copySelection();
-        if (count) { editor._selectionClipboard.offset = 0; editor.deleteFiguresInFrames(rangeFrames()); }
+        const count = editor.copySelection({ inPlace: true });
+        if (count) editor.deleteFiguresInFrames(rangeFrames());
         return count;
       }
       return editor.cutSelection();
@@ -4801,7 +4827,6 @@ const actions = {
   close: async () => {
     await workspaceLayout?.flushPreferences?.();
     await editorSettings?.flush();
-    await nativeFrameClipboard?.flush();
     await desktop?.close();
   },
 };
@@ -5257,10 +5282,10 @@ const hotkeys = new HotkeyManager({run: guarded(runKeyboardCommand), release: gu
 overlays.hotkeys = hotkeys;
 // The timeline island: its mount, its header's controls and what the header shows (src/timeline-host.mjs).
 timelineHost = createTimelineHost({
-  editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, overlays, play, pause, finishKeyboardHandle, cancelDrag,
+  editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, overlays, play, pause, finishKeyboardHandle,
   cancelPolygonDraft, interruptRecovery, cancelWarmPlayback: () => clearTimeout(warmTimer), warmPlayback, scheduleRecovery,
   requestRender, queueUI, renderInspector, syncSelectionControls, rangeFrames, selectTrack, previewScrub, scrubAudio, stopAudioScrub,
-  changeFigureLayer, runClipboardOperation, confirmDiscardFrame: dialogs.confirmDiscardFrame, simpleFrameCount, fail,
+  changeFigureLayer, confirmDiscardFrame: dialogs.confirmDiscardFrame, simpleFrameCount, fail,
   setTimelineMode: (mode) => editorSettings?.commit({ timelineMode: mode }),
   onMount: (timeline) => { timelineUI = timeline; window.styk.timeline = timeline; },
   propertyControls: () => propertyControls, cameraMotionControls: () => cameraMotionControls, drawing: () => drawingController,
@@ -5580,8 +5605,7 @@ editor.addEventListener("change", (e) => {
     (kind === "edit" || kind === "frame-draft" || (kind === "history" && (e.detail.layerSheet || e.detail.figureIndices?.length || (e.detail.frameIndices || e.detail.animation) && !e.detail.structural))) &&
     !e.detail?.live &&
     playback.report === editor.report &&
-    (state.playbackRevision !== editor.revision ||
-      state.playbackDraftRevision !== editor.frameDraftRevision)
+    state.playbackRevision !== editor.revision
   ) {
     const metadataOnly = Boolean(
       kind === "frame-draft" || e.detail.animation || e.detail.cameraMotion || e.detail.layerMetadata || e.detail.layerSheet,
@@ -5599,7 +5623,6 @@ editor.addEventListener("change", (e) => {
       structural: Boolean(e.detail.structural && !metadataOnly),
     });
     state.playbackRevision = editor.revision;
-    state.playbackDraftRevision = editor.frameDraftRevision;
     state.playbackPacket = null;
   }
   if (kind === "seek") interruptRecovery();
@@ -5790,7 +5813,6 @@ if (desktop) {
   );
   desktop.onOpenFile?.(guarded(acceptNativeFile));
 }
-window.addEventListener("pagehide", () => clipboardWorker.dispose());
 window.addEventListener("pagehide", event => { if (!event.persisted) importer.dispose(); });
 window.addEventListener("pagehide", event => { if (!event.persisted) browserRecovery?.dispose(); });
 window.addEventListener("pagehide", () => projects.dispose());
@@ -5831,7 +5853,7 @@ window.styk = {
   }),
   ready: false,
 };
-let thumbnailRenderer, nativeFrameClipboard, sharedClipboard;
+let thumbnailRenderer, sharedClipboard;
 // Poses of the open document drawn through a camera of their own (the parallax monitor).
 const posePictures = new EnginePoses(editor, { stage: () => state.renderer });
 async function changeFigureLayer(label, operation, {labelKey} = {}) {
@@ -5905,87 +5927,6 @@ async function changeFigureLayer(label, operation, {labelKey} = {}) {
     queueUI();
   }
 }
-let clipboardOperationTail = Promise.resolve();
-function runClipboardOperation(kind, execute) {
-  const source = editor._documentToken;
-  const operation = clipboardOperationTail.then(() => {
-    if (editor._documentToken !== source) return 0;
-    return performClipboardOperation(kind, execute);
-  });
-  clipboardOperationTail = operation.catch(() => {});
-  return operation;
-}
-async function performClipboardOperation(kind, execute) {
-  finishCurrentEdit();
-  interruptRecovery();
-  const controller = new AbortController(),
-    source = editor._documentToken,
-    dialog = $("dialog"),
-    originalContent = $("dialog-content").firstChild,
-    originalOpen = dialog.open;
-  const labels = {
-    copy: interfaceText("app.copyingFrames"),
-    cut: interfaceText("app.cuttingFrames"),
-    paste: interfaceText("app.pastingFrames"),
-  };
-  let progressElement, latest;
-  const cancel = () => controller.abort();
-  const changed = () => {
-    if (editor._documentToken !== source) cancel();
-  };
-  const onClose = () => {
-    if (!dialog.open || !progressElement?.isConnected) cancel();
-  };
-  const refresh = () => {
-    if (!progressElement?.isConnected || !latest) return;
-    if (Number.isFinite(latest.total) && latest.total > 0) {
-      progressElement.max = latest.total;
-      progressElement.value = latest.completed || 0;
-    } else progressElement.removeAttribute("value");
-  };
-  editor.addEventListener("change", changed);
-  const timer = setTimeout(() => {
-    if (controller.signal.aborted) return;
-    if (
-      $("dialog-content").firstChild !== originalContent ||
-      dialog.open !== originalOpen
-    ) {
-      cancel();
-      return;
-    }
-    showDialog(
-      labels[kind] || interfaceText("app.updatingFrames"),
-      `<progress id="clipboard-progress" style="width:100%;accent-color:#0d99ff"></progress><div class="dialog-actions"><button class="button" id="cancel-clipboard" data-i18n="common.cancel">${messageHTML("app.cancel", {})}</button></div>`,
-      {titleKey: ({copy: "app.copyingFrames", cut: "app.cuttingFrames", paste: "app.pastingFrames"})[kind] ?? "app.updatingFrames"},
-    );
-    progressElement = $("clipboard-progress");
-    $("cancel-clipboard").onclick = cancel;
-    dialog.addEventListener("close", onClose);
-    refresh();
-  }, 150);
-  try {
-    const count = await execute({
-      signal: controller.signal,
-      onProgress: (progress) => {
-        latest = progress;
-        refresh();
-      },
-    });
-    if (count && kind === "copy")
-      notify(interfaceText("app.frameCopied", {count}), "app.frameCopied", {count});
-    return count;
-  } catch (error) {
-    if (error.name !== "AbortError") throw error;
-    status({messageKey: "app.clipboardOperationCancelled", messageParams: {}});
-    return 0;
-  } finally {
-    clearTimeout(timer);
-    editor.removeEventListener("change", changed);
-    dialog.removeEventListener("close", onClose);
-    if (progressElement?.isConnected) closeDialog();
-    queueUI();
-  }
-}
 /** The timeline's audio Scrub option: a short slice of the sound under the scrubbed frame. */
 function scrubAudio(tick) {
   if (timelineUI?.audio?.scrub.checked && performance.now() - audioScrubAt > 100) {
@@ -6025,13 +5966,13 @@ async function init() {
       if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
       onionController.sync();
       syncAutoKey();
-      if (patch.motionPathRange !== undefined || patch.motionPathAllTargets !== undefined) pathCache.clear();
+      if (patch.motionPathRange !== undefined || patch.motionPathAllTargets !== undefined) trails.clear();
       state.handles = drawingController?.active ? false : next.showHandles;
       state.loop = next.loopPlayback;
       state.motionPaths = next.motionPaths;
       pathControls?.sync();
       canvasGuides?.sync();
-      if (!state.motionPaths) { state.hoverPathPoint = null; syncPathTooltip(); pathCache.clear(); }
+      if (!state.motionPaths) { state.hoverPathPoint = null; syncPathTooltip(); trails.clear(); }
       if (patch.motionPathFalloffRadius !== undefined || patch.motionPathFalloffShape !== undefined || patch.motionPaths !== undefined) syncPathFalloff();
       appLocalization.setLocale(next.locale);
       canvasHandleOverlay.clear();
@@ -6082,7 +6023,7 @@ async function init() {
     getState: () => ({settings: state.settings, view: state.view, report: editor.report,
       hidden: state.playing || state.previewing}),
     onChange: patch => editorSettings.commit(patch)});
-  window.styk.onionCache = onionCache;
+  window.styk.onionSkins = () => onionSkins() && editor._shown.skins(onionController.request({selected: selection(), hidden: state.hidden}));
   // The shell: the stored layout loads before its first commit, then the dock
   // host lays the panels out and owns which one shows where.
   shell = await installShell({
@@ -6146,17 +6087,6 @@ async function init() {
   });
   installShellCommands(actions, { shell, keyboard: shellKeyboard, layout: layoutPopover });
   timelineHost.attach(shell);
-  // The editor's background planning jobs run on the engine's workers against the document
-  // synced for them; the editor still checks its own document again before it publishes a plan.
-  const currentDocument = () => { const report = editor.report, revision = editor.revision; return () => editor.report === report && editor.revision === revision; };
-  editor.setLayerMigrationPlanner((params, options) => {
-    syncPlayback();
-    return playback.planLayerMigration(params, { ...options, isCurrent: currentDocument() });
-  });
-  editor.setInbetweenPlanner((params, options) => {
-    syncPlayback();
-    return playback.planInsertInbetweens(params, { ...options, isCurrent: currentDocument() });
-  });
   cameraMotionControls = new CameraMotionControls($('inspector'),editor,{onError:fail,onRender:()=>{queueUI();requestRender();},beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onPreview:clip=>{pause();editor.seek(clip.start);state.motionPreviewRange={start:clip.start,end:Math.min(editor.totalTicks,clip.start+clip.duration)};play();},posePicture:(pose,options)=>posePictures.picture(pose,options)});
   propertyControls = new PropertyControls($("inspector"), {
     canHandle: (key, input) =>
@@ -6232,7 +6162,7 @@ async function init() {
   window.styk.vfx=vfxInspector;
   // The timeline's VFX rows follow the VFX panel's visibility, which the shell owns.
   shell.define({id:'vfx',root:()=>$('vfx-panel'),onVisibility:visible=>{editor._vfxTimelineVisible=visible;editor._emit('vfx-selection');vfxInspector.panelVisible(visible);}});
-  vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,pickNativeHandle:event=>pick(worldPoint(event)),getOptions:()=>({report:editor.report,frame:currentFrame(),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
+  vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,pickNativeHandle:event=>pick(worldPoint(event)),getOptions:()=>({report:editor.report,frame:currentFrame({shot:true}),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
   window.styk.vfxGizmos=vfxGizmos;
   $('vfx-preview').addEventListener('click',()=>{finishCurrentEdit();pause();state.vfxEnabled=!state.vfxEnabled;playback.setVfxEnabled(state.vfxEnabled);state.playbackPacket=null;syncStageHead();requestRender();queueUI();});
   assetLibrary = new AssetLibrary($("asset-list"), {
@@ -6310,11 +6240,6 @@ async function init() {
     if (drawingController?.active) return drawingController.run(() => drawingController.action("new"));
     showAddMenu(event.currentTarget);
   }));
-  if (desktop?.beginClipboardRead)
-    nativeFrameClipboard = installNativeFrameClipboard(editor, desktop, {
-      onError: fail,
-      onRestored: queueUI,
-    });
   // Frame thumbnails: the engine draws them (src/engine/engine-thumbnails.mjs).
   thumbnailRenderer = createThumbnailRenderer(editor, { stage: () => state.renderer });
   sharedClipboard = new SharedClipboard(editor, desktop);
@@ -6432,6 +6357,7 @@ function recoverCanvas(refreshGpuBudget) {
 function rendererOptions() {
   return {
     onInvalidate: requestRender,
+    onMonitorPicture: requestMonitorRender,
     // A frame the engine refused: the previous picture stays and the document's next revision is tried again.
     onError: error => { telemetry.error(error, 'renderer'); status(error, true); },
     onStatus: (message) => {

@@ -30,5 +30,3 @@
   Cache-Control: public, max-age=0, must-revalidate
 /vendor/*
   Cache-Control: public, max-age=0, must-revalidate
-/python/*
-  Cache-Control: public, max-age=0, must-revalidate

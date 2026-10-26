@@ -1,4 +1,4 @@
-//! Handle Edit Mode (src/editor-handle-edit.mjs): a handle of the current pose moved to
+//! Handle Edit Mode: a handle of the current pose moved to
 //! the pointer, the segments that meet there keeping their arcs (a bend edit keeps the
 //! moved end's tangent), the figures joined at it moving with it; one gesture
 //! (`beginHandleEditDrag`, `editHandlePosition`, `commitHandleEditDrag`,
@@ -182,9 +182,6 @@ impl Editor {
         if !(num(&object, "scale").unwrap_or(f64::NAN).abs() > EPS) {
             return Err(EditError::Invalid("errors.editorHandleEdit.increaseFigureScaleBeforeRepositioningAHandle".into()));
         }
-        if figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy) {
-            return Err(EditError::Unported("handle edit on a movieclip".into()));
-        }
         if !self.begin_drag(&label, false)? {
             return Ok(false);
         }
@@ -363,5 +360,20 @@ impl Editor {
             return Ok(false);
         }
         if commit { self.commit_drag() } else { self.cancel_drag() }
+    }
+
+    /// What the interface reads of the figure-handle, Handle Edit Mode and segment-value gesture in
+    /// progress (`_drag.figureHandle`, `_drag.handleEdit`, `_drag.segmentValueOptions`), told with
+    /// every answer; `null` when none is open.
+    pub fn handle_gesture_view(&self) -> Value {
+        let Some(drag) = &self.drag else { return Value::Null };
+        if drag.figure_handle.is_none() && drag.handle_edit.is_none() && drag.segment_value_options.is_none() {
+            return Value::Null;
+        }
+        let mut out = Obj::new();
+        if let Some(edit) = &drag.figure_handle { out.set("figureHandle", edit.live()); }
+        if let Some(edit) = &drag.handle_edit { out.set("handleEdit", edit.live()); }
+        if let Some(options) = &drag.segment_value_options { out.set("segmentValueOptions", options.clone()); }
+        Value::object(out)
     }
 }

@@ -47,7 +47,7 @@ try {
   await page.evaluate(()=>styk.actions.play());
   await page.waitForFunction(()=>!styk.state.playing&&!styk.state.dirtyRender);
   const result=await page.evaluate(()=>({levels:qualityProbe.levels,ticks:qualityProbe.ticks,msaa:styk.state.renderer.stats.multisampled?4:1,
-    warnings:styk.state.renderer.stats.warnings,renderer:styk.state.renderer.stats.backend,history:styk.editor.historySize}));
+    warnings:styk.state.renderer.stats.warnings,renderer:styk.state.renderer.stats.backend,history:styk.editor._undo.length}));
   await writeFile(path.join(output,'report.json'),JSON.stringify(result,null,2));
   assert.deepEqual(result.levels.map(row=>row.index),[0,1,2,1,0]);
   assert.ok(result.ticks.length>100);

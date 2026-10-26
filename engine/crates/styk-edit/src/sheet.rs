@@ -145,9 +145,19 @@ pub(crate) struct Plan {
     pub(crate) next_frame: u64,
     /// Figure definitions the command adds (`assets.figure_types.added`).
     pub(crate) definitions: Vec<Value>,
+    /// Scene backgrounds the command adds (`assets.backgrounds.added`).
+    pub(crate) backgrounds: Vec<Value>,
+    /// The document's figure definitions, which a drawing layer's one-cel check reads.
+    pub(crate) figures: Value,
 }
 
 impl Plan {
+    /// Whether the figure definition `type_id` (the document's or one the command adds) is a drawing cel.
+    fn is_drawing(&self, type_id: Option<f64>) -> bool {
+        let Some(type_id) = type_id else { return false };
+        items(Some(&self.figures)).iter().chain(self.definitions.iter()).find(|figure| num(figure, "figure_type_id") == Some(type_id)).is_some_and(|figure| figure.path(&["_styk", "drawing"]).is_some_and(Value::truthy))
+    }
+
     /// The same sheet state used by publication and virtual motion previews.
     fn state(&self, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
         check()?;
@@ -330,8 +340,12 @@ impl Plan {
         }
         let layers = Some(&self.layers);
         let owned = |uid: Option<f64>| uid.is_some_and(|u| layer_of(layers, u as u32) == id);
+        // A drawing layer holds at most one figure per key, and it is a drawing cel.
         if layers.and_then(|l| l.path(&["byId", id, "drawing", "version"])).and_then(Value::as_f64) == Some(1.0) {
-            return Err(EditError::Unported("poses on a drawing layer".into()));
+            let mine: Vec<Value> = objects_of(frame).into_iter().filter(|o| owned(num(o, "unique_id"))).collect();
+            if mine.len() > 1 || mine.iter().any(|o| !self.is_drawing(num(o, "figure_type_id"))) {
+                return Err(EditError::Invalid("errors.editorLayerSheet.drawingLayersAcceptOneDrawingCelAtA".into()));
+            }
         }
         let empty = options.blank || (!fixed(id) && !objects_of(frame).iter().any(|o| owned(num(o, "unique_id"))) && !continuations(frame).iter().any(|step| owned(num(step, "uid"))));
         let value = if empty {
@@ -345,7 +359,13 @@ impl Plan {
         key.set("empty", Value::Bool(empty));
         key.remove("sourceTick");
         if let Some(easing) = options.easing {
-            for (name, value) in key_easing(easing) {
+            // The easing replaces the key's: a curve it has stays where it was in the key, and one it has not does not stay beside a
+            // mode that has none (a held draw order written over a bezier key would be no valid key).
+            let fields = key_easing(easing);
+            if fields.iter().all(|(name, _)| *name != "bezier") {
+                key.remove("bezier");
+            }
+            for (name, value) in fields {
                 key.set(name, value);
             }
         }
@@ -695,26 +715,13 @@ impl Editor {
         self.publish_geometry(plan, &label, selection, retain.then_some(after), retain)
     }
 
-    /// `_commitSheetRange(plans, payload, label, selection)` for one frame at the playhead:
-    /// `frame` keyed on the layers of the figures in `changed`, the figures in `inserted`
-    /// assigned to theirs (`hints` first), `definitions` added with it.
-    pub(crate) fn commit_sheet_range_with(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
-        self.commit_sheet_range(&[(self.tick, frame.clone(), changed.to_vec())], inserted, hints, definitions, label, selection, None, None)
-    }
-
-    /// [`Editor::commit_sheet_range_with`] for figures a command inserted (`payload.objects`;
-    /// `paste` for a paste): movieclips alone inside a layer's span become replacements of
-    /// their own, and a pasted movieclip is keyed at the playhead rather than on a held key.
-    pub(crate) fn commit_sheet_insertion(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState, payload: &[Value], paste: bool) -> Result<bool, EditError> {
-        self.commit_sheet_range(&[(self.tick, frame.clone(), changed.to_vec())], inserted, hints, definitions, label, selection, Some((payload, paste)), None)
-    }
-
     /// `_commitSheetRange(plans, payload, label, selection)`: each planned frame `(tick, frame,
     /// changed)` keyed on the layers owning its changed figures (a held cell at its key unless
     /// auto key is on), the figures in `inserted` first assigned to their layer (`hints` first),
     /// `definitions` added with it. Unlike a gesture's commit, nothing else of a frame is
     /// compared: the operation names what it changed. `payload`: the figures an insertion
-    /// added and whether it pastes them (see [`Editor::commit_sheet_insertion`]). `deletion`:
+    /// added and whether it pastes them: movieclips alone inside a layer's span become replacements of
+    /// their own, and a pasted movieclip is keyed at the playhead rather than on a held key. `deletion`:
     /// the figures a deletion removes and each plan's frame before it; where a movieclip
     /// instance is among them, they leave as replacements by nothing.
     #[allow(clippy::too_many_arguments)]
@@ -904,9 +911,6 @@ impl Editor {
     /// `buildGeometry(report, frame)` for a frame record that need not be the one on show.
     pub(crate) fn record_geometry(&self, record: &Value) -> Result<styk_eval::geometry::Scene, EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         Ok(styk_eval::geometry::build(&prepared.doc, &frame))
     }
@@ -919,12 +923,11 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorLayerSheet.selectALayer".into()));
         }
         for id in ids {
-            let state = if fixed(id) { layers.path(&["fixed", id]) } else { layers.path(&["byId", id]) };
             let listed = fixed(id) || items(layers.get("order")).iter().any(|layer| layer.as_str() == Some(id.as_str()));
             if !listed {
                 return Err(EditError::Invalid("errors.editorLayerSheet.theSelectedLayerNoLongerExists".into()));
             }
-            if state.and_then(|s| s.get("locked")).is_some_and(Value::truthy) {
+            if self.track_locked(id) {
                 return Err(crate::invalid_with("errors.editorLayerSheet.unlockBeforeEditingIt", vec![("name", Value::str(&crate::layers::layer_title(Some(&layers), id)))]));
             }
         }
@@ -939,6 +942,8 @@ impl Editor {
             layers,
             next_frame: self.next_frame_identity,
             definitions: Vec::new(),
+            backgrounds: Vec::new(),
+            figures: self.report.get("figure_types").cloned().unwrap_or(Value::Null),
         })
     }
 
@@ -948,7 +953,7 @@ impl Editor {
         self.publish_geometry(plan, label, selection, retained, false)
     }
 
-    fn publish_geometry(&mut self, plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>, retain_geometry: bool) -> Result<bool, EditError> {
+    pub(crate) fn publish_geometry(&mut self, plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>, retain_geometry: bool) -> Result<bool, EditError> {
         self.publish_checked(plan, label, selection, retained, retain_geometry, &mut || Ok(()))
     }
 
@@ -1019,6 +1024,25 @@ impl Editor {
             figures.extend(plan.definitions.iter().cloned());
             Some((index, std::mem::take(&mut plan.definitions)))
         };
+        let backgrounds = if plan.backgrounds.is_empty() {
+            None
+        } else {
+            let table = self.report.make_obj().and_then(|r| r.get_mut("backgrounds")).and_then(Value::make_arr);
+            match table {
+                Some(table) => {
+                    let index = table.len();
+                    table.extend(plan.backgrounds.iter().cloned());
+                    Some((index, std::mem::take(&mut plan.backgrounds)))
+                }
+                None => {
+                    let added = std::mem::take(&mut plan.backgrounds);
+                    if let Some(report) = self.report.make_obj() {
+                        report.set("backgrounds", Value::array(added.clone()));
+                    }
+                    Some((0, added))
+                }
+            }
+        };
         let definition = definitions.is_some();
         self.set_sheet(&after, &after_layers);
         if !plan.sources.is_empty() {
@@ -1034,7 +1058,7 @@ impl Editor {
         let after_selection = self.selection_state();
         let source_ids: Vec<Value> = plan.sources.iter().map(|(id, _)| Value::str(id)).collect();
         self.record_checked(Command {
-            kind: CommandKind::LayerSheet { before, after, before_layers, after_layers, sources: plan.sources, definitions, retain_geometry },
+            kind: CommandKind::LayerSheet { before, after, before_layers, after_layers, sources: plan.sources, definitions, backgrounds, retain_geometry },
             label: label.to_string(),
             before_selection: selection,
             after_selection,
@@ -1172,7 +1196,7 @@ impl Editor {
     /// `applyLayerSheetCommand(editor, command, direction)`.
     pub(crate) fn apply_sheet_command(&mut self, command: &Command, direction: Direction) -> Result<(), EditError> {
         let _scope = crate::prof::scope("sheet::apply_command");
-        let CommandKind::LayerSheet { before, after, before_layers, after_layers, sources, definitions, .. } = &command.kind else { return Ok(()) };
+        let CommandKind::LayerSheet { before, after, before_layers, after_layers, sources, definitions, backgrounds, .. } = &command.kind else { return Ok(()) };
         let (sheet, layers, selection, revision) = match direction {
             Direction::Before => (before, before_layers, &command.before_selection, command.before_revision),
             Direction::After => (after, after_layers, &command.after_selection, command.after_revision),
@@ -1189,6 +1213,20 @@ impl Editor {
                 Direction::After => {
                     let at = (*index).min(figures.len());
                     figures.splice(at..at, added.iter().cloned());
+                }
+            }
+        }
+        // The backgrounds a paste brought with the scene likewise.
+        if let Some((index, added)) = backgrounds
+            && let Some(table) = self.report.make_obj().and_then(|r| r.get_mut("backgrounds")).and_then(Value::make_arr)
+        {
+            match direction {
+                Direction::Before => {
+                    table.drain(*index..(*index + added.len()).min(table.len()));
+                }
+                Direction::After => {
+                    let at = (*index).min(table.len());
+                    table.splice(at..at, added.iter().cloned());
                 }
             }
         }
@@ -1273,7 +1311,6 @@ impl Editor {
             if let CommandKind::LayerSheet { sources, .. } = &command.kind {
                 retained.extend(sources.iter().map(|(id, _)| id.clone()));
             }
-            Editor::external_retained(command, &mut retained);
         }
         if self.generated_sources.iter().all(|id| retained.contains(id)) {
             return;
@@ -1292,12 +1329,12 @@ impl Editor {
             }
             if let CommandKind::MovieclipPoses { before, after } = &command.kind {
                 for entry in before.iter().chain(after) {
-                    if let crate::topology::Place::Source(id) = &entry.place { retained.push(id.clone()); }
+                    if let Some(id) = entry.place.source_id() { retained.push(id.to_string()); }
                 }
             }
             if let CommandKind::Topology { before, after, .. } = &command.kind {
                 for entry in before.frames.iter().chain(&after.frames) {
-                    if let crate::topology::Place::Source(id) = &entry.place { retained.push(id.clone()); }
+                    if let Some(id) = entry.place.source_id() { retained.push(id.to_string()); }
                 }
             }
         }
@@ -1322,5 +1359,61 @@ impl Editor {
         }
         // Counting never fails here: nothing is recorded, so no figure is new.
         let _ = self.track_frames(&removed, &[], false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(text: &str) -> Value { styk_doc::json::parse(text.as_bytes()).unwrap() }
+
+    fn easing(keys: &[Value], tick: f64) -> Value {
+        let mut out = Obj::new();
+        for (name, value) in inherited_easing(keys, tick) {
+            out.set(name, value);
+        }
+        Value::object(out)
+    }
+
+    #[test]
+    fn a_new_key_inherits_the_nearest_earlier_visible_key() {
+        // The key at 8 is later and the key at 4 is hidden: only the bezier key at 2 counts at tick 5.
+        let keys = [
+            parse(r#"{"tick":8,"interpolation":"linear"}"#),
+            parse(r#"{"tick":2,"interpolation":"bezier","bezier":[0.1,0.2,0.8,0.9]}"#),
+            parse(r#"{"tick":4,"hidden":true,"interpolation":"linear"}"#),
+        ];
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 5.0)), r#"{"interpolation":"bezier","bezier":[0.1,0.2,0.8,0.9]}"#);
+        // A key at the same tick is not before it.
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 2.0)), r#"{"interpolation":"constant"}"#);
+        // Later keys, once a visible key is before.
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 9.0)), r#"{"interpolation":"linear"}"#);
+    }
+
+    #[test]
+    fn a_key_with_nothing_before_it_holds() {
+        let keys = [parse(r#"{"tick":8,"interpolation":"linear"}"#)];
+        for tick in [0.0, 8.0] {
+            assert_eq!(styk_doc::json::to_string(&easing(&keys, tick)), r#"{"interpolation":"constant"}"#, "tick {tick}");
+        }
+        assert_eq!(styk_doc::json::to_string(&easing(&[], 3.0)), r#"{"interpolation":"constant"}"#);
+    }
+
+    #[test]
+    fn a_key_without_an_interpolation_eases_linearly_and_hold_reads_as_constant() {
+        let keys = [parse(r#"{"tick":1}"#), parse(r#"{"tick":3,"interpolation":"hold"}"#)];
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 2.0)), r#"{"interpolation":"linear"}"#);
+        assert_eq!(styk_doc::json::to_string(&easing(&keys, 4.0)), r#"{"interpolation":"constant"}"#);
+    }
+
+    #[test]
+    fn a_bezier_curve_is_copied_and_never_shared() {
+        // The inherited curve is a value of its own: changing the new key's controls leaves the key it came from alone.
+        let keys = [parse(r#"{"tick":2,"interpolation":"bezier","bezier":[0.1,0.2,0.8,0.9]}"#)];
+        let mut inherited = easing(&keys, 5.0);
+        inherited.make_obj().unwrap().get_mut("bezier").unwrap().make_arr().unwrap()[0] = Value::Num(0.5);
+        assert_eq!(styk_doc::json::to_string(&inherited), r#"{"interpolation":"bezier","bezier":[0.5,0.2,0.8,0.9]}"#);
+        assert_eq!(styk_doc::json::to_string(keys[0].get("bezier").unwrap()), "[0.1,0.2,0.8,0.9]");
     }
 }

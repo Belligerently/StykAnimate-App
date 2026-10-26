@@ -34,6 +34,15 @@ pub(crate) enum Shown {
     Prepared { generation: u64, tick: f64, epoch: u64 },
 }
 
+/// One onion skin as the stage draws it: the pose it is kept as (`EditScene::update_ghost`) and what is not drawn of it.
+struct Skin {
+    id: u32,
+    opacity: f64,
+    tint: Option<[u8; 3]>,
+    show_on_top: bool,
+    hidden: Vec<u32>,
+}
+
 #[wasm_bindgen]
 pub struct Stage {
     pub(crate) engine: Engine,
@@ -61,6 +70,10 @@ pub struct Stage {
     /// Bytes of pictures the last frame uploaded to the atlas.
     upload_bytes: usize,
     pub(crate) edit: EditScene,
+    /// What a click on artwork draws with ([`Stage::pick_artwork`]).
+    picker: styk_export::pick::Picker,
+    /// The onion skins drawn behind the frame ([`Stage::set_onions`]): the set the session planned and how each is drawn.
+    skins: Option<(Arc<styk_edit::OnionSet>, Vec<Skin>)>,
     /// Effects are drawn (the editor's effects preview is on).
     pub(crate) effects: bool,
     /// The workspace view's rotation (radians) and mirroring, applied to every frame drawn
@@ -176,6 +189,8 @@ impl Stage {
             pictures: PICTURES_COMPLETE,
             upload_bytes: 0,
             edit: EditScene::default(),
+            picker: Default::default(),
+            skins: None,
             effects: true,
             rotation: 0.0,
             flip: false,
@@ -304,23 +319,55 @@ impl Stage {
         self.edit.update(&generation, json.as_bytes()).map_err(js_error)
     }
 
-    /// Replaces the pose of onion skin `id` (an id the interface chooses), in the same
-    /// form as [`Stage::edit_frame`].
-    pub fn edit_ghost(&mut self, id: u32, json: &str) -> Result<(), JsError> {
+    /// Replaces the frame the editor is showing with the one `session` shows at `view` (the call's view): the
+    /// gesture in progress, else the document at the playhead; with `motion`, the motion-path edit's display where
+    /// it shows one. No pose crosses from the interface.
+    pub fn edit_session(&mut self, session: &mut crate::edit::EditSession, view: &str, motion: bool) -> Result<(), JsError> {
         let generation = self.engine.generation().ok_or_else(|| js_error("no document is open"))?;
+        let record = session.show(view, motion)?;
         self.edits += 1;
-        self.edit.update_ghost(&generation, id, json.as_bytes()).map_err(js_error)
+        self.edit.update_record(&generation, &record).map_err(js_error)
+    }
+
+    /// Sets the onion skins drawn behind the frame: the ones `session` plans for `request` (the settings, JSON) at `view` (the
+    /// call's view), from its document. Poses already kept are not made again, and a set already held is not described again.
+    pub fn set_onions(&mut self, session: &mut crate::edit::EditSession, view: &str, request: &str) -> Result<(), JsError> {
+        let generation = self.engine.generation().ok_or_else(|| js_error("no document is open"))?;
+        let set = session.onions(view, request)?;
+        let held = self.skins.as_ref().is_some_and(|(held, _)| Arc::ptr_eq(held, &set));
+        let mut skins = Vec::with_capacity(if held { 0 } else { set.ghosts.len() });
+        let mut changed = !held;
+        for ghost in &set.ghosts {
+            // A pose is kept by the tick it samples (a whole number).
+            let id = ghost.tick as u32;
+            if !self.edit.has_ghost(id, &ghost.record) {
+                self.edit.update_ghost(&generation, id, &ghost.record).map_err(js_error)?;
+                changed = true;
+            }
+            if !held {
+                skins.push(Skin { id, opacity: ghost.opacity, tint: ghost.tint, show_on_top: ghost.show_on_top, hidden: ghost.hidden.clone() });
+            }
+        }
+        if !held {
+            self.skins = Some((set, skins));
+        }
+        if changed {
+            self.edits += 1;
+        }
+        Ok(())
+    }
+
+    /// Draws no onion skins.
+    pub fn clear_onions(&mut self) {
+        if self.skins.take().is_some() {
+            self.edits += 1;
+        }
     }
 
     /// Whether the last edit frame's generated effects still lack some of their targets'
     /// earlier positions (they used the current pose): the interface draws again.
     pub fn refining(&self) -> bool {
         self.edit.refining()
-    }
-
-    /// Whether the pose of onion skin `id` is still kept.
-    pub fn has_ghost(&self, id: u32) -> bool {
-        self.edit.has_ghost(id)
     }
 
     /// Whether the last frame drawn lacked pictures that are still to come: 0 when it had
@@ -352,39 +399,37 @@ impl Stage {
     /// A cold followed pose is accepted but awaits the engine worker's shared path.
     pub fn camera_pending(&self) -> bool { self.edit.camera_pending().is_some() }
 
-    /// Draws the edit frame. `hidden` lists object slots not drawn; `translations` holds
-    /// `slot, dx, dy` triples of dragged objects; `background` is an ARGB canvas colour
-    /// replacing the scene background, or a negative number for none. `onions` describes
-    /// the onion skins far to near, each as `id, opacity, tint (0xRRGGBB or -1), on top
-    /// (0/1), anchor uid (or -1), n, then n hidden slots`.
+    /// The figure whose artwork is under a point of the frame on show, for a click: `request` is
+    /// `{x, y, scale, hidden: [uid], locked: [uid]}` (the point in scene units, the view's scale, the figures
+    /// that cannot be picked), the answer `{slot, uid}` of the topmost figure drawn there, or `null`
+    /// ([`styk_export::pick`]).
+    pub fn pick_artwork(&mut self, request: &str) -> Result<String, JsError> {
+        let request = styk_doc::json::parse(request.as_bytes()).map_err(js_error)?;
+        let number = |key: &str| request.get(key).and_then(styk_doc::Value::as_f64).ok_or_else(|| js_error(format!("a pick needs {key}")));
+        let uids = |key: &str| -> std::collections::HashSet<u32> { request.get(key).and_then(styk_doc::Value::elements).map(|list| list.iter().filter_map(|uid| uid.as_f64()).map(|uid| uid as u32).collect()).unwrap_or_default() };
+        let (generation, frame) = match (self.engine.generation(), self.edit.frame()) {
+            (Some(generation), Some(frame)) => (generation, frame),
+            _ => return Ok("null".into()),
+        };
+        let hit = styk_export::pick::artwork(&mut self.picker, &generation.prepared.doc, &generation.assets, &frame, [number("x")?, number("y")?], request.get("scale").and_then(styk_doc::Value::as_f64).unwrap_or(1.0), &uids("hidden"), &uids("locked")).map_err(js_error)?;
+        Ok(match hit {
+            Some(hit) => format!("{{\"slot\":{},\"uid\":{}}}", hit.slot, hit.uid),
+            None => "null".into(),
+        })
+    }
+
+    /// Draws the edit frame with the onion skins set by [`Stage::set_onions`]. `hidden` lists object slots not drawn;
+    /// `translations` holds `slot, dx, dy` triples of dragged objects; `background` is an ARGB canvas colour
+    /// replacing the scene background, or a negative number for none.
     #[allow(clippy::too_many_arguments)]
-    pub fn render_edit(&mut self, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool, hidden: &[u32], translations: &[f64], background: f64, onions: &[f64]) -> Result<bool, JsError> {
+    pub fn render_edit(&mut self, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool, hidden: &[u32], translations: &[f64], background: f64) -> Result<bool, JsError> {
         let Some(generation) = self.engine.generation() else { return Ok(false) };
         let translations: Vec<(u32, [f64; 2])> = translations.chunks_exact(3).map(|t| (t[0] as u32, [t[1], t[2]])).collect();
-        let mut hidden_slots: Vec<Vec<u32>> = Vec::new();
-        let mut heads: Vec<[f64; 5]> = Vec::new();
-        let mut at = 0;
-        while at + 6 <= onions.len() {
-            let count = onions[at + 5] as usize;
-            let Some(slots) = onions.get(at + 6..at + 6 + count) else { return Err(js_error("the onion skin list is cut short")) };
-            heads.push([onions[at], onions[at + 1], onions[at + 2], onions[at + 3], onions[at + 4]]);
-            hidden_slots.push(slots.iter().map(|&slot| slot as u32).collect());
-            at += 6 + count;
-        }
-        let onion_list: Vec<Onion<'_>> = heads
+        let onion_list: Vec<Onion<'_>> = self
+            .skins
             .iter()
-            .zip(&hidden_slots)
-            .map(|(head, slots)| Onion {
-                id: head[0] as u32,
-                opacity: head[1],
-                tint: (head[2] >= 0.0).then(|| {
-                    let rgb = head[2] as u32;
-                    [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]
-                }),
-                show_on_top: head[3] != 0.0,
-                before_uid: (head[4] >= 0.0).then_some(head[4] as u32),
-                hidden: slots,
-            })
+            .flat_map(|(_, skins)| skins)
+            .map(|skin| Onion { id: skin.id, opacity: skin.opacity, tint: skin.tint, show_on_top: skin.show_on_top, hidden: &skin.hidden })
             .collect();
         // Generated effects evaluate earlier anchors for at most 6 ms a frame, as the editor does
         // (`INTERACTIVE_SAMPLING_MS`); the rest refine over the next frames (`refining`).

@@ -166,21 +166,6 @@ async function composite({id, address, revision, tick, x, y, width, height, matr
   } finally { previews.forget_picture(); }
 }
 
-/** An explicit native interval, with preview onion settings, sampled only here. */
-async function inbetween({id, address, revision, index, ratio, mode, count, opacity, ahead, width, height}) {
-  previews.adopt_engine(address);
-  const started = performance.now();
-  for (;;) {
-    if (releasing || cancelled.has(id)) throw new DOMException('The preview was superseded.', 'AbortError');
-    if (performance.now() - started > THUMBNAIL_WAIT_MS) return {refused: 'timeout'};
-    canvasSize(width, height);
-    const seen = Atomics.load(progress, 0), status = previews.inbetween(revision, index, ratio, mode, count, opacity, ahead, width, height);
-    if (status === 2) return {refused: 'stale'};
-    if (status === 0) return {bitmap: picture(), width, height};
-    await whenProgress(seen);
-  }
-}
-
 /** A pose of the open document (a keyframe record) seen through its own camera, framed by `mode` and `params`. */
 async function pose({id, address, revision, json, width, height, mode, params}) {
   previews.adopt_engine(address);
@@ -231,7 +216,7 @@ async function operate(message) {
   if (message.operation === 'start') return start(message);
   if (!previews) {
     if (message.operation === 'monitor' && wasm) Previews.forget_monitor(message.address);
-    if (['thumbnail', 'inbetween', 'pose', 'composite'].includes(message.operation) && wasm) Previews.forget_engine(message.address);
+    if (['thumbnail', 'pose', 'composite'].includes(message.operation) && wasm) Previews.forget_engine(message.address);
     throw new Error('The preview worker has not started.');
   }
   if (['library-begin', 'library-frame', 'library-close'].includes(message.operation) && message.session !== session) return {refused: 'stale', message: 'another library preview is open'};
@@ -243,7 +228,6 @@ async function operate(message) {
     case 'library-close': session = null; previews.library_close(); return {};
     case 'thumbnail': return thumbnail(message);
     case 'composite': return composite(message);
-    case 'inbetween': return inbetween(message);
     case 'sketch': return sketch(message);
     case 'pose': return pose(message);
     case 'monitor': return monitor(message);
@@ -274,7 +258,7 @@ self.addEventListener('message', ({data: message}) => {
   const run = running.then(() => {
     if (releasing) {
       // A thumbnail's engine address is consumed even when it is not drawn.
-      if (['thumbnail', 'inbetween', 'pose', 'composite'].includes(message.operation) && wasm) try { Previews.forget_engine(message.address); } catch { /* the module is gone */ }
+      if (['thumbnail', 'pose', 'composite'].includes(message.operation) && wasm) try { Previews.forget_engine(message.address); } catch { /* the module is gone */ }
       if (message.operation === 'monitor' && wasm) try { Previews.forget_monitor(message.address); } catch { /* the module is gone */ }
       throw new DOMException('The preview worker was released.', 'AbortError');
     }

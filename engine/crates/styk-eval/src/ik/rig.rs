@@ -1,6 +1,6 @@
-//! The projection adapter between IK and rig relationships (`rigIKContext` in
-//! src/ik-rig.mjs) and the inverse of a rig joint's local space
-//! (`authoredRigTarget` in src/rig-constraints.mjs).
+//! The projection adapter between IK and rig relationships (`rigIKContext` of the recorded
+//! editor) and the inverse of a rig joint's local space
+//! (`authoredRigTarget`).
 //!
 //! A rigged bone is not drawn where its authored angle points: stretch, follow
 //! and spatial relationships derive its rendered position. The solver therefore
@@ -42,7 +42,7 @@ pub struct RigSources<'a> {
 
 /// The plan of a figure without rig relationships: every joint is plain.
 pub(crate) fn plain_plan(count: usize) -> RigPlan {
-    RigPlan { order: (0..count as u32).collect(), inputs: vec![None; count], dependencies: vec![Vec::new(); count] }
+    RigPlan { order: (0..count as u32).collect(), inputs: vec![None; count], outputs: vec![None; count], dependencies: vec![Vec::new(); count] }
 }
 
 struct GroupSample {

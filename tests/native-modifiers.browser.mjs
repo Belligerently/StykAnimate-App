@@ -18,7 +18,7 @@ async function setup() {
 }
 const screen=p=>page.evaluate(p=>__screen(p),p);
 try{
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   for(const key of ['Control','Shift']) {
     await setup();const origin={x:400,y:300},start=await screen({x:400,y:222}),middle=await screen({x:460,y:240}),end=await screen({x:556,y:300});
     await page.mouse.move(start.x,start.y);await page.keyboard.down('Alt');await page.keyboard.down(key);await page.mouse.down();

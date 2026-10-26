@@ -1,5 +1,4 @@
-//! The engine's load normalization (`styk_edit::load`) against the editor's (`prepareEditorLoad`,
-//! src/editor-load.mjs), recorded by `engine/tools/load-fixtures.mjs`: every project document of the
+//! The engine's load normalization (`styk_edit::load`) against the editor's (`prepareEditorLoad`), recorded from it: every project document of the
 //! repository and every synthetic case must normalize to the same bytes and the same indexes, and
 //! every invalid document must be refused with the editor's message key.
 use std::path::{Path, PathBuf};

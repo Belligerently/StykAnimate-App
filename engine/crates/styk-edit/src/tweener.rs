@@ -1,4 +1,4 @@
-//! The tweener (src/editor-tweener.mjs): a gesture that poses the selected figures between the keys on
+//! The tweener: a gesture that poses the selected figures between the keys on
 //! either side of the playhead. `beginTween` plans it once (the neighbouring poses and the blends
 //! between them); `updateTween` poses the draft from a mode and an amount; the gesture ends with the
 //! ordinary `commitDrag` or `cancelDrag`, which key the playhead on the layers it posed.
@@ -269,6 +269,7 @@ impl Editor {
             let layer = self.layer_of(id);
             let locked = object.path(&["_styk", "locked"]).is_some_and(Value::truthy)
                 || layers.as_ref().and_then(|l| l.path(&["byId", &layer, "locked"])).and_then(Value::as_bool) == Some(true)
+                || self.layer_focus_locked(&layer)
                 || layers.as_ref().and_then(|l| l.path(&["byId", &layer, "visible"])).and_then(Value::as_bool) == Some(false);
             if locked {
                 return Err(invalid("errors.editorTweener.unlockAndShowAllSelectedFiguresBeforeTweening"));

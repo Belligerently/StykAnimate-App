@@ -32,7 +32,7 @@ try {
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
         if(editor.geometry.objects.size!==counts[index])throw new Error('Import dropped figures');
-        samples.push({index,objects:counts[index],rasterBytes:state.renderer.rasterCache.bytes});
+        samples.push({index,objects:counts[index],gpuBytes:state.renderer.stats.gpuBytes});
       }
       return {keys:frames.length,types:editor.report.figure_types.length,objects:counts.reduce((a,b)=>a+b,0),
         warnings:state.lastImportWarnings,missing:editor.report.piv_missing_images,

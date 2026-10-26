@@ -1,9 +1,8 @@
-/** Image decoding must not need the geometry/rendering engine to start.
- * The legacy-owner control intentionally fails against the blocked dependency. */
+/** Image decoding must not need the geometry/rendering engine to start. */
 import assert from 'node:assert/strict';
 import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {previewPNG} from './preview-png-fixture.mjs';
 
@@ -19,11 +18,6 @@ try {
   await context.route('**/src/pivot/geometry.mjs', route => {
     blocked.push(new URL(route.request().url()).pathname); return route.abort();
   });
-  if (process.env.STYK_TEST_LEGACY_IMAGE_OWNER === '1') {
-    const body = (await readFile(path.join(root, 'src/preview-image-worker.mjs'), 'utf8'))
-      .replaceAll('ImageResources', 'PlaybackResources').replace("'./image-resources.mjs'", "'./playback-resources.mjs'");
-    await context.route('**/src/preview-image-worker.mjs', route => route.fulfill({contentType: 'text/javascript', body}));
-  }
   const page = await context.newPage(); page.setDefaultTimeout(20000);
   await page.goto(`${backend.origin}/artifacts/image-resources/fixture.html`);
   const result = await page.evaluate(async source => {

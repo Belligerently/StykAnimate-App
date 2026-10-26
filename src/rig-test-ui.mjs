@@ -4,7 +4,7 @@ import {localizedText, messageHTML, messageAttributes} from './localization-bind
 import {t as interfaceText} from './localization.mjs';
 
 import {Editor} from './editor.mjs';
-import {nativeFigureDocument} from './native-figure.mjs';
+import {installEngineOwner} from './engine/engine-owner.mjs';
 import {RIG_EXAMPLES, rigExampleDocument} from './rig-examples.mjs';
 import {icon} from './icons.mjs';
 import {engineDocumentPicture, placement} from './engine/engine-pictures.mjs';
@@ -29,14 +29,14 @@ const exampleNameKeys = Object.freeze({
 let disposeTest;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-/** A bounded, detached editor exercises the real commands/evaluator. Neither
- * construction definitions, authored sources nor undo in the live editor change.
- * Its pictures are drawn by the engine (engine-pictures.mjs) from the test editor's pose. */
+/** A bounded, detached editor exercises the real commands: its own engine session (not the project's: the stage keeps drawing
+ * the open document) evaluates and edits it. Neither construction definitions, authored sources nor undo in the live editor
+ * change. Its pictures are drawn by the engine (engine-pictures.mjs) from the test editor's pose. */
 export function openRigTest(host,document,{back,galleryPreview=false}={}) {
   disposeTest?.();host.finish?.();
-  const source=document??nativeFigureDocument(host.editor.report,{figureUid:host.editor.selectedUid,tick:host.editor.tick,sourceFrame:host.editor.selectionFrame});
-  const initial=structuredClone(source),test=new Editor({demo:false});test.load(initial);
-  const figure=test.report.figure_types[0],object=test.frame.objects[0],
+  const source=document??host.editor._shown.figureDocument({figureUid:host.editor.selectedUid,tick:host.editor.tick});
+  const initial=structuredClone(source),test=new Editor({demo:false,layerTimeline:true}),owner=installEngineOwner(test,{detached:true});test.load(initial);
+  const figure=test.report.figure_types[0],object=test.evaluatedFrame.objects[0],
     selected=host.editor.figure?.segments[host.editor.selectedJoint]?.segment_id,
     control=(galleryPreview?figure._styk?.rigExample?.control:figure.segments.find(s=>s.segment_id===selected)?.segment_id)??figure.segments.find(s=>s.aux_code!==1)?.segment_id??figure.segments[0].segment_id;
   const example=galleryPreview&&RIG_EXAMPLES.some(r=>r.id===figure._styk?.rigExample?.id);
@@ -100,12 +100,12 @@ export function openRigTest(host,document,{back,galleryPreview=false}={}) {
   window.document.getElementById('rig-test-reset').addEventListener('click',()=>{test.load(structuredClone(source));test.select(object.unique_id,figure.segments.findIndex(s=>s.segment_id===control));drag=false;fit();schedule();},on);
   window.document.getElementById('rig-test-add')?.addEventListener('click',guarded(()=>{
     test.commitDrag();
-    host.addToAnimate(nativeFigureDocument(test.report,{figureUid:object.unique_id,tick:test.tick,sourceFrame:test.selectionFrame}));
+    host.addToAnimate(test._shown.figureDocument({figureUid:object.unique_id,tick:test.tick}));
     host.closeDialog();
   }),on);
   const resize=new ResizeObserver(()=>{fit();schedule();});resize.observe(canvas);
   const observer=new MutationObserver(()=>{if(!canvas.isConnected)dispose();});observer.observe(dialog,{childList:true,subtree:true});
-  function dispose(){if(disposed)return;disposed=true;events.abort();resize.disconnect();observer.disconnect();cancelAnimationFrame(scheduled);test._undo.length=0;test._redo.length=0;if(disposeTest===dispose)disposeTest=null;}
+  function dispose(){if(disposed)return;disposed=true;events.abort();resize.disconnect();observer.disconnect();cancelAnimationFrame(scheduled);owner.release();if(disposeTest===dispose)disposeTest=null;}
   disposeTest=dispose;dialog.addEventListener('close',dispose,on);fit();render();
   return {editor:test,dispose};
 }

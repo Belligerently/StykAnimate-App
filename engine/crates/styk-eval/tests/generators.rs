@@ -2,7 +2,7 @@
 //!
 //! Every fixture in `tests/fixtures/generators/` is a small project the editor
 //! built and, per tick, what it computed for its generated effects
-//! (`node engine/tools/generator-fixtures.mjs` regenerates them): the batch
+//! (frozen recordings): the batch
 //! (layer records, birth table, draws) and every live particle, beam and arc.
 //! The engine must pack the same batch, bit for bit in single precision, and
 //! evaluate the same particles: the same instances alive, every value equal,
@@ -35,7 +35,6 @@ fn fixtures() -> Vec<String> {
 
 fn prepared(name: &str) -> Prepared {
     let document = styk_eval::open(&folder().join(format!("{name}.json"))).unwrap_or_else(|e| panic!("{name}: {e}"));
-    assert!(document.unsupported.is_empty(), "{name}: not evaluated: {:?}", document.unsupported);
     styk_eval::prepare(document)
 }
 
@@ -165,7 +164,7 @@ fn compare_particles(frame: &Value, batch: &Batch) -> (usize, Vec<String>) {
 #[test]
 fn every_fixture_packs_and_evaluates_like_the_editor() {
     let names = fixtures();
-    assert!(names.len() >= 7, "fixtures are missing: run node engine/tools/generator-fixtures.mjs");
+    assert!(names.len() >= 7, "fixtures are missing: the generator fixtures are frozen recordings (restore them from version control)");
     let (mut batches, mut live) = (0, 0);
     let mut failures = Vec::new();
     for name in &names {

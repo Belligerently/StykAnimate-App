@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import {emptyPerformance,recordPerformance,mergePerformance,validatePerformance,trimPerformance,PERFORMANCE_METRICS,performancePercentile,provenance,performanceContext} from '../src/telemetry-performance-schema.mjs';
 import {PerformanceMeasurements} from '../src/telemetry-performance.mjs';
 
+test('performance contexts name the graphics backends of the engine',()=>{
+  for(const backend of ['webgpu','webgl2','unavailable'])assert.equal(performanceContext({backend}).backend,backend);
+  assert.equal(performanceContext({backend:'WebGL2'}).backend,'unknown');
+});
+
 test('diagnostics retain finer fast-action quantiles and reject malformed or private dimensions',()=>{
   const perf=emptyPerformance();for(const value of [8,12,16,20,25])recordPerformance(perf,'action_edit',value);
   assert.equal(performancePercentile(perf.rows[0]),25);assert.deepEqual(validatePerformance(perf),perf);
@@ -33,6 +38,15 @@ test('recovery outcome and incident summaries retain durations without paths or 
   meter.loaf([{startTime:0,duration:300,styleAndLayoutStart:280,scripts:[{duration:200,sourceURL:'file:///private/name/app.mjs',invoker:'SECRET'}]}]);
   assert.ok(!JSON.stringify(meter.data).match(/private|SECRET/));assert.equal(meter.data.rows.find(row=>row.metric==='loaf_script').context.source,'app');
   assert.doesNotThrow(()=>validatePerformance(meter.drain()));
+});
+
+test('long-frame scripts are attributed to the app, the stage, the editor or other by module name alone',()=>{
+  const meter=new PerformanceMeasurements({consent:{diagnostics:true}},{now:()=>0,random:()=>0});
+  const script=(url)=>({duration:10,sourceURL:url,invoker:'SECRET'});
+  meter.loaf([{startTime:0,duration:60,styleAndLayoutStart:0,scripts:[script('https://x.invalid/src/engine/engine-stage.mjs?v=1'),script('https://x.invalid/src/engine/engine-owner.mjs'),script('https://x.invalid/src/app.mjs'),script('https://x.invalid/src/renderer.mjs')]}]);
+  const bySource=Object.fromEntries(meter.data.rows.filter(row=>row.metric==='loaf_script').map(row=>[row.context.source,row.count]));
+  assert.deepEqual(bySource,{renderer:1,editor:1,app:1,other:1});
+  assert.ok(!JSON.stringify(meter.data).match(/SECRET|invalid/));
 });
 
 test('post-close memory phase stops being idle as soon as editing resumes',()=>{

@@ -63,56 +63,55 @@ fn origin_sheet_motion_matches_both_recorded_views_at_every_step() {
     }
 }
 
+/// What a motion-path edit of a figure with a rig does, from the first begin to the last undo: the edit opens and
+/// cancels without a trace, and a pose gesture that is open when it begins is committed first, as the editor does.
+fn rigged_motion_ends_cleanly(editor: &mut Editor, remote: &Value, tick: f64, name: &str) {
+    let original = editor.report_json();
+    let point = || styk_doc::json::parse(br#"{"x":239.5,"y":246.4}"#).unwrap();
+    editor.call("select", &[Value::Num(1.0), Value::Num(1.0)]).unwrap();
+    assert_eq!(editor.call("beginMotionPathEdit", &[remote.clone(), Value::Num(tick)]).unwrap(), Value::Bool(true), "{name}: idle");
+    assert_eq!(editor.call("updateMotionPathEdit", &[point()]).unwrap(), Value::Bool(true), "{name}");
+    assert_eq!(editor.call("cancelMotionPathEdit", &[]).unwrap(), Value::Bool(true), "{name}");
+    assert_eq!(editor.report_json(), original, "{name}: a cancelled edit leaves the document as it was");
+    assert!(!editor.state().can_undo, "{name}: a cancelled edit leaves no history");
+    editor.call("beginDrag", &[]).unwrap();
+    editor.call("moveSelection", &[Value::Num(7.125), Value::Num(-3.25)]).unwrap();
+    assert_eq!(editor.call("beginMotionPathEdit", &[remote.clone(), Value::Num(tick)]).unwrap(), Value::Bool(true), "{name}: open drag");
+    assert_eq!(editor.state().undo_label, "Pose figure", "{name}: the open drag was committed first");
+    assert_eq!(editor.call("updateMotionPathEdit", &[point()]).unwrap(), Value::Bool(true), "{name}");
+    assert_eq!(editor.call("commitMotionPathEdit", &[]).unwrap(), Value::Bool(true), "{name}");
+    assert_eq!(editor.state().undo_label, "Edit motion path", "{name}");
+    for _ in 0..2 {
+        assert_eq!(editor.call("undo", &[]).unwrap(), Value::Bool(true), "{name}");
+    }
+    assert_eq!(editor.report_json(), original, "{name}: both entries undone");
+    assert!(!editor.state().can_undo, "{name}");
+}
+
+/// `origin-motion-layout-sheet` with one feature the motion-path edit cannot pose on an animation-origin figure.
+fn with_feature(kind: &str) -> Value {
+    let mut report = document("origin-motion-layout-sheet");
+    let figure = report.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()[usize::from(kind == "joinedRig")].make_obj().unwrap();
+    if ["rig", "joinedRig"].contains(&kind) {
+        figure.get_mut("segments").unwrap().make_arr().unwrap()[0].make_obj().unwrap().set("_stykRig", Value::object(Obj::new()));
+    } else {
+        figure.get_mut("_styk").unwrap().make_obj().unwrap().set(kind, Value::object(Obj::new()));
+    }
+    report
+}
+
+fn sheet_options() -> Options {
+    Options {
+        property_channels: true,
+        layer_timeline: true,
+        ..Options::default()
+    }
+}
+
 #[test]
-fn unrecorded_complex_motion_refuses_without_committing_an_open_drag() {
-    for kind in [
-        "rig",
-        "poseChoices",
-        "spatialMesh",
-        "drawing",
-        "movieclip",
-        "joinedRig",
-        "poseChoiceSegment",
-    ] {
-        let mut report = document("origin-motion-layout-sheet");
-        let index = usize::from(kind == "joinedRig");
-        let figure = report
-            .make_obj()
-            .unwrap()
-            .get_mut("figure_types")
-            .unwrap()
-            .make_arr()
-            .unwrap()[index]
-            .make_obj()
-            .unwrap();
-        if ["rig", "joinedRig", "poseChoiceSegment"].contains(&kind) {
-            figure.get_mut("segments").unwrap().make_arr().unwrap()[0]
-                .make_obj()
-                .unwrap()
-                .set(
-                    if kind == "poseChoiceSegment" {
-                        "_stykPoseChoice"
-                    } else {
-                        "_stykRig"
-                    },
-                    Value::object(Obj::new()),
-                );
-        } else {
-            figure
-                .get_mut("_styk")
-                .unwrap()
-                .make_obj()
-                .unwrap()
-                .set(kind, Value::object(Obj::new()));
-        }
-        let mut editor = Editor::new(
-            report,
-            Options {
-                property_channels: true,
-                layer_timeline: true,
-                ..Options::default()
-            },
-        );
+fn origin_figures_with_meshes_movieclips_or_drawings_refuse_without_committing_an_open_drag() {
+    for kind in ["spatialMesh", "drawing", "movieclip"] {
+        let mut editor = Editor::new(with_feature(kind), sheet_options());
         editor
             .call("select", &[Value::Num(1.0), Value::Num(1.0)])
             .unwrap();
@@ -149,7 +148,14 @@ fn unrecorded_complex_motion_refuses_without_committing_an_open_drag() {
 }
 
 #[test]
-fn native_motion_and_optional_selection_remain_atomic_refusals() {
+fn origin_figures_with_rigs_edit_their_motion_paths() {
+    for kind in ["rig", "joinedRig"] {
+        rigged_motion_ends_cleanly(&mut Editor::new(with_feature(kind), sheet_options()), &target(), 3.0, kind);
+    }
+}
+
+#[test]
+fn native_motion_begun_during_a_live_gesture_remains_an_atomic_refusal() {
     let mut native = Editor::new(document("origin-motion-support-native"), Options::default());
     native
         .call("select", &[Value::Num(1.0), Value::Num(1.0)])
@@ -162,14 +168,11 @@ fn native_motion_and_optional_selection_remain_atomic_refusals() {
         Err(EditError::Unported(_))
     ));
     assert_eq!(snapshot(&mut native), before);
-    let mut sheet = Editor::new(
-        document("origin-motion-layout-sheet"),
-        Options {
-            property_channels: true,
-            layer_timeline: true,
-            ..Options::default()
-        },
-    );
+}
+
+#[test]
+fn a_selected_fill_does_not_stop_a_motion_path_edit() {
+    let mut sheet = Editor::new(document("origin-motion-layout-sheet"), sheet_options());
     sheet
         .call("select", &[Value::Num(1.0), Value::Num(1.0)])
         .unwrap();
@@ -179,25 +182,20 @@ fn native_motion_and_optional_selection_remain_atomic_refusals() {
         .set_selection_metadata(&Value::object(selection))
         .unwrap();
     sheet.take_events();
-    let before = snapshot(&mut sheet);
-    assert!(matches!(
-        sheet.call("beginMotionPathEdit", &[target(), Value::Num(3.0)]),
-        Err(EditError::Unported(_))
-    ));
-    assert_eq!(snapshot(&mut sheet), before);
+    let original = sheet.report_json();
+    assert_eq!(
+        sheet.call("beginMotionPathEdit", &[target(), Value::Num(3.0)]).unwrap(),
+        Value::Bool(true)
+    );
+    assert_eq!(sheet.call("cancelMotionPathEdit", &[]).unwrap(), Value::Bool(true));
+    assert_eq!(sheet.report_json(), original);
+    assert!(!sheet.state().can_undo);
 }
 
 #[test]
-fn remote_only_complex_targets_and_ancestors_refuse_before_live_commit() {
+fn remote_only_rigged_targets_and_ancestors_edit_their_motion_paths() {
     for name in ["origin-future-rig-sheet", "origin-future-rig-joined-sheet"] {
-        let mut editor = Editor::new(
-            document(name),
-            Options {
-                property_channels: true,
-                layer_timeline: true,
-                ..Options::default()
-            },
-        );
+        let mut editor = Editor::new(document(name), sheet_options());
         let mut remote = target().as_obj().unwrap().clone();
         remote.set("joint", Value::Num(2.0));
         if name == "origin-future-rig-sheet" {
@@ -205,47 +203,7 @@ fn remote_only_complex_targets_and_ancestors_refuse_before_live_commit() {
             remote.set("handleId", Value::Num(22.0));
             remote.set("joint", Value::Num(1.0));
         }
-        editor
-            .call("select", &[Value::Num(1.0), Value::Num(1.0)])
-            .unwrap();
-        editor.take_events();
-        let before = snapshot(&mut editor);
-        assert!(
-            matches!(
-                editor.call(
-                    "beginMotionPathEdit",
-                    &[Value::object(remote.clone()), Value::Num(8.0)]
-                ),
-                Err(EditError::Unported(_))
-            ),
-            "{name} without live gesture"
-        );
-        assert_eq!(
-            snapshot(&mut editor),
-            before,
-            "{name} changed remote-only state"
-        );
-        editor.call("beginDrag", &[]).unwrap();
-        editor
-            .call("moveSelection", &[Value::Num(7.125), Value::Num(-3.25)])
-            .unwrap();
-        editor.take_events();
-        let before = snapshot(&mut editor);
-        assert!(
-            matches!(
-                editor.call(
-                    "beginMotionPathEdit",
-                    &[Value::object(remote), Value::Num(8.0)]
-                ),
-                Err(EditError::Unported(_))
-            ),
-            "{name}"
-        );
-        assert_eq!(
-            snapshot(&mut editor),
-            before,
-            "{name} changed the open drag/history/pose"
-        );
+        rigged_motion_ends_cleanly(&mut editor, &Value::object(remote), 8.0, name);
     }
 }
 
@@ -278,16 +236,6 @@ fn motion_display_query_has_no_interface_session_dispatch() {
     ));
     assert_eq!(snapshot(&mut editor), before);
     assert!(editor.motion_display_frame_worker().unwrap().is_none());
-    let mut camera = Obj::new();
-    camera.set("kind", Value::str("camera"));
-    assert!(matches!(
-        editor.call(
-            "beginMotionPathEdit",
-            &[Value::object(camera), Value::Num(3.0)]
-        ),
-        Err(EditError::Unported(_))
-    ));
-    assert_eq!(snapshot(&mut editor), before);
 }
 
 #[test]
@@ -308,12 +256,6 @@ fn unrecorded_live_motion_begin_preserves_drag_and_property_previews() {
         .call("moveSelection", &[Value::Num(7.125), Value::Num(-3.25)])
         .unwrap();
     editor.take_events();
-    let before = snapshot(&mut editor);
-    assert!(matches!(
-        editor.call("beginMotionPathEdit", &[target(), Value::Num(3.0)]),
-        Err(EditError::Unported(_))
-    ));
-    assert_eq!(snapshot(&mut editor), before);
     editor.call("cancelDrag", &[]).unwrap();
     let mut figure = Obj::new();
     figure.set("kind", Value::str("figure"));

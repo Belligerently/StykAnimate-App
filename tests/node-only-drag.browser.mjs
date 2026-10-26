@@ -27,7 +27,7 @@ async function setup() {
     window.__screen=point=>{const r=document.querySelector('#viewport').getBoundingClientRect();
       const p=worldToScreen(point,{report:styk.editor.report,frame:styk.editor.evaluatedFrame,view:styk.state.view});return{x:r.x+p.x,y:r.y+p.y};};
     window.__points=()=>[...styk.editor.geometry.objects].flatMap(([slot,g])=>[...g.joints].map(([id,p])=>({slot,uid:g.obj.unique_id,id,...p})));
-    window.__before=__points(); window.__frameBefore=JSON.stringify(styk.editor.frame);
+    window.__before=__points();
   });
   await page.keyboard.press('v'); await settle();
 }
@@ -42,14 +42,16 @@ async function drag(uid,id,target,{keys=[],button='left',cancel=false,name='drag
   for(const key of [...keys].reverse())await page.keyboard.up(key); await settle(); return route;
 }
 try {
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
-  for (const point of [{x:360,y:220},{x:350,y:255}]) {
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
+  // A press on a segment's line grabs that segment to pose it; on empty space it starts a selection. Neither translates a figure.
+  for (const [point,kind] of [[{x:360,y:220},'pose'],[{x:350,y:255},'marquee']]) {
     await setup();
-    const start=await screenPoint(point);
+    const start=await screenPoint(point),roots=()=>page.evaluate(()=>JSON.stringify(styk.editor.evaluatedFrame.objects.filter(o=>!o.join).map(o=>[o.unique_id,o.root_x,o.root_y])));
+    const rootsBefore=await roots();
     await page.mouse.move(start.x,start.y); await page.mouse.down();
-    check('Artwork and empty space start selection, never figure translation',await page.evaluate(()=>styk.state.drag?.kind==='marquee'));
+    check('A segment line grabs the segment and empty space starts a selection, never a figure translation',await page.evaluate(kind=>styk.state.drag?.kind===kind,kind));
     await page.mouse.move(start.x+25,start.y+20,{steps:4}); await page.mouse.up();
-    check('Dragging away from nodes leaves the frame unchanged',await page.evaluate(()=>JSON.stringify(styk.editor.frame)===__frameBefore));
+    check('Dragging from artwork or empty space leaves every unattached figure where it was',await roots()===rootsBefore);
   }
   await setup();
   const padded=await screenPoint(await worldPoint(1,1));

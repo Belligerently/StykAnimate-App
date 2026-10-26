@@ -8,7 +8,7 @@ The app must work at every commit while subsystems move to Rust one at a time.
 
 ## Decision
 
-`src/engine/engine-stage.mjs` wraps the JavaScript renderer behind the same interface. A gate (`src/engine/engine-eligibility.mjs`) named the first feature of a document the engine lacked; such a document kept the JavaScript renderer whole. It shrank as features landed, and its last two reasons (a frame draft; movieclips nested deeper than 16 levels) went when the engine drew both: the module is gone and no document keeps the JavaScript renderer. What remains are conditions of a frame, not of the document: the engine has failed, a drawing has unpublished strokes, a drawing preview, a rotated or mirrored view (`refusal` in the stage, `eligible` in the playback adapter). Editing is gated per command group (S5).
+The engine stage wrapped the JavaScript renderer behind the same interface. A gate named the first feature of a document the engine lacked; such a document kept the JavaScript renderer whole. It shrank as features landed, and its last two reasons (a frame draft; movieclips nested deeper than 16 levels) went when the engine drew both: the gate and the JavaScript renderer are gone. What remains are conditions of a frame, not of the document: the engine has failed, a drawing has unpublished strokes, a drawing preview, a rotated or mirrored view (`refusal` in the stage, `eligible` in the playback adapter). Editing is gated per command group (S5).
 
 ## Evidence
 

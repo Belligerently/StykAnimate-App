@@ -1,4 +1,4 @@
-//! IK across joined figures (src/ik-joined.mjs).
+//! IK across joined figures.
 //!
 //! A join aliases a child's origin to a vertex of its parent, so a chain may
 //! run through several figures. Each connected assembly that has a pinned

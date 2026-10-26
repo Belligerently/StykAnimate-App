@@ -29,7 +29,7 @@ export function segmentPaint(segment) {
   if (segment.secondary) stops.push({offset: 1, color: segment.secondary.rgb, opacity: 1 - (segment.secondary.a ?? 0) / 255});
   return {type: segment.secondary ? 'linear' : 'solid', angle: 0, stops};
 }
-export const cssColor = s => `rgba(${s.color.join(',')},${s.opacity})`;
+const cssColor = s => `rgba(${s.color.join(',')},${s.opacity})`;
 export function paintCSS(p) {
   if (p.type === 'solid') return cssColor(p.stops[0]);
   const stops = p.stops.map(s => `${cssColor(s)} ${s.offset * 100}%`).join(',');
@@ -43,7 +43,7 @@ export function samplePaint(p, t) {
   }
   return stops.at(-1);
 }
-export function paintGeometry(p, start, end) {
+function paintGeometry(p, start, end) {
   const length = Math.max(.001, Math.hypot(end.x - start.x, end.y - start.y));
   const angle = Math.atan2(end.y - start.y, end.x - start.x) + p.angle * Math.PI / 180;
   const cx = (start.x + end.x) / 2, cy = (start.y + end.y) / 2, dx = Math.cos(angle) * length / 2, dy = Math.sin(angle) * length / 2;
@@ -53,12 +53,6 @@ export function textPaintGeometry(bounds, placement = {x:0,y:0}) {
   const x=(bounds.left??0)-placement.x,y=(bounds.top??(bounds.bottom-bounds.height))-placement.y;
   const width=bounds.width??bounds.right-bounds.left,height=bounds.height??bounds.bottom-bounds.top;
   return {start:{x,y:y+height/2},end:{x:x+width,y:y+height/2},bounds:{x,y,width,height}};
-}
-export function shapePaintBounds(s) {
-  let x=Infinity,y=Infinity,right=-Infinity,bottom=-Infinity;
-  for(const p of s.points?.length?s.points:[s.start,s.end]){x=Math.min(x,p.x);y=Math.min(y,p.y);right=Math.max(right,p.x);bottom=Math.max(bottom,p.y);}
-  const pad=Math.max(Math.abs(s.length??0),s.thickness??0,1);
-  return {x:x-pad,y:y-pad,width:right-x+pad*2,height:bottom-y+pad*2};
 }
 export function canvasPaint(ctx, p, start, end, mapColor = c => c, bounds = {x:0,y:0,width:ctx.canvas.width,height:ctx.canvas.height}) {
   if (p.type === 'solid') return cssColor({...p.stops[0], color: mapColor(p.stops[0].color)});

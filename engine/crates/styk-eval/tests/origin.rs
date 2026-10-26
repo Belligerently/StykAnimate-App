@@ -2,7 +2,7 @@
 //!
 //! Every fixture in `tests/fixtures/origin/` is a project the editor builds with Set
 //! Origin, construction edits and animation, and the editor's own evaluation of it
-//! (`node engine/tools/origin-fixtures.mjs` regenerates them). The engine must draw the
+//! (frozen recordings). The engine must draw the
 //! same joints and primitives, within the tolerance `styk compare` uses.
 
 use std::path::{Path, PathBuf};
@@ -41,10 +41,9 @@ fn describe(report: &Report) -> String {
 #[test]
 fn every_origin_fixture_evaluates_like_the_editor() {
     let names = fixtures();
-    assert!(names.len() >= 3, "fixtures are missing: run node engine/tools/origin-fixtures.mjs");
+    assert!(names.len() >= 3, "fixtures are missing: the origin fixtures are frozen recordings (restore them from version control)");
     for name in &names {
         let document = open(name);
-        assert!(document.unsupported.is_empty(), "{name}: not evaluated: {:?}", document.unsupported);
         assert!(document.notes.is_empty(), "{name}: read leniently: {:?}", document.notes);
         assert!(document.figures.iter().any(|f| f.origin.is_some()), "{name}: no figure with an origin");
         let report = compare(name, document);

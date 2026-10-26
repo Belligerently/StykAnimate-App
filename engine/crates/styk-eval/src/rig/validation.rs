@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use styk_doc::Value;
 
 const RANGE: &str = "errors.cameraMotion.mustBeBetweenAnd";
+/// What [`validate_2d`] answers for a figure whose rig uses a family it does not validate.
+pub const UNAVAILABLE: &str = "2D validation is unavailable for spatial, weighted or angle-path relationships";
 const REFERENCE: &str = "errors.rigConstraints.refersToAMissingJointRemoveOrReconnect";
 
 fn number(value: Option<&Value>, min: f64, max: f64) -> Result<f64, &'static str> {
@@ -42,7 +44,7 @@ pub fn validate_2d(figure: &Value) -> Result<(), &'static str> {
         let field = |key: &str| rig.and_then(|rig| rig.get(key));
         if field("orientation").is_some() { choice(field("orientation"), &["inherit", "world"], "errors.rigConstraints.chooseAValidAttachmentOrientation")?; }
         if ["spatial", "weighted", "anglePath"].iter().any(|key| field(key).is_some_and(Value::truthy)) {
-            return Err("2D validation is unavailable for spatial, weighted or angle-path relationships");
+            return Err(UNAVAILABLE);
         }
         let (connector, stretch, follow) = (field("connector").filter(|value| value.truthy()), field("stretch").filter(|value| value.truthy()), field("follow").filter(|value| value.truthy()));
         let mut add = |value: Option<&Value>, root| -> Result<(), &'static str> {

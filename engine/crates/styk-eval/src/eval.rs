@@ -1,6 +1,6 @@
-//! Frame evaluation: the timeline, native Pivot tweening (`evaluatedNativeFrame`
-//! in src/pivot/geometry.mjs) with its property channels ([`crate::channels`]) and the
-//! StykAnimate layer sheet (`sampleLayerSheet` in src/layer-sheet.mjs).
+//! Frame evaluation: the timeline, native Pivot tweening (`evaluatedNativeFrame`)
+//! with its property channels ([`crate::channels`]) and the
+//! StykAnimate layer sheet (`sampleLayerSheet`).
 //!
 //! Evaluation is a pure function of an immutable [`Prepared`] document and a
 //! tick, so any number of threads can evaluate different ticks concurrently.
@@ -13,7 +13,6 @@ use std::sync::Arc;
 
 use crate::doc::*;
 
-pub mod preview;
 pub(crate) mod retained;
 
 /// One key of a native or virtual (pose-track) timeline.
@@ -916,14 +915,27 @@ impl Prepared {
         }
         let mut objects = Vec::with_capacity(next as usize);
         let mut origins = Vec::with_capacity(next as usize);
+        // A figure joined to an instance that left the frame comes loose where the whole
+        // frame had it, built once (`resolveGeometry` of `sampleMovieclipObjects`).
+        let mut loose: Option<crate::geometry::Scene> = None;
         for (i, o) in frame.objects.iter().enumerate() {
             if !keep[i] {
                 continue;
             }
             let mut o = o.clone();
             if let Some(j) = o.join {
-                let target = remap[j.slot as usize];
-                Arc::make_mut(&mut o).join = (target != u32::MAX).then_some(Join { slot: target, handle: j.handle });
+                let target = remap.get(j.slot as usize).copied().unwrap_or(u32::MAX);
+                if target == u32::MAX {
+                    let scene = loose.get_or_insert_with(|| crate::geometry::build(doc, frame));
+                    let root = scene.objects.get(i).filter(|g| g.resolved).map(|g| g.root);
+                    let detached = Arc::make_mut(&mut o);
+                    detached.join = None;
+                    if let Some(root) = root {
+                        detached.root = root;
+                    }
+                } else {
+                    Arc::make_mut(&mut o).join = Some(Join { slot: target, handle: j.handle });
+                }
             }
             objects.push(o);
             origins.push(frame.origins.get(i).cloned().flatten());
@@ -947,14 +959,6 @@ impl Prepared {
         self.finish_frame(self.evaluate_raw(tick, fractional), tick, fractional)
     }
 
-    /// A native interval selected explicitly by the editor (including one-tick and
-    /// hidden keys). A layer sheet still samples its tracks at the absolute tick.
-    pub fn evaluate_interval(&self, index: usize, ratio: f64, tick: f64) -> Frame {
-        let mut frame = if self.doc.sheet.is_some() { self.sample_sheet(tick) } else { self.native_interval(index, ratio, tick) };
-        frame.tick = tick;
-        self.finish_frame(frame, tick, false)
-    }
-
     fn finish_frame(&self, mut frame: Frame, tick: f64, fractional: bool) -> Frame {
         self.apply_movieclips(&mut frame, tick);
         apply_layer_order(&self.doc, &mut frame);
@@ -970,18 +974,25 @@ impl Prepared {
         }
         if self.has_vfx {
             let mut export_vfx = Vec::new();
-            if self.doc.vfx_clips.is_none()
-                && let (Some(source), Some(source_tick)) = (self.retained_effect_source(), frame.retained_vfx_tick)
-            {
-                let mut timed = frame.clone();
-                timed.tick = source_tick;
-                frame.vfx = crate::vfx::frame::inherited_filters(source, &timed, &mut export_vfx);
-            } else {
-                frame.vfx = crate::vfx::frame::evaluate_for_export(&self.doc, &frame, &mut export_vfx);
-            }
+            frame.vfx = self.frame_vfx(&frame, &mut export_vfx);
             frame.export_vfx = export_vfx;
         }
         frame
+    }
+
+    /// The effects to draw for an evaluated `frame`: the document's own clips sampled at its tick, or, in the crop of a
+    /// movieclip whose effect clips are its retained source's, the source's at the source tick the frame was taken at
+    /// (`vfxRenderFrame`). `export` receives the metadata of export's `hasDrawableVfx`.
+    pub fn frame_vfx(&self, frame: &Frame, export: &mut Vec<bool>) -> Option<Arc<crate::vfx::FrameVfx>> {
+        if self.doc.vfx_clips.is_none()
+            && let (Some(source), Some(source_tick)) = (self.retained_effect_source(), frame.retained_vfx_tick)
+        {
+            let mut timed = frame.clone();
+            timed.tick = source_tick;
+            crate::vfx::frame::inherited_filters(source, &timed, export)
+        } else {
+            crate::vfx::frame::evaluate_for_export(&self.doc, frame, export)
+        }
     }
 
     fn retained_effect_source(&self) -> Option<&Document> {

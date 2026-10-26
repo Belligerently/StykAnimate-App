@@ -103,6 +103,7 @@ fn sheet_plan_and_publication_use_the_existing_owner_exactly() {
                 deleted_layer: r.get("deletedLayerId").and_then(Value::as_str),
                 next_frame_identity: next,
                 max_source_bytes: 128 * 1024 * 1024,
+                focus: None,
             },
             || Ok(()),
             |p| progress.push(progress_value(p)),
@@ -276,6 +277,7 @@ fn recorded_refusals_cancellation_and_stale_publication_preserve_the_owner() {
                     .get("maxSourceBytes")
                     .and_then(Value::as_f64)
                     .unwrap_or(128.0 * 1024.0 * 1024.0) as usize,
+                focus: None,
             },
             || {
                 if stopped.get() {
@@ -319,6 +321,7 @@ fn recorded_refusals_cancellation_and_stale_publication_preserve_the_owner() {
             deleted_layer: None,
             next_frame_identity: identity,
             max_source_bytes: 128 * 1024 * 1024,
+            focus: None,
         },
         || Ok(()),
         |_| {},
@@ -438,6 +441,7 @@ fn malformed_raw_owner_descriptors_refuse_without_panics_or_mutation() {
                     next_frame_identity: r.get("nextFrameIdentity").unwrap().as_f64().unwrap()
                         as u64,
                     max_source_bytes: 128 * 1024 * 1024,
+                    focus: None,
                 },
                 || Ok(()),
                 |_| {},

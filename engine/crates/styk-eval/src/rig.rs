@@ -13,7 +13,7 @@ const EPS: f64 = 1e-8;
 const SPATIAL_EPS: f64 = 1e-9;
 
 mod validation;
-pub use validation::validate_2d;
+pub use validation::{validate_2d, UNAVAILABLE};
 
 #[derive(Clone, Debug)]
 pub struct Connector {
@@ -276,6 +276,8 @@ pub struct Impulse {
 pub struct RigPlan {
     pub order: Vec<u32>,
     pub inputs: Vec<Option<Impulse>>,
+    /// What each joint passes on to the joints below it (`plan.outputs`).
+    pub outputs: Vec<Option<Impulse>>,
     /// Segment indices each joint reads (`plan.dependencies`), for IK (`crate::ik::rig`).
     pub dependencies: Vec<Vec<u32>>,
 }
@@ -412,7 +414,7 @@ pub fn plan(segments: &[crate::doc::Segment], index_of: &std::collections::HashM
             source
         };
     }
-    Some(RigPlan { order, inputs, dependencies })
+    Some(RigPlan { order, inputs, outputs, dependencies })
 }
 
 // ------------------------------------------------------------ evaluation
@@ -455,12 +457,17 @@ pub struct State {
     pub bend: f64,
     pub width: f64,
     pub handle: Option<[f64; 2]>,
+    /// Where a connector's slider sits along it, 0 to 1 (`position`); none for any other joint.
+    pub position: Option<f64>,
     pub rotation: f64,
     pub ratio: f64,
     pub impulse_angle: f64,
     pub spatial: Option<SpatialFrame>,
     pub path: Option<([f64; 2], f64, f64)>,
     pub space: Option<Space>,
+    /// The space the joints below it are authored in (`childSpace`): the rotation they inherit and the
+    /// stretch they follow, when it passes one on.
+    pub child_space: Option<Space>,
     /// Where the joint's depth lands along the surface reference X, from the
     /// figure root (`depthOffset`): spatial joints and weighted joints with a depth.
     pub depth_offset: Option<[f64; 2]>,
@@ -761,12 +768,14 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             bend: 0.0,
             width: 1.0,
             handle: Some([start[0] + dx, start[1] + dy]),
+            position: None,
             rotation: angle - input.angle,
             ratio: 1.0,
             impulse_angle: angle,
             spatial: None,
             path: None,
             space: Some(Space { rotation: angle - input.angle, follow: None }),
+            child_space: None,
         };
         states[i] = Some(s);
         return s;
@@ -810,12 +819,14 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             bend: 0.0,
             width: 1.0,
             handle: Some([origin[0] + dx, origin[1] + dy]),
+            position: None,
             rotation: angle - input.angle,
             ratio: 1.0,
             impulse_angle: angle,
             spatial: None,
             path: Some((origin, delta, z)),
             space: Some(Space { rotation: delta, follow: None }),
+            child_space: None,
             depth_offset: None,
             raw_point: None,
             start_raw: None,
@@ -940,6 +951,21 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
     // `rotation || followScale !== undefined || lock`: NaN and zero rotations are falsy.
     let space = (rotation != 0.0 && !rotation.is_nan() || follow_scale.is_some() || r.lock.is_some())
         .then(|| Space { rotation, follow: follow_scale.map(|amount| (follow_axis_used, amount)) });
+    let impulse_angle = if c {
+        angle
+    } else if response.is_some_and(|x| x.reset) {
+        raw_angle
+    } else {
+        angle
+    };
+    // What the joints below it follow, read from the joints that drive it (possibly this one).
+    let child_space = ctx.plan.outputs.get(i).copied().flatten().filter(|out| !out.legacy).map(|out| Space {
+        rotation: inherited,
+        follow: Some((
+            if out.axis == i { impulse_angle } else { states[out.axis].map_or(f64::NAN, |s| s.impulse_angle) },
+            if out.driver == i { ratio } else { states[out.driver].map_or(f64::NAN, |s| s.ratio) },
+        )),
+    });
     let st = State {
         start,
         angle,
@@ -948,18 +974,14 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         bend,
         width,
         handle,
+        position: r.connector.is_some().then_some(position),
         rotation: inherited,
         ratio,
-        impulse_angle: if c {
-            angle
-        } else if response.is_some_and(|x| x.reset) {
-            raw_angle
-        } else {
-            angle
-        },
+        impulse_angle,
         spatial: None,
         path: None,
         space,
+        child_space,
         depth_offset: None,
         raw_point: None,
         start_raw: None,
@@ -1074,11 +1096,13 @@ fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: 
         bend: 0.0,
         width: 1.0,
         handle: Some(handle),
+        position: None,
         rotation: angle - input.angle,
         ratio: 1.0,
         impulse_angle: angle,
         spatial,
         path: None,
         space: Some(Space { rotation: angle - input.angle, follow: None }),
+        child_space: None,
     }
 }

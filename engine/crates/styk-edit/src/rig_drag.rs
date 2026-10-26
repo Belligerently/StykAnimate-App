@@ -1,4 +1,4 @@
-//! Rig editing by dragging (src/editor-rig.mjs): a joint of the selected figure dragged in the
+//! Rig editing by dragging: a joint of the selected figure dragged in the
 //! Rig tool or the Build Figure workspace. The gesture previews on the frame on show, then its
 //! commit changes the reusable definition and every pose of it by the same deltas, as one
 //! `topology` history entry (`commitRigDrag`). Repositioning moves the joint and refits its

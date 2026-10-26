@@ -1,4 +1,4 @@
-//! Camera commands on a layer sheet (src/editor-camera.mjs): the camera's values copied,
+//! Camera commands on a layer sheet: the camera's values copied,
 //! pasted, typed, reset, transformed, aligned with the canvas view or taken from the
 //! neighbouring key, each a key of the camera track (`addAnimationKeys`); a camera drag that
 //! previews its keys and commits them once; a handle moved to where it is on the neighbouring
@@ -142,7 +142,7 @@ impl Editor {
     }
 
     /// `finishGesture(editor)`: an open property edit or gesture is committed first.
-    fn finish_gesture(&mut self) -> Result<(), EditError> {
+    pub(crate) fn finish_gesture(&mut self) -> Result<(), EditError> {
         if self.property_edit.is_some() {
             self.commit_animation_edit()?;
         }

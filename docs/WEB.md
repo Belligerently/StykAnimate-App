@@ -232,7 +232,8 @@ The desktop app runs the same module the same way; see
   its queue (`src/codec-web-shell.mjs`) and cancellation; `src/codec-engine.mjs` loads the
   module and answers one request.
 - The Python codec (`codecs/`, `backend/`) is the development test oracle only: the
-  parity replay checks that the Rust codec answers what it answered.
+  parity replay checks that the Rust codec answers what it answered. The web build ships
+  and starts no Python (`web:verify` rejects `backend/` and `codecs/`).
 
 The module (0.43 MiB at Brotli 5) loads on the first Pivot import or export, never at
 startup, and is then cached. Native projects (`.styk`, `.stkz`, `.stykmov`), Stick Nodes

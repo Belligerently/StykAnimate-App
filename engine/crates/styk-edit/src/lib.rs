@@ -4,8 +4,8 @@
 //! receives it), the playhead, the selection, the gesture in progress and the
 //! history, and runs the editor's commands on them so that they change the same
 //! records into the same bytes, leave the same selection and emit the same change
-//! events as `src/editor.mjs`. The command-replay harness (`replay`, and
-//! `engine/tools/edit-replay.mjs` on the JavaScript side) checks that step by step.
+//! events as the JavaScript editor did. The command-replay harness (`replay`) checks that step by step
+//! against the recordings in `engine/tests/edit`.
 //!
 //! Ported so far: selecting, seeking, moving and transforming figures, posing,
 //! rotating and bending joints, and undo and redo of what those record, on native
@@ -15,23 +15,36 @@
 mod audio;
 mod authored;
 mod builder;
+mod drawing_pixels;
+mod drawing_structure;
+mod disconnect;
 mod duplicate_drag;
 mod bounds;
+mod camera_bake;
 mod camera_commands;
 mod camera_motion;
+mod combine;
+mod camera_views;
+mod clipboards;
 mod figure_clipboard;
+mod figure_discard;
 mod figure_transform;
-mod external;
+pub mod export;
+mod args;
+mod owner;
+mod preview;
 mod figures;
 mod frame;
 mod frame_draft;
+mod interface;
 mod handle_commands;
 mod handle_edit;
 mod history;
 mod ik;
 mod ik_settings;
+mod layer_focus;
+mod layer_membership;
 mod layers;
-pub mod inbetween_planning;
 pub mod load;
 pub mod layer_planning;
 pub mod movieclip_planning;
@@ -40,10 +53,13 @@ mod motion_path;
 mod movieclips;
 mod origin;
 mod origin_topology;
+mod movieclip_bake;
 mod movieclip_commands;
 mod movieclip_native;
+mod onion_skins;
 mod pose;
 mod pose_choice;
+mod pose_value;
 mod palette;
 pub mod prof;
 pub mod patch;
@@ -58,6 +74,7 @@ mod record;
 pub mod replay;
 mod rig_behavior;
 mod rig_drag;
+mod scene_backgrounds;
 mod select;
 pub mod session;
 mod sheet;
@@ -65,8 +82,10 @@ mod sheet_clipboard;
 mod sheet_frames;
 mod spatial;
 mod spatial_ik;
+mod spatial_shape;
 mod timeline;
 mod topology;
+mod trails;
 mod transform;
 mod tweener;
 mod vfx_clips;
@@ -80,6 +99,8 @@ use styk_doc::{Obj, Value};
 
 pub use history::{Command, CommandKind, HistoryLimits};
 pub use frame::FrameSlice;
+pub use onion_skins::{Ghost, OnionSet, MAX_GHOSTS};
+pub use layer_focus::FocusLock;
 pub use select::Selection;
 
 /// What a failed call says. `Unported` means "run this in JavaScript": the call
@@ -272,6 +293,8 @@ pub struct Editor {
     /// `editor.audioRipple` (the app sets it) and `_audioRippling`: frame edits of every layer move the audio.
     pub(crate) audio_ripple: bool,
     pub(crate) audio_rippling: bool,
+    /// The layers Focus and lock holds (`editor.getLayerFocus()` with a lock), as the view of the call in progress has them.
+    pub(crate) focus_lock: Option<FocusLock>,
     /// `editor._audioClipboard`: the last copied audio clip and its recording.
     pub(crate) audio_clipboard: Option<(Value, Value)>,
     /// `editor._cameraMotionClipboard`: the last copied camera motion clip.
@@ -284,6 +307,12 @@ pub struct Editor {
     pub(crate) draws: std::collections::VecDeque<(String, Value)>,
     /// The draws are a pool taken by kind, not the editor's recorded sequence (D19).
     pub(crate) draw_pool: bool,
+    /// Drawing cels a call copied, `(old cel, new cel)`: the pixels of the old one belong to the new one too, which the
+    /// interface (it holds the pixels) is told with the call's answer.
+    pub(crate) drawing_forks: Vec<(String, String)>,
+    /// The call retired a history entry that referred to the interface's drawings (pixel commits, cels): the interface lets go of
+    /// what no entry refers to any more (`drawing_pixels.rs`).
+    pub(crate) drawing_retired: bool,
     /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
     pub(crate) vfx_edit: Option<Option<Value>>,
     /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
@@ -294,15 +323,27 @@ pub struct Editor {
     pub(crate) property_edit: Option<property_edit::Edit>,
     pub(crate) native_token: Option<builder::native::Token>,
     pub(crate) native_token_serial: u64,
+    /// A movieclip being baked in slices (`movieclip_bake.rs`).
+    pub(crate) bake: Option<movieclip_bake::Job>,
+    /// The document field a live preview set without recording it (`preview.rs`).
+    pub(crate) preview: Option<preview::Preview>,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
     pub(crate) eval: RefCell<frame::Cache>,
+    /// What the interface was last told of the geometry of the frame on show (and of the motion-path display).
+    pub(crate) shown: RefCell<[interface::Cache; 2]>,
+    /// What the interface reads besides the frame on show: the motion-path trails, the onion skins and the camera's views.
+    pub(crate) trails: RefCell<trails::Cache>,
+    pub(crate) onions: RefCell<onion_skins::Cache>,
+    pub(crate) camera_views: RefCell<camera_views::Cache>,
+    /// The host's clock (milliseconds), which a read that is given a time to take is held to; without one it takes what it needs.
+    pub(crate) clock: Option<fn() -> f64>,
     /// The last document checked for unported features, and the answer.
     gate: RefCell<Option<(Value, Option<&'static str>)>>,
 }
 
-/// What the interface reads after a call (`engine/tools/edit-replay.mjs` records the same).
+/// What the interface reads after a call (the recordings hold the same).
 #[derive(Clone, Debug, PartialEq)]
 pub struct State {
     pub tick: f64,
@@ -354,6 +395,7 @@ struct Snapshot {
     property_edit: Option<property_edit::Edit>,
     native_token: Option<builder::native::Token>,
     native_token_serial: u64,
+    preview: Option<preview::Preview>,
     drag_serial: u64,
 }
 
@@ -401,18 +443,28 @@ impl Editor {
             audio_clipboard: None,
             audio_ripple: false,
             audio_rippling: false,
+            focus_lock: None,
             camera_motion_clipboard: None,
             vfx_clip_clipboard: None,
             draws: Default::default(),
             draw_pool: false,
+            drawing_forks: Vec::new(),
+            drawing_retired: false,
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
             property_edit: None,
             native_token: None,
             native_token_serial: 0,
+            bake: None,
+            preview: None,
             events: Vec::new(),
             eval: RefCell::default(),
+            shown: RefCell::default(),
+            trails: RefCell::default(),
+            onions: RefCell::default(),
+            camera_views: RefCell::default(),
+            clock: None,
             gate: RefCell::new(None),
         }
     }
@@ -528,7 +580,7 @@ impl Editor {
         }
     }
 
-    /// The state as JSON, in the key order `engine/tools/edit-replay.mjs` records it.
+    /// The state as JSON, in the key order the recordings hold it.
     pub fn state_value(&self) -> Value {
         let _scope = crate::prof::scope("editor::state_value");
         let state = self.state();
@@ -708,6 +760,7 @@ impl Editor {
             property_edit: self.property_edit.clone(),
             native_token: self.native_token.clone(),
             native_token_serial: self.native_token_serial,
+            preview: self.preview.clone(),
             drag_serial: self.drag_serial,
         }
     }
@@ -729,7 +782,7 @@ impl Editor {
             layer_event_pending, sheet_clipboard, figure_clipboard,
             segment_values_clipboard, camera_clipboard, audio_clipboard, camera_motion_clipboard,
             vfx_clip_clipboard, vfx_edit, batch, sheet_selection, property_edit,
-            native_token, native_token_serial, drag_serial);
+            native_token, native_token_serial, preview, drag_serial);
         for (actual, captured) in [
             &mut self.revision, &mut self.saved_revision,
             &mut self.revision_serial, &mut self.layer_revision,
@@ -744,42 +797,34 @@ impl Editor {
     }
 
     fn dispatch_layer_publication(&mut self, method: &str, args: &[Value], worker: bool, check: &mut dyn FnMut() -> Result<(), EditError>, publication: Option<&mut Option<Value>>, duplicate_pastes: Option<&mut Option<Value>>) -> Result<Value, EditError> {
-        // The owner's bookkeeping (D19, external.rs) is not a command: no document gate applies.
+        // The owner's bookkeeping (D19, owner.rs) is not a command: no document gate applies.
         match method {
-            "@external" => return self.record_external(args),
-            "@sync" => return self.sync_records(args),
-            "@externalDone" => return self.external_done(args),
             "@historyLimits" => return self.configure_history(args),
             "@markSaved" => return self.mark_saved(),
+            "@touch" => return self.mark_changed(),
+            "@publishCel" => return self.publish_cel(args),
+            "@drawingBytes" => return self.set_pixels_bytes(args),
+            "@retractDrawing" => return self.retract_pixels(args),
+            "@setClipboard" => return self.set_clipboard(args),
             "@revisions" => return self.set_revisions(args),
             // A grouped edit (`movieclipBatch`) is bookkeeping around the edits it holds: no document gate applies.
             "beginBatch" => return self.begin_batch(args.first().and_then(Value::as_str).unwrap_or("")).map(|_| Value::Null),
             "endBatch" => return self.end_batch().map(|_| Value::Null),
             "abortBatch" => return self.abort_batch().map(|_| Value::Null),
-            "undo" | "redo" if let Some(id) = self.external_on_top(method == "redo") => {
-                return Err(EditError::Unported(format!("{}{id}", external::EXTERNAL_ENTRY)));
-            }
             _ => {}
         }
+        self.end_preview_for(method);
         let projected_native=worker && self.native_projected_call(method,args);
         if worker && self.options.property_channels && !self.sheet() { self.native_projected_gate(method,args,check)?; }
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
         // A JSON argument that is not a number is NaN to the finite checks, as `Number.isFinite` sees it.
         let number = |i: usize| arg(i).as_f64().unwrap_or(f64::NAN);
-        self.selection_metadata_gate(method)?;
         self.native_transform_gate(method, args, projected_native)?;
         if let Some(reason) = self.unported_document() {
-            let recorded = match reason {
-                "with animation origins" => origin::recorded_call(method) || select::metadata_recorded_call(method),
-                "with animation origins and property channels" => origin::recorded_channel_call(method) || select::metadata_recorded_call(method),
-                _ => self.recorded_native_movieclip_call(method, args, reason) || self.recorded_native_transform_call(method) || self.recorded_native_motion_call(method) || projected_native || self.recorded_native_draw_call(method, reason),
-            };
-            if !recorded {
+            // A document with animation origins runs every command: the ones that pose figures synchronize the pivots.
+            if !reason.starts_with("with animation origins")
+                && !(self.recorded_native_movieclip_call(method, args, reason) || self.recorded_native_transform_call(method) || self.recorded_native_motion_call(method) || projected_native || self.recorded_native_draw_call(method, reason)) {
                 return Err(EditError::Unported(format!("{method} {reason}")));
-            }
-            // Branch mirrors enter topology/range paths, outside this gesture milestone.
-            if matches!(method, "mirrorSelection" | "mirrorFigure") && self.selection.joint >= 0 && self.selected_objects()?.len() == 1 {
-                return Err(EditError::Unported(format!("{method} of an origin branch")));
             }
             if method == "moveSelectionInFrames" && !self.sheet() {
                 return Err(EditError::Unported("moving animation-origin figures across native keyframes".into()));
@@ -789,8 +834,7 @@ impl Editor {
             }
             if origin::choice_call(method) { self.origin_choice_gate()?; }
             if origin::constraint_call(method) { self.origin_constraint_gate(method, args)?; }
-            if origin::rig_pose_call(method) { self.origin_rig_pose_gate(method, reason == "with animation origins and property channels")?; }
-            else if origin::posing_call(method) { self.origin_pose_gate()?; }
+            if origin::posing_call(method) || origin::rig_pose_call(method) { self.origin_pose_gate()?; }
             if origin::gesture_call(method) { self.origin_gesture_gate(method)?; }
             if origin::rig_tool_call(method) { self.origin_rig_gate()?; }
             if origin::property_call(method) { self.origin_property_gate(method, args)?; }
@@ -900,6 +944,22 @@ impl Editor {
             "slideConnector" => self.slide_selected_connector(number(0), number(1)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "importSceneBackground" => self.import_scene_background(&arg(0), &arg(1)),
+            "renameSceneBackground" => self.rename_scene_background(&arg(0), &arg(1)).map(Value::Bool),
+            "assignFiguresToLayer" => self.assign_figures_to_layer(&arg(0), &arg(1)).map(Value::Bool),
+            "deleteLayer" => self.delete_layer(&arg(0), &arg(1)).map(Value::Bool),
+            "createDrawingLayer" => self.create_drawing_layer(&arg(0)),
+            "addDrawingFrame" => self.add_drawing_frame(&arg(0), &arg(1)),
+            "nextDrawing" => self.next_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "extendDrawing" => self.extend_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "drawingKey" => self.drawing_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "autoKeyDrawing" => self.auto_key_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "commitDrawingPixels" => self.commit_drawing_pixels(&arg(0), &arg(1), &arg(2)),
+            "resampleDrawing" => self.resample_drawing(&arg(0), &arg(1)),
+            "bakeCameraMotion" => self.bake_camera_motion(&arg(0)).map(Value::Bool),
+            "setSpatialCamera" => self.set_spatial_camera(&arg(0)).map(Value::Bool),
+            "setSpatialProportions" => self.set_spatial_proportions(&arg(0)).map(Value::Bool),
+            "resetSpatialProportions" => self.reset_spatial_proportions().map(Value::Bool),
             "setAudioTrack" => self.set_audio_track(&arg(0), &arg(1)).map(Value::Bool),
             "deleteAudioTrack" => self.delete_audio_track(&arg(0)).map(Value::Bool),
             "addAudioTrack" => self.add_audio_track(args.first()),
@@ -934,8 +994,22 @@ impl Editor {
             "randomizeCameraMotion" => self.randomize_camera_motion(&arg(0)).map(Value::Bool),
             "updateSegment" => self.update_segment(&arg(0)).map(Value::Bool),
             "updateObject" => self.update_object(&arg(0)).map(Value::Bool),
+            "discardNewFigure" => self.discard_new_figure(&arg(0), &arg(1)).map(Value::Bool),
             "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),
-            "addMovieclipToNextKeyframes" if !self.sheet() => self.extend_native_movieclip(number(0)),
+            "addMovieclipToNextKeyframes" if self.sheet() => self.inline_timeline(|editor, worker| editor.extend_sheet_movieclip(number(0), worker)),
+            "addMovieclipToNextKeyframes" => self.extend_native_movieclip(number(0)),
+            // Samples the whole clip frame by frame and publishes it as one entry: bounded (5000 frames, 250000 poses), run inline.
+            "previewCameraMotion" => self.preview_camera_motion(&arg(0), &arg(1)).map(Value::Bool),
+            "previewLayerParallax" => self.preview_layer_parallax(&arg(0), &arg(1)).map(Value::Bool),
+            "cancelDocumentPreview" => Ok(Value::Bool(self.cancel_document_preview())),
+            "bakeMovieclip" => self.inline_timeline(|editor, worker| editor.bake_movieclip_worker(worker)),
+            // The same bake in slices, for the interface to give the thread back between them.
+            "bakeMovieclipBegin" => self.inline_timeline(|editor, worker| editor.begin_bake(worker)),
+            "bakeMovieclipSample" => self.inline_timeline(|editor, worker| editor.sample_bake(number(0), worker)),
+            "bakeMovieclipPublish" => self.inline_timeline(|editor, worker| editor.publish_bake(worker)),
+            "bakeMovieclipCancel" => Ok(Value::Bool(self.bake.take().is_some())),
+            "setFrameDuration" if self.sheet() => self.sheet_set_duration(number(0), &Value::Null, &Value::Null).map(Value::Bool),
+            "setFrameDuration" => Err(EditError::Unported("setFrameDuration on a native timeline".into())),
             "addFigure" => self.add_figure((!args.is_empty()).then(|| arg(0)).as_ref()),
             "renameLayer" => self.rename_layer_publication(&arg(0), &arg(1), publication).map(Value::Bool),
             "setLayerColor" => self.set_layer_color(&arg(0), &arg(1), publication).map(Value::Bool),
@@ -1020,18 +1094,19 @@ impl Editor {
             "splitMovieclip" => self.split_native_movieclip(args.first().map(|v| v.as_f64().unwrap_or(f64::NAN)).unwrap_or(self.tick)),
             "breakApartMovieclip" => self.break_apart_movieclip(),
             "renameMovieclip" => self.rename_movieclip(&arg(0)),
+            "publishMovieclipEdit" => self.publish_movieclip_edit(&arg(0), &arg(1), &arg(2)),
             "restartMovieclip" => self.restart_movieclip(),
             "removeMovieclipRestart" => self.remove_movieclip_restart(),
             "setMovieclipPlayback" => self.set_movieclip_playback(&arg(0), &arg(1)),
             "setMovieclipDrawing" => self.set_movieclip_drawing(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "setLayerParallax" => self.set_layer_parallax(&arg(0), &arg(1), publication).map(Value::Bool),
-            "setFPS" => self.set_fps(&arg(0)).map(Value::Bool),
+            "setFPS" => self.set_fps(&arg(0), &arg(1)).map(Value::Bool),
             "setCanvasSize" => self.set_canvas_size(&arg(0), &arg(1)).map(Value::Bool),
-            "updateProject" => self.update_project(&arg(0)).map(Value::Bool),
-            "copySelection" => match args.first().and_then(|o| o.get("wholeFigures")).is_some_and(Value::truthy) {
-                false => self.copy_selection(),
-                true => Err(EditError::Unported("copying whole figures of a branch selection".into())),
-            },
+            "updateProject" => self.update_project(&arg(0), &arg(1)).map(Value::Bool),
+            "copySelection" => {
+                let flag = |name: &str| args.first().and_then(|o| o.get(name)).is_some_and(Value::truthy);
+                self.copy_selection_of(flag("wholeFigures"), flag("inPlace"))
+            }
             "cutSelection" => self.cut_selection(),
             "pasteSelection" => self.paste_selection(&arg(0)),
             "importFigure" => self.import_figure(&arg(0), &arg(1)),
@@ -1070,6 +1145,8 @@ impl Editor {
             "joinFigure" => if arg(0).is_null() { self.unjoin_figure() } else { self.join_to(arg(0).as_f64(), &arg(1)) }.map(Value::Bool),
             "deleteSelection" | "deleteFigure" => self.delete_selection().map(Value::Bool),
             "duplicateFigure" => self.duplicate_figure(),
+            "disconnectSegment" => self.disconnect_segment(),
+            "combineJoinedFigure" => self.combine_joined_figure(args.first(), args.get(1)),
             "undo" => self.undo().map(Value::Bool),
             "redo" => self.redo().map(Value::Bool),
             other => Err(EditError::Unported(other.to_string())),
@@ -1101,8 +1178,10 @@ impl Editor {
         if styk.and_then(|s| s.path(&["animation", "channels"])).and_then(Value::array_len).unwrap_or(0) > 0 {
             return Some("with property channels");
         }
-        if styk.and_then(|s| s.get("movieclipSource")).is_some() {
-            return Some("inside a movieclip");
+        // The editor authors a movieclip's own document through its layer sheet; on a native timeline it edits the
+        // keyframes of a document that retains a source differently from the session.
+        if sheet.is_none() && styk.and_then(|s| s.get("movieclipSource")).is_some() {
+            return Some("inside a movieclip on a native timeline");
         }
         let figures = list(self.report.get("figure_types"));
         if figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
@@ -1154,7 +1233,16 @@ fn next_frame_identity(report: &Value) -> u64 {
 }
 
 #[cfg(test)]
+mod drawing_pixels_tests;
+
+#[cfg(test)]
 mod native_motion_history_tests;
 
 #[cfg(test)]
 mod native_projection_tests;
+
+#[cfg(test)]
+mod interface_tests;
+
+#[cfg(test)]
+mod views_tests;

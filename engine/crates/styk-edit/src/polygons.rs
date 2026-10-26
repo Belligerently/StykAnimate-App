@@ -1,7 +1,7 @@
-//! Polygons of the selected figure's definition (src/editor-builder.mjs): created,
+//! Polygons of the selected figure's definition: created,
 //! reshaped, reordered and deleted, each one `figure` history entry (`editDefinition`).
 //! Colour edits of a figure on show are recoloured ([`crate::recolor`]), opacity edits keyed;
-//! surfaces go through the figure's geometry and answer `Unported`.
+//! a face visibility surface is checked against the joints of the figure on show.
 
 use styk_doc::{Obj, Value};
 
@@ -128,7 +128,8 @@ fn patch_polygon(figure: &Value, polygon: &mut Obj, patch: &Obj) -> Result<(), E
             Some(Value::Null) => {
                 polygon.remove("_stykSurface");
             }
-            _ => return Err(EditError::Unported("a polygon surface".into())),
+            Some(surface) => polygon.set("_stykSurface", surface.clone()),
+            None => {}
         }
     }
     let ids = polygon.get("segment_ids").cloned().unwrap_or(Value::Null);
@@ -156,7 +157,11 @@ impl Editor {
         let mut figure = before.as_obj().cloned().unwrap_or_default();
         mutate(&before, &mut figure)?;
         // `validateScene` on the definition: what a polygon edit can make invalid.
+        let handles: Vec<f64> = std::iter::once(0.0).chain(figure.get("segments").and_then(Value::elements).map(|e| e.iter().filter_map(|s| s.get("segment_id").and_then(Value::as_f64)).collect::<Vec<_>>()).unwrap_or_default()).collect();
         for polygon in figure.get("polyfills").and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default() {
+            if polygon.get("_stykSurface").is_some() {
+                crate::load::validate_surface(&polygon, &handles)?;
+            }
             if let Some(order) = polygon.get("z_order").and_then(Value::as_f64)
                 && !((order as f32) as f64).is_finite()
             {
@@ -170,10 +175,11 @@ impl Editor {
         figure.remove("segment_z_raw");
         figure.remove("poly_z_raw");
         let after = Value::object(figure);
+        // The selection is kept as it was before the edit (a deleted fill is still the one selected when undone).
+        let selection = self.selection_state();
         if let Some(slot) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr).and_then(|f| f.get_mut(index)) {
             *slot = after.clone();
         }
-        let selection = self.selection_state();
         self.record(Command { kind: CommandKind::Figure { index, before, after: after.clone() }, label: label.into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("label", Value::str(label)), ("definition", Value::Bool(true))]);
         Ok(after)
@@ -261,6 +267,19 @@ impl Editor {
             let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
             return self.key_polygon_style(uid, polygon, type_id, patch);
         }
+        // A surface is validated against the joints on show first (`editableSurface`).
+        let editable;
+        let patch = match patch.get("surface").filter(|surface| !surface.is_null()) {
+            Some(surface) => {
+                let figure = definition.as_ref().map(|(_, figure)| figure).unwrap_or(&Value::Null);
+                let own = figure.get("polyfills").and_then(|p| p.item(at)).and_then(|p| p.get("segment_ids").cloned());
+                let mut next = patch.clone();
+                next.set("surface", self.editable_surface(surface, figure, patch.get("handleIds").cloned().or(own))?);
+                editable = next;
+                &editable
+            }
+            None => patch,
+        };
         self.edit_definition("Edit polygon", |before, figure| {
             let mut polygons: Vec<Value> = figure.get("polyfills").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
             let mut polygon = polygons[at].as_obj().cloned().unwrap_or_default();
@@ -272,6 +291,45 @@ impl Editor {
             figure.set("polyfills", Value::array(polygons));
             Ok(())
         })
+    }
+
+    /// `editableSurface(surface, figure, joints, handleIds)`: a face visibility surface the figure on show can
+    /// have. Its three reference joints must form a triangle where they are drawn.
+    fn editable_surface(&self, surface: &Value, figure: &Value, handle_ids: Option<Value>) -> Result<Value, EditError> {
+        let segments = figure.get("segments").and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default();
+        let handles: Vec<f64> = std::iter::once(0.0).chain(segments.iter().filter_map(|s| s.get("segment_id").and_then(Value::as_f64))).collect();
+        let mut probe = Obj::new();
+        probe.set("_stykSurface", surface.clone());
+        probe.set("segment_ids", handle_ids.unwrap_or(Value::Null));
+        crate::load::validate_surface(&Value::object(probe), &handles)?;
+        let Some((slot, object)) = self.object()? else { return Err(invalid("errors.surfaces.referenceJointsMustFormATriangleChooseA")) };
+        let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
+        let uid = crate::record::uid(&object);
+        let drawn = frame.objects.iter().find(|o| Some(o.uid) == uid).and_then(|o| Some((prepared.doc.figure(o.figure)?, scene.objects.iter().find(|g| g.uid == o.uid && g.resolved)?)));
+        let joint = |id: &Value| -> Option<[f64; 2]> {
+            let id = id.as_f64()?;
+            let (typed, geometry) = drawn?;
+            if id == 0.0 { Some(geometry.root) } else { geometry.joint(typed, id as u32) }
+        };
+        let basis: Vec<Option<[f64; 2]>> = surface.get("basis").and_then(Value::elements).map(|e| e.iter().map(|id| joint(&id)).collect()).unwrap_or_default();
+        let (cross, scale) = match basis.as_slice() {
+            [Some(o), Some(x), Some(y)] => ((x[0] - o[0]) * (y[1] - o[1]) - (x[1] - o[1]) * (y[0] - o[0]), styk_math::hypot(x[0] - o[0], x[1] - o[1]) * styk_math::hypot(y[0] - o[0], y[1] - o[1])),
+            _ => (0.0, 0.0),
+        };
+        if scale == 0.0 || scale.is_nan() || cross.abs() <= scale * 1e-7 {
+            return Err(invalid("errors.surfaces.referenceJointsMustFormATriangleChooseA"));
+        }
+        let mut editable = Obj::new();
+        editable.set("basis", surface.get("basis").cloned().unwrap_or(Value::Null));
+        editable.set("side", surface.get("side").filter(|v| !v.is_null()).cloned().unwrap_or_else(|| Value::str("front")));
+        editable.set("flipped", surface.get("flipped").filter(|v| !v.is_null()).cloned().unwrap_or(Value::Bool(false)));
+        if let Some(depth) = surface.get("depth").filter(|d| d.truthy()) {
+            editable.set("depth", depth.clone());
+        }
+        if surface.get("depthTest").is_some_and(Value::truthy) {
+            editable.set("depthTest", Value::Bool(true));
+        }
+        Ok(Value::object(editable))
     }
 
     /// `removePolygon(index)`: the polygon deleted; polygons without an identity take

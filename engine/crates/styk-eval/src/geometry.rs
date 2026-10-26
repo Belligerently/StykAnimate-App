@@ -1,5 +1,4 @@
-//! World-space geometry of an evaluated frame (`buildGeometrySteps` in
-//! src/pivot/geometry.mjs): joints, segment primitives and polygons in the
+//! World-space geometry of an evaluated frame (`buildGeometrySteps`): joints, segment primitives and polygons in the
 //! exact painter order the JavaScript editor uses.
 //!
 //! Objects are resolved level by level along their joins; every level builds in
@@ -9,6 +8,8 @@
 use std::sync::Arc;
 
 mod cache;
+mod interface;
+pub use interface::write_groups;
 pub(crate) use cache::{Resolved, arc_allocation};
 pub use cache::{ClipSceneCache, RetainedScene, SceneBudget};
 
@@ -112,6 +113,8 @@ pub const ITEM_SEG_BRUSH: u8 = 1;
 pub const ITEM_SOLID: u8 = 2;
 /// Stroke `points` as an open polyline (curved Stick Nodes segments).
 pub const ITEM_POLYLINE: u8 = 4;
+/// A polygon turned away from the view: only [`build_shapes`] keeps it (in [`Scene::measured`]).
+pub const ITEM_CULLED: u8 = 8;
 
 /// Query metadata of a segment before visible drawable/Stick Nodes expansion.
 /// Curves remain in [`Scene::points`]; a straight segment's empty range reads
@@ -152,6 +155,11 @@ pub struct ObjectGeometry {
     /// every polygon's points (culled surfaces too); a movieclip's handle. `None` when
     /// nothing is finite, and for a figure built without [`build_measured`].
     pub extent: Option<[f64; 4]>,
+    /// Per segment: the angle it was built at, after inverse kinematics and the rig. Recorded by
+    /// [`build_shapes`] (a movieclip instance always has its own).
+    pub angles: Vec<f64>,
+    /// What inverse kinematics solved for the object, recorded by [`build_shapes`].
+    pub solution: Option<Arc<crate::ik::Solution>>,
 }
 
 /// What a build collects besides the scene that is drawn.
@@ -162,9 +170,12 @@ enum Measure {
     Follow,
     /// The primitives the app's `boundsOf` measures ([`Scene::measured`]).
     Bounds,
+    /// What the interface reads of every segment and polygon, drawn or not: [`Scene::measured`],
+    /// [`ObjectGeometry::angles`] and [`ObjectGeometry::solution`].
+    Shapes,
 }
 
-/// `figureBounds` in src/camera-follow.mjs, accumulated point by point.
+/// `figureBounds`, accumulated point by point.
 #[derive(Clone, Copy, Debug)]
 struct Bounds {
     rect: [f64; 4],
@@ -230,6 +241,10 @@ pub struct RigJoint {
     pub length: f64,
     /// The angle the pose authored for it before the rig's own turns (`authoredAngle`).
     pub authored: f64,
+    /// The rotation it inherits (`rigRotation`), and the space the joints below it are authored in
+    /// (`rigChildSpace`) when it passes one on.
+    pub rotation: f64,
+    pub child_space: Option<crate::rig::Space>,
 }
 
 /// The 3D side of an evaluated figure: what surfaces, meshes and attached
@@ -431,6 +446,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let mut ends = vec![nan; n];
     let mut starts = vec![nan; n];
     let mut lengths = vec![f64::NAN; n];
+    let mut angles: Vec<f64> = if measure == Measure::Shapes { vec![f64::NAN; n] } else { Vec::new() };
     let mut raw_segments = vec![RawSegment::default(); n];
     let mut items: Vec<Item> = if render_output { Vec::with_capacity(n + fig.polyfills.len()) } else { Vec::new() };
     let mut points: Vec<[f64; 2]> = Vec::new();
@@ -542,6 +558,9 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         };
         starts[i] = start;
         lengths[i] = length;
+        if measure == Measure::Shapes {
+            angles[i] = angle;
+        }
         if !render_output {
             raw_segments[i] = RawSegment { drawing_end: end, points: (p0, p1), thickness: seg.thickness * scale.abs() * width };
             continue;
@@ -606,7 +625,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     // Shape queries keep the same segment arithmetic and curve samples. Polygon
     // points, colors and drawable ordering do not change the joints just built.
     if !render_output {
-        let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, lengths, raw_segments, opacity, resolved: true, spatial: None, rig: None, extent: None });
+        let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, lengths, raw_segments, opacity, resolved: true, spatial: None, rig: None, extent: None, angles, solution: None });
         built.points = points;
         return built;
     }
@@ -653,10 +672,24 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         }
         for edge in &pp.edges {
             let item = if edge.index == u32::MAX { None } else { segment_items.get(seg_item[edge.index as usize] as usize) };
+            // A connector's edge follows its curve only where the polygon leaves its start, and ends at its slider.
+            let connector = item.and_then(|_| fig.segments[edge.index as usize].rig.as_ref()).and_then(|rig| rig.connector.as_ref());
             match item {
-                Some(e) if e.bend.abs() > 1e-7 => {
+                Some(e) if e.bend.abs() > 1e-7 && connector.is_none_or(|c| fig.segments[edge.index as usize].parent == c.start) => {
+                    let slid = connector.and_then(|_| rig_states.get(edge.index as usize).copied().flatten()).and_then(|state| state.position);
                     let (a, b) = (e.points.0 as usize, e.points.1 as usize);
-                    if b > a {
+                    if let Some(position) = slid {
+                        let mut arc = Vec::new();
+                        arc_points(e.start, e.angle, e.length * position, e.bend * position, &mut arc);
+                        if edge.reverse {
+                            points.extend(arc.iter().rev().skip(1));
+                        } else {
+                            points.extend(arc.iter().skip(1));
+                        }
+                        if projecting {
+                            raws.resize(points.len() - p0 as usize, None);
+                        }
+                    } else if b > a {
                         if edge.reverse {
                             for k in (a..b - 1).rev() {
                                 points.push(points[k]);
@@ -759,12 +792,17 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         };
         if culled {
             // The editor measures a polygon turned away from the view; nothing draws it.
-            if measure == Measure::Bounds {
+            if measure == Measure::Shapes {
+                measured.push(Item { flags: item.flags | ITEM_CULLED, ..item });
+            } else if measure == Measure::Bounds {
                 measured.push(item);
             } else {
                 points.truncate(p0 as usize);
             }
             continue;
+        }
+        if measure == Measure::Shapes {
+            measured.push(item.clone());
         }
         items.push(item);
     }
@@ -820,6 +858,9 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     if measure == Measure::Bounds {
         measured.extend(items.iter().cloned());
         measured.extend(segment_items.iter().cloned());
+    } else if measure == Measure::Shapes {
+        measured.extend(items.iter().filter(|it| it.kind == ItemKind::Mesh).cloned());
+        measured.extend(segment_items.iter().cloned());
     }
     // Drawables: polygons, mesh faces, then visible segments in record order, stably by z.
     segment_items.sort_by_key(|it| it.index);
@@ -850,11 +891,13 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                 bend: state.map_or(f64::NAN, |s| s.bend),
                 length: state.map_or(f64::NAN, |s| s.length),
                 authored: state.map_or(f64::NAN, |s| s.authored_angle),
+                rotation: state.map_or(f64::NAN, |s| s.rotation),
+                child_space: state.and_then(|s| s.child_space),
             })
             .collect()
     });
     let extent = bounds.extent();
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, lengths, raw_segments, opacity, resolved: true, spatial, rig, extent });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, lengths, raw_segments, opacity, resolved: true, spatial, rig, extent, angles, solution: ik.filter(|_| measure == Measure::Shapes).map(|solution| Arc::new(solution.clone())) });
     built.items = items;
     built.points = points;
     built.meshes = meshes;
@@ -881,9 +924,10 @@ struct JoinedParent<'a> {
 }
 
 /// `buildMovieclipMeshSteps`: an attached mesh. Joined to a spatial bone, the
-/// bone alone owns its orientation and the instance's root is the bone's start.
+/// bone alone owns its orientation and the instance's root is the bone's start. The app's `boundsOf` measures the mesh's faces
+/// ([`Scene::measured`]); the handle paints nothing.
 #[allow(clippy::too_many_arguments)]
-fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, clip: &Movieclip, meshes: &[Arc<crate::spatial::ClipMesh>], mut root: [f64; 2], parent: Option<JoinedParent<'_>>) -> Built {
+fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, clip: &Movieclip, meshes: &[Arc<crate::spatial::ClipMesh>], mut root: [f64; 2], parent: Option<JoinedParent<'_>>, measure: Measure) -> Built {
     let obj = &frame.objects[slot];
     let local_angle = obj.angles.first().copied().unwrap_or(0.0);
     let scale = obj.scale;
@@ -904,7 +948,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
     };
     let angle = attachment.as_ref().map_or(local_angle, |a| a.figure_angle);
     let end = [root[0] + 40.0 * scale * styk_math::cos(angle), root[1] + 40.0 * scale * styk_math::sin(angle)];
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], lengths: vec![40.0 * scale], raw_segments: vec![RawSegment { drawing_end: end, ..Default::default() }], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], lengths: vec![40.0 * scale], raw_segments: vec![RawSegment { drawing_end: end, ..Default::default() }], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end), angles: vec![angle], solution: None });
     let Some(local) = obj.clip_time else { return built };
     let transition = match &obj.color_transition {
         Some(c) => {
@@ -956,6 +1000,9 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
         });
     }
     built.meshes.push(Arc::new(geometry));
+    if matches!(measure, Measure::Bounds | Measure::Shapes) {
+        built.measured = built.items.clone();
+    }
     built
 }
 
@@ -1049,7 +1096,7 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     let (a, b) = (angle.cos() * scale, angle.sin() * scale);
     let end = [root[0] + 40.0 * angle.cos() * scale, root[1] + 40.0 * angle.sin() * scale];
     let opacity = 1.0 - obj.transparency / 255.0;
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], lengths: vec![40.0 * scale], raw_segments: vec![RawSegment { drawing_end: end, ..Default::default() }], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], lengths: vec![40.0 * scale], raw_segments: vec![RawSegment { drawing_end: end, ..Default::default() }], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end), angles: vec![angle], solution: None });
     let Some(local) = obj.clip_time else { return built };
     // A rotated drawing shows the frame its bone selects, whatever the clip's own time.
     let local = drawing.as_ref().map_or(local, |d| d.frame);
@@ -1116,6 +1163,27 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     built
 }
 
+/// How a movieclip joined to a spatial bone is placed when its drawings turn with the bone (`g.drawingView` and
+/// `g.drawingTransform`): the frame of the view the bone selects, and the angle, scale and flip the clip is drawn with.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DrawingView {
+    pub frame: f64,
+    pub angle: f64,
+    pub scale: f64,
+    pub flip: f64,
+}
+
+/// The view the movieclip at `slot` shows, from a scene built for `frame`; `None` for any object that is not a clip
+/// whose drawings rotate with the bone it is joined to.
+pub fn drawing_view(frame: &Frame, scene: &Scene, slot: usize) -> Option<DrawingView> {
+    let obj = frame.objects.get(slot)?;
+    let clip = scene.figure_for(slot)?.movieclip.as_ref()?;
+    let parent_slot = obj.join?.slot as usize;
+    let parent = JoinedParent { object: frame.objects.get(parent_slot)?, figure: scene.figure_for(parent_slot)?, geometry: scene.objects.get(parent_slot)? };
+    let drawing = rotated_drawing(clip, obj, &parent)?;
+    Some(DrawingView { frame: drawing.frame, angle: drawing.angle, scale: drawing.scale, flip: drawing.flip })
+}
+
 /// Builds the scene for an evaluated frame.
 pub fn build(doc: &Document, frame: &Frame) -> Scene {
     build_filtered(doc, frame, None, Measure::Off, true, None)
@@ -1130,6 +1198,16 @@ pub fn build_measured(doc: &Document, frame: &Frame) -> Scene {
 /// `slots`, for [`crate::drawlist::app_bounds`].
 pub fn build_only_measured(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
     build_only_with(doc, frame, slots, true, None, Measure::Bounds)
+}
+
+/// [`build_only`] with what the interface reads of each object (`Scene::measured` holds every segment
+/// and polygon, drawn or not; `ObjectGeometry::angles` and `ObjectGeometry::solution`), for the objects in
+/// `slots` (and the ones they are joined to), or all of them.
+pub fn build_shapes(doc: &Document, frame: &Frame, slots: Option<&[usize]>) -> Scene {
+    match slots {
+        Some(slots) => build_only_with(doc, frame, slots, true, None, Measure::Shapes),
+        None => build_filtered(doc, frame, None, Measure::Shapes, true, None),
+    }
 }
 
 /// [`build`] for the objects in `slots` and the objects they are joined to, the others
@@ -1342,7 +1420,7 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
                     Some(JoinedParent { object: &frame.objects[j.slot as usize], figure, geometry })
                 });
                 if let Some(meshes) = &clip.meshes {
-                    return Some((i, build_clip_mesh(frame, i, fig_of[i], fig, clip, meshes, root, parent)));
+                    return Some((i, build_clip_mesh(frame, i, fig_of[i], fig, clip, meshes, root, parent, measure)));
                 }
                 return Some((i, build_clip(frame, i, fig, clip, root, parent)));
             }
@@ -1419,6 +1497,7 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
         });
         for mut it in b.measured {
             it.points = (it.points.0 + base, it.points.1 + base);
+            it.depth = (it.depth.0 + depth_base, it.depth.1 + depth_base);
             if it.mesh != NO_MESH {
                 it.mesh += mesh_base;
             }

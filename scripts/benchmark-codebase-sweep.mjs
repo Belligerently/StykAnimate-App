@@ -24,16 +24,10 @@ if (mode === 'evidence') {
       platform: process.platform, release: os.release(), releaseRuntimeMismatch: 'Node 24.16.0 and Python 3.11.15; release CI pins Node 24.11.0/Python 3.12.9'},
     measurements: {}};
   for (const name of ['benchmark-codebase-sweep.mjs', 'benchmark-codec-topology-sweep.py',
-    'benchmark-layer-sheet-sweep.mjs',
     'benchmark-localization-sweep.mjs'])
     evidence.benchmarkSources[`scripts/${name}`] = createHash('sha256').update(await readFile(`scripts/${name}`)).digest('hex');
-  for (const name of ['animation-modes', 'animation-locality', 'builder', 'node-selection',
-    'rig-constraints', 'movieclips', 'telemetry', 'connected-transactions'])
+  for (const name of ['node-selection', 'telemetry'])
     evidence.measurements[name] = await read(`${base}/${name}.json`);
-  evidence.measurements.audio = await read(`${base}/audio/benchmark.json`);
-  evidence.measurements.animationMemory = await read(`${base}/animation-memory/memory.json`);
-  evidence.measurements.layerSheet = await read('artifacts/performance-sweep/layer-sheet/sweep-20261001.json');
-  evidence.measurements.layerSheetSourceCheck = await read(`${later}/layer-sheet-source-check.json`);
   evidence.measurements.localization = await read('artifacts/performance-sweep/sweep-20261001-r2/localization.json');
   evidence.measurements.stkTopology = await read(`${later}/stk-topology.json`);
   evidence.measurements.browser = await read(`${later}/browser.json`);
@@ -101,25 +95,13 @@ async function run(name, args, env = {}) {
 }
 {
   const jobs = [
-    ['animation-modes', ['--expose-gc', 'scripts/benchmark-animation-modes.mjs', label]],
-    ['animation-locality', ['--expose-gc', 'scripts/benchmark-animation-locality.mjs', '.', path.join(output, 'animation-locality.json')]],
-    ['animation-memory', ['--expose-gc', 'scripts/benchmark-animation-memory.mjs'], {STYK_BENCH_OUT: path.join(output, 'animation-memory')}],
-    ['connected-transactions', ['scripts/benchmark-connected-transactions.mjs']],
-    ['builder', ['scripts/benchmark-builder.mjs', label]],
     ['node-selection', ['scripts/benchmark-node-selection.mjs']],
-    ['rig-constraints', ['--expose-gc', 'scripts/benchmark-rig-constraints.mjs']],
-    ['movieclips', ['scripts/benchmark-movieclips.mjs']],
-    ['audio', ['scripts/benchmark-audio.mjs'], {STYK_BENCH_OUT: path.join(output, 'audio')}],
     ['telemetry', ['scripts/benchmark-telemetry.mjs']],
   ];
   for (const [name, args, env] of jobs) await run(name, args, env);
   for (const [name, source] of Object.entries({
-    'animation-modes': `artifacts/animation-mode-performance/${label}.json`,
-    'connected-transactions': 'artifacts/connected-editing/transactions/report.json',
-    builder: `artifacts/builder-performance/${label}.json`,
     'node-selection': 'artifacts/join-selection/benchmark.json',
-    'rig-constraints': 'artifacts/rig-constraints/benchmark.json',
-    movieclips: 'artifacts/movieclips/performance.json', telemetry: 'artifacts/telemetry-performance.json',
+    telemetry: 'artifacts/telemetry-performance.json',
   })) {
     if (report.rows.find(row => row.name === name)?.exitCode === 0)
       await writeFile(path.join(output, `${name}.json`), await readFile(source));

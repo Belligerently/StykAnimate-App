@@ -7,13 +7,14 @@ fn reference(folder: &str, name: &str) -> Value {
 }
 #[test]
 fn worker_replay_completes_actual_movie_scenarios_while_ordinary_replay_stays_refused() {
-    let r = reference("movieclip-insertion", "insert-sheet");
-    assert!(replay(&r).unwrap().unported.is_some(), "ordinary UI dispatch must stay closed");
-    let mut cases = 0;
+    let (mut cases, mut closed) = (0, 0);
     for folder in ["movieclip-timed-sheet-commands", "movieclip-timed-sheet-expansion", "movieclip-sheet-extension", "movieclip-native-extension", "movieclip-insertion", "movieclip-key-capacity"] {
         let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests").join(folder);
         for path in std::fs::read_dir(folder).unwrap().map(|entry| entry.unwrap().path()).filter(|path| path.to_string_lossy().ends_with(".reference.json")) {
             let r = json::parse(&std::fs::read(&path).unwrap()).unwrap();
+            if replay(&r).unwrap().unported.is_some() {
+                closed += 1;
+            }
             let result = replay_worker(&r).unwrap();
             assert!(result.mismatches.is_empty(), "{}: {:?}", path.display(), result.mismatches);
             assert!(result.unported.is_none(), "{}: {:?}", path.display(), result.unported);
@@ -22,6 +23,7 @@ fn worker_replay_completes_actual_movie_scenarios_while_ordinary_replay_stays_re
         }
     }
     assert!(cases >= 60);
+    assert!(closed > 0, "ordinary UI dispatch must stay closed for what only the worker plans");
     println!("{cases} editor movie tapes match through the central worker replay");
 }
 #[test]

@@ -27,7 +27,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(backend.origin);
   await page.waitForFunction(() => window.styk?.ready);
-  await page.locator('input[type=file]').first().setInputFiles(source);
+  await page.locator('#file-input').setInputFiles(source);
   await page.waitForFunction(() => styk.state.lastImportWarnings?.some(w => w.code === 'piv_duplicate_object_ids'),
     null, {timeout: 240000});
   await page.screenshot({path: path.join(out, 'import-notes.png')});
@@ -90,9 +90,8 @@ try {
       } finally { exporter.dispose(); importer.dispose(); }
     });
   }
-  const transport = await page.evaluate(() => ({transport: styk.state.lastImport?.transport, wireBytes: styk.state.lastImport?.wire_bytes}));
-  assert.equal(transport.transport, 'native-v5-frames', 'Real import must exercise the native frame transport');
-  assert.ok(transport.wireBytes > 0);
+  const transport = await page.evaluate(() => ({transport: styk.state.lastImport?.transport}));
+  assert.equal(transport.transport, 'engine-open', 'The engine opens the import');
   assert.deepEqual(errors, []);
   await writeFile(path.join(out, 'report.json'), JSON.stringify({checks, transport, errors}, null, 2));
   console.log(JSON.stringify({checks, transport, errors}, null, 2));

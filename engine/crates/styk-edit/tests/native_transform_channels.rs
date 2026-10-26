@@ -80,76 +80,6 @@ fn native_scalar_preview_and_cancel_share_untouched_document_heads() {
 }
 
 #[test]
-fn unrecorded_native_targets_refuse_before_committing_an_open_gesture() {
-    let mut count = 0;
-    for kind in ["future-rig", "future-rig-joined"] {
-        let mut editor = Editor::new(document(kind), Options::default());
-        editor
-            .call("select", &[Value::Num(1.0), Value::Num(-1.0)])
-            .unwrap();
-        editor.call("beginTranslationDrag", &[]).unwrap();
-        editor
-            .call("moveSelection", &[Value::Num(2.125), Value::Num(-1.25)])
-            .unwrap();
-        editor.take_events();
-        let before = (
-            editor.report_json(),
-            editor.state_value(),
-            editor.drag_value(),
-            editor.draft_figures(),
-        );
-        for (uid, property) in [
-            (3, "x"),
-            (2, "x"),
-            (1, "rotation"),
-            (999, "x"),
-            (1, "opacity"),
-        ] {
-            if kind == "future-rig" && [(2, "x"), (1, "rotation")].contains(&(uid, property)) {
-                continue;
-            }
-            if kind == "future-rig-joined" && (uid, property) == (1, "rotation") {
-                continue;
-            }
-            let target = json(&format!(r#"{{"kind":"figure","uid":{uid}}}"#));
-            let entry = json(&format!(
-                r#"{{"target":{{"kind":"figure","uid":{uid}}},"property":"{property}","tick":8,"value":401.25}}"#
-            ));
-            for (method, args) in [
-                (
-                    "addAnimationKey",
-                    vec![
-                        target.clone(),
-                        Value::str(property),
-                        Value::Num(8.0),
-                        Value::Num(401.25),
-                    ],
-                ),
-                ("addAnimationKeys", vec![Value::array(vec![entry])]),
-            ] {
-                assert!(
-                    matches!(editor.call(method, &args), Err(EditError::Unported(_))),
-                    "{kind} {uid} {property} {method}"
-                );
-                assert_eq!(
-                    (
-                        editor.report_json(),
-                        editor.state_value(),
-                        editor.drag_value(),
-                        editor.draft_figures()
-                    ),
-                    before,
-                    "{kind} {uid} {property} {method}"
-                );
-                assert!(editor.take_events().is_empty());
-                count += 1;
-            }
-        }
-    }
-    assert_eq!(count, 14);
-}
-
-#[test]
 fn native_scalar_scope_keeps_projection_pose_style_and_optional_selection_refused() {
     let target = json(r#"{"kind":"figure","uid":1}"#);
     for options in [
@@ -382,4 +312,23 @@ fn native_saved_transform_channels_match_every_editor_step() {
     );
     total += outcome.steps;
     println!("native transform channels: {total} exact steps");
+}
+
+#[test]
+fn an_edit_on_a_property_the_native_channels_do_not_hold_is_refused_before_it_begins() {
+    let target = json(r#"{"kind":"figure","uid":1}"#);
+    let mut editor = Editor::new(document("support-saved"), Options::default());
+    editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();
+    let before = (editor.report_json(), editor.state_value());
+    for property in ["zIndex", "opacity"] {
+        assert!(
+            matches!(editor.call("beginAnimationEdit", &[target.clone(), Value::str(property)]), Err(EditError::Unported(_))),
+            "{property}"
+        );
+        assert_eq!((editor.report_json(), editor.state_value()), before, "{property} left an edit open");
+    }
+    // The properties it holds begin, and end, as before.
+    editor.call("beginAnimationEdit", &[target.clone(), Value::str("x")]).unwrap();
+    editor.call("previewAnimationEdit", &[Value::Num(341.25)]).unwrap();
+    editor.call("cancelAnimationEdit", &[]).unwrap();
 }

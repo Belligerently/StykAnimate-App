@@ -217,8 +217,15 @@ impl Editor {
         if !(handle.fract() == 0.0 && handle >= 0.0) {
             return Ok(false);
         }
-        let Some(row) = crate::timeline::rows(&self.report).get(index as usize).copied() else { return Ok(false) };
-        let neighbour = self.evaluated(row.start, true)?;
+        let rows = crate::timeline::rows(&self.report);
+        let Some(row) = rows.get(index as usize).copied() else { return Ok(false) };
+        // Without a layer sheet or saved channels a hidden (zero-length) key is read as the frame itself: it shares its tick with the key after it, which the tick would give.
+        let hidden = rows.get(index as usize + 1).is_some_and(|next| next.start == row.start);
+        let own = hidden && !self.sheet() && self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) == 0;
+        let neighbour = match own.then(|| self.report.get("keyframes").and_then(|k| k.item(index as usize))).flatten() {
+            Some(key) => key,
+            None => self.evaluated(row.start, true)?,
+        };
         let id = target.unwrap();
         let point = self.joint_in_frame(&neighbour, id, handle)?;
         let Some(point) = point else { return Ok(false) };
@@ -549,7 +556,20 @@ impl Editor {
     /// `cameraAtTime(report, frame)`: follow travel, then preset impulses. Keep the record's
     /// own fields and spread order; typed evaluation owns the sampler and stored arithmetic.
     pub(crate) fn camera_at_time(&self, frame: &Value, tick: f64) -> Result<Option<Value>, EditError> {
-        let mut camera = frame.get("camera").cloned().filter(|c| !c.is_null());
+        let camera = self.camera_travel_at(frame, tick)?;
+        if self.report.path(&["_styk", "cameraMotion", "clips"]).and_then(Value::array_len).is_none_or(|count| count == 0) { return Ok(camera); }
+        let prepared = self.prepared()?;
+        if prepared.doc.camera_motion.is_empty() { return Ok(camera); }
+        Ok(match styk_eval::camera::impulse(&prepared.doc.camera_motion, tick, prepared.doc.fps) {
+            Some(impulse) => Some(moved_camera(camera, &impulse)),
+            None => camera,
+        })
+    }
+
+    /// `cameraTravelAt(report, frame)`: the frame's camera moved by the clips that follow figures, where the camera
+    /// actually is and what parallax layers respond to.
+    pub(crate) fn camera_travel_at(&self, frame: &Value, tick: f64) -> Result<Option<Value>, EditError> {
+        let camera = frame.get("camera").cloned().filter(|c| !c.is_null());
         if self.report.path(&["_styk", "cameraMotion", "clips"]).and_then(Value::array_len).is_none_or(|count| count == 0) { return Ok(camera); }
         let prepared = self.prepared()?;
         if prepared.doc.camera_motion.is_empty() { return Ok(camera); }
@@ -559,21 +579,17 @@ impl Editor {
             is_default: c.get("is_default").is_some_and(Value::truthy), motion_offset: None,
         });
         let travel = prepared.travel(base, tick);
-        if travel != base {
-            if let Some(travel) = travel {
-                let mut out = camera.filter(|c| !c.get("is_default").is_some_and(Value::truthy)).and_then(|c| c.as_obj().cloned()).unwrap_or_default();
-                out.set("is_default", Value::Bool(false));
-                out.set("x", Value::Num(travel.x));
-                out.set("y", Value::Num(travel.y));
-                out.set("scale", Value::Num(travel.scale));
-                out.set("angle_rad", Value::Num(travel.angle));
-                camera = Some(Value::object(out));
-            }
+        if travel == base {
+            return Ok(camera);
         }
-        if let Some(impulse) = styk_eval::camera::impulse(&prepared.doc.camera_motion, tick, prepared.doc.fps) {
-            camera = Some(moved_camera(camera, &impulse));
-        }
-        Ok(camera)
+        let Some(travel) = travel else { return Ok(camera) };
+        let mut out = camera.filter(|c| !c.get("is_default").is_some_and(Value::truthy)).and_then(|c| c.as_obj().cloned()).unwrap_or_default();
+        out.set("is_default", Value::Bool(false));
+        out.set("x", Value::Num(travel.x));
+        out.set("y", Value::Num(travel.y));
+        out.set("scale", Value::Num(travel.scale));
+        out.set("angle_rad", Value::Num(travel.angle));
+        Ok(Some(Value::object(out)))
     }
 }
 

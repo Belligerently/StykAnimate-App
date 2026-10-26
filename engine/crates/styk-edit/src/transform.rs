@@ -373,15 +373,15 @@ impl Editor {
         })
     }
 
-    /// `scaleSelection` (label "Scale figures") and `scaleSelected` (selected figures only).
+    /// `scaleSelection` (label "Scale figures", or the options' `label`) and `scaleSelected` (selected figures only).
     pub(crate) fn scale_selection(&mut self, factor: f64, options: &Value, selected: bool) -> Result<bool, EditError> {
         finite(factor, "Scale")?;
         if factor < 0.0 {
             return Err(EditError::Invalid("errors.editor.scaleCannotBeNegative".into()));
         }
         let (center, selected_only) = transform_options(options)?;
-        let label = if selected { "Scale selected figures" } else { "Scale figures" };
-        self.transform_selection(label, center, selected || selected_only, |_, object, pivot, root, _| {
+        let label = crate::history::entry_label(options, if selected { "Scale selected figures" } else { "Scale figures" });
+        self.transform_selection(&label, center, selected || selected_only, |_, object, pivot, root, _| {
             if root {
                 object.set("root_x", Value::Num(pivot[0] + (field(object, "root_x") - pivot[0]) * factor));
                 object.set("root_y", Value::Num(pivot[1] + (field(object, "root_y") - pivot[1]) * factor));
@@ -493,7 +493,7 @@ pub(crate) fn field(object: &Obj, key: &str) -> f64 {
 }
 
 /// `object[key] = object[key].map(f)` for an array of numbers.
-fn map_numbers(object: &mut Obj, key: &str, f: impl Fn(f64) -> f64) {
+pub(crate) fn map_numbers(object: &mut Obj, key: &str, f: impl Fn(f64) -> f64) {
     if let Some(values) = object.get(key).and_then(Value::elements) {
         let mapped = values.iter().map(|v| Value::Num(f(v.as_f64().unwrap_or(f64::NAN)))).collect();
         object.set(key, Value::array(mapped));

@@ -10,6 +10,7 @@
 //! - [`open::OpenedDocument`]: a document opened on the engine's workers, read back in bounded pieces.
 //! - [`edit::EditSession`]: the editor's calls run on the open document, which the engine publishes as it
 //!   changes. Interface thread only.
+//! - [`document_export::export_document`]: the document of a Pivot or figure export, made on a worker that joined the engine.
 //! - [`export::ExportRenderer`]: export frames, drawn in a worker with a GPU device of its own,
 //!   or by the CPU rasterizer where it has none.
 //! - [`preview::Previews`]: library previews (the worker's GPU device, else the CPU) and the
@@ -18,12 +19,12 @@
 //! The module is instantiated once per thread over one shared memory. Workers
 //! call [`engine::worker_run`] and stay inside it.
 
+pub mod document_export;
 pub mod edit;
 pub mod engine;
 pub mod export;
 pub mod math;
 pub mod open;
-pub mod planning;
 pub mod preview;
 pub mod stage;
 pub mod views;

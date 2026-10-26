@@ -1,5 +1,5 @@
 //! Effect parity with the editor: `frames[].vfx` of a reference dump
-//! (`engine/tools/reference.mjs --vfx`) against [`super::evaluate`]. Used by
+//! (recorded with the effects) against [`super::evaluate`]. Used by
 //! [`crate::parity::compare`], so `styk compare` and the fixture tests share it.
 
 use std::sync::Arc;
