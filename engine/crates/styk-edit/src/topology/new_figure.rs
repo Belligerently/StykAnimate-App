@@ -213,6 +213,8 @@ impl Editor {
             uids: vec![identity as u32],
             joint: segments.len() as i64 - 1,
         };
+        // `selectedUid = uid`: no fill, joints or branch of the figure drawn from stays chosen.
+        self.selection_metadata = crate::select::SelectionMetadata::default();
         if record_command {
             let layers = self.track_frames(
                 std::slice::from_ref(&before_frame),

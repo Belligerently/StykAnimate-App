@@ -109,7 +109,7 @@ passes all four views and its engine RGBA output is byte-identical to the retain
 original captures; all four software-web legacy captures are also byte-identical.
 The draw-list entry marks exactly one published drawing image before tile expansion.
 `DrawingGrid::Destination` uses the existing nested placement/filter owner for direct
-software edit frames, thumbnails and in-between previews, including a single drawing
+software edit frames and thumbnails, including a single drawing
 inside a movieclip with child/outer effects. Multiple children and ordinary onion
 entries retain their existing policy. `DrawingGrid::World` remains the portable default
 for prepared playback and ordinary GPU rendering. The private monitor request carries
@@ -118,7 +118,7 @@ this policy beside the same captured `MonitorFrame`; it does not rebuild a snaps
 Final main acceptance additionally passes the real dense single-child movieclip and
 the serialized child-Blur/outer-Tint fixture (mean 0.0682 and 0.001352 respectively,
 zero solids). Shared-type validation passes 632 native tests and 31 focused JavaScript
-tests; both new editor-built fixtures regenerate byte for byte. Eligibility and plan
+tests; both new editor-built fixtures matched when recorded. Eligibility and plan
 regressions expose the relevant actual source mutations. The shipping engine is
 9,584 KiB (`79ce084e8d9d`); no cost comparison is certified by these loaded runs.
 
@@ -173,7 +173,7 @@ per texture, array textures of at least two layers, [D11](decisions/0011-array-t
 
 ## Text
 
-The editor's WebGPU renderer (`src/renderer.mjs`) never draws text as vectors
+The JavaScript editor's WebGPU renderer (since deleted) never drew text as vectors
 below a raster density of 8; the engine draws it the same two ways.
 
 - **Text in an object raster.** Text is one of the things `requiresCompatibilityTexture`
@@ -419,12 +419,13 @@ build before this work against this one).
 ## In the app
 
 `src/engine/engine-stage.mjs` draws the page's scene canvas (`#scene`) with the
-engine: the edit frame, onion skins and prepared playback frames of every document
+engine: the edit frame (the one the open document's session shows, `Stage::edit_session`: nothing crosses from
+the interface), onion skins (the poses the session plans, `Stage::set_onions`: [evaluation.md](evaluation.md#the-interfaces-views)) and prepared playback frames of every document
 ([D4](decisions/0004-strangler-gate.md), [Every document](#every-document)); no other
 renderer draws a frame. The WebGPU surface is configured with
 premultiplied alpha so the page shows through the pasteboard. Through the scene
 camera (prepared playback frames, and edit frames in the camera preview) the scene is
-seen through `cameraAtTime` (follow clips, camera-motion impulses) and parallax layers
+seen through the shot (follow clips, camera-motion impulses) and parallax layers
 move: the frame's per-object offsets ([evaluation.md](evaluation.md#the-scene-camera))
 join the drag translations of the draw list. Filter effects are
 drawn by the engine; the effects preview switch reaches it through
@@ -432,6 +433,15 @@ drawn by the engine; the effects preview switch reaches it through
 by the engine (an edit frame whose trails are still being sampled asks the app for
 another frame, `Stage::refining`); so are 3D meshes, surfaces, poses and drawings a
 spatial bone turns.
+
+### Picking artwork
+
+A click on artwork (`pick` in `src/app.mjs`) asks the stage which figure the frame it drew last paints at the point
+(`Stage::pick_artwork`, `styk_export::pick`): the figures are taken from the top of the draw order down, those hidden or
+locked left out, and each whose measured bounds reach the point (a movieclip's contents always) is drawn alone, without the
+background or effects, into a three-pixel surface centred on the point at the view's scale by the CPU rasterizer. The first
+whose centre pixel has any coverage is the answer, `{slot, uid}`. A click hits what is painted: fills, curves, pictures,
+meshes, movieclip contents and transparency. The pictures it samples stay decoded between clicks within the rasterizer's budget.
 
 ### Every document
 
@@ -477,15 +487,15 @@ Two conditions of a document the gate used to count:
   refused (the stage then keeps its previous picture and reports the refusal, as for any document the engine refuses). A file
   opens eight levels (`validateMovieclipGraph`), so only nested editing in a session builds
   deeper documents: `deep-seventeen` and `deep-twenty-four`
-  (`engine/tools/document-fixtures.mjs`: each clip made, placed and entered in turn, the figure
-  at the bottom animated through every level; `reference.mjs --deep` loads them without the file
+  (recorded fixtures, frozen: each clip made, placed and entered in turn, the figure
+  at the bottom animated through every level, loaded without the file
   check) match the editor primitive by primitive at five ticks, and changing the pose at the
   bottom of the chain breaks the comparison (`styk-eval/tests/document.rs`). The gate counted
   from zero, so 17 levels passed it and 18 did not.
 - **Frame drafts.** `_styk.simpleFrameDraft` (the Simple timeline's working frame,
   [SIMPLE-FRAME-DRAFTS.md](../SIMPLE-FRAME-DRAFTS.md)) keeps the stored pose and animation beside
-  the working ones. The stage draws the pose the editor shows, and its onion skins (the stored
-  pose among them), from poses the interface hands it, so a draft reaches the engine only as
+  the working ones. The stage draws the frame the session shows, and its onion skins (the stored
+  pose among them) from the poses the session plans for them, so a draft reaches the engine only as
   metadata nothing it evaluates reads; its playback, thumbnails and exports hold the document as
   the editor does. The app gives every document a layer sheet, which deletes the draft of a native
   one (a draft a file brings with its sheet stays in the document, unused until drafts are
@@ -538,8 +548,8 @@ stage is drawn by JavaScript renderer code: where the engine cannot draw one (a 
 without the engine's worker threads, a stage that gets no GPU device at all), the picture is not drawn.
 
 **Frame thumbnails** (the timeline's filmstrip cards at 320×192, the export dialog's stage and
-strip at up to 512×288 and 96×60): `src/engine/engine-thumbnails.mjs` is the object the filmstrip, the export dialog
-and the in-between dialog draw with (`renderThumbnail` resolves `false` for a thumbnail the engine did
+strip at up to 512×288 and 96×60): `src/engine/engine-thumbnails.mjs` is the object the filmstrip and the export dialog
+draw with (`renderThumbnail` resolves `false` for a thumbnail the engine did
 not draw, and the filmstrip asks again later). For a thumbnail it brings the engine to the
 editor's revision (`src/engine/engine-document.mjs`, the synchronisation exports use), then asks
 the stage (`renderThumbnail` in `engine-stage.mjs`, `Stage::prepare_thumbnail` and
@@ -558,10 +568,7 @@ with an `ExportFrames`, waits on the engine's progress counter for the frame (pr
 workers) and every picture (decoded there once per document lineage: a later revision decodes only
 the images and drawing cels the earlier one lacked, `ExportFrames::decode_images_since`), rasterizes
 the card with styk-raster and hands it over as an `ImageBitmap`, which the interface draws onto the
-card. No copy of the document goes to a thumbnail worker. In-between previews
-(`docs/INSERT-INBETWEEN.md`, a sampled pose that is not in the document) are drawn by the same worker
-(`Previews::inbetween`, an explicit interval with the dialog's onion settings). Thumbnails show parallax
-layers moved by the camera, as playback does.
+card. No copy of the document goes to a thumbnail worker. Thumbnails show parallax layers moved by the camera, as playback does.
 
 **Library previews** (`src/library-files.mjs`, `src/library-hover-preview.mjs`): one preview
 worker per page (`src/engine/engine-previews.mjs`, `engine-preview-worker.mjs`) joins the
@@ -602,7 +609,8 @@ the stage's frame, `drawCameraMonitor` on the stage (`Stage::render_monitor`) dr
 again through the scene camera, on the stage's device with a renderer of the monitor's own: a
 prepared playback frame from the cache, or the edit frame encoded again with the camera's parallax
 and without onion skins (kept while the frame does not change). The auxiliary worker
-draws WebGL2 monitor requests through the engine's CPU path.
+draws WebGL2 monitor requests through the engine's CPU path. A picture that arrives from the worker asks the app
+for the monitor alone to be painted again (`onMonitorPicture`), never for another scene render.
 
 Prepared playback packets bind generation, cache epoch and exact finite sample. The
 native drawing boundary refuses stale or malformed tickets and preserves the scalar
@@ -712,7 +720,7 @@ particle), `node --test tests/engine-previews.test.mjs` (which renderer draws a 
 preview worker's CPU thumbnails from the engine's document, the thumbnails not drawn, the preview
 worker's queue, messages made when sent, cancellation, failure and release, the camera monitor's
 one pending request), `tests/camera-monitor-visibility.test.mjs`, `tests/asset-library.browser.mjs`
-and `tests/insert-inbetween-app.browser.mjs` in the app. Measured when the pictures moved to the
+in the app. Measured when the pictures moved to the
 engine (Electron, an RTX 4070 SUPER): a 320×192 thumbnail of an open document took 1.7–7 ms on the stage's
 device (the first 1.8–8.8 ms, no worker to start), a library poster 11–34 ms and a hover frame
 0.5–2 ms once the preview worker ran, the camera monitor 0.5–0.7 ms of the interface thread. Not
@@ -829,7 +837,7 @@ export never shows a frame without one.
 | Size | The canvas scaled to the output: `scale(output / canvas)` then the scene camera (`view::tile_view`); an output of another shape stretches (`ViewParams::stretch`), as `drawExportScene` does. |
 | Smooth edges | `Edges::Smooth`: four samples a pixel, analytic shapes covered by distance; sprites to the nearest texel. |
 | No smoothing | `Edges::Crisp`: one sample a pixel at its centre, every shape fully in or out (hairlines one solid pixel), lone glyphs from their outlines, layers and drawing cels to the nearest texel; opacity kept. Crisp edges apply to every frame, including those with effects, generated effects or 3D; filtered pixels stay filtered. |
-| Smooth sprites | Drawn at twice the width and height, each 2×2 block averaged in premultiplied colour (`pixels::resolve`, the rule of `downsampleExportPixels`). |
+| Smooth sprites | Drawn at twice the width and height, each 2×2 block averaged in premultiplied colour (`pixels::resolve`). |
 | Background | The scene's, from the draw list; transparent where the scene has none. |
 | Video without alpha | Composited over black by the engine before any rounding (`matte`). |
 | Scene effects | The camera image follows the output's density (`ViewParams::camera_limit` unbounded) within the effect surface (3,968 pixels); the stage caps it at 2,048. |

@@ -1,8 +1,7 @@
 //! Visual-effect evaluation against the JavaScript editor.
 //!
 //! Every fixture in `tests/fixtures/vfx/` is a small project and the editor's
-//! own evaluation of it, effects included (`node engine/tools/vfx-fixtures.mjs`
-//! regenerates them). The engine must resolve the same stacks, connected
+//! own evaluation of it, effects included (frozen recordings). The engine must resolve the same stacks, connected
 //! groups and generated effects, parameter by parameter, and the pure
 //! functions must return what the JavaScript returns for the recorded inputs
 //! (`vectors.json`).
@@ -48,11 +47,10 @@ fn describe(report: &Report) -> String {
 #[test]
 fn every_fixture_resolves_effects_like_the_editor() {
     let names = fixtures();
-    assert!(names.len() >= 9, "fixtures are missing: run node engine/tools/vfx-fixtures.mjs");
+    assert!(names.len() >= 9, "fixtures are missing: the effect fixtures are frozen recordings (restore them from version control)");
     let mut effects = 0;
     for name in &names {
         let document = open(name);
-        assert!(document.unsupported.is_empty(), "{name}: not evaluated: {:?}", document.unsupported);
         assert!(document.notes.is_empty(), "{name}: read leniently: {:?}", document.notes);
         assert!(vfx::document_has_vfx(&document), "{name}: no effects");
         let report = compare(name, document);

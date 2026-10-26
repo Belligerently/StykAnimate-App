@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {emptyDocument} from '../src/demo.mjs';
 import {layerFolderRows} from '../src/layer-folders.mjs';
 import {organizeTimelineRows} from '../src/timeline-organization.mjs';
@@ -8,7 +9,7 @@ import {sheetRowLayout} from '../src/timeline-rows.mjs';
 import {runTimelineHotkey} from '../src/timeline-hotkeys.mjs';
 import {roundTrip} from './support/codec.mjs';
 
-function editor() { const e = new Editor({demo:false,layerTimeline:true}).load(emptyDocument()); for(const name of ['Floor','Drawing','Scene 2'])e.createLayer(name); return e; }
+function editor() { const e = engineEditor({demo:false,layerTimeline:true}, emptyDocument()); for(const name of ['Floor','Drawing','Scene 2'])e.createLayer(name); return e; }
 test('keyboard layer navigation skips folder headers and never selects folder cells', () => {
   const selected=[], timeline={tracks:[{id:'scene',kind:'scene'},{id:'layer-1',kind:'layer'},{id:'folder-1',kind:'folder'},{id:'layer-2',kind:'layer'}],selectedTrackId:'layer-2',editor:{tick:5},_run:fn=>fn(),_selectCell:hit=>selected.push(hit),revealPlayhead(){}};
   runTimelineHotkey(timeline,'timeline-layer-up');assert.deepEqual(selected.pop(),{row:1,tick:5});
@@ -41,6 +42,13 @@ test('moving, renaming and ungrouping folders retain layers and undo their metad
   const before=e.serialize();e.deleteLayerFolder(f.id);assert.equal(e.getLayerFolders().length,0);assert.equal(e.layers.filter(l=>l.kind==='layer').length,4);
   e.undo();assert.deepEqual(e.serialize(),before);
   e.deleteLayer('layer-1');assert.equal(e.getLayerFolders().length,1);e.undo();assert.equal(e.getLayer('layer-1').folderId,f.id);
+});
+test('a folder argument left undefined keeps the arranged layers where they are, as one left out does', () => {
+  // The timeline's drop passes the target's folder, undefined for a folder dragged among layers: its layers must stay in it.
+  const e=editor(), folder=e.createLayerFolder('Shot',['layer-1','layer-2']);
+  e.arrangeLayers(['layer-3','layer-4','layer-1','layer-2'],['layer-1','layer-2'],undefined);
+  assert.deepEqual(e.report._styk.layers.order,['layer-3','layer-4','layer-1','layer-2']);
+  assert.equal(e.getLayer('layer-1').folderId,folder.id);assert.equal(e.getLayer('layer-2').folderId,folder.id);
 });
 test('arranging layers restacks them and changes their folder in one undo step', () => {
   const e=editor(), folder=e.createLayerFolder('Shot',['layer-1','layer-2']), start=e.serialize(), steps=e._undo.length;

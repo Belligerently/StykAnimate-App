@@ -41,7 +41,6 @@ pub struct Loader {
     /// Append-only: an index, once handed out, names the same image for good. An image is in it once, however
     /// many records, revisions or copies of its payload (an undo that builds a record anew) name it.
     pub images: Vec<ImageData>,
-    pub unsupported: Vec<String>,
     /// Records read leniently or ignored (invalid effect records).
     pub notes: Vec<String>,
     /// Image index by the address of its payload (a blob's bytes or a string's text), while the payload exists.
@@ -220,7 +219,6 @@ impl Loader {
         Loader {
             scene_budget: Arc::new(crate::geometry::SceneBudget::with_limits(bytes, entries)),
             images: Vec::new(),
-            unsupported: Vec::new(),
             notes: Vec::new(),
             image_of: HashMap::new(),
             images_by_content: HashMap::new(),
@@ -280,7 +278,6 @@ impl Loader {
         self.converted = Converted::default();
         let mut document = self.nested_document(d, name)?;
         document.images = self.images.clone();
-        document.unsupported = self.unsupported.clone();
         // Each distinct note once, and a bounded number of them however many revisions are read.
         let mut notes: Vec<String> = Vec::new();
         for note in self.notes.drain(..) {
@@ -290,13 +287,6 @@ impl Loader {
         }
         self.notes = notes;
         document.notes = self.notes.clone();
-        for figure in &document.figures {
-            for feature in &figure.unsupported {
-                if !document.unsupported.iter().any(|known| known == feature) {
-                    document.unsupported.push(feature.to_string());
-                }
-            }
-        }
         if document.name.is_empty() {
             document.name = name.to_string();
         }
@@ -416,7 +406,6 @@ impl Loader {
             vfx_clips,
             vfx_elsewhere: effect_channels || source_vfx,
             animation,
-            unsupported: Vec::new(),
             notes: Vec::new(),
             figure_index: HashMap::new(),
             origins: false,
@@ -509,11 +498,10 @@ impl Loader {
     fn figure(&mut self, f: &Value, version: u32) -> Result<Figure, Error> {
         let id = int(f, "figure_type_id").ok_or_else(|| Error::Format("Figure without an id".into()))? as u32;
         let styk = f.get("_styk").cloned().unwrap_or(Value::Null);
-        let mut unsupported = Vec::new();
         let segs = f.get("segments").and_then(Value::as_arr).unwrap_or_default();
         let mut segments = Vec::with_capacity(segs.len());
         for (i, s) in segs.iter().enumerate() {
-            segments.push(self.segment(s, i, &mut unsupported));
+            segments.push(self.segment(s, i));
         }
         let mut polyfills = Vec::new();
         for p in f.get("polyfills").and_then(Value::as_arr).into_iter().flatten() {
@@ -600,12 +588,11 @@ impl Loader {
             mesh_colors,
             origin,
             plan,
-            unsupported,
             base: None,
         })
     }
 
-    fn segment(&mut self, s: &Value, i: usize, _unsupported: &mut Vec<&'static str>) -> Segment {
+    fn segment(&mut self, s: &Value, i: usize) -> Segment {
         let prim = int(s, "primitive_code")
             .and_then(|c| Prim::from_code(c as u8))
             .or_else(|| match s.get("segment_kind").and_then(Value::as_str) {

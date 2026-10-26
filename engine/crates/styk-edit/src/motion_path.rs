@@ -1,4 +1,4 @@
-//! Motion-path edits (src/editor-motion-path.mjs, src/motion-path-falloff.mjs): a dragged
+//! Motion-path edits (the falloff weights the overlay draws stay in src/motion-path-falloff.mjs): a dragged
 //! trail point rewrites the pose at its own tick while the playhead stays put. The session
 //! poses a copy of the frame evaluated there (`snapshotPoseFrame`) and commits once through the
 //! sheet plan, as gestures on a layer sheet do (`_sheetPoseDraftBegin`, `_sheetPoseDraftWrite`,
@@ -14,8 +14,10 @@
 //! of a limb with an IK controller (a pinned target moves; a free limb is solved and baked, across
 //! joined figures too), and the camera. Recorded native origin figures reuse the same pose math,
 //! Objects history and shared native row-splice owner. Recorded saved native origin
-//! pose/transform channels use the same private animation draft and Animation history. Native camera,
-//! ordinary native targets, rigged and 3D figures, and keys whose figures a movieclip replacement placed stay `Unported`.
+//! pose/transform channels use the same private animation draft and Animation history. Rigged and 3D figures
+//! are posed as the editor poses them: a rigged joint's turn is measured against the rig's own evaluation of it, and
+//! a free 3D limb is captured with its 3D target and followers before it is solved. Native camera, ordinary native
+//! targets and keys whose figures a movieclip replacement placed stay `Unported`.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -204,6 +206,22 @@ pub(crate) struct Session {
     /// that its virtual report (`session.report`) was refreshed by a pointer move.
     fresh: bool,
     refreshed: bool,
+    /// How many pointer moves changed the virtual report: with the gesture's serial, what a read of it can tell from another
+    /// (`motion_stamp`).
+    moves: u64,
+}
+
+/// An open motion-path edit as the trails and the stage read it ([`Editor::motion_live`]).
+pub(crate) struct MotionLive {
+    pub stamp: (u64, u64),
+    /// The ticks the edit changes, `[low, high)` (`session.range`).
+    pub range: [f64; 2],
+    /// The tick of the grabbed frame.
+    pub tick: f64,
+    pub report: Value,
+    pub prepared: Arc<Prepared>,
+    /// The property channels of a native edit's draft, which the document does not hold yet.
+    pub draft: Option<Vec<Value>>,
 }
 
 /// `Math.round`.
@@ -337,13 +355,6 @@ fn is_static(segment: &Value) -> bool {
     crate::pose::is_static(segment)
 }
 
-/// A segment as geometry draws it (`geometry.objects.get(slot).segments[joint]`).
-struct Shape {
-    start: [f64; 2],
-    angle: f64,
-    bend: f64,
-}
-
 /// `cameraValues(camera)`, then `checkedCamera` of it with `x` and `y` replaced: the camera a
 /// camera trail point puts there, or the editor's refusal.
 fn checked_camera(current: &Value, x: f64, y: f64) -> Result<Value, EditError> {
@@ -379,14 +390,39 @@ impl Editor {
         let Some(session) = self.drag.as_ref().and_then(|drag| drag.motion_path.as_ref()).filter(|session| session.moved) else { return Ok(None) };
         let range = self.display_range(session);
         if self.tick < range[0] || self.tick >= range[1] { return Ok(None); }
-        let report = self.motion_virtual_report(session)?;
-        let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
-        let prepared = Prepared::new(Arc::new(doc));
-        let records = match &session.draft {
-            Some(draft) => styk_eval::records::Records::new_native_draft(&report, &prepared, draft.channels())?,
-            None => styk_eval::records::Records::new(&report, &prepared)?,
+        // The same document as the trails sample, made once for each pointer move.
+        let Some(live) = self.shared_motion_live()? else { return Ok(None) };
+        let records = match &live.draft {
+            Some(draft) => styk_eval::records::Records::new_native_draft(&live.report, &live.prepared, draft)?,
+            None => styk_eval::records::Records::new(&live.report, &live.prepared)?,
         };
         Ok(Some(records.evaluated(self.tick)?))
+    }
+
+    /// Which state of an open motion-path edit that has moved a read of it sees: the gesture and how many pointer moves have
+    /// changed what it shows. `None` with no edit open, or before the first move (the trails are the document's).
+    pub(crate) fn motion_stamp(&self) -> Option<(u64, u64)> {
+        let drag = self.drag.as_ref()?;
+        let session = drag.motion_path.as_deref().filter(|session| session.moved)?;
+        Some((drag.serial, session.moves))
+    }
+
+    /// The document as an open motion-path edit that has moved shows it, with the typed views of it: what the trails sample and
+    /// the stage draws while the point is dragged. [`Editor::motion_stamp`] says whether it is the one a reader holds; the
+    /// readers share one made for each pointer move ([`Editor::shared_motion_live`]).
+    pub(crate) fn motion_live(&self) -> Result<Option<MotionLive>, EditError> {
+        let Some(stamp) = self.motion_stamp() else { return Ok(None) };
+        let session = self.drag.as_ref().and_then(|drag| drag.motion_path.as_deref()).expect("an edit is open");
+        let report = self.motion_virtual_report(session)?;
+        let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
+        Ok(Some(MotionLive {
+            stamp,
+            range: self.display_range(session),
+            tick: session.tick,
+            report,
+            prepared: Arc::new(Prepared::new(Arc::new(doc))),
+            draft: session.draft.as_ref().map(|draft| draft.channels().to_vec()),
+        }))
     }
 
     /// The ticks the gesture's virtual report changes (`session.range`) once it has moved: a
@@ -735,8 +771,8 @@ impl Editor {
         if !self.sheet() && !saved && self.unported_document() != Some("with animation origins") {
             return Err(EditError::Unported("a native motion-path document outside its origin recordings".into()));
         }
-        if (!self.sheet() && (self.drag.is_some() || self.property_edit.is_some())) || (self.drag.is_some() && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels"))) {
-            return Err(EditError::Unported("an origin motion-path begin during another live gesture".into()));
+        if !self.sheet() && (self.drag.is_some() || self.property_edit.is_some()) {
+            return Err(EditError::Unported("a native motion-path begin during another live gesture".into()));
         }
         if !self.sheet() && !saved && self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) != 0 {
             return Err(EditError::Unported("an authored native motion-path edit".into()));
@@ -753,9 +789,6 @@ impl Editor {
         let label = label.unwrap_or_else(|| if falloff.is_some() { "Reshape motion path" } else { "Edit motion path" }.to_string());
         let mut target = Target::parse(target)?;
         if target.camera && !self.sheet() { return Err(EditError::Unported("an unrecorded native camera motion-path edit".into())); }
-        if target.camera && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels")) {
-            return Err(EditError::Unported("an unrecorded camera motion-path edit on an origin document".into()));
-        }
         if self.drag.is_some() {
             self.commit_drag()?;
         }
@@ -838,6 +871,7 @@ impl Editor {
             last: None,
             fresh: true,
             refreshed: false,
+            moves: 0,
         };
         if falloff_mode {
             if !self.begin_falloff(&mut session)? {
@@ -889,8 +923,8 @@ impl Editor {
         if tick == self.tick { self.shown_frame() } else { self.evaluated(tick, true) }
     }
 
-    /// The figures a motion-path edit poses and those whose pinned limbs it bakes must be
-    /// figures without rig relationships, 3D bones or perspective.
+    /// The figures a motion-path edit poses and those whose pinned limbs it bakes must be ones
+    /// the saved-origin recordings admit.
     fn check_figures(&self, session: &Session, frame: &Value) -> Result<(), EditError> {
         if session.target.camera {
             return Ok(());
@@ -901,17 +935,6 @@ impl Editor {
             let slots = objects.iter().enumerate().filter_map(|(slot, object)|
                 (uid(object).is_some_and(|uid| session.component.contains(&uid)) || has_pinned(object)).then_some(slot)).collect::<Vec<_>>();
             self.origin_motion_gate(&objects, &slots)?;
-        }
-        for object in objects {
-            if !uid(&object).is_some_and(|u| session.component.contains(&u)) && !has_pinned(&object) {
-                continue;
-            }
-            let figure = figures.iter().find(|f| num(f, "figure_type_id") == num(&object, "figure_type_id"));
-            let rigged = figure.and_then(|f| f.get("segments")).and_then(Value::elements).is_some_and(|s| s.iter().any(|segment| truthy(&segment, "_stykRig")));
-            let spatial = truthy(&object, "_stykSpatial") || controllers(&object).iter().any(|(_, c)| truthy(c, "spatialTarget"));
-            if rigged || spatial {
-                return Err(EditError::Unported("a motion-path edit of rigged or 3D figures".into()));
-            }
         }
         Ok(())
     }
@@ -1003,23 +1026,27 @@ impl Editor {
     }
 
     /// The typed view of a posed frame and its geometry (`buildGeometry(report, working)`).
-    fn posed_scene(&self, record: &Value) -> Result<(Arc<Prepared>, Frame, Scene), EditError> {
+    pub(crate) fn posed_scene(&self, record: &Value) -> Result<(Arc<Prepared>, Frame, Scene), EditError> {
         let (prepared, frame) = self.posed_frame(record)?;
         let scene = styk_eval::geometry::build(&prepared.doc, &frame);
         Ok((prepared, frame, scene))
     }
 
+    /// [`Editor::posed_scene`] with what the interface reads of every segment and fill (`build_shapes`): drawn or not.
+    pub(crate) fn posed_shapes(&self, record: &Value) -> Result<(Arc<Prepared>, Frame, Scene), EditError> {
+        let (prepared, frame) = self.posed_frame(record)?;
+        let scene = styk_eval::geometry::build_shapes(&prepared.doc, &frame, None);
+        Ok((prepared, frame, scene))
+    }
+
     fn posed_frame(&self, record: &Value) -> Result<(Arc<Prepared>, Frame), EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         Ok((prepared, frame))
     }
 
     /// `geometry.objects.get(slot).joints.get(handle)`.
-    fn joint_point(&self, prepared: &Prepared, frame: &Frame, scene: &Scene, slot: usize, handle: f64) -> Option<[f64; 2]> {
+    pub(crate) fn joint_point(&self, prepared: &Prepared, frame: &Frame, scene: &Scene, slot: usize, handle: f64) -> Option<[f64; 2]> {
         let object = frame.objects.get(slot)?;
         let geometry = scene.objects.iter().find(|g| g.uid == object.uid && g.resolved)?;
         if handle == 0.0 {
@@ -1032,19 +1059,10 @@ impl Editor {
         geometry.joint(figure, handle as u32)
     }
 
-    /// The segment `joint` of the figure in `slot` as geometry draws it.
-    fn posed_shape(&self, prepared: &Prepared, frame: &Frame, scene: &Scene, slot: usize, joint: usize) -> Option<Shape> {
-        let object = frame.objects.get(slot)?;
-        let geometry = scene.objects.iter().find(|g| g.uid == object.uid && g.resolved)?;
-        let figure = object.figure_override.as_deref().or_else(|| prepared.doc.figure(object.figure).map(|f| &**f))?;
-        let segment = figure.segments.get(joint)?;
-        let start = *geometry.starts.get(joint)?;
-        let (_, bend, _) = styk_eval::geometry::segment_pose(object, segment, joint);
-        // A straight Stick Nodes segment with a sagitta is drawn as a curve, which geometry
-        // reports with a bend of 1e-6.
-        let bend = if bend.abs() < 1e-7 && styk_eval::sticknodes::shape_for(segment, object).is_some_and(|s| s.sagitta != 0.0) { 1e-6 } else { bend };
-        let angle = displayed_angle(prepared, frame, scene, &solve_frame(prepared, frame, scene), slot, joint);
-        Some(Shape { start, angle, bend })
+    /// The segment `joint` of the figure in `slot` as geometry draws it (a rigged joint as its rig evaluates it).
+    fn posed_shape(&self, prepared: &Prepared, frame: &Frame, scene: &Scene, slot: usize, joint: usize) -> Result<Option<crate::pose::Shape>, EditError> {
+        let Some(object) = frame.objects.get(slot) else { return Ok(None) };
+        Editor::drawn_shape(prepared, frame, scene, object.uid, joint)
     }
 
     /// `updateMotionPathEdit(point, options)`.
@@ -1062,6 +1080,12 @@ impl Editor {
         let result = if session.falloff.is_some() { self.update_falloff(&mut session, point_xy, options) } else { self.update_single(&mut session, point_xy, options) };
         self.put_motion_path(session);
         result
+    }
+
+    /// `_synchronizeAnimationOrigins(sub.working, sub.baseline.length ? sub.baseline : sub.source.objects)`: a camera edit has no baseline.
+    fn synchronize_origin_posed(&self, posed: &mut Posed) -> Result<(), EditError> {
+        let before = if posed.baseline.is_empty() { objects_of(&posed.source) } else { posed.baseline.clone() };
+        self.synchronize_origin_frame(&mut posed.working, &before, false)
     }
 
     fn take_motion_path(&mut self) -> Session {
@@ -1083,7 +1107,7 @@ impl Editor {
         session.moved = true;
         let posed = &mut session.posed[0];
         posed.moved = true;
-        self.synchronize_origin_frame(&mut posed.working, &posed.baseline, false)?;
+        self.synchronize_origin_posed(posed)?;
         if target.camera {
             posed.camera_changed = true;
         }
@@ -1104,6 +1128,7 @@ impl Editor {
         let changed = changed_uids(posed, None);
         if session.mode == Mode::Channels { self.write_channels(session, 0, &changed)?; }
         session.refreshed = true;
+        session.moves += 1;
         self.emit("edit", vec![("live", Value::Bool(true)), ("motionPath", Value::Bool(true)), ("changedUids", uid_array(&changed))]);
         Ok(true)
     }
@@ -1124,7 +1149,7 @@ impl Editor {
             let moved = matches!(applied, Ok(true));
             if moved {
                 posed.moved = true;
-                self.synchronize_origin_frame(&mut posed.working, &posed.baseline, false)?;
+                self.synchronize_origin_posed(&mut posed)?;
                 if target.camera {
                     posed.camera_changed = true;
                 }
@@ -1143,6 +1168,7 @@ impl Editor {
                 }
             }
             session.refreshed = true;
+            session.moves += 1;
         }
         let mut changed: Vec<u32> = Vec::new();
         for posed in session.posed.iter().filter(|p| p.moved) {
@@ -1379,7 +1405,7 @@ impl Editor {
             }
         }
         let (prepared, frame, scene) = self.posed_scene(&posed.working)?;
-        let Some(shape) = self.posed_shape(&prepared, &frame, &scene, slot, joint) else { return Ok(false) };
+        let Some(shape) = self.posed_shape(&prepared, &frame, &scene, slot, joint)? else { return Ok(false) };
         let angle = atan2(point[1] - shape.start[1], point[0] - shape.start[0]) - shape.bend / 2.0;
         let delta = shortest(angle - shape.angle);
         let stretch = flag("stretch");
@@ -1627,6 +1653,7 @@ impl Editor {
                 }
                 let id = graph.id(slot, handle).ok_or_else(|| unported("of a handle outside the assembly"))?;
                 let (mut followers, mut joined) = (BTreeMap::new(), BTreeMap::<u32, BTreeMap<u32, f64>>::new());
+                let (mut spatial, mut joined_spatial) = (BTreeMap::new(), BTreeMap::<u32, BTreeMap<u32, [f64; 4]>>::new());
                 for i in graph.skeleton().follower_indices(id) {
                     let entry = graph.entry(i);
                     let angle = drawn(entry.slot, entry.index) - rotation;
@@ -1634,6 +1661,9 @@ impl Editor {
                         followers.insert(entry.handle, angle);
                     } else {
                         joined.entry(entry.uid).or_default().insert(entry.handle, angle);
+                    }
+                    if let Some(q) = crate::spatial_ik::follower_orientation(geometry_of(entry.slot), entry.index, rotation) {
+                        if entry.slot == slot { spatial.insert(entry.handle, q); } else { joined_spatial.entry(entry.uid).or_default().insert(entry.handle, q); }
                     }
                 }
                 let mut points = Vec::with_capacity(chain.len() + 1);
@@ -1655,6 +1685,8 @@ impl Editor {
                     followers: followers.clone(),
                     joined_followers: Some(joined.clone()),
                     bend_reference: Some(captured.clone()),
+                    spatial_followers: Some(spatial.clone()),
+                    joined_spatial_followers: Some(joined_spatial.clone()),
                     ..controller
                 };
                 // The lengths the frame had when the gesture began, scaled into the skeleton.
@@ -1689,8 +1721,8 @@ impl Editor {
                 }
                 next.set("followers", angle_table(&followers));
                 next.set("joinedFollowers", joined_table(&joined));
-                next.set("spatialFollowers", Value::object(Obj::new()));
-                next.set("joinedSpatialFollowers", Value::object(Obj::new()));
+                next.set("spatialFollowers", crate::spatial_ik::quaternion_table(&spatial));
+                next.set("joinedSpatialFollowers", crate::spatial_ik::joined_quaternion_table(&joined_spatial));
                 next.set("bendReference", reference_value(&bend));
             }
             None => {
@@ -1699,7 +1731,8 @@ impl Editor {
                 if skeleton.index(handle).is_none() {
                     return Ok(false);
                 }
-                let followers: BTreeMap<u32, f64> = skeleton.follower_indices(handle).iter().map(|&i| (figure.segments[i].id, drawn(slot, i) - rotation)).collect();
+                let follower_indices = skeleton.follower_indices(handle);
+                let followers: BTreeMap<u32, f64> = follower_indices.iter().map(|&i| (figure.segments[i].id, drawn(slot, i) - rotation)).collect();
                 let chain = skeleton.chain(handle, controller.chain_length);
                 if chain.is_empty() {
                     return Err(unported("without a chain"));
@@ -1724,12 +1757,17 @@ impl Editor {
                 let points: Vec<[f64; 2]> = std::iter::once(geometry.starts[chain[0]]).chain(chain.iter().map(|&i| geometry.ends[i])).collect();
                 let lengths: Vec<f64> = chain.iter().map(|&i| hypot(geometry.ends[i][0] - geometry.starts[i][0], geometry.ends[i][1] - geometry.starts[i][1])).collect();
                 let captured = ik::bend_reference(&points, &lengths, controller.bend_reference.as_ref());
+                // `captureSpatialIK`: a 3D limb keeps its followers' orientations and its target's depth and bend plane.
+                let context = Editor::spatial_context_of(slot, object.clone(), evaluated.uid, &prepared, &frame, &scene, Some(&solved), None);
+                let spatial = Editor::capture_spatial_from(context.as_ref(), &chain, &follower_indices, rotation, 0.0);
                 let temporary = Controller {
                     pinned: true,
                     target: ik::Target { x: point[0], y: point[1], rotation },
                     followers: followers.clone(),
                     bend_direction,
                     bend_reference: Some(captured.clone()),
+                    spatial_followers: spatial.spatial_followers.clone().or_else(|| controller.spatial_followers.clone()),
+                    spatial_target: spatial.spatial_target.clone().or_else(|| controller.spatial_target.clone()),
                     ..controller
                 };
                 let baseline = baseline_of(slot).unwrap_or_else(|| object.clone());
@@ -1747,7 +1785,9 @@ impl Editor {
                     shape: evaluated.spatial.as_ref().and_then(|s| s.shape.as_ref()),
                 };
                 let table = Table { controllers: BTreeMap::from([(handle, temporary)]) };
-                let solution = ik::solve_object_with(&skeleton, &pose, geometry.root, &table, true).ok_or_else(|| unported("the solver did not reach"))?;
+                // A 3D target is solved without following the target's orientation (as `bake_unpinned`).
+                let follow = table.controllers.get(&handle).is_some_and(|c| c.spatial_target.is_none());
+                let solution = ik::solve_object_with(&skeleton, &pose, geometry.root, &table, follow).ok_or_else(|| unported("the solver did not reach"))?;
                 let bend = solution.results.iter().find(|(h, _)| *h == handle).and_then(|(_, o)| o.bend_reference.clone()).unwrap_or(captured);
                 let lengths = match &solution.lengths {
                     Some(lengths) => Value::nums(lengths),
@@ -1758,6 +1798,8 @@ impl Editor {
                 record.set("len_flag", if solution.lengths.is_some() { Value::Num(1.0) } else { length_flag });
                 record.set("lengths", lengths);
                 next.set("followers", angle_table(&followers));
+                if let Some(q) = &spatial.spatial_followers { next.set("spatialFollowers", crate::spatial_ik::quaternion_table(q)); }
+                if let Some(target) = &spatial.spatial_target { next.set("spatialTarget", crate::spatial_ik::spatial_target_value(target)); }
                 next.set("bendReference", reference_value(&bend));
             }
         }
@@ -2014,8 +2056,7 @@ mod tests {
     use super::*;
 
     /// Every weight a falloff can give, for every shape, radius and distance, is V8's: the
-    /// digest of their bits that engine/tools/edit-scenarios-motion-path.mjs records from the
-    /// editor's `falloffWeight`.
+    /// digest of their bits that the recorded editor's `falloffWeight` gave.
     #[test]
     fn falloff_weights() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/motion-path-falloff.weights.json");

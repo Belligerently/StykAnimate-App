@@ -64,7 +64,7 @@ try{
   // A synchronous seek burst: the queue keeps at most two pending decodes and
   // the final seek's cel is the one that decodes.
   const burst=await page.evaluate(async()=>{
-    const e=styk.editor,owner=styk.drawing.owner,{drawingCelPrefetch}=await import('/src/onion-skin.mjs');
+    const e=styk.editor,owner=styk.drawing.owner,{drawingCelPrefetch}=await import('/src/drawing-cel-prefetch.mjs');
     for(const entry of owner.entries.values()){entry.store=null;entry.levels=null;}
     e.seek(0);for(let i=0;i<10;i++)e.seek(Math.min(57,i*3));
     const queued=owner.decodeQueue.length;

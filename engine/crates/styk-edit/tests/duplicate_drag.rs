@@ -1,4 +1,4 @@
-//! Alt-drag duplication in the session (src/editor-duplicate-drag.mjs): the copies and their move are
+//! Alt-drag duplication in the session: the copies and their move are
 //! one history entry when the gesture commits, and no entry at all when it is cancelled.
 
 use styk_doc::Value;

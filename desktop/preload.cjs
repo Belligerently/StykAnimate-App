@@ -169,8 +169,6 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   beginFileWrite: (options) => ipcRenderer.invoke('styk:file-write-begin', options),
   beginProjectWrite: (options) => ipcRenderer.invoke('styk:project-write-begin', options),
   beginRecoveryWrite: (options) => ipcRenderer.invoke('styk:recovery-write-begin', options),
-  beginClipboardWrite: (options) => ipcRenderer.invoke('styk:clipboard-write-begin', options),
-  beginClipboardRead: () => ipcRenderer.invoke('styk:clipboard-read-begin'),
   writeFileChunk: (token, bytes) => ipcRenderer.invoke('styk:file-write-chunk', token, bytes),
   patchFileWrite: (token, offset, bytes) => ipcRenderer.invoke('styk:file-write-patch', token, offset, bytes),
   finishFileWrite: (token) => ipcRenderer.invoke('styk:file-write-finish', token),

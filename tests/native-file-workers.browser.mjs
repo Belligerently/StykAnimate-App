@@ -12,16 +12,18 @@ try {
   await page.goto(process.env.STYK_URL || 'http://127.0.0.1:47843');
   await page.waitForFunction(() => window.styk?.ready);
   const result = await page.evaluate(async () => {
-    const {Editor} = await import('/src/editor.mjs'), {nativeFigureDocument} = await import('/src/native-figure.mjs');
     const {buildContainerV2, decodeDocument} = await import('/tests/support/native-files.mjs');
     const {ImportClient} = await import('/src/import-client.mjs'), {DocumentExporter} = await import('/src/document-export.mjs');
-    const plain = new Editor({propertyChannels: true}), editor = new Editor({propertyChannels: true});
+    // The app's editor: the engine holds its document, and makes the figure and the exports from it.
+    const editor = styk.editor;
+    const figure = editor._shown.figureDocument({figureUid: 1, tick: 0});
+    const figureSaved = new Uint8Array(await (await new DocumentExporter().export(editor.report, {format: 'stkz', figureUid: 1, tick: 0, revision: editor.revision})).arrayBuffer());
     editor.select(1);
-    const clip = editor.createMovieclip({start: 0, end: 12}), clipUid = editor.selectedUid;
+    const clip = editor.createMovieclip({start: 0, end: editor.totalTicks}), clipUid = editor.selectedUid;
     const files = {
       'project.styk': await buildContainerV2(structuredClone(editor.report), 'styk'),
-      'figure.stkz': await buildContainerV2(nativeFigureDocument(plain.report, {figureUid: 1, tick: 0}), 'stkz'),
-      'clip.stykmov': await buildContainerV2(nativeFigureDocument(editor.report, {figureUid: clipUid, tick: 0}), 'stykmov'),
+      'figure.stkz': await buildContainerV2(figure, 'stkz'),
+      'clip.stykmov': await buildContainerV2(editor._shown.figureDocument({figureUid: clipUid, tick: 0}), 'stykmov'),
     };
     const importer = new ImportClient({}), opened = {};
     for (const [name, bytes] of Object.entries(files)) {
@@ -31,8 +33,7 @@ try {
     }
     importer.dispose();
     const exporter = new DocumentExporter();
-    const saved = new Uint8Array(await (await exporter.export(editor.report, {format: 'styk'})).arrayBuffer());
-    const figureSaved = new Uint8Array(await (await exporter.export(plain.report, {format: 'stkz', figureUid: 1, tick: 0})).arrayBuffer());
+    const saved = new Uint8Array(await (await exporter.export(editor.report, {format: 'styk', revision: editor.revision})).arrayBuffer());
     exporter.dispose();
     return {opened, clip: Boolean(clip && clipUid),
       savedMagic: new TextDecoder().decode(saved.subarray(0, 4)), savedVersion: saved[4],

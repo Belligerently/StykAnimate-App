@@ -98,3 +98,26 @@ fn session_selection_commands_do_not_advance_the_document_revision() {
         assert!(!session.can_undo());
     }
 }
+
+/// Explicit command expectations supplement the frozen pre-cutover recordings.
+#[test]
+fn selection_modes_preserve_order_active_uid_and_fixed_drag_origin() {
+    let mut editor = editor();
+    editor.call("selectMany", &args("[[5,1]]")).unwrap();
+    for (method, text, expected, active) in [
+        ("selectSameDefinition", "[]", vec![1,3,5], Some(1)),
+        ("invertSelection", "[[1,2]]", vec![3,5,2], Some(2)),
+        ("selectMarquee", "[[1,3],{\"mode\":\"replace\"}]", vec![1,3], Some(3)),
+        ("selectMarquee", "[[1,3],{\"mode\":\"add\",\"initial\":[5,1] }]", vec![5,1,3], Some(3)),
+        ("selectMarquee", "[[1,3],{\"mode\":\"toggle\",\"initial\":[5,1] }]", vec![5,3], Some(3)),
+        ("selectMarquee", "[[1,3],{\"mode\":\"toggle\",\"initial\":[5,1] }]", vec![5,3], Some(3)),
+        ("selectMarquee", "[[1,3],{\"mode\":\"subtract\",\"initial\":[5,1] }]", vec![5], Some(5)),
+    ] {
+        editor.call(method, &args(text)).unwrap();
+        let state = editor.state();
+        assert_eq!(state.selected_uids, expected, "{method}/{text}");
+        assert_eq!(state.selected_uid, active, "{method}/{text}");
+        assert_eq!(state.selected_joint, -1);
+        assert!(!state.can_undo);
+    }
+}

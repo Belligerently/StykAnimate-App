@@ -1,6 +1,5 @@
 //! Where generated effects' targets were on earlier ticks, kept across frames
-//! (docs/engine/vfx.md, Generated effects; `GeneratorAnchors` in
-//! src/vfx-generator-anchors.mjs). Particles keep the anchor their target had
+//! (docs/engine/vfx.md, Generated effects; `GeneratorAnchors` of the recorded editor). Particles keep the anchor their target had
 //! when they were born, so a frame's batch reads targets on up to a lifetime of
 //! earlier ticks; consecutive frames share almost all of them.
 //!

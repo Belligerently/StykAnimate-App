@@ -1,4 +1,4 @@
-//! The editor's load normalization in the engine (`prepareEditorLoadSteps` of src/editor-load.mjs).
+//! The editor's load normalization in the engine (`prepareEditorLoadSteps`).
 //!
 //! Opening a document runs the same transformation and the same refusals as the JavaScript editor, in the
 //! same order, on the document store: pose sequences expanded, a zero-key animation given its working frame,
@@ -12,7 +12,7 @@
 //! `EditError::Invalid` with the editor's message key (or its plain message where it has none, or
 //! [`js::TYPE_ERROR`] where the JavaScript throws a `TypeError` on a malformed document). Their parameters
 //! (the labels in `must be a finite number`) are not carried yet. The checks are transcribed from the
-//! JavaScript and recorded against it (`engine/tools/load-fixtures.mjs`, `tests/load.rs`).
+//! JavaScript and recorded against it (`tests/load.rs` replays the recordings).
 
 mod animation;
 mod drawings;
@@ -32,6 +32,66 @@ use self::js::*;
 use crate::EditError;
 
 pub use self::js::TYPE_ERROR;
+pub(crate) use self::object::{object_pose as validate_object_pose, spatial_pose};
+pub(crate) use self::scene::projected_drawing;
+pub(crate) use self::sheet::initialize as initialize_layer_sheet;
+
+/// `validateScene({...report, figure_types: definitions, backgrounds: [], keyframes: [a frame without figures]})`: whether the
+/// definitions a paste adds are ones the document may hold.
+pub(crate) fn validate_definitions(report: &Value, definitions: &[Value]) -> Result<(), EditError> {
+    let mut source = report.as_obj().cloned().unwrap_or_default();
+    source.set("figure_types", Value::array(definitions.to_vec()));
+    source.set("backgrounds", Value::array(Vec::new()));
+    source.set("keyframes", Value::array(vec![crate::sheet::create_frame(&[])]));
+    scene::validate_scene(&Value::object(source), None)
+}
+
+/// `validateScene({...report, figure_types: [], backgrounds: [background], keyframes: [createFrame([])]})`: whether
+/// `background` is a scene asset the document may hold.
+pub(crate) fn validate_background(report: &Value, background: &Value) -> Result<(), EditError> {
+    if !matches!(background.get("kind").and_then(Value::as_f64), Some(0.0 | 1.0 | 2.0 | 3.0 | 4.0)) {
+        return fail("errors.editorScene.expectedADecodedImageColorOrGradientBackground");
+    }
+    let mut source = report.as_obj().cloned().unwrap_or_default();
+    source.set("figure_types", Value::array(Vec::new()));
+    source.set("backgrounds", Value::array(vec![background.clone()]));
+    source.set("keyframes", Value::array(vec![crate::sheet::create_frame(&[])]));
+    scene::validate_scene(&Value::object(source), None)
+}
+
+/// What `validateScene` checks of a figure definition beyond its hierarchy and rig, for the edits that change one:
+/// the segments' pose choices, the figure's pose-choice groups and its 3D mesh.
+pub(crate) fn validate_figure_extensions(figure: &Value) -> Result<(), EditError> {
+    for segment in items(figure.get("segments")) {
+        figure::pose_choice(&segment)?;
+    }
+    figure::figure_pose_choices(figure)?;
+    figure::spatial_mesh(figure)
+}
+
+/// `validateSurface(polygon, ids)`: the face visibility a polygon holds, against the handles of its figure.
+pub(crate) fn validate_surface(polygon: &Value, handles: &[f64]) -> Result<(), EditError> {
+    let mut known = NumberSet::default();
+    for &handle in handles {
+        known.insert(handle);
+    }
+    figure::surface(polygon, &known)
+}
+
+/// `validateScene(report)`: the figure definitions, backgrounds and frames of a document.
+pub(crate) fn validate_scene(report: &Value) -> Result<(), EditError> {
+    scene::validate_scene(report, None)
+}
+
+/// `validateLayerState(state)`.
+pub(crate) fn validate_layer_state(state: &Value) -> Result<(), EditError> {
+    layer_state::validate(Some(state))
+}
+
+/// `validateAnimationDocument(report)`: the authored channels of `report._styk.animation`.
+pub(crate) fn validate_animation(report: &Value) -> Result<(), EditError> {
+    animation::validate_document(report)
+}
 
 /// What `prepareEditorLoad` returns: the normalized report and the indexes the editor adopts.
 #[derive(Clone, Debug)]
@@ -68,7 +128,7 @@ pub struct Track {
 }
 
 impl Prepared {
-    /// The indexes as JSON: the shape `engine/tools/load-fixtures.mjs` records from the editor.
+    /// The indexes as JSON: the shape the load recordings hold.
     pub fn indexes(&self) -> Value {
         let number = |n: f64| Value::Num(n);
         let pairs = |items: Vec<Value>| Value::array(items);

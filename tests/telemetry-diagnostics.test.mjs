@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
+import {readdirSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {diagnosticDetails,sanitizeError,validateSnapshot} from '../src/telemetry-schema.mjs';
+import {diagnosticDetails,sanitizeError,validateSnapshot,ERROR_MODULES} from '../src/telemetry-schema.mjs';
 import {TelemetryAccumulator} from '../src/telemetry-core.mjs';
 import {TelemetryService} from '../desktop/telemetry.cjs';
 
@@ -18,6 +19,20 @@ test('worker diagnostics retain cause, stage and safe source frames through wrap
   assert.equal(sanitizeError({code:'export_canvas_lost'}).code,'device_lost');
   assert.equal(sanitizeError({code:'ENOSPC'}).code,'disk_full');
   assert.deepEqual(sanitizeError({telemetryFrames:[{module:'camera-monitor.mjs',line:20,secret:'private'},{module:'secret.mjs',line:2},{module:'app.mjs',line:-1}]}).frames,[{module:'camera-monitor.mjs',line:20}]);
+});
+
+test('the error module allowlist names the modules that ship, the engine modules among them',()=>{
+  const shipped=new Set();
+  const walk=directory=>{for(const entry of readdirSync(new URL(directory,import.meta.url),{withFileTypes:true})){
+    if(entry.isDirectory()){if(!['node_modules','pkg','locales'].includes(entry.name))walk(`${directory}${entry.name}/`);}
+    else shipped.add(entry.name);
+  }};
+  walk('../src/');walk('../desktop/');
+  assert.equal(new Set(ERROR_MODULES).size,ERROR_MODULES.length,'no module is listed twice');
+  assert.deepEqual(ERROR_MODULES.filter(name=>!shipped.has(name)),[],'every listed module exists');
+  for(const name of ['engine-stage.mjs','engine-owner.mjs','engine-export-worker.mjs','engine-preview-worker.mjs','engine-drawing-worker.mjs','engine-worker.mjs'])assert.ok(ERROR_MODULES.includes(name),name);
+  const stack=['Error: SECRET',' at a (https://private.example/src/engine/engine-owner.mjs:7:1)',' at b (https://private.example/src/engine/engine-stage.mjs:9:2)',' at c (https://private.example/src/playback-worker.mjs:3:4)'].join('\n');
+  assert.deepEqual(sanitizeError(Object.assign(new Error('SECRET'),{stack}),'app').frames,[{module:'engine-owner.mjs',line:7},{module:'engine-stage.mjs',line:9}]);
 });
 
 function saturated() {

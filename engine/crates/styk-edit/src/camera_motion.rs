@@ -1,4 +1,4 @@
-//! Camera motion clips as the timeline edits them (src/editor-camera-motion.mjs): a clip's
+//! Camera motion clips as the timeline edits them: a clip's
 //! timing, switch, parameters and followed figures, and deleting one, each validated as
 //! `validateCameraMotion` does and recorded as one `camera-motion` history entry. Adding,
 //! duplicating, pasting and randomizing give clips random identities and seeds, which a
@@ -18,7 +18,7 @@ const FOLLOW_FRAMES: f64 = 100000.0;
 /// `Object.keys(defaults)` and `Object.keys(FOLLOW_DEFAULTS)`: the parameters of each kind.
 const PRESET_KEYS: [&str; 13] = ["strength", "moveX", "moveY", "roll", "zoom", "frequency", "roughness", "direction", "recovery", "phase", "fadeIn", "fadeOut", "seed"];
 const FOLLOW_KEYS: [&str; 13] = ["strength", "followX", "followY", "offsetX", "offsetY", "lag", "deadZone", "lookAhead", "zoomFit", "padding", "maxZoom", "fadeIn", "fadeOut"];
-/// `defaults` and `FOLLOW_DEFAULTS` (src/camera-motion.mjs, src/camera-follow.mjs): a new clip's parameters.
+/// A new clip's parameters (`defaults` and `FOLLOW_DEFAULTS` of the recorded editor).
 const MOTION_DEFAULTS: &[(&str, f64)] = &[("strength", 1.0), ("moveX", 12.0), ("moveY", 12.0), ("roll", 1.0), ("zoom", 0.0), ("frequency", 8.0), ("roughness", 0.5), ("direction", 0.0), ("recovery", 5.0), ("phase", 0.0), ("fadeIn", 2.0), ("fadeOut", 4.0), ("seed", 1.0)];
 const FOLLOW_DEFAULTS: &[(&str, f64)] = &[("strength", 1.0), ("followX", 1.0), ("followY", 1.0), ("offsetX", 0.0), ("offsetY", 0.0), ("lag", 8.0), ("deadZone", 0.0), ("lookAhead", 0.0), ("zoomFit", 0.0), ("padding", 0.2), ("maxZoom", 3.0), ("fadeIn", 6.0), ("fadeOut", 6.0)];
 
@@ -170,14 +170,14 @@ fn shifted_ranges(clip: &Value, start: f64, duration: f64) -> Option<Value> {
 }
 
 impl Editor {
-    fn camera_clips(&self) -> Vec<Value> {
+    pub(crate) fn camera_clips(&self) -> Vec<Value> {
         self.report.path(&["_styk", "cameraMotion", "clips"]).and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default()
     }
 
     /// `publish(editor, next, label)`: the new table, one history entry, the sheet lengthened
     /// to the last clip.
-    fn publish_camera(&mut self, clips: Vec<Value>, label: &str) -> Result<bool, EditError> {
-        if self.report.path(&["_styk", "layers", "fixed", "camera", "locked"]).is_some_and(Value::truthy) {
+    pub(crate) fn publish_camera(&mut self, clips: Vec<Value>, label: &str) -> Result<bool, EditError> {
+        if self.track_locked("camera") {
             return Err(invalid("errors.editorCameraMotion.unlockCameraBeforeEditingMotion"));
         }
         let mut table = Obj::new();
@@ -272,11 +272,16 @@ impl Editor {
     /// `setCameraMotion(id, patch)`: a clip's start, duration, switch, parameters or
     /// followed figures.
     pub(crate) fn set_camera_motion(&mut self, id: &Value, patch: &Value) -> Result<bool, EditError> {
+        let list = self.camera_motion_after(self.camera_clips(), id, patch)?;
+        self.publish_camera(list, "Edit camera motion")
+    }
+
+    /// The clips with `patch` applied to the clip `id`, as `setCameraMotion` makes them.
+    pub(crate) fn camera_motion_after(&self, clips: Vec<Value>, id: &Value, patch: &Value) -> Result<Vec<Value>, EditError> {
         let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();
         if entries.iter().any(|(k, _)| !["start", "duration", "enabled", "params", "targets"].contains(&k.as_str())) {
             return Err(invalid("errors.editorCameraMotion.unsupportedCameraMotionProperty"));
         }
-        let clips = self.camera_clips();
         let Some(at) = clips.iter().position(|c| c.get("id") == Some(id)) else { return Err(invalid("errors.editorCameraMotion.selectACameraMotionClip")) };
         let old = clips[at].clone();
         let given = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).filter(|v| !v.is_null());
@@ -299,7 +304,7 @@ impl Editor {
         next.set("params", Value::object(params));
         let mut list = clips;
         list[at] = Value::object(next);
-        self.publish_camera(list, "Edit camera motion")
+        Ok(list)
     }
 
     /// `copyCameraMotion(id)`: a clip kept for pasting.

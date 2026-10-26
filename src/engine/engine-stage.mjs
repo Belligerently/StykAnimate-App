@@ -8,8 +8,10 @@
  * it can be; a frame it refuses leaves the previous picture too, with the reason reported once
  * (`engine-failure.mjs`), and the document's next revision is tried afresh.
  *
- * What crosses to the engine per edited frame is the pose the editor shows:
- * only the objects whose geometry the editor rebuilt since the last frame.
+ * The frame on show is the session's, inside a movieclip too: the engine evaluates it and draws it
+ * (`Stage::edit_session`), nothing crosses from the interface. One frame is the interface's own and crosses as
+ * poses (only the objects whose geometry the editor rebuilt since the last frame): the first stroke on a blank
+ * exposure, whose new cel the session does not hold yet. The onion skins are the session's as well.
  */
 import {loadEngine} from './engine.mjs';
 import {holdsRevision} from './engine-open.mjs';
@@ -28,8 +30,6 @@ let shared = null;
 const perStage = () => ({
   /** Geometry groups the engine last received, by slot: an unchanged group is not sent again. */
   groups: [], count: -1, fields: null, frameSent: false,
-  /** Onion skin poses the engine holds, by the editor's sampled frame. */
-  ghosts: new WeakMap(), nextGhost: 1,
   /** The drawing cels the engine holds live: strokes drawn before they are published. */
   live: null,
   /** Counts the frames drawn: a wait for pictures ends when another frame is drawn. */
@@ -134,7 +134,7 @@ async function adapterName(stage) {
  * The stage over `canvas`, the page's scene canvas: the engine's surface for as long as the stage lives.
  * Rejects with a localized error when the engine or its graphics device cannot start.
  * @param {HTMLCanvasElement} canvas the scene canvas (a canvas keeps one context type: a stage replaced after a lost device gets a new canvas)
- * @param {object} options `onInvalidate()` asks for another frame; `onStatus(message)` reports the device being lost; `onError(error)` reports a frame the engine refused
+ * @param {object} options `onInvalidate()` asks for another frame; `onMonitorPicture()` asks for the camera monitor alone to be painted again (its picture arrived); `onStatus(message)` reports the device being lost; `onError(error)` reports a frame the engine refused
  * @param {() => Promise<object>} [load] how the engine is loaded (a test stands in its own)
  */
 export async function createStage(canvas, options = {}, load = loadEngine) {
@@ -177,7 +177,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
   poller.unref?.();
   /** The poses the engine received are in doubt after an error: the next frame sends them all again. */
   const resend = () => {
-    side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap();
+    side.groups = []; side.count = -1; side.fields = null; side.frameSent = false;
   };
   /** The engine refused this document; reported once, retried with the next revision. */
   const refuse = (error, report, revision) => {
@@ -208,28 +208,6 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     known.fields = fields;
     side.stats.objectsSent += sent;
     return `${fields.slice(0, -1)}${Object.keys(header).length ? ',' : ''}"objects":[${items.join(',')}]}`;
-  };
-
-  /** Sends the onion skins that changed and describes all of them for this frame. */
-  const onionList = request => {
-    const list = [];
-    for (const onion of request.onionFrames ?? []) {
-      let known = side.ghosts.get(onion.frame);
-      if (!known || !stage.has_ghost(known.id)) side.ghosts.set(onion.frame, known = {id: known?.id ?? side.nextGhost++, groups: [], count: -1});
-      const json = frameJSON(onion.frame, onion.geometry, known);
-      if (json !== null) stage.edit_ghost(known.id, json);
-      // The skin shows the objects its geometry lists (scope, hidden figures and layers are already applied to it).
-      const shown = new Set(), ordered = onion.geometry.orderedObjects ?? [...onion.geometry.objects.values()];
-      let tint = -1;
-      for (const group of ordered) {
-        shown.add(group.slot);
-        if (tint < 0) { const rgb = group.drawables?.find(item => item.onionTint)?.onionTint; if (rgb) tint = rgb[0] << 16 | rgb[1] << 8 | rgb[2]; }
-      }
-      const hidden = [];
-      for (let slot = 0; slot < (onion.frame.objects?.length ?? 0); slot++) if (!shown.has(slot)) hidden.push(slot);
-      list.push(known.id, onion.opacity ?? .14, tint, onion.showOnTop ? 1 : 0, onion.beforeUid ?? -1, hidden.length, ...hidden);
-    }
-    return list;
   };
 
   const awaitPictures = seen => { waitForPictures(side, seen, invalidate); uploadRemainingPictures(side); };
@@ -275,15 +253,23 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     holds(request.revision ?? 0);
     draft(request);
     // A pose of another document starts the engine's edit scene over.
-    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.frameReport = request.report; }
+    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.frameReport = request.report; }
     // Strokes, fills and floating selections not yet published are drawn from the tiles held live.
     side.live.invalidate = invalidate;
     side.live.sync(drawingResourcesFor(request.documentReport ?? request.report));
-    const {frame, geometry} = request, objects = frame.objects ?? [];
-    const json = frameJSON(frame, geometry, side);
-    // An unchanged frame is not parsed again; the first frame and every changed one are.
-    if (json !== null) { stage.edit_frame(json); side.frameSent = true; }
-    const onions = onionList(request);
+    const {frame, geometry, source} = request, objects = frame.objects ?? [];
+    if (source) {
+      stage.edit_session(source.session, source.view, source.motion);
+      // The poses the engine holds are the session's: the next frame sent as poses is sent whole.
+      side.groups = []; side.count = -1; side.fields = null;
+    } else {
+      const json = frameJSON(frame, geometry, side);
+      // An unchanged frame is not parsed again; the first frame and every changed one are.
+      if (json !== null) { stage.edit_frame(json); side.frameSent = true; }
+    }
+    // The onion skins are the session's: it plans them from its document and the settings, and the stage keeps their poses.
+    if (request.onions) stage.set_onions(request.onions.session, request.onions.view, request.onions.request);
+    else stage.clear_onions();
     const sendMs = performance.now() - started;
     const hidden = [], translations = [];
     objects.forEach((object, slot) => {
@@ -299,7 +285,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     orient(view);
     const drawn = stage.render_edit((view.scale ?? 1) * deviceRatio, (view.x ?? 0) * deviceRatio, (view.y ?? 0) * deviceRatio, request.cameraEnabled !== false,
       request.clipToCanvas !== false, new Uint32Array(hidden), new Float64Array(translations),
-      Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1, new Float64Array(onions));
+      Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1);
     if (drawn) side.live.presented();
     Object.assign(side.stats, {frames: side.stats.frames + (drawn ? 1 : 0), lastSendMs: sendMs, lastDrawMs: performance.now() - started - sendMs});
     // Generated effects whose trails are still being sampled refine on the next frame
@@ -359,6 +345,16 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
         return false;
       }
     },
+    /**
+     * The figure whose artwork the frame last drawn shows at `point` (scene units), for a click: `{slot, uid}` of the topmost
+     * one, or null. `hiddenUids` and `lockedUids` list the figures that cannot be picked (docs/engine/rendering.md,
+     * "Picking artwork").
+     */
+    pickArtwork(point, {scale = 1, hiddenUids = [], lockedUids = []} = {}) {
+      if (destroyed || lost || side.failed || !engineShown) return null;
+      try { return JSON.parse(stage.pick_artwork(JSON.stringify({x: point.x, y: point.y, scale, hidden: [...hiddenUids], locked: [...lockedUids]}))); }
+      catch (error) { options.onError?.(error); return null; }
+    },
     // Prepared playback frames: a packet is a ticket for a tick the engine has ready.
     hasPreparedFrame(key) {
       const ticket = engineTicket(key);
@@ -407,7 +403,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     drawCameraMonitor(target, {width, height, zoom, panX, panY, dpr = 1}, afterSourcePaint) {
       if (!engineShown || side.failed) { side.workerMonitor?.destroy(); side.workerMonitor = null; return false; }
       if (side.engine.threaded) {
-        side.workerMonitor ??= new EngineCameraMonitor(side.stage, {invalidate: () => options.onInvalidate?.()});
+        side.workerMonitor ??= new EngineCameraMonitor(side.stage, {invalidate: () => options.onMonitorPicture?.()});
         return side.workerMonitor.draw(target, {width, height, zoom, panX, panY, dpr}, afterSourcePaint);
       }
       if (side.monitor === undefined) {

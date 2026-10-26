@@ -1,23 +1,18 @@
 //! Headless engine tools.
 //!
 //!   styk info <file>                      load timing, contents, unsupported features
-//!   styk compare <file> <reference.json>  primitive-by-primitive parity with the JS editor
-//!                                         (effects too, for a reference written with --vfx)
+//!   styk compare <file> <reference.json>  primitive-by-primitive parity with a recorded dump of the JS editor's
+//!                                         evaluation (effects too, where the dump has them)
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
 //!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
 //!   styk generators <file> <tick>…        the generated effects of frames: draws, live particles, timing
 //!   styk edit-replay [--worker [--max-source-bytes N]] <reference.json>…    editing commands against the JS editor's recording
 //!   styk edit-replay --live-worker <session.json> <returns.json>…  strict paired live worker traces
-//!   styk edit-session <capture.json>      an app edit session the shadow facade captured,
-//!                                         replayed natively (each answer's status)
 //!   styk edit-bench <report.json> <uid> <tick> [--joint N]   what a gesture costs in styk-edit
 //!                                         on a document, called directly and through an edit
 //!                                         session's JSON (as the app calls it)
-//!   styk load <file> [--layer-timeline] [--input out.json] [--output out.json] [--indexes out.json]
-//!                                         the editor's load normalization (engine/tools/load-private.mjs compares it)
 //!   styk open <file> [--layer-timeline]   the app's open: decode, load normalization and typed views, timed
-//!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
-//!                                         (engine/tools/records-reference.mjs wrote the folder)
+//!   styk records <folder> [--write]       the evaluated frame as records against a recording of the JS editor's
 //!   styk export <file> <tick|a-b> <out>   export frames as the app's engine exports them, timed
 //!                                         (see export.rs for the options; --cpu: styk-raster)
 //!   styk raster-parity <file>…            styk-raster against styk-render on the same draw lists,
@@ -40,7 +35,6 @@ fn main() {
     let code = match args.first().map(String::as_str) {
         Some("container") if args.len() >= 3 && args[1] == "roundtrip" => container::roundtrip(&args[2], &args[3..]),
         Some("container") if args.len() >= 4 && args[1] == "json" => container::json(&args[2], &args[3]),
-        Some("load") if args.len() >= 2 => load::load(&args[1], &args[2..]),
         Some("open") if args.len() >= 2 => load::open(&args[1], &args[2..]),
         Some("describe") if args.len() >= 3 => match load(&args[1]) {
             Ok((prepared, _)) => {
@@ -61,21 +55,20 @@ fn main() {
         Some("raster") if args.len() >= 4 => raster(&args[1], &args[2], &args[3], &args[4..]),
         Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2], args[3..].iter().any(|a| a == "--no-effects")),
         Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
-        Some("edit-session") if args.len() == 2 => edit_session(&args[1]),
         Some("records") if args.len() >= 2 => records(&args[1], &args[2..]),
         Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3], &args[4..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         Some("export") if args.len() >= 4 => export::export(&args[1], &args[2], &args[3], &args[4..]),
         Some("raster-parity") if args.len() >= 2 => raster_parity::run(&args[1..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay [--worker [--max-source-bytes N]] <reference.json>... | edit-replay --live-worker <session.json> <returns.json>... | edit-session <capture.json>");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay [--worker [--max-source-bytes N]] <reference.json>... | edit-replay --live-worker <session.json> <returns.json>...");
             2
         }
     };
     std::process::exit(code);
 }
 
-/// Replays command recordings (engine/tools/edit-replay.mjs) in styk-edit. Exit code 1
+/// Replays command recordings (the tapes and references in engine/tests/edit) in styk-edit. Exit code 1
 /// when any step the engine runs differs from the editor's.
 fn edit_replay(files: &[String]) -> i32 {
     if files.first().is_some_and(|flag| flag=="--live-worker") { return edit_live_replay(&files[1..]); }
@@ -143,50 +136,7 @@ fn edit_live_replay(files: &[String]) -> i32 {
     i32::from(failed)
 }
 
-/// Replays a captured edit session: the document and editor state the
-/// session started from, then every call with the arguments and view the facade sent,
-/// printing each answer's status (and why, for one the engine did not run).
-fn edit_session(file: &str) -> i32 {
-    let capture = match std::fs::read(file).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())) {
-        Ok(capture) => capture,
-        Err(error) => {
-            println!("{file}: {error}");
-            return 2;
-        }
-    };
-    let text = |value: Option<&styk_doc::Value>| value.and_then(styk_doc::Value::as_str).unwrap_or("null").to_string();
-    let report = match styk_doc::json::parse(text(capture.get("document")).as_bytes()) {
-        Ok(report) => report,
-        Err(error) => {
-            println!("{file}: the document is not JSON: {error}");
-            return 2;
-        }
-    };
-    let mut session = match styk_edit::session::Session::start(report, &text(capture.get("state"))) {
-        Ok(session) => session,
-        Err(error) => {
-            println!("{file}: the session did not start: {error}");
-            return 2;
-        }
-    };
-    println!("{}: {}", file, text(capture.get("key")));
-    let calls: Vec<styk_doc::Value> = capture.get("calls").and_then(styk_doc::Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-    for (at, call) in calls.iter().enumerate() {
-        let name = text(call.get("name"));
-        let started = std::time::Instant::now();
-        let answer = session.call(&name, &text(call.get("args")), &text(call.get("view")));
-        let elapsed = started.elapsed().as_secs_f64() * 1000.0;
-        let answer_len = answer.len();
-        let answer = styk_doc::json::parse(answer.as_bytes()).unwrap_or(styk_doc::Value::Null);
-        let status = text(answer.get("status"));
-        let why = answer.get("reason").or(answer.get("error")).and_then(styk_doc::Value::as_str).map(|why| format!(": {why}")).unwrap_or_default();
-        println!("{at:>4} {name}: {status}{why} ({elapsed:.2} ms, {} bytes)", answer_len);
-    }
-    for (scope, count, ms) in styk_edit::prof::take() { println!("  {scope}: {count} × , {ms:.2} ms"); }
-    0
-}
-
-/// Times a gesture in styk-edit on a loaded report (records-reference.mjs writes one):
+/// Times a gesture in styk-edit on a document given as JSON:
 /// selecting a figure at a tick, a drag of 30 moves and of 30 joint poses, each committed.
 fn edit_bench(report: &str, uid: &str, tick: &str, rest: &[String]) -> i32 {
     let report_path = report.to_string();
@@ -261,7 +211,7 @@ fn edit_bench(report: &str, uid: &str, tick: &str, rest: &[String]) -> i32 {
 }
 
 /// Compares the evaluated frame as records, tick by tick, with what the editor stores
-/// (engine/tools/records-reference.mjs). `--write` leaves the engine's record of the
+/// (the recordings kept in styk-eval's tests/fixtures/records). `--write` leaves the engine's record of the
 /// first differing tick in `<folder>/engine-<tick>.json`. Exit code 1 on a difference;
 /// ticks the engine does not produce as records yet are counted, not failed.
 fn records(folder: &str, flags: &[String]) -> i32 {
@@ -431,9 +381,6 @@ fn info(path: &str) -> i32 {
         if d.sheet.is_some() { ", layer sheet" } else { "" }
     );
     println!("  opened in {ms:.1} ms");
-    if !d.unsupported.is_empty() {
-        println!("  not evaluated yet: {}", d.unsupported.join(", "));
-    }
     0
 }
 

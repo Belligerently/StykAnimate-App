@@ -554,6 +554,3 @@ export class AssetLibrary {
     this.updateStats();
   }
 }
-
-export const mountAssetLibrary = (container, options) =>
-  new AssetLibrary(container, options);

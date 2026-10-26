@@ -1,6 +1,6 @@
 //! The rectangles effects are filtered on, as the editor computes them
 //! (`objectBounds` in src/renderer-geometry.mjs with `drawableVfxPadding` from
-//! src/vfx-canvas.mjs). A layer's pixel grid, and the coordinates spatial
+//! src/vfx-drawable.mjs). A layer's pixel grid, and the coordinates spatial
 //! effects read (noise cells, gradient positions, the downsampled blur grid),
 //! are anchored to these rectangles, so they are computed exactly as the editor
 //! does: integer world units, three units beyond every stroke's half width and

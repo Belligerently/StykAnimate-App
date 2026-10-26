@@ -1,5 +1,4 @@
-//! The Build Figure workspace's styles of a figure definition (src/editor-builder-branch.mjs,
-//! src/editor-builder.mjs, src/editor-builder-style.mjs): a segment's shape, colour, opacity,
+//! The Build Figure workspace's styles of a figure definition: a segment's shape, colour, opacity,
 //! thickness and construction flag, a branch's caps and circle fill, a polygon's opacity and the
 //! figure's name and outline. Definition edits are one `native-properties` history entry of the
 //! paths they change (or, for the figure's name, one `figure` entry); colours of a figure on show
@@ -271,7 +270,7 @@ pub(crate) fn branch(figure: &Value, selected: usize, whole: bool, polygons: boo
     Branch { indices, queue, polygons }
 }
 
-/// `finite(value, label, min, max)` of src/editor-builder-branch.mjs.
+/// `finite(value, label, min, max)` of the branch style commands.
 pub(crate) fn branch_finite(value: Option<&Value>, label: &str, min: f64, max: f64) -> Result<f64, EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max => Ok(*n),
@@ -279,7 +278,7 @@ pub(crate) fn branch_finite(value: Option<&Value>, label: &str, min: f64, max: f
     }
 }
 
-/// `finite(value, label, min, max)` of src/editor-builder.mjs.
+/// `finite(value, label, min, max)` of the builder commands.
 pub(crate) fn builder_finite(value: Option<&Value>, label: &str, min: f64, max: f64) -> Result<f64, EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max => Ok(*n),
@@ -336,7 +335,7 @@ fn style_patch(figure: &Value, selected: usize, patch: &Obj, targets: &Branch) -
     let mut opacity = patch.get("opacity").cloned();
     let mut gradient = patch.get("gradient").cloned();
     if patch.contains("paint") {
-        let paint = crate::recolor::normalize_paint(patch.get("paint").unwrap_or(&Value::Null))?;
+        let paint = styk_eval::records::paint::normalize_paint(patch.get("paint").unwrap_or(&Value::Null))?;
         let value = paint.value();
         let stops: Vec<Value> = value.get("stops").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         let (first, last) = (stops.first().cloned().unwrap_or(Value::Null), stops.last().cloned().unwrap_or(Value::Null));
@@ -669,7 +668,14 @@ impl Editor {
         let Some(fields) = patch.as_obj() else { return Err(invalid("errors.editorBuilderBranch.chooseASegmentStylePatch")) };
         let mut style = fields.clone();
         let shape = style.remove("shape");
-        let targets = branch(&selected.figure, selected.joint, whole, fields.contains("color") || fields.contains("opacity"));
+        // Several joints selected with Shift are styled together (`selectionTargets`).
+        let chosen = self.selected_segment_ids(Some(&selected.figure));
+        let targets = if chosen.len() > 1 {
+            let indices: Vec<usize> = segments_of(&selected.figure).iter().enumerate().filter(|(_, s)| s.get("segment_id").is_some_and(|id| chosen.iter().any(|other| crate::history::js_strict_eq(other, id)))).map(|(i, _)| i).collect();
+            Branch { queue: indices.clone(), indices, polygons: Vec::new() }
+        } else {
+            branch(&selected.figure, selected.joint, whole, fields.contains("color") || fields.contains("opacity"))
+        };
         let (mut entries, _) = style_patch(&selected.figure, selected.joint, &style, &targets)?;
         let segments = segments_of(&selected.figure);
         let polygons = polygons_of(&selected.figure);
@@ -1101,6 +1107,13 @@ fn style_targets(figure: &Value, entries: &[Drawable], target: (bool, usize), br
         .collect()
 }
 
+/// How many drawables `builderStyleTargets(figure, {kind: 'segment', index: joint}, {branch})` names.
+pub(crate) fn style_target_count(figure: &Value, joint: usize, branch: bool) -> Result<usize, EditError> {
+    let entries = drawables(figure, None)?;
+    let target = resolve_target(figure, &Value::object(Obj::new()), joint as i64)?;
+    Ok(style_targets(figure, &entries, target, branch).len())
+}
+
 fn items_of(value: Option<&Value>) -> Vec<Value> {
     value.and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default()
 }
@@ -1231,8 +1244,8 @@ impl Editor {
         self.write_builder_order(&label, &figure, &object, &entries, &next).map(Value::Bool)
     }
 
-    /// `beginBuilderOrderAnimation`, `previewBuilderOrderSequence`, `commitBranchStyleAnimation`: every
-    /// drawable keyed at its new place (a held key), after the preview's live event.
+    /// Every drawable keyed at its new place (a held key), after the preview's live event, as the inspector's draw-order gesture
+    /// (`beginAnimationEdit([targets], "zIndex")`, `property_edit.rs`) keys it.
     fn key_builder_order(&mut self, figure: &Value, object: &Value, entries: &[Drawable], next: &[usize]) -> Result<bool, EditError> {
         if self.property_edit.is_some() {
             return Err(EditError::Unported("a draw order edit while a property edit is open".into()));

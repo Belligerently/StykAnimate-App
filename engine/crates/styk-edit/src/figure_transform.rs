@@ -1,4 +1,4 @@
-//! Whole-figure transforms by a handle (src/editor-figure-transform.mjs): Alt-dragging a
+//! Whole-figure transforms by a handle: Alt-dragging a
 //! handle turns and scales the selected figures, and those joined below them, about the
 //! dragged figure's origin (`beginFigureHandleDrag`, `transformFigureHandle`,
 //! `commitFigureHandleDrag`, `cancelFigureHandleDrag`).

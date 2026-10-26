@@ -1,4 +1,4 @@
-//! Gestures on a layer sheet (src/editor-authored-pose.mjs): a gesture edits a draft
+//! Gestures on a layer sheet: a gesture edits a draft
 //! of the frame on show, never the keys it was evaluated from, and commits by
 //! capturing the draft into the tracks of the layers it changed ([`crate::sheet`]).
 
@@ -316,7 +316,7 @@ impl Editor {
         let index = self.frame_index;
         let before = self.report.get("keyframes").and_then(|frames| frames.item(index)).ok_or_else(|| EditError::Invalid("a native transaction without a frame".into()))?;
         let before_selection = self.selection_state();
-        let result = mutate(self).and_then(|()| self.synchronize_origins(&objects_of(&before)));
+        let result = mutate(self).and_then(|()| self.synchronize_origins_with(&objects_of(&before), true));
         if let Err(error) = result {
             if let Some(frame) = self.report.make_obj().and_then(|report| report.get_mut("keyframes")).and_then(Value::make_arr).and_then(|frames| frames.get_mut(index)) { *frame = before; }
             self.restore_selection(&before_selection)?;
@@ -379,7 +379,7 @@ impl Editor {
             serial: self.next_drag_serial(),
             authored: true,
         });
-        let result = mutate(self).and_then(|()| self.commit_authored_drag());
+        let result = mutate(self).and_then(|()| self.synchronize_origins_with(&objects_of(&source), true)).and_then(|()| self.commit_authored_drag());
         if result.is_err() {
             if let Some(figures) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr) {
                 figures.truncate(definitions_start);

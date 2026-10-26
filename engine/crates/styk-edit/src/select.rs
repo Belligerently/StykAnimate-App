@@ -100,7 +100,7 @@ impl Editor {
         })))
     }
 
-    fn branch_selected(&self) -> bool {
+    pub(crate) fn branch_selected(&self) -> bool {
         self.selection.joint >= 0 && self.selection_metadata.branch.as_ref().is_some_and(|branch|
             branch.get("uid").and_then(Value::as_f64) == self.selection.uid.map(|uid| uid as f64)
             && branch.get("joint").and_then(Value::as_f64) == Some(self.selection.joint as f64))
@@ -117,7 +117,7 @@ impl Editor {
         }
     }
 
-    fn selected_segment_ids(&self, figure: Option<&Value>) -> Vec<Value> {
+    pub(crate) fn selected_segment_ids(&self, figure: Option<&Value>) -> Vec<Value> {
         let Some(active) = figure.and_then(|figure| figure.get("segments")).and_then(|segments| usize::try_from(self.selection.joint).ok().and_then(|joint| segments.item(joint))).and_then(|segment| segment.get("segment_id").cloned()) else { return Vec::new() };
         match self.selection_metadata.segments.as_ref() {
             Some(selection) if selection.uid == self.selection.uid && selection.active.as_ref().is_some_and(|id| crate::history::js_strict_eq(id, &active)) => selection.ids.clone(),
@@ -218,12 +218,11 @@ impl Editor {
         self.selection_metadata.branch = Some(Value::object(branch));self.emit("selection", vec![]);Ok(true)
     }
 
-    pub(crate) fn selection_metadata_gate(&self, method: &str) -> Result<(), EditError> {
-        if (self.selection_metadata.polygon.is_some() || self.selection_metadata.segments.as_ref().is_some_and(|selection| selection.ids.len() > 1) || self.branch_selected()) && !metadata_recorded_call(method) && !matches!(method, "selectSameDefinition" | "invertSelection" | "selectMarquee") {
-            return Err(EditError::Unported(format!("{method} with optional selection metadata")));
-        }
-        Ok(())
+    /// Whether a fill, several joints or a branch are selected (the metadata a view repeats and history keeps).
+    pub(crate) fn selection_metadata_visible(&self) -> bool {
+        self.selection_metadata.polygon.is_some() || self.selection_metadata.segments.as_ref().is_some_and(|selection| selection.ids.len() > 1) || self.branch_selected()
     }
+
     /// `select(uid, joint, {toggle, add})`.
     pub(crate) fn select(&mut self, uid: Option<u32>, joint: i64, toggle: bool, add: bool) -> Result<Value, EditError> {
         if self.branch_selected() && uid == self.selection.uid && joint == self.selection.joint && !toggle && !add {

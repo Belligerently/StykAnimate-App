@@ -7,7 +7,7 @@
 // app internals are in appInternals() below, each with a fallback, and every result records which path was used.
 //
 //   node scripts/engine-benchmark.mjs --file "<path>" --label <name>
-//        [--target electron|web-chromium|web-webkit] [--renderer gpu|canvas] [--throttle 1|4] [--touch]
+//        [--target electron|web-chromium|web-webkit] [--throttle 1|4] [--touch]
 //        [--workloads open,playback,scrub,zoom,pan,drag,draw,onion,export-png,export-gif,export-video,memory]
 //        [--runs 1] [--width 1440 --height 900] [--root <checkout>] [--tick N] [--export-frames 120]
 //        [--wait-idle 2.0] [--headed] [--web-dir <built site>] [--url <running site>] [--out <dir>]
@@ -19,7 +19,7 @@
 // runs already there), and one `RESULT {...}` line per run on stdout. Progress goes to stderr.
 //
 // Workloads always run in the order listed above, whatever order --workloads names them in; the file is opened once
-// per run in a fresh profile and is never saved. Use STYK_PYTHON for the desktop codec (.venv is picked up by itself).
+// per run in a fresh profile and is never saved.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -32,8 +32,6 @@ import zlib from 'node:zlib';
 
 const DRIVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WORKLOADS = ['open', 'playback', 'scrub', 'zoom', 'pan', 'drag', 'draw', 'onion', 'export-png', 'export-gif', 'export-video', 'memory'];
-/** The editor settings' storage key in a browser (src/settings.mjs EDITOR_SETTINGS_KEY) and file in a desktop profile. */
-const SETTINGS_KEY = 'stykanimate.editor.settings.v1', SETTINGS_FILE = 'editor-settings.json';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const log = (...parts) => process.stderr.write(`[bench] ${parts.join(' ')}\n`);
 
@@ -79,7 +77,7 @@ async function appInternals(page, request, args = {}) {
         ['internal:styk.performance', () => { const stats = window.styk.performance().renderer; return stats.backend && { backend: stats.backend, adapter: stats.adapter ?? null }; }],
         ['fallback:dom-renderer-label', () => ({ backend: document.querySelector('#renderer-label')?.textContent?.trim() || null, adapter: null })]);
       case 'settings': return attempt(
-        ['internal:state.settings', () => { const s = state.settings; return plain({ rendererMode: s.rendererMode, playbackQuality: s.playbackQuality, fitViewOnPlayback: s.fitViewOnPlayback, loopPlayback: s.loopPlayback,
+        ['internal:state.settings', () => { const s = state.settings; return plain({ playbackQuality: s.playbackQuality, fitViewOnPlayback: s.fitViewOnPlayback, loopPlayback: s.loopPlayback,
           smoothZoom: s.smoothZoom, canvasZoomGesture: s.canvasZoomGesture, uiScale: s.uiScale, uiScaleMode: s.uiScaleMode, timelineMode: s.timelineMode, touchInterface: s.touchInterface,
           showHandles: s.showHandles, showUnselectedHandles: s.showUnselectedHandles, onionBefore: s.onionBefore, onionAfter: s.onionAfter, onionMode: s.onionMode, onionOpacity: s.onionOpacity, autosaveSeconds: s.autosaveSeconds }); }],
         ['fallback:localStorage', () => JSON.parse(localStorage.getItem(args.key) || 'null')]);
@@ -143,12 +141,12 @@ async function appInternals(page, request, args = {}) {
 
 // ---- Options
 function parseArguments(argv) {
-  const options = { target: 'electron', renderer: 'gpu', throttle: 1, touch: false, workloads: [...WORKLOADS], runs: 1, width: null, height: null, root: process.cwd(),
+  const options = { target: 'electron', throttle: 1, touch: false, workloads: [...WORKLOADS], runs: 1, width: null, height: null, root: process.cwd(),
     tick: null, exportFrames: 120, waitIdle: 2.0, coldStart: false, bundleSize: false, build: true, headed: false, webDir: null, url: null, out: null,
     openTimeout: 600, exportTimeout: 900, keepExports: false, canvasHook: true, startupView: 'editor', label: null, file: null };
   const flags = { '--touch': ['touch', true], '--cold-start': ['coldStart', true], '--bundle-size': ['bundleSize', true], '--no-build': ['build', false], '--headed': ['headed', true],
     '--keep-exports': ['keepExports', true], '--no-canvas-hook': ['canvasHook', false] };
-  const values = { '--file': 'file', '--label': 'label', '--target': 'target', '--renderer': 'renderer', '--throttle': 'throttle', '--workloads': 'workloads', '--runs': 'runs', '--width': 'width',
+  const values = { '--file': 'file', '--label': 'label', '--target': 'target', '--throttle': 'throttle', '--workloads': 'workloads', '--runs': 'runs', '--width': 'width',
     '--height': 'height', '--root': 'root', '--tick': 'tick', '--export-frames': 'exportFrames', '--wait-idle': 'waitIdle', '--web-dir': 'webDir', '--url': 'url', '--out': 'out',
     '--open-timeout': 'openTimeout', '--export-timeout': 'exportTimeout', '--startup-view': 'startupView' };
   const numeric = new Set(['throttle', 'runs', 'width', 'height', 'tick', 'exportFrames', 'waitIdle', 'openTimeout', 'exportTimeout']);
@@ -166,7 +164,6 @@ function parseArguments(argv) {
   if (typeof options.workloads === 'string') options.workloads = options.workloads.split(',').map((name) => name.trim()).filter(Boolean);
   for (const name of options.workloads) if (!WORKLOADS.includes(name)) throw new Error(`Unknown workload "${name}". Known: ${WORKLOADS.join(', ')}`);
   if (!['electron', 'web-chromium', 'web-webkit'].includes(options.target)) throw new Error('--target is electron, web-chromium or web-webkit');
-  if (!['gpu', 'canvas'].includes(options.renderer)) throw new Error('--renderer is gpu or canvas');
   if (!['editor', 'home'].includes(options.startupView)) throw new Error('--startup-view is editor or home');
   if (options.touch && options.target === 'electron') throw new Error('--touch needs a web target (the desktop app has no phone-size emulation)');
   if (!options.label || !/^[\w.-]+$/.test(options.label)) throw new Error('--label <name> is required (letters, digits, dot, dash, underscore)');
@@ -265,7 +262,6 @@ async function residentKiB(pid) { try { return Number(/VmRSS:\s+(\d+)/.exec(awai
 function processKind(commandLine, isRoot) {
   const type = /--type=([\w-]+)/.exec(commandLine)?.[1];
   if (type) return type === 'gpu-process' ? 'gpu' : type;
-  if (/python|styk-codec|backend/.test(commandLine)) return 'codec';
   if (/WebProcess/.test(commandLine)) return 'renderer';
   if (/NetworkProcess|GPUProcess/.test(commandLine)) return /GPU/.test(commandLine) ? 'gpu' : 'utility';
   return isRoot ? 'main' : 'other';
@@ -436,20 +432,12 @@ function electronBinary(root) {
   for (const base of [root, DRIVER_ROOT]) { try { return createRequire(path.join(base, 'package.json'))('electron'); } catch { /* next */ } }
   throw new Error('Electron is not installed (npm ci).');
 }
-function pythonFor(root) {
-  if (process.env.STYK_PYTHON) return process.env.STYK_PYTHON;
-  for (const base of [root, DRIVER_ROOT]) { const candidate = path.join(base, '.venv/bin/python'); if (existsSync(candidate)) return candidate; }
-  return undefined;
-}
-const rendererSetting = (requested) => (requested === 'canvas' ? 'canvas' : 'auto');
 async function removeDirectory(directory) { await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }).catch(() => {}); }
 
 async function launchElectron(options, { startupView = 'editor' } = {}) {
   const { _electron: electron } = await supportModule();
   const profile = await mkdtemp(path.join(os.tmpdir(), 'styk-bench-'));
-  await writeFile(path.join(profile, SETTINGS_FILE), JSON.stringify({ rendererMode: rendererSetting(options.renderer) }));
-  const python = pythonFor(options.root);
-  const env = { ...process.env, STYK_STARTUP_VIEW: startupView, STYK_USER_DATA_DIR: profile, STYK_LIBRARY_DIR: path.join(profile, 'library'), ...(python ? { STYK_PYTHON: python } : {}) };
+  const env = { ...process.env, STYK_STARTUP_VIEW: startupView, STYK_USER_DATA_DIR: profile, STYK_LIBRARY_DIR: path.join(profile, 'library') };
   const app = await electron.launch({ executablePath: electronBinary(options.root), args: [options.root], cwd: options.root, timeout: 60000, env });
   const child = app.process();
   let stderr = ''; child.stderr?.on('data', (chunk) => { stderr = (stderr + chunk).slice(-4000); });
@@ -465,7 +453,7 @@ async function launchElectron(options, { startupView = 'editor' } = {}) {
   };
   try {
     const page = await app.firstWindow({ timeout: 60000 });
-    return { target: 'electron', app, page, profile, roots: [child.pid], python: python ?? null, close, stderr: () => stderr,
+    return { target: 'electron', app, page, profile, roots: [child.pid], close, stderr: () => stderr,
       versions: async () => app.evaluate(() => ({ electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node })) };
   } catch (error) { await close(); throw error; }
 }
@@ -519,11 +507,8 @@ async function launchWeb(options) {
   try {
     const context = await browser.newContext({ viewport: { width: options.width, height: options.height }, acceptDownloads: true,
       ...(options.touch ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
-    // Exports download instead of opening the native picker, and the Graphics mode is the one asked for.
-    await context.addInitScript(({ key, mode }) => {
-      delete window.showSaveFilePicker;
-      try { if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ rendererMode: mode })); } catch { /* storage is unavailable before the first navigation */ }
-    }, { key: SETTINGS_KEY, mode: rendererSetting(options.renderer) });
+    // Exports download instead of opening the native picker.
+    await context.addInitScript(() => { delete window.showSaveFilePicker; });
     const page = await context.newPage();
     return { target: options.target, browser, context, page, site, roots, close: async () => { await browser.close().catch(() => {}); },
       versions: async () => ({ browser: `${browser.browserType().name()} ${browser.version()}` }) };
@@ -558,7 +543,7 @@ async function openSession(options, result) {
     result.versions = { driverNode: process.version, ...(await session.versions()) };
     result.window = { requested: [options.width, options.height], touch: options.touch, headless: session.app ? false : !options.headed, pageZoom: session.pageZoom,
       ...(await page.evaluate(() => ({ inner: [innerWidth, innerHeight], dpr: devicePixelRatio, input: document.documentElement.dataset.input ?? null, layout: document.documentElement.dataset.touchLayout ?? null }))) };
-    result.environment = { STYK_PYTHON: session.python ?? null, STYK_BROWSER_GPU: process.env.STYK_BROWSER_GPU ?? null, site: session.site ? { source: session.site.source, origin: session.site.origin } : null };
+    result.environment = { STYK_BROWSER_GPU: process.env.STYK_BROWSER_GPU ?? null, site: session.site ? { source: session.site.source, origin: session.site.origin } : null };
     return session;
   } catch (error) { await session.close(); throw error; }
 }
@@ -1063,11 +1048,12 @@ function baseResult(options, kind) {
   return { schema: 1, tool: 'scripts/engine-benchmark.mjs', kind, label: options.label, startedAt: new Date().toISOString(), target: options.target,
     root: options.root, git: gitState(options.root), driverGit: options.root === DRIVER_ROOT ? undefined : gitState(DRIVER_ROOT),
     host: { ...hostInfo(), loadStart: os.loadavg().map((v) => round(v)), topCpuStart: topProcesses() },
-    renderer: { requested: options.renderer, setting: rendererSetting(options.renderer), reported: null }, errors: [] };
+    renderer: { reported: null }, errors: [] };
 }
 function configName(options) {
   const size = options.touch ? (options.width === 780 && options.height === 390 ? '' : `-${options.width}x${options.height}`) : (options.width === 1440 && options.height === 900 ? '' : `-${options.width}x${options.height}`);
-  return `${options.target}-${options.renderer}-t${options.throttle}${options.touch ? '-touch' : ''}${size}`;
+  // `gpu` stays in the id so runs recorded before the Canvas mode was removed still line up in the summary.
+  return `${options.target}-gpu-t${options.throttle}${options.touch ? '-touch' : ''}${size}`;
 }
 async function nextRunPath(directory) {
   await mkdir(directory, { recursive: true });
@@ -1185,8 +1171,8 @@ async function runBundleSize(options) {
       if (built.status !== 0) throw new Error(`npm run web:build failed: ${(built.stderr || built.stdout || '').trim().split('\n').slice(-3).join(' | ')}`);
       result.buildOutput = built.stdout.trim().split('\n').at(-1);
     }
-    const groups = Object.fromEntries(['js', 'wasm', 'pythonRuntime', 'other'].map((name) => [name, { files: 0, bytes: 0, brotli5: 0 }])), files = [];
-    const group = (name) => (name.startsWith('vendor/pyodide/') || name.startsWith('python/') ? 'pythonRuntime' : name.endsWith('.wasm') ? 'wasm' : /\.(mjs|js)$/.test(name) ? 'js' : 'other');
+    const groups = Object.fromEntries(['js', 'wasm', 'other'].map((name) => [name, { files: 0, bytes: 0, brotli5: 0 }])), files = [];
+    const group = (name) => (name.endsWith('.wasm') ? 'wasm' : /\.(mjs|js)$/.test(name) ? 'js' : 'other');
     for (const name of (await readdir(directory, { recursive: true })).sort()) {
       const file = path.join(directory, name);
       if (!(await stat(file)).isFile()) continue;
@@ -1197,7 +1183,7 @@ async function runBundleSize(options) {
     }
     const total = Object.values(groups).reduce((sum, entry) => ({ files: sum.files + entry.files, bytes: sum.bytes + entry.bytes, brotli5: sum.brotli5 + entry.brotli5 }), { files: 0, bytes: 0, brotli5: 0 });
     result.bundle = { directory, built: options.build && !options.webDir, groups: { ...groups, total },
-      grouping: 'pythonRuntime is vendor/pyodide/ and python/ (the Pivot codec, loaded on first use); wasm is every other .wasm; js is every other .mjs/.js; brotli5 compresses each file alone at quality 5',
+      grouping: 'wasm is every .wasm; js is every .mjs/.js; brotli5 compresses each file alone at quality 5',
       largest: files.sort((a, b) => b.bytes - a.bytes).slice(0, 15) };
   } catch (error) { result.errors.push(error.message); }
   await finish(result, destination, { label: options.label, bundle: result.bundle?.groups ?? null, errors: result.errors.length });

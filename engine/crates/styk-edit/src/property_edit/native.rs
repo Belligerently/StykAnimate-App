@@ -486,6 +486,16 @@ impl Editor {
                 "unrecorded native channel authoring or projection".into(),
             ));
         }
+        // An edit begun on a property the saved native channels do not hold (`zIndex`, `opacity`) would leave a channel the
+        // gate above refuses to end it with: the editor runs it.
+        if method == "beginAnimationEdit"
+            && !projected_native
+            && !args.get(1).and_then(Value::as_str).is_some_and(|property| matches!(property, "x" | "y" | "scale" | "rotation"))
+        {
+            return Err(EditError::Unported(
+                "unrecorded native channel authoring or projection".into(),
+            ));
+        }
         if method == "addAnimationKey"
             && args
                 .get(4)
@@ -759,6 +769,7 @@ impl Editor {
             selection: self.selection_state(),
             changed: false,
             preview: None,
+            group: None,
         });
         Ok(Value::Null) // The existing replay/facade treats the edit record as a view.
     }

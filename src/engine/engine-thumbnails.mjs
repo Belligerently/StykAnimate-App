@@ -2,8 +2,8 @@
  * Frame thumbnails drawn by the engine (docs/engine/rendering.md, Thumbnails and library
  * previews; stage S4 of docs/RUST-ENGINE-PORT.md).
  *
- * `createThumbnailRenderer` returns the object the filmstrip, the export dialog and the
- * in-between dialog draw thumbnails with (`renderThumbnail`, `invalidate`, `setPaused`,
+ * `createThumbnailRenderer` returns the object the filmstrip and the export dialog draw
+ * thumbnails with (`renderThumbnail`, `invalidate`, `setPaused`,
  * `destroy`, `stats`). A thumbnail is the tick of the revision the editor is at, from the
  * document the engine already holds: its frame prepared on the engine's workers, drawn by
  * the stage's GPU renderer on the stage's device (`renderThumbnail` in engine-stage.mjs),
@@ -12,8 +12,7 @@
  * draw thumbnails (a WebGL2 stage cannot present one device to a second canvas; a WebGPU
  * canvas whose pictures do not reach the page), the engine's preview worker draws them with
  * the CPU rasterizer from the same document (engine-previews.mjs): the same pixels by the
- * app-parity rule. In-between samples use the same preview worker and pinned typed
- * document, with the editor's explicit interval and onion settings.
+ * app-parity rule.
  *
  * A thumbnail the engine cannot draw (no worker threads, a frame outside the timeline, a
  * document the stage refuses, a preview worker that fails) resolves `false` with the reason
@@ -53,7 +52,7 @@ export class EngineThumbnails {
     this.currentAbort = null;
     /** Why the last thumbnail was not drawn by the engine. */
     this.refusal = null;
-    this.engineStats = {renders: 0, cpu: 0, inbetweens: 0, refused: 0, stale: 0, lastRenderMs: 0};
+    this.engineStats = {renders: 0, cpu: 0, refused: 0, stale: 0, lastRenderMs: 0};
     this.events = new AbortController();
     editor.addEventListener('change', event => this.invalidate(event.detail || {}), {signal: this.events.signal});
   }
@@ -81,11 +80,10 @@ export class EngineThumbnails {
    * Why the engine cannot draw this thumbnail, or null: the stage has no engine with
    * worker threads, or neither the stage nor the preview worker can draw on this device.
    */
-  _route(inbetween) {
+  _route() {
     const stage = this.stage();
     if (!stage) return NOT_YET;
     if (!stage?.engineSide?.engine?.threaded || typeof stage.renderThumbnail !== 'function') return 'no engine with worker threads';
-    if (inbetween && this.cpuRefusal) return `the preview worker cannot sample in-betweens (${this.cpuRefusal})`;
     // A stage that cannot present to a second canvas (WebGL2) never will; the preview worker then draws them on the CPU.
     if (stage.engineSide.thumbnails === false && this.cpuRefusal) return `the stage cannot draw thumbnails on this device (${this.cpuRefusal})`;
     return null;
@@ -105,7 +103,7 @@ export class EngineThumbnails {
    * holds at `revision`, and copied onto `canvas`. Resolves like the stage's `renderThumbnail`:
    * `drawn`, `stale` or `refused` (no usable preview worker, a frame it could not prepare).
    */
-  async _cpu({revision, tick, index, width, height, inbetween}, canvas, signal) {
+  async _cpu({revision, tick, width, height}, canvas, signal) {
     const previews = await this._cpuReady();
     if (!previews) return 'refused';
     const engine = this.stage().engineSide.engine;
@@ -113,8 +111,7 @@ export class EngineThumbnails {
     try {
       answer = await previews.request(() => {
         const address = engine.handle.address();
-        return inbetween ? {operation: 'inbetween', address, revision, index, ratio: inbetween.ratio, mode: ['adjacent', 'settings', 'none'].indexOf(inbetween.onionMode), count: inbetween.onionCount, opacity: inbetween.onionOpacity, ahead: inbetween.onionAhead, width, height}
-          : {operation: 'thumbnail', address, revision, tick, width, height};
+        return {operation: 'thumbnail', address, revision, tick, width, height};
       }, {signal, discard: message => engine.handle.forget_address(message.address)});
     } catch (error) {
       if (error?.name === 'AbortError') throw error;
@@ -129,14 +126,14 @@ export class EngineThumbnails {
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(answer.bitmap, 0, 0);
     answer.bitmap.close?.();
-    if (inbetween) this.engineStats.inbetweens++; else this.engineStats.cpu++;
+    this.engineStats.cpu++;
     return 'drawn';
   }
 
   renderThumbnail = (index, canvas, options = {}) => {
-    const {signal, inbetween} = options;
+    const {signal} = options;
     if (this.disposed || this.paused || signal?.aborted) return Promise.resolve(false);
-    const route = this._route(inbetween);
+    const route = this._route();
     if (route === NOT_YET) return Promise.resolve(false);
     if (route) return Promise.resolve(this._refuse(route));
     // A caller outside the virtual filmstrip still cannot queue an unbounded backlog.
@@ -163,14 +160,14 @@ export class EngineThumbnails {
       await drawingBarrier(report, {signal: controller.signal});
       check();
       // A stage that cannot draw thumbnails needs the preview worker: known before the engine is brought to the revision.
-      if (options.inbetween || this.stage()?.engineSide?.thumbnails === false) await this._cpuReady();
-      const reason = this._route(options.inbetween) ?? await engineDocument({stage: this.stage(), report, revision, check});
+      if (this.stage()?.engineSide?.thumbnails === false) await this._cpuReady();
+      const reason = this._route() ?? await engineDocument({stage: this.stage(), report, revision, check});
       check();
       // An edit landed meanwhile: the engine follows it, and the caller asks again.
       if (editor.revision !== revision || editor.report !== report) return false;
       if (reason) return this._refuse(reason);
-      const started = performance.now(), request = {revision, tick, ...(options.inbetween ? {index, inbetween: options.inbetween} : {}), width: canvas.width, height: canvas.height};
-      const stageless = () => options.inbetween || this.stage().engineSide?.thumbnails === false;
+      const started = performance.now(), request = {revision, tick, width: canvas.width, height: canvas.height};
+      const stageless = () => this.stage().engineSide?.thumbnails === false;
       let result = stageless() ? 'refused' : await this.stage().renderThumbnail(request, canvas, {signal: controller.signal});
       // The stage cannot draw thumbnails on this device: the preview worker draws them on the CPU.
       if (result === 'refused' && stageless()) result = await this._cpu(request, canvas, controller.signal);

@@ -1,4 +1,4 @@
-//! Figure controls across frames (src/editor-range-commands.mjs `applyFigureRange` and the
+//! Figure controls across frames (`applyFigureRange` and the
 //! `*InFrames` commands): a figure operation planned on each frame of a range
 //! ([`crate::range_plan`]) and committed as one history entry, through the layer sheet's
 //! range commit (`_commitSheetRange`) or, on a native timeline, as a `figure-range` entry
@@ -89,6 +89,8 @@ pub(crate) enum Request {
     Reset,
     /// Recolouring (its label comes with the options).
     Recolor(Box<crate::recolor::Recolor>),
+    /// A pose property at one value (the label comes with the options; the entry says how many frames it changed).
+    Pose(crate::pose_value::Pose),
 }
 
 impl Request {
@@ -108,6 +110,7 @@ impl Request {
             Request::Align { .. } => "Align figures across frames",
             Request::Reset => "Reset poses across frames",
             Request::Recolor(_) => "Edit figure colors",
+            Request::Pose(_) => "Edit pose",
         }
     }
 }
@@ -337,6 +340,7 @@ fn validate(request: &Request, version: f64, canvas: [f64; 2], reference: Option
         Request::Detach => Kind::Detach,
         Request::Reset => Kind::Reset,
         Request::Recolor(recolor) => Kind::Recolor(recolor.clone()),
+        Request::Pose(pose) => Kind::Pose(pose.clone()),
         Request::Add { .. } => unreachable!("an insertion is not planned"),
     };
     let center = match request {
@@ -363,6 +367,7 @@ impl Editor {
                 let options = arg(2);
                 self.apply_figure_range(Request::Add { type_id: arg(0), x: options.get("x").cloned().unwrap_or(Value::Null), y: options.get("y").cloned().unwrap_or(Value::Null) }, range_args(args, 1))
             }
+            "pasteFiguresInFrames" => self.paste_figures_in_frames(range_args(args, 0), &arg(1)),
             "duplicateFiguresInFrames" | "duplicateInFrames" => self.apply_figure_range(Request::Duplicate { offset: arg(1).get("offset").cloned().unwrap_or(Value::Null) }, range_args(args, 0)),
             "deleteFiguresInFrames" => self.apply_figure_range(Request::Delete, range_args(args, 0)),
             "updateFiguresInFrames" => self.apply_figure_range(Request::Appearance(arg(0)), range_args(args, 1)),
@@ -385,6 +390,8 @@ impl Editor {
                 })
             }
             "resetPoseInFrames" => self.apply_figure_range(Request::Reset, range_args(args, 0)),
+            "setPoseProperty" => crate::pose_value::Pose::validated(arg(0).as_str().unwrap_or(""), &arg(1), self.selection.uid, self.selection.joint)
+                .and_then(|pose| self.apply_figure_range(Request::Pose(pose), range_args(args, 2))),
             "bringToFront" => self.partition_layers(true),
             "sendToBack" => self.partition_layers(false),
             "moveSelectionLayer" => self.move_selection_layer(&arg(0)),
@@ -394,7 +401,7 @@ impl Editor {
             // `mirrorSelection` on one figure's joint flips the branch; whole figures stay in transform.rs.
             "mirrorSelection" => match self.selection.joint >= 0 && axis_valid(&arg(0)) {
                 true => match self.selected_objects() {
-                    Ok(objects) if objects.len() == 1 => self.apply_figure_range(Request::Mirror(arg(0)), Options { at_playhead: true, ..Options::default() }),
+                    Ok(objects) if objects.len() == 1 || self.branch_selected() => self.apply_figure_range(Request::Mirror(arg(0)), Options { at_playhead: true, ..Options::default() }),
                     Ok(_) => return None,
                     Err(error) => Err(error),
                 },
@@ -403,6 +410,36 @@ impl Editor {
             _ => return None,
         };
         Some(result)
+    }
+
+    /// `pasteFiguresInFrames(indices, {offset, pasteMode, pasteDepth})`: what the figure clipboard holds, pasted into
+    /// every chosen frame; one history entry and nothing if the clipboard is empty.
+    fn paste_figures_in_frames(&mut self, options: Options, given: &Value) -> Result<Value, EditError> {
+        if self.drag.is_some() {
+            self.commit_drag()?;
+        }
+        if self.property_edit.is_some() {
+            self.commit_animation_edit()?;
+        }
+        let (authored, targets) = self.range_targets(&options)?;
+        if targets.is_empty() {
+            return Ok(outcome(&[], &[]));
+        }
+        let Some(clipboard) = self.figure_clipboard.clone() else { return Ok(outcome(&[], &[])) };
+        if !authored {
+            return Err(EditError::Unported("figures pasted across frames on a native timeline".into()));
+        }
+        let ticks: Vec<f64> = targets.iter().map(|t| t.tick).collect();
+        let frames: Vec<(f64, Value)> = targets.into_iter().map(|t| (t.tick, t.frame)).collect();
+        let mut paste = Obj::new();
+        paste.set("pasteMode", given.get("pasteMode").filter(|m| !m.is_null()).cloned().unwrap_or_else(|| Value::str("default")));
+        if let Some(depth) = given.get("pasteDepth") {
+            paste.set("pasteDepth", depth.clone());
+        }
+        let offset = given.get("offset").filter(|o| !o.is_null()).cloned();
+        let label = options.label.clone().unwrap_or_else(|| "Paste figures across frames".to_string());
+        let inserted = self.paste_figures_across(&clipboard, &Value::object(paste), offset.as_ref(), 0.0, None, &label, Some(&frames))?;
+        Ok(outcome(&ticks, &inserted))
     }
 
     /// `applyFigureRange(operation, options)`.
@@ -429,16 +466,17 @@ impl Editor {
                 uids.push(id);
             }
         }
-        if matches!(request, Request::Duplicate { .. }) && self.figure_effect_clips(&uids) {
-            return Err(EditError::Unported("duplicating figures with effect clips".into()));
+        // Duplicated figures keep their timeline effects in the same undo step.
+        let effects = if matches!(request, Request::Duplicate { .. }) { self.figure_effect_clips(&uids) } else { Vec::new() };
+        if !effects.is_empty() && self.batch.is_none() {
+            return self.movieclip_batch(&label, |editor| editor.apply_figure_range_with(request, options, movieclip_insertion, worker));
         }
         let mut part = None;
-        if matches!(request, Request::Mirror(_)) && self.selection.joint >= 0 && self.selected_objects()?.len() == 1 {
-            let handle = self.object()?.and_then(|(_, object)| {
-                let figure = self.figure_of(&object)?;
-                figure.get("segments").and_then(|s| s.item(self.selection.joint as usize)).and_then(|s| num(&s, "segment_id"))
-            });
-            part = Some(Part { uid: self.selection.uid, handles: handle.into_iter().collect() });
+        if matches!(request, Request::Mirror(_)) && self.selection.joint >= 0 && (self.selected_objects()?.len() == 1 || self.branch_selected()) {
+            // The joints selected (several with Shift), and with a selected branch everything below them.
+            let figure = self.object()?.and_then(|(_, object)| self.figure_of(&object));
+            let handles = self.selected_segment_ids(figure.as_ref()).iter().map(|id| id.as_f64().unwrap_or(f64::NAN)).collect();
+            part = Some(Part { uid: self.selection.uid, handles, branch: self.branch_selected() });
         }
         if self.drag.is_some() {
             self.commit_drag()?;
@@ -490,7 +528,7 @@ impl Editor {
         let canvas = [num(&self.report, "canvas_width").unwrap_or(f64::NAN), num(&self.report, "canvas_height").unwrap_or(f64::NAN)];
         let operation = match &request {
             Request::Add { .. } => None,
-            _ => Some(validate(&request, version, canvas, self.selection.uid, part, matches!(request, Request::Order(_)) && authored, map)?),
+            _ => Some(validate(&request, version, canvas, self.selection.uid, part, matches!(request, Request::Order(_)) && authored, map.clone())?),
         };
         let mut plans: Vec<(Target, Planned)> = Vec::new();
         let origins = figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy));
@@ -544,6 +582,19 @@ impl Editor {
         if plans.is_empty() {
             return Ok(outcome(&[], &[]));
         }
+        let label = if matches!(request, Request::Pose(_)) {
+            // The poses are ones the document may hold (`validateObjectChanges`); the entry says how many frames it changed.
+            for (_, planned) in &plans {
+                for object in objects_of(&planned.frame).iter().filter(|object| uid(object).is_some_and(|id| planned.changed.contains(&id))) {
+                    if let Some(figure) = self.figure_of(object) {
+                        crate::load::validate_object_pose(&self.report, object, &figure)?;
+                    }
+                }
+            }
+            format!("{label} in {} frames", plans.len())
+        } else {
+            label
+        };
         let selection = self.selection_state();
         let ticks: Vec<f64> = plans.iter().map(|(t, _)| t.tick).collect();
         let inserted: Vec<u32> = payload.as_ref().map(|p| p.order.clone()).unwrap_or_default();
@@ -565,7 +616,8 @@ impl Editor {
                 self.select_ids(payload.order.clone());
                 self.next_uid = payload.next_uid;
             }
-            let insertion = payload.as_ref().filter(|_| movieclip_insertion).map(|payload| (payload.objects.as_slice(), false));
+            // Movieclips alone inserted inside a layer's span are replacements of their own.
+            let insertion = payload.as_ref().filter(|payload| movieclip_insertion || (!payload.objects.is_empty() && payload.objects.iter().all(|o| o.get("_stykMovieclip").is_some_and(Value::truthy)))).map(|payload| (payload.objects.as_slice(), false));
             if let Err(error) = self.commit_sheet_range_worker(&entries, &inserted, &hints, Vec::new(), &label, selection, insertion, deletion, worker) {
                 self.selection = previous_selection;
                 self.next_uid = previous_next;
@@ -607,6 +659,9 @@ impl Editor {
                     ("frameIndices", Value::array(indices.iter().map(|&i| Value::Num(i as f64)).collect())),
                 ],
             );
+        }
+        if !effects.is_empty() {
+            self.paste_figure_vfx_clips(&effects, &map.unwrap_or_default(), &[], 0.0)?;
         }
         Ok(outcome(&ticks, &inserted))
     }
@@ -785,10 +840,10 @@ impl Editor {
         self.report.get("figure_types").and_then(Value::elements).and_then(|e| e.iter().find(|f| num(f, "figure_type_id") == Some(id)))
     }
 
-    /// `figureVfxClips(report, uids)` is not empty: effect clips target one of the figures.
-    fn figure_effect_clips(&self, uids: &[u32]) -> bool {
+    /// `figureVfxClips(report, uids)`: the effect clips that target one of the figures.
+    fn figure_effect_clips(&self, uids: &[u32]) -> Vec<Value> {
         let clips = self.report.path(&["_styk", "vfxClips", "clips"]).and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default();
-        clips.iter().any(|c| c.path(&["target", "kind"]).and_then(Value::as_str) != Some("scene") && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| uids.contains(&(u as u32))))
+        clips.into_iter().filter(|c| c.path(&["target", "kind"]).and_then(Value::as_str) != Some("scene") && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| uids.contains(&(u as u32)))).collect()
     }
 
     /// `insertionPlan(editor, {kind: 'add', typeId, x, y})`: a new figure of a library definition.
@@ -807,8 +862,8 @@ impl Editor {
             return Err(invalid("errors.editorRangeCommands.figurePositionMustBeFinite"));
         }
         let movieclip = figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy);
-        if movieclip && !movieclip_insertion {
-            return Err(EditError::Unported("adding a movieclip".into()));
+        if movieclip && !movieclip_insertion && !self.sheet() {
+            return Err(EditError::Unported("adding a movieclip on a native timeline".into()));
         }
         let mut object = crate::figures::with_origin_pivot(figure, crate::figures::create_object(figure, identity, x, y));
         if movieclip {
@@ -842,9 +897,6 @@ impl Editor {
     /// the frame they hang from).
     pub(crate) fn joints_of(&self, record: &Value, slots: &[usize]) -> Result<HashMap<usize, Joints>, EditError> {
         let prepared = self.prepared()?;
-        if let Some(feature) = prepared.doc.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
         let frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         let scene = styk_eval::geometry::build_only(&prepared.doc, &frame, slots);
         let unresolved = || invalid("errors.rangeFigureOperations.cannotTransformAFrameWithUnresolvedFigureGeometry");
@@ -912,7 +964,13 @@ impl Editor {
         if objects.len() == 1 && self.selection.joint >= 0 {
             let figure = self.object()?.and_then(|(_, o)| self.figure_of(&o));
             let count = |key: &str| figure.as_ref().and_then(|f| f.get(key)).and_then(Value::array_len).unwrap_or(0);
-            if (self.selection.joint as usize) < count("segments") && count("segments") + count("polyfills") > 1 {
+            let branch = self.branch_selected();
+            // The drawables the order edit moves (`builderStyleTargets`) are part of the figure's own order.
+            let moved = match (&figure, branch) {
+                (Some(figure), true) => crate::builder::style_target_count(figure, self.selection.joint as usize, true)?,
+                _ => 1,
+            };
+            if (self.selection.joint as usize) < count("segments") && moved < count("segments") + count("polyfills") {
                 // A segment of one figure moves in the figure's own drawing order (`moveBuilderOrder`).
                 let mut target = styk_doc::Obj::new();
                 target.set("kind", Value::str("segment"));
@@ -923,7 +981,7 @@ impl Editor {
                     None => direction.clone(),
                 };
                 let mut options = styk_doc::Obj::new();
-                options.set("branch", Value::Bool(false));
+                options.set("branch", Value::Bool(branch));
                 return self.move_builder_order(&Value::object(target), &step, Some(&Value::object(options)));
             }
         }
@@ -949,7 +1007,7 @@ impl Editor {
     fn mirror_figure(&mut self, axis: &Value) -> Result<Value, EditError> {
         let Some(horizontal) = axis_horizontal(axis) else { return Err(invalid("errors.editorBuilderTopology.chooseAHorizontalOrVerticalFlip")) };
         let selected = self.selected_objects()?.len();
-        if self.selection.joint >= 0 && selected == 1 {
+        if self.selection.joint >= 0 && (selected == 1 || self.branch_selected()) {
             return self.apply_figure_range(Request::Mirror(axis.clone()), Options { at_playhead: true, ..Options::default() });
         }
         if selected > 1 {

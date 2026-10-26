@@ -1,7 +1,7 @@
 //! Exact editor history weights, prepared on a worker. No cache or second
 //! document owner: sizes use the retained command's COW records and owner views.
 use crate::history::{Command, CommandKind};
-use crate::topology::{FramePoses, Place, Snapshot};
+use crate::topology::{FramePoses, Snapshot};
 use std::collections::{HashMap, HashSet};
 use styk_doc::{Obj, Value};
 
@@ -12,6 +12,22 @@ fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
             .map(|(key, value)| (key.into(), value))
             .collect(),
     )
+}
+/// A sheet command's `assets`: the definitions and backgrounds it added, each with where it put them
+/// (`fields` names the two fields in the order the record keeps them).
+fn assets_of(definitions: &Option<(usize, Vec<Value>)>, backgrounds: &Option<(usize, Vec<Value>)>, fields: [&'static str; 2]) -> Option<Value> {
+    let table = |(at, added): &(usize, Vec<Value>)| {
+        let field = |name: &'static str| (name, if name == "index" { Value::Num(*at as f64) } else { Value::array(added.clone()) });
+        object([field(fields[0]), field(fields[1])])
+    };
+    let mut assets = Vec::new();
+    if let Some(definitions) = definitions {
+        assets.push(("figure_types", table(definitions)));
+    }
+    if let Some(backgrounds) = backgrounds {
+        assets.push(("backgrounds", table(backgrounds)));
+    }
+    (!assets.is_empty()).then(|| object(assets))
 }
 fn bytes(
     value: &Value,
@@ -49,13 +65,7 @@ fn poses(
     for entry in frames {
         check()?;
         let mut frame = Obj::new();
-        match &entry.place {
-            Place::Keyframe(index) => frame.set("index", Value::Num(*index as f64)),
-            Place::Source(id) => {
-                frame.set("index", Value::Num(-1.0));
-                frame.set("sourceId", Value::str(id));
-            }
-        }
+        entry.place.locate(&mut frame);
         let mut objects = Vec::with_capacity(entry.objects.len());
         for value in &entry.objects {
             check()?;
@@ -291,6 +301,7 @@ fn command_projection_checked(
             after_layers,
             sources,
             definitions,
+            backgrounds,
             retain_geometry,
         } => {
             let old = before.get("tracks");
@@ -331,17 +342,8 @@ fn command_projection_checked(
             value.set("beforeLayers", before_layers.clone());
             value.set("afterLayers", after_layers.clone());
             value.set("sources", sources.clone());
-            if let Some((at, added)) = definitions {
-                value.set(
-                    "assets",
-                    object([(
-                        "figure_types",
-                        object([
-                            ("added", Value::array(added.clone())),
-                            ("index", Value::Num(*at as f64)),
-                        ]),
-                    )]),
-                );
+            if let Some(assets) = assets_of(definitions, backgrounds, ["added", "index"]) {
+                value.set("assets", assets);
             }
             let result = bytes(&Value::object(value), check)?;
             if record.is_some() {
@@ -351,8 +353,8 @@ fn command_projection_checked(
                 metadata.set("beforeLayers", before_layers.clone());
                 metadata.set("afterLayers", after_layers.clone());
                 metadata.set("frameSourceChanges", sources);
-                if let Some((at, added)) = definitions {
-                    metadata.set("assets", object([("figure_types", object([("index", Value::Num(*at as f64)), ("added", Value::array(added.clone()))]))]));
+                if let Some(assets) = assets_of(definitions, backgrounds, ["index", "added"]) {
+                    metadata.set("assets", assets);
                 }
                 flags(&mut metadata, true, true);
                 metadata.set("retainGeometry", Value::Bool(*retain_geometry));
@@ -412,6 +414,15 @@ fn command_projection_checked(
             flags(&mut metadata, true, false);
             projection_bytes(&mut metadata, record.is_some(), check)?
         }
+        CommandKind::FigureDiscard { figure_index, figure, frames } => {
+            metadata.set("kind", Value::str("figure-discard"));
+            metadata.set("figureIndex", Value::Num(*figure_index as f64));
+            metadata.set("figure", figure.clone());
+            metadata.set("before", Value::array(frames.iter().map(|frame| frame.before.clone()).collect()));
+            metadata.set("after", Value::array(frames.iter().map(|frame| frame.after.clone()).collect()));
+            flags(&mut metadata, true, false);
+            projection_bytes(&mut metadata, record.is_some(), check)?
+        }
         CommandKind::CameraMotion {
             before,
             after,
@@ -427,6 +438,17 @@ fn command_projection_checked(
                     .map_or(0, Obj::len) as f64
                     * 160.0
             }) + 256.0
+        }
+        CommandKind::Scene { change, .. } => {
+            256.0
+                + match change {
+                    crate::scene_backgrounds::Change::Added(asset) => bytes(asset, check)?,
+                    crate::scene_backgrounds::Change::Fields { before, after } => {
+                        let side = |fields: Vec<(&String, &Value)>| fields.into_iter().map(|(key, value)| Value::array(vec![Value::str(key), value.clone()])).collect::<Vec<_>>();
+                        bytes(&Value::array(side(before.iter().filter_map(|(key, value)| value.as_ref().map(|value| (key, value))).collect())), check)?
+                            + bytes(&Value::array(side(after.iter().map(|(key, value)| (key, value)).collect())), check)?
+                    }
+                }
         }
         CommandKind::Palette { before, after } => {
             256.0
@@ -609,9 +631,24 @@ fn command_projection_checked(
             flags(&mut metadata, false, false);
             projection_bytes(&mut metadata, record.is_some(), check)?
         }
-        // Measured by the JavaScript editor, which owns the entry (D19).
-        CommandKind::External { .. } => {
-            metadata.set("kind", Value::str("external"));
+        CommandKind::Disconnect { piece, figure_index, figures, changes } => {
+            metadata.set("kind", Value::str("disconnect"));
+            metadata.set("changes", Value::array(changes.iter().map(crate::disconnect::Change::history_value).collect()));
+            metadata.set("definition", Value::Bool(true));
+            let mut splice = Obj::new();
+            splice.set("index", Value::Num(*figure_index as f64));
+            splice.set("figures", Value::array(figures.clone()));
+            metadata.set("figureDefinitionSplice", Value::object(splice));
+            let mut counts = Obj::new();
+            counts.set("before", Value::array(Vec::new()));
+            counts.set("after", Value::array(vec![Value::array(vec![Value::Num(f64::from(*piece)), Value::Num(changes.len() as f64)])]));
+            metadata.set("frameUidCounts", Value::object(counts));
+            flags(&mut metadata, true, false);
+            projection_bytes(&mut metadata, record.is_some(), check)?
+        }
+        // Measured by the interface, which holds the pixels (drawing_pixels.rs).
+        CommandKind::DrawingPixels { .. } => {
+            metadata.set("kind", Value::str("drawing-pixels"));
             0.0
         }
         CommandKind::Topology {
@@ -704,7 +741,7 @@ fn command_projection_checked(
             CommandKind::Ranges { .. } => &["kind", "label", "changes", "beforeSelection", "structural", "timing", "afterSelection"],
             // These existing owners retain exact weight support. Full enumerable
             // observation needs their own recorded optional construction fields.
-            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::External { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
+            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::FigureDiscard { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Scene { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::Disconnect { .. } | CommandKind::DrawingPixels { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
         };
         let mut fields = Obj::new();
         for key in order.iter().chain(["layerChanges", "layers", "beforeRevision", "afterRevision"].iter()) {

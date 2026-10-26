@@ -63,8 +63,23 @@ impl Drop for EditSession {
 }
 
 impl EditSession {
+    /// The record of the frame the stage draws ([`styk_edit::session::Session::show`]).
+    pub(crate) fn show(&mut self, view: &str, motion: bool) -> Result<Value, JsError> {
+        let record = self.session.as_mut().expect("a session is open until it is dropped").show(view, motion).map_err(js_error);
+        self.publish();
+        record
+    }
+
+    /// The onion skins the stage draws (`Session::onions`).
+    pub(crate) fn onions(&mut self, view: &str, request: &str) -> Result<Arc<styk_edit::OnionSet>, JsError> {
+        let set = self.session.as_mut().expect("a session is open until it is dropped").onions(view, request).map_err(js_error);
+        self.publish();
+        set
+    }
+
     /// A session that publishes into `engine` the document `opened` was made from.
-    pub(crate) fn publishing(session: styk_edit::session::Session, engine: Engine, opened: Arc<OpenedDocument>) -> EditSession {
+    pub(crate) fn publishing(mut session: styk_edit::session::Session, engine: Engine, opened: Arc<OpenedDocument>) -> EditSession {
+        session.set_clock(crate::clock);
         EditSession { session: Some(session), revision: 0.0, publisher: Some(Publisher { engine, opened, published: None, error: None }), working: [0; 2] }
     }
 
@@ -101,7 +116,8 @@ impl EditSession {
     /// it evaluates itself (D19). It publishes nothing.
     pub fn from_document(document: &str, state: &str, revision: f64) -> Result<EditSession, JsError> {
         let tree = styk_doc::json::parse(document.as_bytes()).map_err(js_error)?;
-        let session = styk_edit::session::Session::start(tree, state).map_err(js_error)?;
+        let mut session = styk_edit::session::Session::start(tree, state).map_err(js_error)?;
+        session.set_clock(crate::clock);
         Ok(EditSession { session: Some(session), revision, publisher: None, working: [0; 2] })
     }
 
@@ -139,6 +155,16 @@ impl EditSession {
 
     pub fn can_redo(&self) -> bool {
         self.session().can_redo()
+    }
+
+    /// A read of what the interface shows at `view` (the call's view): `kind` is `frame` (the frame on show),
+    /// `document` (the document's own frame under any gesture), `motion` (the motion-path edit's display, `null`
+    /// where it shows the document), `timeline` or `geometry` (`args`: `{since, motion}`; the groups that changed
+    /// since the read `since`). Answers JSON text; the document does not change.
+    pub fn query(&mut self, kind: &str, args: &str, view: &str) -> Result<String, JsError> {
+        let answer = self.session.as_mut().expect("a session is open until it is dropped").query(kind, args, view).map_err(js_error);
+        self.publish();
+        answer
     }
 
     /// Runs one editor call: its JavaScript name, its arguments as a JSON array and

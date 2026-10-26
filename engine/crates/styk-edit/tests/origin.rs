@@ -31,13 +31,6 @@ fn unproven_origin_commands_refuse_atomically_during_a_gesture() {
         assert!(matches!(editor.call(method, &[]), Err(styk_edit::EditError::Unported(_))), "{method}");
         assert_eq!((editor.report_json(), editor.state()), before, "{method} changed state on refusal");
     }
-    // A selected joint must not route either mirror call into a topology command.
-    editor.call("select", &[styk_doc::Value::Num(1.0), styk_doc::Value::Num(0.0)]).unwrap();
-    let before = (editor.report_json(), editor.state());
-    for method in ["mirrorSelection", "mirrorFigure"] {
-        assert!(matches!(editor.call(method, &[]), Err(styk_edit::EditError::Unported(_))));
-        assert_eq!((editor.report_json(), editor.state()), before);
-    }
 }
 
 #[test]

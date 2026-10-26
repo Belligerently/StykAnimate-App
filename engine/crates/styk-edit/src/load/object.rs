@@ -156,7 +156,7 @@ fn hypot(values: &[f64]) -> f64 {
 }
 
 /// `validateSpatialPose(object, figure)` (src/spatial-projection.mjs).
-fn spatial_pose(object: &Value, figure: &Value) -> Result<(), EditError> {
+pub(crate) fn spatial_pose(object: &Value, figure: &Value) -> Result<(), EditError> {
     let state = object.get("_stykSpatial");
     if missing(state) {
         return Ok(());
@@ -291,7 +291,7 @@ fn animation_style(object: &Value, figure: &Value) -> Result<(), EditError> {
             }
             if has_own(v, "paint") {
                 if let Some(paint) = get(v, "paint") {
-                    crate::recolor::normalize_paint(paint)?;
+                    styk_eval::records::paint::normalize_paint(paint)?;
                 } else {
                     return fail("errors.paint.invalidPaintType");
                 }
@@ -354,7 +354,7 @@ fn segment_key(key: &str) -> bool {
 }
 
 /// `validateObjectPose(report, object, figure, origin)`.
-pub(super) fn object_pose(report: &Value, object: &Value, figure: &Value) -> Result<(), EditError> {
+pub(crate) fn object_pose(report: &Value, object: &Value, figure: &Value) -> Result<(), EditError> {
     if truthy(object.get("_sticknodesShapes")) || truthy(object.get("_sticknodesSprite")) {
         sticknodes_object(object, figure)?;
     }

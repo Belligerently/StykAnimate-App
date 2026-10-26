@@ -17,8 +17,7 @@ import {createBrushStroke,loadDrawingEngine,paintStroke} from './engine/engine-d
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS,FILL_SOURCE_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
-import {drawingCelPrefetch,drawingCelDistances} from './onion-skin.mjs';
-import {buildGeometry} from './pivot/geometry.mjs';
+import {drawingCelPrefetch,drawingCelDistances} from './drawing-cel-prefetch.mjs';
 import {applyLayerOrder} from './layers.mjs';
 import {createFrame} from './demo.mjs';
 import {screenToWorld,worldToScreen} from './renderer-geometry.mjs';
@@ -29,7 +28,7 @@ import {installCanvasPinch} from './canvas-pinch.mjs';
 
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons,shiftKey:e.shiftKey,altKey:e.altKey,ctrlKey:e.ctrlKey,metaKey:e.metaKey,tiltX:e.tiltX,tiltY:e.tiltY});
 const yieldToInput=()=>globalThis.scheduler?.yield?globalThis.scheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
-const canvas=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c;};
+const previewItems=new WeakMap();
 const brushKeys=['preset',...BRUSH_KEYS];
 // Settings edited as percentages in the inspector.
 const PERCENT_SETTINGS=['opacity','flow','hardness','stabilization','roundness','scatter','spacingRatio','texture','smudgeLength','colorRate'];
@@ -211,7 +210,7 @@ export class DrawingController {
   }
   history(direction){
     return this.afterGesture(()=>{
-      const command=this.editor[direction==='undo'?'_undo':'_redo'].at(-1),side=direction==='undo'?'before':'after';
+      const command=this.editor.historyPixels(direction),side=direction==='undo'?'before':'after';
       if(!this.owner?.history?.needsLoad(command)&&!this.owner?.needsPreparation(command,side))return this.editor[direction]();
       return this.pixelOperation({messageKey:direction==='undo'?'drawingController.restoringUndo':'drawingController.restoringRedo'},async op=>{op.history=true;return this.editor[direction]({signal:op.abort.signal});});
     });
@@ -364,7 +363,7 @@ export class DrawingController {
       frame.camera=source.camera;
       for(const key of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor'])if(key in source)frame[key]=source[key];
       frame=applyLayerOrder(report,frame);
-      g.preview={report,frame,geometry:buildGeometry(report,frame)};
+      g.preview={report,frame,geometry:this.editor._shown.previewGeometry(frame,g.target.figure,g.target.id,g.target.object.unique_id)};
     }
     return g.preview;
   }
@@ -381,7 +380,12 @@ export class DrawingController {
     return this._viewRect;
   }
   point(event){const rect=this.viewRect();return screenToWorld({x:(event.clientX-rect.left)*rect.clientWidth/rect.width,y:(event.clientY-rect.top)*rect.clientHeight/rect.height},{report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false});}
-  geometryItem(target){let item;if(target.created||target.migratedFrom)item=buildGeometry({...this.editor.report,figure_types:[...this.editor.report.figure_types,target.figure]},createFrame([target.object])).drawables[0];else item=this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)throw messageError(new Error(''), "errors.drawingController.theDrawingPoseIsUnavailable", {});return item;}
+  geometryItem(target){let item;if(target.created||target.migratedFrom)item=this.previewItem(target);else item=this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)throw messageError(new Error(''), "errors.drawingController.theDrawingPoseIsUnavailable", {});return item;}
+  /** The image a cel the document does not hold yet draws, as the engine places it (read once for a target). */
+  previewItem(target){
+    if(!previewItems.has(target))previewItems.set(target,this.editor._shown?.previewGeometry(createFrame([target.object]),target.figure,target.id,target.object.unique_id)?.drawables[0]);
+    return previewItems.get(target);
+  }
   pixelMatrix(target){return this.gesture?.session?.target===target?(this.gesture.session.matrix??this.gesture.session.pixelMatrix??drawingPixelMatrix(this.geometryItem(target))):drawingPixelMatrix(this.geometryItem(target));}
   pixel(event,target){return inversePoint(this.pixelMatrix(target),this.point(event));}
   /** Whether a finger draws now: the setting, and in Automatic until a pen has drawn in this session. */

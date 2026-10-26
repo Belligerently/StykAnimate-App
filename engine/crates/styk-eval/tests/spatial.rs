@@ -1,8 +1,7 @@
 //! 3D evaluation against the JavaScript editor (docs/engine/spatial.md).
 //!
 //! Every fixture in `tests/fixtures/spatial/` is a small project and the
-//! editor's own evaluation of it (`node engine/tools/spatial-fixtures.mjs`
-//! regenerates them): spatial poses and their tweens, one-sided surfaces,
+//! editor's own evaluation of it (frozen recordings): spatial poses and their tweens, one-sided surfaces,
 //! figure meshes and attached movieclip meshes. The engine must produce the
 //! same joints, the same visible faces in the same order, and the same
 //! vertices and depths. Each fixture must also stop matching without the
@@ -50,11 +49,10 @@ fn describe(report: &Report) -> String {
 #[test]
 fn every_fixture_evaluates_like_the_editor() {
     let names = fixtures();
-    assert!(names.len() >= 13, "fixtures are missing: run node engine/tools/spatial-fixtures.mjs");
+    assert!(names.len() >= 13, "fixtures are missing: the spatial fixtures are frozen recordings (restore them from version control)");
     let (mut faces, mut surfaces) = (0, 0);
     for name in &names {
         let document = open(name);
-        assert!(document.unsupported.is_empty(), "{name}: not evaluated: {:?}", document.unsupported);
         assert!(document.notes.is_empty(), "{name}: read leniently: {:?}", document.notes);
         let prepared = styk_eval::prepare(document);
         let reference = json(&folder().join(format!("{name}.reference.json")));
@@ -351,7 +349,7 @@ fn object(loader: &mut styk_eval::load::Loader, value: &Value) -> Arc<Object> {
 fn spatial_poses_interpolate_as_the_editor_does() {
     let vectors = json(&folder().join("vectors.json"));
     let cases = vectors.get("interpolate").and_then(Value::as_arr).expect("interpolate");
-    assert!(cases.len() >= 100, "vectors are missing: run node engine/tools/spatial-fixtures.mjs");
+    assert!(cases.len() >= 100, "vectors are missing: the spatial fixtures are frozen recordings (restore them from version control)");
     let mut loader = styk_eval::load::Loader::new();
     for (index, case) in cases.iter().enumerate() {
         let (a, b) = (object(&mut loader, case.get("a").expect("a")), object(&mut loader, case.get("b").expect("b")));

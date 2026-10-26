@@ -17,9 +17,9 @@ if (!label || label.startsWith('--')) { console.error('usage: node scripts/engin
 const bench = path.resolve(option('--bench') ?? 'artifacts/engine-rust/bench');
 const against = option('--against');
 
-const CONFIGS = ['electron-gpu-t1', 'electron-canvas-t1', 'web-chromium-gpu-t1', 'web-webkit-gpu-t1', 'electron-gpu-t4', 'electron-canvas-t4', 'web-chromium-gpu-t1-touch'];
-const CONFIG_NAMES = {'electron-gpu-t1': 'Electron, WebGPU', 'electron-canvas-t1': 'Electron, no WebGPU', 'web-chromium-gpu-t1': 'Web, Chromium',
-  'web-webkit-gpu-t1': 'Web, WebKit', 'electron-gpu-t4': 'Electron, WebGPU, 4× throttle', 'electron-canvas-t4': 'Electron, no WebGPU, 4× throttle',
+const CONFIGS = ['electron-gpu-t1', 'web-chromium-gpu-t1', 'web-webkit-gpu-t1', 'electron-gpu-t4', 'web-chromium-gpu-t1-touch'];
+const CONFIG_NAMES = {'electron-gpu-t1': 'Electron, WebGPU', 'web-chromium-gpu-t1': 'Web, Chromium',
+  'web-webkit-gpu-t1': 'Web, WebKit', 'electron-gpu-t4': 'Electron, WebGPU, 4× throttle',
   'web-chromium-gpu-t1-touch': 'Web, Chromium, phone touch'};
 /** [column, unit, read(run)] — what each table shows, in workload order. */
 const METRICS = [

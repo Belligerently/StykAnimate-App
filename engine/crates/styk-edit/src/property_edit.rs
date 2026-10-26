@@ -1,11 +1,10 @@
 //! Property edits on a layer sheet: the inspector's scrubs and keyed values
-//! (src/editor-animation.mjs: `addAnimationKeys` and the sheet branches of
+//! (`addAnimationKeys` and the sheet branches of
 //! `beginAnimationEdit`, `previewAnimationEdit`, `commitAnimationEdit`,
-//! `cancelAnimationEdit`), `_sheetPropertyEntries` (src/editor-layer-sheet.mjs), and the
-//! commands that reach it on a sheet: `setSceneColor`, `setSceneBackground`
-//! (src/editor-scene.mjs), `setBackgroundColor` (src/editor.mjs), `updateFigureStyle` and the
-//! opacity of `updatePolygon` (src/editor-builder.mjs), `setVfxParameter`
-//! (src/editor-vfx.mjs).
+//! `cancelAnimationEdit`), the sheet's property entries, and the
+//! commands that reach it on a sheet: `setSceneColor`, `setSceneBackground`,
+//! `setBackgroundColor`, `updateFigureStyle` and the
+//! opacity of `updatePolygon`, `setVfxParameter`.
 //!
 //! A property edit at a tick composes one-key channels on the frame there
 //! (`styk_eval::records::Records::compose_channels`) and writes the result as keys of the
@@ -47,6 +46,17 @@ pub(crate) struct Edit {
     selection: SelectionState,
     pub changed: bool,
     pub preview: Option<Value>,
+    /// An edit that sets one property on several targets at once (a branch's segments and polygons, the drawables of a figure's draw
+    /// order): every member with its value. `target`, `initial` and `value` above are the first member's.
+    group: Option<Vec<Member>>,
+}
+
+/// One target of a group edit.
+#[derive(Clone, Debug)]
+struct Member {
+    target: Value,
+    initial: Value,
+    value: Value,
 }
 
 /// `Number.isInteger(value)`.
@@ -158,7 +168,7 @@ pub(crate) fn channel_id(target: &Value, property: &str) -> Result<String, EditE
 }
 
 /// `validateAnimationValue(target, property, value)` of a normalized target; `None` is
-/// `undefined`. Fill styles and effect colours given as paints are not validated here.
+/// `undefined`.
 pub(crate) fn validate_value(target: &Value, property: &str, value: Option<&Value>) -> Result<Value, EditError> {
     channel_id(target, property)?;
     let kind = target.get("kind").and_then(Value::as_str).unwrap_or("");
@@ -166,7 +176,7 @@ pub(crate) fn validate_value(target: &Value, property: &str, value: Option<&Valu
         return validate_vfx_value(property, value);
     }
     if property == "paint" {
-        return Err(EditError::Unported("a fill style value".into()));
+        return Ok(styk_eval::records::paint::normalize_paint(value.unwrap_or(&Value::Null))?.value());
     }
     if property == "pose" {
         return match value {
@@ -251,7 +261,7 @@ pub(crate) fn validate_vfx_value(property: &str, value: Option<&Value>) -> Resul
     };
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max && (!(color || discrete) || n.fract() == 0.0) => Ok(Value::Num(*n)),
-        Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if color => crate::recolor::normalize_paint(paint).map(|paint| paint.value()),
+        Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if color => styk_eval::records::paint::normalize_paint(paint).map(|paint| paint.value()).map_err(EditError::from),
         _ => {
             let mut parts = property.split(':').skip(1);
             let (type_name, _, param) = (parts.next().unwrap_or(""), parts.next(), parts.next().unwrap_or(""));
@@ -326,6 +336,11 @@ fn entry(target: &Value, property: &str, tick: Option<f64>, value: Option<Value>
     Value::object(out)
 }
 
+/// `isDiscreteAnimationProperty(property)` for the properties a group edit names: values that hold between keys.
+fn holds(property: &str) -> bool {
+    matches!(property, "zIndex" | "paint" | "backgroundId")
+}
+
 /// `entry.tick ?? fallback`.
 fn tick_of(entry: &Value, fallback: f64) -> Value {
     entry.get("tick").filter(|t| !t.is_null()).cloned().unwrap_or(Value::Num(fallback))
@@ -346,14 +361,23 @@ impl Editor {
         let mut out = Obj::new();
         if begin {
             out.set("sheet", Value::Bool(sheet));
-            out.set("target", edit.target.clone());
+            match &edit.group {
+                Some(members) => out.set("targets", Value::array(members.iter().map(|m| m.target.clone()).collect())),
+                None => out.set("target", edit.target.clone()),
+            }
             out.set("property", Value::str(&edit.property));
             out.set("exactTarget", Value::Bool(edit.exact));
             out.set("tick", Value::Num(edit.tick));
-            out.set("initialValue", edit.initial.clone());
+            out.set("initialValue", match &edit.group {
+                Some(members) => Value::array(members.iter().map(|m| m.initial.clone()).collect()),
+                None => edit.initial.clone(),
+            });
         }
         if sheet {
-            out.set("value", edit.value.clone());
+            out.set("value", match &edit.group {
+                Some(members) => Value::array(members.iter().map(|m| m.value.clone()).collect()),
+                None => edit.value.clone(),
+            });
         }
         out.set("changed", Value::Bool(edit.changed));
         Value::object(out)
@@ -591,17 +615,36 @@ impl Editor {
         if let Some(native) = &edit.native { return Ok(native.begin_value_worker(edit)); }
         let mut out = Obj::new();
         out.set("sheet", Value::Bool(true));
-        out.set("target", edit.target.clone());out.set("property", Value::str(&edit.property));
+        match &edit.group {
+            Some(members) => out.set("targets", Value::array(members.iter().map(|m| m.target.clone()).collect())),
+            None => out.set("target", edit.target.clone()),
+        }
+        out.set("property", Value::str(&edit.property));
         out.set("exactTarget", Value::Bool(edit.exact));out.set("tick", Value::Num(edit.tick));
-        out.set("initialValue", edit.initial.clone());out.set("value", edit.value.clone());
+        match &edit.group {
+            Some(members) => {
+                out.set("initialValue", Value::array(members.iter().map(|m| m.initial.clone()).collect()));
+                out.set("value", Value::array(members.iter().map(|m| m.value.clone()).collect()));
+            }
+            None => {
+                out.set("initialValue", edit.initial.clone());out.set("value", edit.value.clone());
+            }
+        }
         out.set("frame", edit.frame.clone());out.set("selection", edit.selection.history_value());
         out.set("changed", Value::Bool(edit.changed));
         Ok(Value::object(out))
     }
 
-    /// `beginAnimationEdit(target, property, {exactTarget})` on a layer sheet.
+    /// `beginAnimationEdit(target, property, {exactTarget})` on a layer sheet. A list of targets begins one edit of the property on all of
+    /// them (`previewAnimationEdit` then takes one value for all, or one for each).
     pub(crate) fn begin_animation_edit_checked(&mut self, target: &Value, property: &Value, exact: bool, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
         check()?;
+        if target.is_array() {
+            if !self.sheet() {
+                return Err(EditError::Unported("an edit of several targets on a native timeline".into()));
+            }
+            return self.begin_group_animation_edit(&items(Some(target)), property, exact);
+        }
         if !self.sheet() { return self.begin_native_animation_edit_checked(target, property, exact, check); }
         if self.property_edit.is_some() {
             self.commit_animation_edit()?;
@@ -630,6 +673,7 @@ impl Editor {
             selection: self.selection_state(),
             changed: false,
             preview: None,
+            group: None,
         });
         // The editor returns its edit record, a view.
         let mut out = Obj::new();
@@ -650,6 +694,9 @@ impl Editor {
         check()?;
         if !self.sheet() { return self.preview_native_animation_edit_checked(value, check); }
         let Some(edit) = self.property_edit.clone() else { return Err(invalid("errors.editorAnimation.beginAPropertyEditBeforePreviewingIt")) };
+        if edit.group.is_some() {
+            return self.preview_group_animation_edit(&edit, value);
+        }
         let validated = validate_value(&edit.target, &edit.property, value.as_ref())?;
         let changed = !strictly_equal(&validated, Some(&edit.initial));
         let mut key = Obj::new();
@@ -672,6 +719,100 @@ impl Editor {
         Ok(value.unwrap_or(Value::Null))
     }
 
+    /// `beginAnimationEdit([targets], property, {exactTarget})` on a layer sheet.
+    fn begin_group_animation_edit(&mut self, targets: &[Value], property: &Value, exact: bool) -> Result<Value, EditError> {
+        if self.property_edit.is_some() {
+            self.commit_animation_edit()?;
+        }
+        if self.drag.is_some() {
+            self.commit_drag()?;
+        }
+        let property = property.as_str().unwrap_or("");
+        if targets.is_empty() {
+            return Err(invalid("errors.editorBranchStyle.chooseABranchWithEditableOpacity"));
+        }
+        if property == "pose" {
+            return Err(invalid("errors.editorAnimation.usePoseKeysToEditALayerPose"));
+        }
+        check_tick(&Value::Num(self.tick))?;
+        let frame = self.shown_frame()?;
+        let started = self.with_records(|records| {
+            let mut started = Vec::with_capacity(targets.len());
+            for target in targets {
+                let target = normalize_target(target)?;
+                channel_id(&target, property)?;
+                let Some(initial) = records.property_value(&frame, &target, property)? else { return Err(invalid("errors.editorAnimation.theSelectedFigureIsNotPresentAtThis")) };
+                started.push(Member { target, initial: initial.clone(), value: initial });
+            }
+            Ok(started)
+        })?;
+        let first = started[0].clone();
+        let view = Edit {
+            native: None,
+            target: first.target,
+            property: property.to_string(),
+            exact,
+            tick: self.tick,
+            initial: first.initial,
+            value: first.value,
+            frame,
+            selection: self.selection_state(),
+            changed: false,
+            preview: None,
+            group: Some(started),
+        };
+        self.property_edit = Some(view);
+        // The editor returns its edit record, a view.
+        Ok(self.animation_edit_view(true))
+    }
+
+    /// `previewAnimationEdit(value)` of a group edit: `value` is one number for every member or a list with one for each. The frame on
+    /// show at the edit's start with the values composed is shown until the edit ends.
+    fn preview_group_animation_edit(&mut self, edit: &Edit, value: Option<Value>) -> Result<Value, EditError> {
+        let members = edit.group.as_deref().unwrap_or_default();
+        let given: Vec<Option<Value>> = match &value {
+            Some(list) if list.is_array() => {
+                let list = items(Some(list));
+                if list.len() != members.len() {
+                    return Err(invalid("errors.editorBranchStyle.everyEditedDrawableNeedsAValue"));
+                }
+                list.into_iter().map(Some).collect()
+            }
+            other => vec![other.clone(); members.len()],
+        };
+        let mut values = Vec::with_capacity(members.len());
+        let mut channels = Vec::with_capacity(members.len());
+        for (member, given) in members.iter().zip(&given) {
+            let validated = validate_value(&member.target, &edit.property, given.as_ref())?;
+            let mut key = Obj::new();
+            key.set("id", Value::str("preview"));
+            key.set("tick", Value::Num(edit.tick));
+            key.set("value", validated.clone());
+            key.set("interpolation", Value::str("constant"));
+            let mut channel = Obj::new();
+            channel.set("id", Value::str(&channel_id(&member.target, &edit.property)?));
+            channel.set("target", member.target.clone());
+            channel.set("property", Value::str(&edit.property));
+            channel.set("keys", Value::array(vec![Value::object(key)]));
+            channels.push(Value::object(channel));
+            values.push(validated);
+        }
+        let changed = members.iter().zip(&values).any(|(member, value)| !strictly_equal(value, Some(&member.initial)));
+        let preview = self.with_records(|records| Ok(records.compose_channels(edit.frame.clone(), &channels, edit.tick)?))?;
+        if let Some(open) = self.property_edit.as_mut() {
+            if let Some(members) = open.group.as_mut() {
+                for (member, value) in members.iter_mut().zip(values) {
+                    member.value = value;
+                }
+                open.value = members[0].value.clone();
+            }
+            open.changed = changed;
+            open.preview = Some(preview);
+        }
+        self.emit("edit", vec![("live", Value::Bool(true))]);
+        Ok(value.unwrap_or(Value::Null))
+    }
+
     /// `commitAnimationEdit()` on a layer sheet: the edited value keyed at the edit's tick.
     pub(crate) fn commit_animation_edit(&mut self, ) -> Result<bool, EditError> { self.commit_animation_edit_checked(&mut || Ok(())) }
     pub(crate) fn commit_animation_edit_checked(&mut self, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
@@ -681,6 +822,20 @@ impl Editor {
         self.retained = None;
         if !edit.changed {
             return Ok(false);
+        }
+        if let Some(members) = &edit.group {
+            // Every member is keyed (a draw order gives each drawable its position) as one entry; values that hold between keys hold here too.
+            let entries: Vec<Value> = members.iter().map(|member| {
+                let mut written = entry(&member.target, &edit.property, Some(edit.tick), Some(member.value.clone()), edit.exact);
+                if holds(&edit.property) {
+                    if let Some(record) = written.make_obj() {
+                        record.set("interpolation", Value::str("constant"));
+                    }
+                }
+                written
+            }).collect();
+            self.sheet_property_entries(&entries, "Edit layer pose")?;
+            return Ok(true);
         }
         let entry = entry(&edit.target, &edit.property, Some(edit.tick), Some(edit.value.clone()), edit.exact);
         self.sheet_property_entries(&[entry], &format!("Edit {}", edit.property))?;
@@ -714,7 +869,7 @@ impl Editor {
 
     /// `setSceneBackground(id, {indices})` on a layer sheet: the background chosen and the
     /// colour handed back to it.
-    fn set_scene_background(&mut self, id: &Value, options: Option<&Value>) -> Result<Value, EditError> {
+    pub(crate) fn set_scene_background(&mut self, id: &Value, options: Option<&Value>) -> Result<Value, EditError> {
         let exists = |id: f64| items(self.report.get("backgrounds")).iter().any(|bg| num(bg, "background_id") == Some(id));
         let Some(id) = integer(id).filter(|v| *v >= 0.0 && (*v == 0.0 || exists(*v))) else { return Err(invalid("errors.editorScene.chooseAnExistingBackground")) };
         let scene = scene_target();

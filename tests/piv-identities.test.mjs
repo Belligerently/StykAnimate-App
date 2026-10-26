@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {NATIVE_FRAME_CONTENT_TYPE, unpackNativeFrameResponse, materializeNativeFrames} from '../src/import-wire.mjs';
-import {Editor} from '../src/editor.mjs';
+import {engineEditor} from './support/owned-editor.mjs';
 import {nodeCodec} from './support/codec.mjs';
 
 const app = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,7 +20,7 @@ test('recovered native IDs match JSON import and keep separate editable geometry
     const expected = await json.json();
     const result = await materializeNativeFrames(packet.result, buffer, packet.offset);
     assert.deepEqual(result.document, expected.document);
-    const editor = new Editor({demo: false}).load(result.document);
+    const editor = engineEditor({demo: false}, result.document);
     assert.equal(editor.totalTicks, 8);
     for (const index of [0, 1, 2, 3]) {
       editor.selectFrame(index);

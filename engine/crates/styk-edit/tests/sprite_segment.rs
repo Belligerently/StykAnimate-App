@@ -65,7 +65,7 @@ fn setup(name: &str) -> (styk_edit::Editor, styk_doc::Value) {
 }
 
 #[test]
-fn retaining_derived_runtime_pose_requires_worker_authoritative_geometry() {
+fn a_sprite_attached_over_derived_runtime_pose_keeps_its_lengths_and_bends() {
     use styk_doc::Value;
     let (editor, source) = setup("sprite-segment-native");
     let mut report = styk_doc::json::parse(editor.report_json().as_bytes()).unwrap();
@@ -105,11 +105,13 @@ fn retaining_derived_runtime_pose_requires_worker_authoritative_geometry() {
             joint: 2,
         },
     );
-    let before = (editor.report_json(), editor.state());
-    assert!(matches!(
-        editor.call("addSpriteSegment", &[source]),
-        Err(styk_edit::EditError::Unported(_))
-    ));
-    assert_eq!((editor.report_json(), editor.state()), before);
-    assert!(editor.take_events().is_empty());
+    editor.call("addSpriteSegment", &[source]).unwrap();
+    // The lengths and bends the pose only held in its derived cache become its own, ahead of the sprite's.
+    let after = styk_doc::json::parse(editor.report_json().as_bytes()).unwrap();
+    let object = after.path(&["keyframes"]).unwrap().item(0).unwrap().get("objects").unwrap().item(0).unwrap();
+    assert!(object.get("runtime_segments").is_none());
+    assert_eq!(object.get("len_flag").and_then(Value::as_f64), Some(1.0));
+    assert_eq!(object.get("lengths").unwrap().item(0).and_then(|v| v.as_f64()), Some(123.5));
+    assert_eq!(object.get("bend_flag").and_then(Value::as_f64), Some(1.0));
+    assert_eq!(object.get("bends").unwrap().item(0).and_then(|v| v.as_f64()), Some(0.15));
 }

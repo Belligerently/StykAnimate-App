@@ -8,112 +8,112 @@ nothing here should need re-deriving.
   in a draft pull request against `main`; nothing released. That day its history was moved onto the
   open-source history: commit IDs written earlier on this page and in `docs/engine/` are the old ones,
   and [`engine/history-map.tsv`](../engine/history-map.tsv) gives the commit each became.
-- **Rule:** the interface and editable behavior do not change. Every feature stays;
-  editing class cost follows the current user policy below, with D13 unchanged.
-- **Status in one line:** see [Milestone log](#milestone-log), last entry.
-- **Handoff:** the next section, current class gate and verification workflow.
+- **Status in one line:** the cutover is complete: the Rust engine is the app's only engine
+  (2026-10-25); the next phase is performance.
+- **Handoff:** the next section: how the app works now, gate results, what remains, known
+  differences and the next phase. The milestone log stops at the cutover; git history has the rest.
 
-## Handoff (2026-10-22, Windows session: orchestrator with subagents, in progress)
+## Handoff (2026-10-26, cutover complete)
 
-**Goal of this session (user, 2026-10-22):** finish the port so the app switches to the Rust
-engine for good, with measured large speed-ups. Done means: the engine owns every open
-document by default (shadow/opt-in modes, adoption packets, mirror write-back and the
-renderer gate deleted; every tape replays with zero refusals); handles, picking, snapping
-and hit tests are engine queries and the engine draws every path (section 8 gaps closed);
-`.styk` and Pivot open and save through Rust, byte-identical, atomic replacement and
-recovery intact, no Python in the shipped app; the replaced JavaScript deleted (no `js` or
-`partial` inventory rows); all checks green on Windows; the section 5 protocol shows the
-speed-ups; docs and `CHANGELOG.md` current.
+**Where it stands.** The Rust engine is the app's only engine. On the user's steer of 2026-10-24
+(cut over completely and delete the JavaScript engine, clean and correct, quickly; performance
+tuning is a later phase) the five cuts are done: (1) the engine owner is the only path and the
+shadow, adoption packets, mirror write-back and every opt-in or off switch are gone; (2) the mirror
+is gone: the engine opens files into its own store and the stage draws the session's document;
+(3) the JavaScript renderer, playback workers, prepared frames, effect executors and frame
+fallbacks are gone; (4) the JavaScript command implementations and evaluation are gone and the
+interface reads engine queries; (5) nothing Python ships. `engine-rust` at `3bb99e16` passed the
+cut-4 gate and is pushed; the draft pull request against `main` is unchanged.
 
-**Rules in force (user, 2026-10-22; replace the 2026-10-11 ones):** an orchestrator plans,
-reviews, verifies and integrates; Claude Sonnet 5.5 subagents implement, each in its own
-worktree and branch (`../wt/<name>`, branch `agent/<name>`, `node_modules` a junction to this
-checkout's), on distinct crates or modules, shared types (`styk-doc`, `styk-draw`, the patch
-format) changed one at a time. Every result is reviewed, its checks rerun here (a fresh
-Sonnet verifier for parity and performance claims), then squash-merged into `engine-rust`
-and the worktree and branch removed. Push `engine-rust` at each milestone; never `main`, PR
-#17 stays a draft, no tags, releases, deploys or settings. D7, D10, D13, D15, D16, D18, D19
-stand; the JavaScript of a subsystem is the oracle until it is deleted. Cost rule unchanged:
-`C <= 1.05 × J` or `(C − J) / calls <= 0.1 ms`, with exact behaviour.
+**How the app works now.**
+- Each open document is a `styk-edit` session: one per project tab, one per movieclip entered. The
+  engine opens it from the file's bytes (`src/engine/engine-open.mjs`). The owner
+  (`src/engine/engine-owner.mjs`) installs every session command on the editor
+  (`src/engine/engine-commands.mjs`, held to the session's dispatch by
+  `tests/engine-owner-command-list.test.mjs`). The editor keeps a read view patched from the
+  session's answers, and its own view state (selection, playhead, tools, layer focus, sent with
+  every call). Nothing writes the read view in place; tests run the owner in verify mode, which
+  catches it.
+- The frame on show, its geometry, the timeline, onion skins, trails, the camera shot and the
+  values the inspector shows are session queries (`src/engine/engine-shown.mjs`,
+  [engine/evaluation.md](engine/evaluation.md)). A read never fails for a document that opened.
+- Stage, playback, thumbnails, previews and exports are the engine's. Pivot, STK, STKZ and STYKMOV
+  files are made from the session's document (`styk_edit::export`) in the document export worker;
+  a `.styk` save keeps its container path, and an unchanged document saves byte-identical.
+- The recorded tapes and fixtures are frozen: nothing re-records them, and a behaviour change
+  updates the test that states it ([engine/README.md](engine/README.md), "Fixtures").
 
-**Environment (this Windows 11 PC; Ryzen 5 5500, 64 GB, RTX 4070 SUPER):** in Git Bash,
-`source ~/.styk-tools/env.sh` first. It puts wasm-bindgen 0.2.129 (`~/.styk-tools/bin`) and a
-portable clang 23 (`~/.styk-tools/llvm`, needed by `zstd-sys` for WebAssembly) on `PATH`,
-sets `RUSTUP_TOOLCHAIN=1.99.1` (stable as CI uses it; the machine's own stable is older and
-cannot compile `if let` guards) and `STYK_PYTHON` (miniconda 3.12.9). The WebAssembly build
-names `nightly-2026-09-15` itself. No wasm-opt yet. Private documents: `~/Downloads/pivs` is a
-junction to `Desktop/uriel pivot` (svr_uriel, tdd2 uriel nemesis, AyameDemo, hitoshi, finisher,
-Uriel 19-2-2026, tdd2 uriel nemesis 2); `Desktop/Folder` holds the Akane files
-(`STYK_CORPUS_DIR`). `TDD2 URIEL NEMESIS 3.styk`, `Jay on a new app (repaired).styk`,
-`WafflesPack` and `AssetReleases/` are not on this machine. Baseline-0 (section 5) was measured
-on the Linux machine: before/after on this PC are both measured here, with the same driver.
+**Gate (2026-10-25, clean worktree, final commits).** `npm run check` clean; `npm test` 2438 pass,
+0 fail, 21 skipped (owner tapes 511 / 32708 steps, 0 failing); Rust workspace 1052 pass, 0 fail;
+the app on the three large private documents: open, play, pose, IK, movieclip create, enter and
+leave, effect, undo and redo all pass (screenshots checked; the large `.styk`'s movieclip entry of
+about 93 MB exceeds the 48 MiB history and retires older entries, as before); drawing smoke pass;
+save smoke 11 of 11; video export decodes every format; `npm run pack` and the packaged boot
+(13 of 13) pass; no Python file in the package.
 
-**State at the start (2026-10-22, `fda6b19b` + Windows fixes):** engine module builds on
-Windows (3.5 min); `npm run check` passes; the owner tape suite passes on Windows (325 tapes,
-8,308 steps; native 3,020, editor 1,389; from the mirror 2,989 / 1,434). The 1,389 editor
-calls are gestures the owner leaves to the editor (`EDITOR_GESTURES`: effect-clip gizmo 365,
-motion paths 296, figure handles 182, Handle Edit Mode 176, property edits 86, rig drags 56,
-camera drags 20, segment values 18, drags begun by the editor 30) and about 105 refusals
-(native movieclip commands needing worker preparation 67, bounds-callback alignment 31, origin
-and native-channel combinations 6). Windows here: `cargo test --workspace --exclude styk-wasm
---no-fail-fast` 870 pass, 11 fail, 2 ignored (the drawing parity `pressure-size-curve`, the
-platform `pow`; ten tests that open the asset packs, absent here and in CI); `npm test` 4,112:
-4,102 pass, 2 fail (the Python oracle decodes Pivot text differently on Windows; a launcher
-test assumes no Miniconda), 8 skipped. Draft PR CI on Windows also failed four JavaScript test
-files (one an absolute-path import, fixed in `f78648b7`).
+**Measured (tdd2 uriel nemesis.piv, 41 MB, two runs each, same machine, background window).**
 
-**State on 2026-10-24 (`63e8aafa`, pushed):** merged since the start: the tools and tests on
-Windows paths; effect-clip, property and motion-path edits in the session; native movieclip
-commands in the session; `.styk`, `.stkz`, `.stykmov` open and save through Rust (the
-JavaScript container codec and the vendored zstd deleted); one V8 `pow` with the fixture tools
-pinned to it (regeneration byte-stable on Windows and Linux). Counters: owner tapes 325 / 8,308
-steps, 0 failing, native 3,836, editor 549 (from the mirror 3,805 / 594); refusals left:
-bounds-callback alignment 32, origin/native-channel combinations 6, follow projections (mirror
-variant only). Inventory 357: 173 js, 126 partial, 33 ported, 23 verified, 2 removed. Windows:
-`npm test` 4,121 tests, 0 fail; Rust 886 pass, 11 fail before the pow merge (10 read the asset
-packs: `private-fixtures`); parity 59 ok, 5 fail before the pow merge (all pow regeneration
-stages and the Rust suite). The weekly usage limit stopped all streams on 2026-10-23; they were
-resumed from their worktrees on 2026-10-24 with continuation notes in their briefs.
+| | main (`def97214`) | engine-rust (`3bb99e16`, optimised build) |
+| --- | --- | --- |
+| open to first frame on show | 22.6 s, 20.8 s | 5.1 s, 5.6 s |
+| longest gap, 8 s of playback | 63 ms (second run: playback stalled, 7 frames) | 49 ms, 35 ms |
+| peak private memory, all app processes | 3.1 GB, 2.4 GB | 4.6 GB, 4.0 GB |
 
-**Streams (wave 1, 2026-10-22):** `win-paths` (scripts, tools and tests on Windows paths;
-parity runs on Windows), `v8-pow` (one V8-exact `pow` in `styk-math`), `owner-cost` (per-figure
-memoized records; the default-ownership blocker), `bench-windows` (the section 5 driver on
-Windows; baseline-0 worktree), `owner-gestures` (effect-clip and property edits in the session),
-`private-fixtures` (engine tests that read the asset packs move to repository documents with
-the same coverage), `rust-files` (`.styk`, `.stkz`, `.stykmov` open and save through Rust).
-Briefs: `tmp/win/briefs/` (common rules, verifier, one file per stream); each stream runs as a
-workflow: implementer, then a fresh verifier, up to two fix rounds. Never message a running
-workflow agent: `SendMessage` to its id starts a second copy in the same worktree (seen
-2026-10-22; both copies were stopped). Create worktrees with `tmp/win/new-worktree.sh <name>`
-(a `node_modules` junction, the built `src/engine/pkg` and the checkout's compiled third-party
-dependencies, 2.2 GB, so only changed crates compile) and remove them with
-`tmp/win/remove-worktree.sh <name>`: `git worktree remove --force` follows the junction and
-empties this checkout's `node_modules` (happened once; restored with `npm ci`). Load rule
-(user, 2026-10-23): at most five implementation agents; agents run focused checks only and
-`--dev` or copied WebAssembly builds; verifiers mostly review; the orchestrator alone runs the
-full-optimization build, whole suites and parity, once per merge batch. Also running:
-`refusals-movieclips`, `refusals-bounds`, `perf-open`.
+Opening is about four times faster and playback is as smooth or smoother; peak memory is about
+1.5 GB higher. Memory is the first item of the performance phase.
 
-**Open-path finding (2026-10-22, Node probe `tmp/win/open-stages.mjs`, machine loaded):**
-opening `tdd2 uriel nemesis.piv` costs the codec 16–23 s (197 MB of JSON out of WebAssembly),
-JSON.parse 1 s, the editor's load 0.4–1.1 s, and the mirror's sync to the engine 41–54 s, of
-which ~27 s is the engine's own commit (one function 18.5 s self) and ~7 s JavaScript lifting.
-`svr_uriel.piv`: codec 36 s, parse 5 s, load 4.6 s, mirror 60 s. The document crosses three
-times (codec JSON, the editor's objects, the mirror's lifted records); the end state crosses
-once: the engine decodes the file into its store and does the editor's load normalization,
-the session starts on that document, the stage draws the session's document, and the editor
-gets its read view as one JSON. `perf-open` first fixes the two hotspots.
+**What is still JavaScript, and why.** The interface (view state, selection and seeking, handles,
+picking and marquee over the engine's groups, inspector, timeline, dialogs); validation of stored
+data that open, save and paste run (`src/pivot/model.mjs`) and the `.styk` container layout before
+the Rust writer; reads of stored data (`src/pivot/read-view.mjs`) and the instance style overlay
+(`resolveInstanceFigure`, no time math); interface math (gizmo quaternions, easing curves);
+import, codec hosting, media, text and the Stick Nodes decoder; the drawing tile store (its raster
+work is `styk-drawing`'s); `spatial-mesh-legacy.mjs` with `scripts/convert-spatial-meshes.mjs`, a
+developer converter. `Editor.serialize()` is used by tests and smoke scripts only. Python remains
+for development only: the codec oracle in `backend/` and building the video encoder. In Rust,
+`styk-edit` keeps its native-timeline editing (the app never edits one; the tapes do) and `load`
+still builds the `figureNames` and `tracks` indexes that the frozen load fixtures record.
 
-**Order after wave 1:** owner default and the shadow deleted (`delete-shadow`, after
-`owner-cost`); the remaining gesture families (`gestures-motion`, `gestures-handles`,
-`gestures-rig-camera`, after `owner-gestures` sets the mirroring pattern); the engine loads
-documents and the stage draws the session's document (the mirror deleted); handles, picking,
-snapping and hit tests as engine queries; the JavaScript renderer, playback workers and effect
-executors deleted (after the renderer census); performance passes on the section 5 workloads
-with the Windows driver; then the JavaScript command implementations and evaluation, with the
-recorded tapes as the frozen oracle.
+**Known differences** (behaviour chosen on purpose, with the reason in the commit or doc):
+- The Graphics mode setting is gone (the engine draws with WebGPU, or WebGL2 where there is none).
+- Rare refusals with a localized message instead of an edit: an animation-origin figure that holds
+  a 3D pose, mesh, movieclip or drawing; combining groups with Stick Nodes shapes, meshes,
+  movieclips, drawings or origins; the keyframe commands of a native timeline.
+- Pictures reach the stage up to about 2 s after opening; pictures that do not fit the engine's
+  memory are not shown (counted) instead of failing; opens and edits are refused, with a message,
+  when memory is short.
+- A very large movieclip edit retires older history entries (as before); bake publication and
+  creating a movieclip on very large layers are one synchronous step (see the next phase).
+- Group width and height across several keys are measured with the engine's bounds (close to,
+  not exactly, the typed value when strokes do not scale); a draw-order key written over a bezier
+  key is constant (the old editor refused the edit).
+- A figure joined to a hidden movieclip comes loose at its geometry root; layer poses that join in
+  a ring leave one figure loose; a join to a slot outside the frame comes loose.
+- Library `.stkz` files of spatial IK figures can differ from before by about one unit in the last
+  place of solved angles (solved once instead of twice); a re-exported `.stk` is re-encoded.
+- Browser pages that are not cross-origin isolated cannot make Pivot or figure files (the desktop
+  app and the site are isolated).
 
-## Handoff (2026-10-11, third agent; superseded by the 2026-10-22 handoff above)
+**Next phase and open items.**
+- Performance: peak memory on large documents (above); bake publication and movieclip creation on
+  very large layers (0.3 to 2.6 s in a development build); geometry reads of very dense frames;
+  scrub painting; leaving a movieclip after an edit sends the clip's document once.
+- Translations: 305 English messages have no translation in the 26 packs.
+- Pre-existing, not changed: the polygon draft's instruction message hides its Finish and Cancel
+  buttons (Enter and Esc work); Combine refuses on a layer sheet when one figure came from Import
+  figure; reopening an exported unconverted nested movieclip shows each odd tick with the pose of
+  the even tick before it (the JavaScript export did the same).
+- Outside this repository: the telemetry collector should accept the backend value `webgl2` and drop
+  the deleted module names; CI and release workflows still install Python for the codec tests and
+  the video encoder build.
+- Tests: some browser tests need local sample files or hard-code a port; tests that read
+  `editor.frame` on layer-sheet documents may be stale (read `evaluatedFrame`).
+
+**Working on this branch.** `AGENTS.md` describes the rules now in force. App runs from scripts and
+agents set `STYK_BACKGROUND_WINDOW=1`. The disk is short: share one cargo target directory and build
+only the crates you change.
+
+## Handoff (2026-10-11, third agent; superseded by the 2026-10-26 handoff above)
 
 **Where it stands:** S0–S4 done; S6 done for the raster engine. S5 phase 3 has begun under
 D19 (user, 2026-10-11): one engine session per document owns document and history
@@ -673,7 +673,7 @@ layer-sheet movieclip replacements.
 
 ## 7. Parity results
 
-2026-10-25 selection-set commands: `selectSameDefinition`, `invertSelection` and `selectMarquee` match all 150 JavaScript-recorded steps natively and through the development WebAssembly binding. Five focused behavioral tests cover atomic refusals and readonly document/revision/history semantics; all seven fixture files regenerate byte-identically. App selection routing and document gates are unchanged.
+2026-10-25 selection-set commands: `selectSameDefinition`, `invertSelection` and `selectMarquee` match all 150 JavaScript-recorded steps natively and through the development WebAssembly binding. Six focused behavioral tests cover atomic refusals and readonly document/revision/history semantics; the seven fixture files are retained as frozen references after the upstream recorder retirement. App selection routing is unchanged.
 
 Figure clipboard publication passes 238 Rust tests, three recorded replays /
 106 exact calls, 263 JS tests and final Main check in 47.783 s. The scoped warmed
@@ -1370,4 +1370,4 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-23 | S7 Windows; S5 owner gestures; S1 native files | The tools and tests run on Windows paths; effect-clip and property edits and native movieclip commands run in the session; `.styk`/`.stkz`/`.stykmov` open and save through `styk-formats` in the codec module, the JavaScript container codec and vendored zstd deleted. **Counters:** owner editor calls 1,389 → 849; inventory 175/123/34/23/1 → 173/126/33/23/2; deleted JS modules +2 (native-container, vendored zstd). | Owner tapes 0 failing in both variants; `npm test` on Windows 4,121, 0 fail; old and new container codecs equal on 259 native files and two large documents (documents, saves, cache) before deletion. |
 | 2026-10-24 | D16 pow; S5 motion paths | `styk_math::pow` is V8's legacy fdlibm pow and every fixture tool pins Node to it (`engine/tools/v8-pin.mjs`); motion-path edits run in the session (redo under an open edit hands it to the editor). **Counters:** engine pow call sites on platform pow 9 → 0; owner editor calls 849 → 549. | pow: 0 mismatches on 6.17 M recorded and 2 M fresh inputs; regeneration byte-stable on Windows and Linux; four crates 455 tests pass; owner tapes 0 failing. |
 
-| 2026-10-25 | Add set-based selection command parity | `selectSameDefinition`, `invertSelection` and `selectMarquee` run through the Rust command/Session APIs, preserving ordered selection, no-op events, error keys and history. No app routing or ownership gate changes; inventory classifications unchanged. | 140 focused Rust tests and 34 related JavaScript tests pass (no skips); 150 steps match through native and development WebAssembly; seven fixture files regenerate identically. Native/Wasm macOS verification only; app UI, packaged builds and performance unverified. |
+| 2026-10-25 | Add set-based selection command parity | `selectSameDefinition`, `invertSelection` and `selectMarquee` run through the Rust command/Session APIs, preserving ordered selection, no-op events, error keys and history. No app routing or ownership gate changes; inventory classifications unchanged. | 230 focused Rust tests and 28 related JavaScript tests pass (no skips); 150 steps match through native and development WebAssembly; seven fixture files retained as frozen references. Native/Wasm macOS verification only; app UI, packaged builds and performance unverified. |

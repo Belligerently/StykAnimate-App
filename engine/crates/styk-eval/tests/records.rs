@@ -1,5 +1,5 @@
-//! The evaluated frame as records against what the editor stores
-//! (engine/tools/records-fixtures.mjs): byte for byte at every recorded tick.
+//! The evaluated frame as records against what the editor stored
+//! (frozen recordings): byte for byte at every recorded tick.
 //! Frames the engine does not produce as records yet are counted, so the test
 //! fails when a ported kind of frame stops matching or stops being produced.
 

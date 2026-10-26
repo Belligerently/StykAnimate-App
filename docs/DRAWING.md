@@ -416,7 +416,8 @@ on demand in the same worker, keeping their caches for later requests. A module
 load failure releases that worker and rejects all pending requests so retrying
 can start a fresh one. This adds no extra worker or queue.
 
-Undo belongs to the editor's chronological history. Before/after tile records
+Undo belongs to the engine session's chronological history, whose entries name
+the records of the pixel history below ([docs/engine/drawing.md](engine/drawing.md#history)). Before/after tile records
 are exact; absent sides are `null` and uniform tiles use a four-byte color
 representation. Where workers and IndexedDB are available, records of at least
 64 KiB move to a session-owned disk tier. Its dedicated worker encodes, hashes
@@ -503,8 +504,7 @@ Existing cache budgets and preparation leases retain their lifetime guarantees.
 A parent caches a nested cel publication without writing back into the child definition;
 changed revisions, undo and superseded decodes replace only that cached cel.
 
-The scratch-canvas presenter below serves the JavaScript painters of drawing geometry
-(`pivot/geometry.mjs`) that remain; the editing canvas is the engine's stage, which draws
+The scratch-canvas presenter below serves the JavaScript painters that remain; the editing canvas is the engine's stage, which draws
 cels, onion skins and floating selections from the tiles it holds. Drawing textures participate in the normal scene compositor, including
 ordering, opacity, erasing, camera and clipping. Tiles are painted into
 tile-anchored scratch canvases; each presenter keeps a bounded LRU of them,
@@ -608,8 +608,8 @@ fill/selection/resample history, clipboard, both renderer paths and encoders.
 Mouse/browser checks and deterministic pressure tests do not certify physical
 pen drivers, input-to-photon latency or every GPU. Pen tilt steers tilt-mode tips; vector strokes and
 resolution-independent drawing are outside this implementation. Fill follows
-stage plus artwork bounds, independently of zoom. The `drawing-fill.mjs` worker
-kernel allocates masks only for reached tiles and the gap/expansion halo, so a
+stage plus artwork bounds, independently of zoom. The fill kernel (`styk-drawing`)
+allocates masks only for reached tiles and the gap/expansion halo, so a
 small enclosed fill is independent of distant artwork or total bounds area.
 Tolerance still compares premultiplied RGBA; gap closing and expansion retain
 four-neighbour distances across tile boundaries. Uniform tiles use a fast path.

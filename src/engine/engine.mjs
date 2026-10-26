@@ -17,7 +17,7 @@ const API_VERSION = 1;
 const WORKER_STACK_BYTES = 2 * 1024 * 1024;
 
 /** How many preparation threads a device gets: its cores minus the interface thread, at most eight. */
-export function defaultWorkerCount(cores = globalThis.navigator?.hardwareConcurrency || 4) {
+function defaultWorkerCount(cores = globalThis.navigator?.hardwareConcurrency || 4) {
   return Math.max(1, Math.min(8, cores - 1));
 }
 
@@ -44,7 +44,7 @@ const MEMORY_MAXIMA = [32768, 16384, 8192];
  * It starts at `initial` pages, the size the module declares (`declaredMemoryPages`):
  * a smaller memory does not link, and the size changes with the module's static data.
  */
-export function createEngineMemory(initial, maxima = MEMORY_MAXIMA) {
+function createEngineMemory(initial, maxima = MEMORY_MAXIMA) {
   let failure;
   for (const maximum of maxima) {
     try { return Object.assign(new WebAssembly.Memory({initial, maximum, shared: true}), {maximumBytes: maximum * 65536}); }

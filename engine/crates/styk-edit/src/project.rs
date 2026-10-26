@@ -29,7 +29,7 @@ impl Editor {
     }
 
     /// `_fields(label, patch, {timing})`: the document's fields set, unless they already are.
-    fn set_fields(&mut self, label: &str, patch: Vec<(&str, Value)>, timing: bool) -> Result<bool, EditError> {
+    pub(crate) fn set_fields(&mut self, label: &str, patch: Vec<(&str, Value)>, timing: bool) -> Result<bool, EditError> {
         let before: Vec<(String, Option<Value>)> = patch.iter().map(|(key, _)| (key.to_string(), self.report.get(key).cloned())).collect();
         // `same(before, patch)`: equal as JSON, a missing field left out.
         let json = |pairs: &mut dyn Iterator<Item = (String, Option<Value>)>| {
@@ -88,14 +88,14 @@ impl Editor {
         Ok(())
     }
 
-    /// `setFPS(value)`: frames per second, and the frame delay older formats store.
-    pub(crate) fn set_fps(&mut self, value: &Value) -> Result<bool, EditError> {
+    /// `setFPS(value, {label})`: frames per second, and the frame delay older formats store.
+    pub(crate) fn set_fps(&mut self, value: &Value, options: &Value) -> Result<bool, EditError> {
         let fps = whole_between(Some(value), 1.0, 1000.0).ok_or_else(|| invalid("errors.editor.fpsMustBeAnIntegerBetween1And"))?;
         let mut patch = vec![("fps", Value::Num(fps))];
         if self.older_format() {
             patch.push(("frame_delay_ms", Value::Num(js_round(1000.0 / fps))));
         }
-        self.set_fields("Change frame rate", patch, true)
+        self.set_fields(&crate::history::entry_label(options, "Change frame rate"), patch, true)
     }
 
     /// `setCanvasSize(width, height)`.
@@ -106,8 +106,8 @@ impl Editor {
         self.set_fields("Resize canvas", vec![("canvas_width", Value::Num(width)), ("canvas_height", Value::Num(height))], false)
     }
 
-    /// `updateProject(patch)`: the canvas size and frame rate from the project settings.
-    pub(crate) fn update_project(&mut self, patch: &Value) -> Result<bool, EditError> {
+    /// `updateProject(patch, {label})`: the canvas size and frame rate from the project settings.
+    pub(crate) fn update_project(&mut self, patch: &Value, options: &Value) -> Result<bool, EditError> {
         let patch = patch.as_obj().ok_or_else(|| EditError::Unported("project settings that are not an object".into()))?;
         if let Some(key) = patch.keys().find(|key| !["canvas_width", "canvas_height", "fps"].contains(&&***key)) {
             return Err(crate::invalid_with("errors.editor.projectSettingIsNotEditableHere", vec![("key", Value::str(key))]));
@@ -126,6 +126,6 @@ impl Editor {
         }
         let fields: Vec<(String, Value)> = fields.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
         let borrowed: Vec<(&str, Value)> = fields.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
-        self.set_fields("Project settings", borrowed, fps.is_some())
+        self.set_fields(&crate::history::entry_label(options, "Project settings"), borrowed, fps.is_some())
     }
 }

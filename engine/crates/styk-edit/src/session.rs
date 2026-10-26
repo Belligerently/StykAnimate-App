@@ -14,8 +14,11 @@ use styk_doc::{Obj, Value};
 
 use crate::{EditError, Editor, Options, Selection};
 
+/// The start of the message of a read the session does not answer for this document.
+pub const UNPORTED: &str = "unported: ";
+
 pub struct Session {
-    editor: Editor,
+    pub(crate) editor: Editor,
 }
 
 mod worker;
@@ -255,6 +258,8 @@ fn split_topology_publication(before: &Value, report: &Value) -> Option<Value> {
         let mut fields = match place {
             crate::topology::Place::Keyframe(index) => vec![("index", Value::Num(index as f64))],
             crate::topology::Place::Source(id) => vec![("index", Value::Num(-1.0)), ("sourceId", Value::str(&id))],
+            // A retained source document is not part of this packet.
+            crate::topology::Place::Retained(..) => return None,
         };
         fields.push(("objects", Value::array(objects)));
         frames.push(response_value(fields));
@@ -422,6 +427,83 @@ impl Session {
         styk_doc::json::to_string(&answer)
     }
 
+    /// A read of what the interface shows, at `view` (its playhead: `tick` and `frameIndex`): `kind` is `frame`, `document`, `motion`,
+    /// `timeline` or `geometry` (`args`: `{since, motion}`); or the name of one of the editor's reads the session answers
+    /// (`Editor::interface_query`, at the whole view: `{"v": value}`, or `{}` where the editor answers `undefined`). The answer is
+    /// JSON text; the document does not change. An error that starts with [`UNPORTED`] is a document the session does not answer for.
+    pub fn query(&mut self, kind: &str, args: &str, view: &str) -> Result<String, String> {
+        let (args, view) = (styk_doc::json::parse(args.as_bytes()).map_err(|error| error.to_string())?, styk_doc::json::parse(view.as_bytes()).map_err(|error| error.to_string())?);
+        let shown = match kind {
+            "timeline" | "geometry" | "previewGeometry" | "figureDocument" | "frame" | "document" | "motion" => {
+                apply_playhead(&mut self.editor, &view);
+                match kind {
+                    "timeline" => Ok(self.editor.interface_timeline()),
+                    "geometry" => self.editor.interface_geometry(&args),
+                    "previewGeometry" => self.editor.interface_preview_geometry(&args),
+                    "figureDocument" => self.editor.interface_figure_document(&args),
+                    other => self.editor.interface_frame(other),
+                }
+            }
+            // What is sampled from the document besides the frame on show, at the playhead: the trails, the pose at a trail point, the
+            // onion skins (as the stage takes them, `Session::onions`) and the camera.
+            "trails" | "ghost" | "onions" | "shot" | "frameCamera" | "cameraSamples" | "framing" | "vfxClips" | "vfxGroup" | "vfxExtent" => {
+                apply_playhead(&mut self.editor, &view);
+                match kind {
+                    "trails" => self.editor.interface_trails(&args),
+                    "ghost" => self.editor.interface_trail_ghost(&args),
+                    "onions" => self.editor.onion_summary(&styk_doc::json::to_string(&args)),
+                    "vfxClips" => self.editor.interface_vfx_clips(&args),
+                    "vfxGroup" => self.editor.interface_vfx_group(&args),
+                    "vfxExtent" => self.editor.interface_vfx_extent(&args),
+                    other => self.editor.interface_camera(other, &args),
+                }
+            }
+            // The editor's own reads: the view is its whole state (the selection too).
+            name => {
+                apply_view(&mut self.editor, &view).map_err(|error| format!("{error:?}"))?;
+                match self.editor.interface_query(name, &args) {
+                    Some(answer) => answer.map(|value| match value {
+                        Some(value) => format!("{{\"v\":{}}}", styk_doc::json::to_string(&value)),
+                        None => "{}".to_string(),
+                    }),
+                    None => Err(EditError::Invalid(format!("the session answers no read '{name}'"))),
+                }
+            }
+        };
+        shown.map_err(|error| match error {
+            EditError::Invalid(message) => message,
+            // What the session does not evaluate yet: the editor reads it itself.
+            EditError::Unported(message) => format!("{UNPORTED}{message}"),
+        })
+    }
+
+    /// The onion skins the stage draws behind the frame on show, for the settings, the hidden figures and the selection in `request`
+    /// (JSON), at `view` (its playhead). The same set while nothing it depends on changed.
+    pub fn onions(&mut self, view: &str, request: &str) -> Result<Arc<crate::OnionSet>, String> {
+        let view = styk_doc::json::parse(view.as_bytes()).map_err(|error| error.to_string())?;
+        apply_playhead(&mut self.editor, &view);
+        self.editor.onion_set(request).map_err(|error| match error {
+            EditError::Invalid(message) => message,
+            EditError::Unported(message) => format!("{UNPORTED}{message}"),
+        })
+    }
+
+    /// The clock reads that are given a time to take are held to (milliseconds).
+    pub fn set_clock(&mut self, clock: fn() -> f64) {
+        self.editor.clock = Some(clock);
+    }
+
+    /// The frame the stage draws, at `view` (its playhead): the gesture in progress, else the document at the playhead; with `motion`,
+    /// the motion-path edit's display where one is shown. The record is the editor's own (no text is made).
+    pub fn show(&mut self, view: &str, motion: bool) -> Result<Value, String> {
+        let view = styk_doc::json::parse(view.as_bytes()).map_err(|error| error.to_string())?;
+        apply_playhead(&mut self.editor, &view);
+        self.editor.interface_record(motion).map_err(|error| match error {
+            EditError::Invalid(message) => message,
+            EditError::Unported(message) => format!("{UNPORTED}{message}"),
+        })
+    }
+
     /// The same command and response owner over already decoded COW values.
     /// This worker-only boundary avoids whole-answer JSON serialization: its
     /// returned value stays worker-owned until the common bounded packet ACK.
@@ -486,6 +568,44 @@ impl Session {
     }
 }
 
+/// Puts the editor's playhead, selection and settings where the interface has them (the view of a
+/// call, or of a read of what the interface shows).
+fn apply_view(editor: &mut Editor, view: &Value) -> Result<(), EditError> {
+    if !view.is_object() {
+        return Ok(());
+    }
+    if !view_unchanged(editor, view) {
+        let (tick, frame_index) = (number(view, "tick").unwrap_or(0.0), number(view, "frameIndex").unwrap_or(0.0) as usize);
+        // The editor seeked without the session (D19): the frame it kept on show is gone, as after `seek`.
+        if tick.to_bits() != editor.tick.to_bits() || frame_index != editor.frame_index { editor.retained = None; }
+        editor.set_view(tick, frame_index, selection_of(view));
+    }
+    editor.sync_selection_metadata(view)?;
+    editor.set_auto_key(flag(view, "autoKey"));
+    editor.audio_ripple = flag(view, "audioRipple");
+    // Focus and lock: the layers outside the focus are locked for this call (the focus is the interface's, never the document's).
+    editor.set_layer_focus_lock_of(view);
+    // Selecting changes the active layer without a new revision of the document.
+    if let Some(active) = view.get("activeLayerId").and_then(Value::as_str) {
+        editor.set_active_layer_id(active);
+    }
+    editor.set_sheet_selection(sheet_selection_of(view));
+    Ok(())
+}
+
+/// Puts the editor's playhead where the interface has it, leaving the selection and settings as the session last had
+/// them: what the frame on show and its geometry are does not depend on them, so a read of those needs no more.
+fn apply_playhead(editor: &mut Editor, view: &Value) {
+    let (Some(tick), Some(frame_index)) = (number(view, "tick"), number(view, "frameIndex")) else { return };
+    let frame_index = frame_index as usize;
+    if tick.to_bits() != editor.tick.to_bits() || frame_index != editor.frame_index {
+        // The editor seeked without the session (D19): the frame it kept on show is gone, as after `seek`.
+        editor.retained = None;
+        let selection = editor.selection.clone();
+        editor.set_view(tick, frame_index, selection);
+    }
+}
+
 /// Shared by legacy JSON calls and canonical worker transactions.
 fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, worker_preparation: bool, check: Option<&mut dyn FnMut() -> Result<(), EditError>>) -> Result<Value, EditError> {
     let prelude_scope = crate::prof::scope("call::prelude");
@@ -539,26 +659,14 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     if changes_only {
         answer.push(("changesOnly", Value::Bool(true)));
     }
-    if view.is_object() {
-        if !view_unchanged(editor, view) {
-            let (tick, frame_index) = (number(view, "tick").unwrap_or(0.0), number(view, "frameIndex").unwrap_or(0.0) as usize);
-            // The editor seeked without the session (D19): the frame it kept on show is gone, as after `seek`.
-            if tick.to_bits() != editor.tick.to_bits() || frame_index != editor.frame_index { editor.retained = None; }
-            editor.set_view(tick, frame_index, selection_of(view));
-        }
-        if let Err(error) = editor.sync_selection_metadata(view) {
-            answer.push(("status", Value::str("unported")));
-            answer.push(("reason", Value::str(&format!("{error:?}"))));
-            return Ok(response_value(answer));
-        }
-        editor.set_auto_key(flag(view, "autoKey"));
-        editor.audio_ripple = flag(view, "audioRipple");
-        // Selecting changes the active layer without a new revision of the document.
-        if let Some(active) = view.get("activeLayerId").and_then(Value::as_str) {
-            editor.set_active_layer_id(active);
-        }
-        editor.set_sheet_selection(sheet_selection_of(view));
+    if let Err(error) = apply_view(editor, view) {
+        answer.push(("status", Value::str("unported")));
+        answer.push(("reason", Value::str(&format!("{error:?}"))));
+        return Ok(response_value(answer));
     }
+    // The document the editor's read view holds is the one the call's patch is the difference from: the view's active layer
+    // (the editor sets it in place when it selects) is part of it.
+    let before = editor.report().clone();
     // Capture through the existing selected-definition reader after view sync.
     // Failure only omits the opt-in marker; dispatch keeps its original errors.
     let unique_original = if unique_requested { editor.selected_movieclip().ok().map(|(_, _, figure)| figure) } else { None };
@@ -568,6 +676,11 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     // What the editor drew at random during its own run of the call (D18).
     editor.set_draws(view.get("draws").unwrap_or(&Value::Null));
     editor.draw_pool = view.get("drawPool") == Some(&Value::Bool(true));
+    editor.drawing_forks.clear();
+    editor.drawing_retired = false;
+    // What JSON cannot say (a member set to `undefined`, a non-finite number) arrives encoded (args.rs).
+    let decoded;
+    let args = if flag(view, "encoded") { decoded = crate::args::decode(args, crate::args::keeps_undefined(method)); &decoded } else { args };
     let args: Vec<Value> = args.elements().map(|e| e.iter().collect()).unwrap_or_default();
     let clipboard_requested = matches!(method, "pasteSelection" | "duplicateSelection")
         && view.get("figureClipboardPastes") == Some(&Value::Bool(true));
@@ -629,12 +742,16 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             _ => None,
         } }
     } else { None };
+    let called_ok = result.is_ok();
+    // A copy that copied something (`sheetCopyFrames` answers nothing): the interface keeps what was copied.
+    let copied = if called_ok { crate::clipboards::copied_kind(method).filter(|_| method == "sheetCopyFrames" || result.as_ref().is_ok_and(Value::truthy)) } else { None };
     match result {
         Ok(result) => {
             answer.push(("status", Value::str("ok")));
             // The facade returns these views from its adopted document. Repeating
             // their complete figure/frame data in the answer serves no purpose.
-            let adopted_view = changes_only && matches!(method, "duplicateFigure" | "addFigure" | "importFigure" | "pasteSelection" | "duplicateSelection" | "sheetAppendFrame");
+            // (A paste or a duplicate that made nothing answers an empty list, which the facade cannot read from its document.)
+            let adopted_view = changes_only && matches!(method, "duplicateFigure" | "addFigure" | "importFigure" | "pasteSelection" | "duplicateSelection" | "sheetAppendFrame") && result.array_len() != Some(0);
             answer.push(("result", if adopted_view { Value::Null } else { result }));
         }
         Err(EditError::Unported(what)) => {
@@ -650,6 +767,17 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         }
     }
     answer.push(("state", editor.state_value()));
+    // The cels a call copied: the interface gives the copies the pixels of the cels they copy.
+    if called_ok && !editor.drawing_forks.is_empty() {
+        let forks = std::mem::take(&mut editor.drawing_forks);
+        answer.push(("drawingForks", Value::array(forks.into_iter().map(|(old, new)| Value::array(vec![Value::str(&old), Value::str(&new)])).collect())));
+    }
+    if called_ok && std::mem::take(&mut editor.drawing_retired) {
+        answer.push(("drawingRetired", Value::Bool(true)));
+    }
+    if let Some(kind) = copied && let Some(data) = editor.clipboard_answer(kind) {
+        answer.push(("clipboard", response_value(vec![("kind", Value::str(kind)), ("data", data)])));
+    }
     let events = editor.take_events();
     let report = editor.report();
     // A command published the sheet when one of its events says so, as the facade reads

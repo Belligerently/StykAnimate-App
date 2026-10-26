@@ -156,3 +156,16 @@ test('failed exports discard the compressed pool from previous successful saves'
   await until(() => workers[1]?.messages.at(-1)?.operation === 'export');
   abort.abort(); await rejected; assert.equal(exporter.compressionCache.size, 0);
 });
+
+test('a Pivot or figure export on a page that is not cross-origin isolated is refused with a message, before any worker starts', async t => {
+  const {workers, exporter} = environment(t, {engine: {join: {}}});
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crossOriginIsolated');
+  Object.defineProperty(globalThis, 'crossOriginIsolated', {value: false, configurable: true});
+  t.after(() => { if (descriptor) Object.defineProperty(globalThis, 'crossOriginIsolated', descriptor); else delete globalThis.crossOriginIsolated; });
+  for (const format of ['piv', 'stk', 'stkz', 'stykmov']) {
+    await assert.rejects(exporter.export(createDemo(), {format, revision: 1}), error =>
+      error.messageKey === 'errors.documentExport.theEngineCannotMakeThisFileHere' && error.telemetryCode === 'engine_failed' && /shared memory/.test(error.message), format);
+  }
+  assert.equal(workers.length, 0, 'no worker was started');
+  assert.equal(exporter.jobs.size, 0); assert.equal(exporter.active, false);
+});
