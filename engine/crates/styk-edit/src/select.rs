@@ -12,6 +12,13 @@ use crate::{EditError, Editor};
 #[path = "selection_metadata_tests.rs"]
 mod tests;
 
+/// A host-owned, monotonic selection deny mask, outside document and undo state.
+#[derive(Clone, Debug)]
+pub(crate) struct SelectionLocks {
+    generation: u32,
+    denied: std::collections::HashSet<u32>,
+}
+
 /// The selected figures and joint.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Selection {
@@ -274,11 +281,44 @@ impl Editor {
         Ok(Value::array(frame.into_iter().filter(|o| uid(o).is_some_and(|u| self.selection.uids.contains(&u))).collect()))
     }
 
+    /// Install a connected-selection deny mask from the collaboration owner.
+    /// Newer generations replace the mask; identical retries are idempotent.
+    /// Command candidates and Session views cannot overwrite this policy.
+    pub fn set_selection_locks(&mut self, generation: u32, denied: &[u32]) -> Result<bool, String> {
+        let denied: std::collections::HashSet<u32> = denied.iter().copied().collect();
+        if let Some(current) = &self.selection_locks {
+            if generation == current.generation && denied == current.denied {
+                self.enforce_connected_selection_locks();
+                return Ok(false)
+            }
+            if generation <= current.generation { return Err("selection lock generation must increase".into()) }
+        }
+        self.selection_locks = Some(std::sync::Arc::new(SelectionLocks { generation, denied }));
+        self.enforce_connected_selection_locks();
+        Ok(true)
+    }
+
+    /// Purge newly denied state before snapshotting a connected-selection call.
+    /// Policy enforcement survives a command refusal; document/history stay intact.
+    pub(crate) fn enforce_connected_selection_locks(&mut self) {
+        let Some(policy) = &self.selection_locks else { return };
+        if !self.selection.uids.iter().any(|id| policy.denied.contains(id))
+            && !self.selection.uid.is_some_and(|id| policy.denied.contains(&id)) { return }
+        self.selection.uids.retain(|id| !policy.denied.contains(id));
+        self.selection.uid = self.selection.uid.filter(|id| self.selection.uids.contains(id))
+            .or_else(|| self.selection.uids.last().copied());
+        self.selection.joint = -1;
+        self.selection_metadata = SelectionMetadata::default();
+        self.emit("selection", vec![]);
+    }
+
     /// `selectConnected(uid = selectedUid, {add, candidates})`: traverse joins in
     /// both directions, then filter eligible UIDs. Excluded intermediates must
     /// not disconnect the component. Selection order follows document slots,
     /// after any existing selection retained by `add`.
     pub(crate) fn select_connected(&mut self, args: &[Value]) -> Result<Value, EditError> {
+        // Internal batch dispatch can bypass the public call wrapper.
+        self.enforce_connected_selection_locks();
         let number_uid = |value: &Value| value.as_f64()
             .filter(|n| n.is_finite() && n.fract() == 0.0 && *n >= 0.0 && *n <= u32::MAX as f64)
             .map(|n| n as u32);
@@ -325,6 +365,7 @@ impl Editor {
         let mut chosen: std::collections::HashSet<u32> = ids.iter().copied().collect();
         for (slot, object) in objects.iter().enumerate() {
             if visited[slot] && let Some(id) = uid(object)
+                && self.selection_locks.as_ref().is_none_or(|policy| !policy.denied.contains(&id))
                 && eligible.as_ref().is_none_or(|eligible| eligible.contains(&id)) && chosen.insert(id)
             { ids.push(id); }
         }

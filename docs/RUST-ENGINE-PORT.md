@@ -1371,3 +1371,26 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-23 | S7 Windows; S5 owner gestures; S1 native files | The tools and tests run on Windows paths; effect-clip and property edits and native movieclip commands run in the session; `.styk`/`.stkz`/`.stykmov` open and save through `styk-formats` in the codec module, the JavaScript container codec and vendored zstd deleted. **Counters:** owner editor calls 1,389 → 849; inventory 175/123/34/23/1 → 173/126/33/23/2; deleted JS modules +2 (native-container, vendored zstd). | Owner tapes 0 failing in both variants; `npm test` on Windows 4,121, 0 fail; old and new container codecs equal on 259 native files and two large documents (documents, saves, cache) before deletion. |
 | 2026-10-24 | D16 pow; S5 motion paths | `styk_math::pow` is V8's legacy fdlibm pow and every fixture tool pins Node to it (`engine/tools/v8-pin.mjs`); motion-path edits run in the session (redo under an open edit hands it to the editor). **Counters:** engine pow call sites on platform pow 9 → 0; owner editor calls 849 → 549. | pow: 0 mismatches on 6.17 M recorded and 2 M fresh inputs; regeneration byte-stable on Windows and Linux; four crates 455 tests pass; owner tapes 0 failing. |
 | 2026-10-26 | Refresh connected selection after the engine cutover | Preserve upstream selection metadata handling, retire obsolete JavaScript recorders and retain the seven frozen fixtures. Document caller-owned external eligibility via candidates, including add retaining prior selections. | Six connected-selection tests cover 81 frozen recorded steps through Editor/Session, plus excluded bridge/start nodes in a cyclic graph, no-op events and unchanged document/history; four loader regression tests pass. No remote ownership registry or multiplayer lock guarantee is introduced. |
+
+
+### Connected-selection lock boundary (2026-10-26)
+
+The optional host-owned `set_selection_locks` policy is installed separately from
+command candidates and view state on Editor, Session, WorkerSession and WebAssembly
+EditSession. Monotonic generations prevent stale updates clearing a deny mask;
+identical retries are idempotent. Accepted updates immediately prune denied IDs,
+while connected traversal still reaches allowed figures past denied bridges.
+Stale imported views and add selections are revalidated before command snapshotting.
+Publication guards retain immutable policy identity, and worker updates retire old
+operation epochs without modifying document revisions or undo history.
+Without a policy the original 81-step selection contract remains unchanged. This
+is a connected-selection policy boundary, not multiplayer authentication, an edit
+authorization system, or a default app-routing change. See the editing contract
+for native and WebAssembly API/input and refusal semantics.
+
+Verification of the lock-boundary update: 242 affected Rust tests and 31 focused
+JavaScript tests pass with no skips, including real WebAssembly policy/input checks
+and document-patch reconstruction of 329 tapes / 8,433 steps. Repository syntax,
+CSS and localization checks pass. Development native/WebAssembly profiles used
+opt-level=0/debug=0. Full workspace/Node, interactive UI and performance checks were
+not rerun for this update; no deployment/performance claim is made.

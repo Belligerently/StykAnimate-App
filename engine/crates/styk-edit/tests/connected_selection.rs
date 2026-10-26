@@ -136,3 +136,137 @@ fn external_ownership_candidates_skip_a_bridge_without_breaking_traversal() {
         assert!(report.same_node(editor.report()));
     }
 }
+
+#[test]
+fn session_lock_mask_overrides_stale_candidates_and_add_selection() {
+    let reference = reference("native");
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let report = styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap();
+    let mut session = styk_edit::session::Session::start(report.clone(), &styk_doc::json::to_string(first.get("state").unwrap())).unwrap();
+    session.call("selectMany", "[[2,4]]", "null");
+    let revision = session.revision();
+    let state = styk_doc::json::parse(session.set_selection_locks(1, &[2]).unwrap().as_bytes()).unwrap();
+    assert_eq!(state.get("selectedUids").unwrap().numbers().unwrap(), vec![4.0]);
+    // A stale caller reintroduces the denied bridge in both view and candidates.
+    let mut view = first.get("state").unwrap().as_obj().unwrap().clone();
+    view.set("selectedUid", Value::Num(2.0));
+    view.set("selectedUids", styk_doc::json::parse(b"[2,4]").unwrap());
+    // Command/view fields cannot replace the host-installed mask.
+    view.set("selectionLocks", styk_doc::json::parse(b"[]").unwrap());
+    let view = styk_doc::json::to_string(&Value::object(view));
+    for start in [1,2] {
+        let args = format!(r#"[{start},{{"add":true,"candidates":[1,2,3,999],"selectionLocks":[]}}]"#);
+        let answer = styk_doc::json::parse(session.call("selectConnected", &args, &view).as_bytes()).unwrap();
+        assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+        let state = answer.get("state").unwrap();
+        assert_eq!(state.get("selectedUids").unwrap().numbers().unwrap(), vec![4.0,1.0,3.0]);
+        assert_eq!(state.get("selectedUid").and_then(Value::as_f64), Some(if start==1 {1.0} else {3.0}));
+        assert_eq!(state.get("canUndo"), Some(&Value::Bool(false)));
+    }
+    // Invalid transport refuses without restoring the stale denied selection.
+    let answer = styk_doc::json::parse(session.call("selectConnected", r#"[1,{"add":true,"candidates":null}]"#, &view).as_bytes()).unwrap();
+    assert_eq!(answer.get("status").and_then(Value::as_str), Some("unported"));
+    assert_eq!(answer.get("state").unwrap().get("selectedUids").unwrap().numbers().unwrap(), vec![4.0]);
+    assert!(report.same_node(session.report()));
+    assert_eq!(session.revision(), revision);
+    assert!(!session.can_undo());
+}
+
+#[test]
+fn lock_policy_generations_are_monotonic_and_never_enter_history() {
+    let reference = reference("native");
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let report = styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap();
+    let mut editor = styk_edit::Editor::new(report.clone(), styk_edit::Options::default());
+    editor.call("selectMany", &[styk_doc::json::parse(b"[1,2,3]").unwrap()]).unwrap();
+    editor.set_selection_locks(4, &[2,2]).unwrap();
+    assert_eq!(editor.state().selected_uids, vec![1,3]);
+    editor.take_events();
+    editor.set_selection_locks(4, &[2]).unwrap();
+    assert!(editor.take_events().is_empty());
+    assert!(editor.set_selection_locks(3, &[]).is_err());
+    assert!(editor.set_selection_locks(4, &[]).is_err());
+    editor.call("selectConnected", &[Value::Num(2.0)]).unwrap();
+    assert_eq!(editor.state().selected_uids, vec![1,3]);
+    editor.take_events();
+    editor.call("selectConnected", &[Value::Num(2.0)]).unwrap();
+    assert!(editor.take_events().is_empty());
+    // A newer empty policy explicitly releases the deny mask.
+    editor.set_selection_locks(5, &[]).unwrap();
+    editor.call("selectConnected", &[Value::Num(2.0)]).unwrap();
+    assert_eq!(editor.state().selected_uids, vec![1,2,3]);
+    assert!(report.same_node(editor.report()));
+    assert!(!editor.state().can_undo);
+}
+
+#[test]
+fn worker_policy_update_retires_a_prepared_operation_without_changing_revision() {
+    let reference = reference("native");
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let report = styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap();
+    let mut session = styk_edit::session::Session::start(report.clone(), &styk_doc::json::to_string(first.get("state").unwrap())).unwrap();
+    session.call("select", "[2]", "null");
+    session.prepare_worker_history(styk_edit::HistoryLimits::default(), 0.0, || Ok(())).unwrap();
+    let mut worker = session.into_worker();
+    let revision = worker.revision();
+    let prepared = worker.prepare_quiet("moveSelection", &styk_doc::json::parse(b"[5,0]").unwrap(), &Value::Null, || Ok(())).unwrap();
+    let epoch = worker.operation_epoch();
+    worker.set_selection_locks(1, &[2]).unwrap();
+    assert!(worker.operation_epoch() > epoch);
+    assert!(worker.guard(prepared, || Ok(())).is_err());
+    assert_eq!(worker.revision(), revision);
+    assert!(report.same_node(worker.report()));
+    let epoch = worker.operation_epoch();
+    worker.set_selection_locks(1, &[2]).unwrap();
+    assert_eq!(worker.operation_epoch(), epoch, "identical updates are idempotent");
+    let mut session = worker.into_session();
+    let answer = styk_doc::json::parse(session.call("selectConnected", "[2]", "null").as_bytes()).unwrap();
+    assert_eq!(answer.get("state").unwrap().get("selectedUids").unwrap().numbers().unwrap(), vec![1.0,3.0]);
+}
+
+#[test]
+fn denied_bridge_in_a_cycle_is_traversed_but_never_retained_or_added() {
+    let reference = reference("native");
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let mut report = styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap();
+    let objects = report.make_obj().unwrap().get_mut("keyframes").unwrap().make_arr().unwrap()[0]
+        .make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap();
+    objects[0].make_obj().unwrap().set("join", styk_doc::json::parse(br#"{"target_object_slot":1,"target_handle_id":22}"#).unwrap());
+    let mut editor = styk_edit::Editor::new(report.clone(), styk_edit::Options::default());
+    editor.call("select", &[Value::Num(2.0)]).unwrap();
+    editor.set_selection_locks(1, &[2]).unwrap();
+    let options = styk_doc::json::parse(br#"{"add":true,"candidates":[1,2,3]}"#).unwrap();
+    editor.call("selectConnected", &[Value::Num(2.0), options]).unwrap();
+    assert_eq!(editor.state().selected_uids, vec![1,3]);
+    assert_eq!(editor.state().selected_uid, Some(3));
+    assert!(report.same_node(editor.report()));
+}
+
+#[test]
+fn direct_publication_guard_checks_policy_even_when_selection_did_not_change() {
+    let reference = reference("native");
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let report = styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap();
+    let mut session = styk_edit::session::Session::start(report.clone(), &styk_doc::json::to_string(first.get("state").unwrap())).unwrap();
+    session.call("select", "[1]", "null");
+    session.prepare_worker_history(styk_edit::HistoryLimits::default(), 0.0, || Ok(())).unwrap();
+    let prepared = session.prepare_worker_call_values("moveSelection", &styk_doc::json::parse(b"[5,0]").unwrap(), &Value::Null, || Ok(())).unwrap();
+    // UID 2 was not selected: the policy change alone must retire this candidate.
+    session.set_selection_locks(1, &[2]).unwrap();
+    assert!(session.guard_worker_publication_checked(prepared, || Ok(())).is_err());
+    assert!(report.same_node(session.report()));
+}
+
+#[test]
+fn batch_dispatch_cannot_retain_denied_ids_added_by_an_earlier_step() {
+    let reference = reference("native");
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let report = styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap();
+    let mut editor = styk_edit::Editor::new(report.clone(), styk_edit::Options::default());
+    editor.set_selection_locks(1, &[2]).unwrap();
+    let args = styk_doc::json::parse(br#"["selection",[["selectMany",[2,4]],["selectConnected",1,{"add":true,"candidates":[1,2,3]}]]]"#).unwrap();
+    editor.call("@batch", &args.elements().unwrap().iter().collect::<Vec<_>>()).unwrap();
+    assert_eq!(editor.state().selected_uids, vec![4,1,3]);
+    assert!(report.same_node(editor.report()));
+    assert!(!editor.state().can_undo);
+}

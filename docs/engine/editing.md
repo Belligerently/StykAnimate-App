@@ -978,22 +978,44 @@ API, command admission, cache, stored arithmetic or response field.
 
 ### Connected selection and external ownership
 
-`selectConnected` has no remote-user identity, presence registry or ownership-tag
-schema. A remote highlight alone does not impose an exclusive lock. Collaboration
-code that enforces exclusive ownership must compute eligible UIDs and supply them
-as `candidates`; omitting candidates permits every reached figure. Arbitrary remote
-ownership tags are not interpreted by this API.
+The collaboration owner can install a persistent deny mask before admitting calls:
 
-Candidate filtering happens after the bounded graph traversal: an excluded bridge
-or starting node is traversed but is not newly selected. Eligible figures beyond
-it remain reachable, including in cyclic graphs. The command reads joins without
-editing the document or acquiring, releasing or transferring any remote lock.
+- Rust `Editor::set_selection_locks(generation, denied_uids)` returns whether the
+  policy changed. `Session::set_selection_locks` and `WorkerSession::set_selection_locks`
+  return corrected selection state as JSON.
+- WebAssembly `EditSession.set_selection_locks(generation, deniedJson)` accepts a
+  nonnegative u32 generation and a JSON array of u32 UIDs; malformed updates fail
+  before changing state. For example, `session.set_selection_locks(1, '[2]')` denies UID 2.
 
-Candidates restrict additions, not selections retained by `add: true`. If an existing
-selection becomes remotely owned, the caller must reconcile it first or use
-`add: false` with the full eligible set. The caller must also apply layer-focus and
-lock eligibility. This local API provides no distributed mutual exclusion; the
-collaboration owner must validate current ownership again when authorizing edits.
-The direct Rust test `external_ownership_candidates_skip_a_bridge_without_breaking_traversal`
-simulates that caller boundary and checks ordering, active selection, no-op events,
-cyclic traversal and unchanged document/history.
+Policy generations must increase; an identical same-generation retry is idempotent,
+and an older or conflicting same-generation update is rejected. A newer empty mask
+explicitly releases all denied UIDs. The policy stays with the runtime owner across
+worker handoff; it is outside document JSON and undo history. Prepared publications
+are invalidated when policy changes, even without a document/selection revision.
+Worker operations also advance their operation epoch on a changed policy.
+
+`selectConnected` checks the installed deny mask when accepting component members.
+An excluded starting node or bridge is still traversed with the visited set, so
+eligible nodes beyond it remain reachable even in a cycle. Policy updates immediately
+purge denied selections, repair the active UID and clear joint/optional selection
+metadata when purging. Imported stale Session views are revalidated before command
+snapshotting. `add: true` retains only selections allowed by the installed policy;
+stale or unfiltered `candidates` cannot override the deny mask. Non-array candidates
+still refuse, preserving the policy-corrected selection and unchanged document/history.
+Command arguments and view fields cannot replace this separately installed policy.
+
+`candidates` remains an operation's eligible-addition domain, not the lock mask.
+Without a policy, the existing recorded behavior is unchanged; with a policy, existing
+unlocked selections outside candidates are still retained by `add: true`.
+
+The trusted collaboration owner must control access to the policy setter and supply
+its authoritative, session-scoped UID/generation mapping. Remote presence/highlights
+are not inherently exclusive locks, and arbitrary document ownership tags are not
+interpreted. This opt-in policy guards connected selection; it is not a network
+protocol, authentication mechanism or authorization policy for other editing commands.
+No multiplayer UI or default app routing is enabled by this addition.
+
+Native integration tests cover stale views/candidates with `add: true`, invalid
+candidate transport, cyclic bridges, monotonic policy updates, no-op events,
+unchanged document/revision/history and stale worker/publication rejection. Real
+WebAssembly tests exercise the same boundary and strict policy-input validation.
